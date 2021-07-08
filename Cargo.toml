@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "cli",
+    "lib",
+]
+
+# Exclude our integration test fixtures, which need to be compiled to wasm
+# (managed by the Makefile)
+exclude = [
+    "test-fixtures",
+]
+
+# Specify `cli` as the default workspace member to operate on. This means that
+# commands like `cargo run` will run the CLI binary by default.
+# See: https://doc.rust-lang.org/cargo/reference/workspaces.html#package-selection
+default-members = [ "cli" ]

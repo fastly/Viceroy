@@ -1,0 +1,4 @@
+**/target/
+publish
+verify-publishable/
+.vscode
