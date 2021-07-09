@@ -21,6 +21,7 @@ You'll need to get a copy of the Viceroy source code locally, by cloning the
 
 ```
 git clone git@github.com:fastly/Viceroy.git
+cd Viceroy
 git submodule update --recursive --init
 ```
 
@@ -39,7 +40,7 @@ is made available on your system.
 
 ### Updating Viceroy
 
-o update Viceroy, navigate to the `Viceroy` directory you cloned above, and then:
+To update Viceroy, navigate to the `Viceroy` directory you cloned above, and then:
 
 ```
 git pull
