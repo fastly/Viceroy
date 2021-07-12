@@ -27,7 +27,7 @@ jobs:
 
       - name: Build and package
         run: |
-          cargo build --all --release
+          cargo build --all --release --locked
           cd target/release
           strip viceroy
           tar czf viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz viceroy
@@ -62,7 +62,7 @@ jobs:
 
       - name: Build and package
         run: |
-          cargo build --all --release
+          cargo build --all --release --locked
           cd target/release
           strip viceroy
           tar czf viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz viceroy
