@@ -30,7 +30,7 @@ pub struct Opts {
     )]
     input: PathBuf,
     /// The path to a TOML file containing `local_server` configuration.
-    #[structopt(short = "C")]
+    #[structopt(short = "C", long = "config")]
     config_path: Option<PathBuf>,
     /// Whether to treat stdout as a logging endpoint
     // NB: struct_opt won't let us use `default_value` here, but the default is `false`
