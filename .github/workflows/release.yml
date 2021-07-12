@@ -21,42 +21,22 @@ jobs:
           default: true
           override: true
 
-      - name: Build
-        run: cargo build --all --release && strip target/release/viceroy && mv target/release/viceroy target/release/viceroy_linux-amd64
+      - name: Extract tag name
+        uses: olegtarasov/get-tag@v2.1
+        id: tagName
 
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            target/release/viceroy_linux-amd64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-win:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          submodules: true
-
-      - name: Install latest Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          default: true
-          override: true
-
-      - name: Build
+      - name: Build and package
         run: |
           cargo build --all --release
-          ren target\release\viceroy.exe viceroy_windows-amd64.exe
+          cd target/release
+          strip viceroy
+          tar czf viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz viceroy
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/viceroy_windows-amd64.exe
+            target/release/viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -76,13 +56,21 @@ jobs:
           default: true
           override: true
 
-      - name: Build
-        run: cargo build --all --release && strip target/release/viceroy && mv target/release/viceroy target/release/viceroy_darwin-amd64
+      - name: Extract tag name
+        uses: olegtarasov/get-tag@v2.1
+        id: tagName
+
+      - name: Build and package
+        run: |
+          cargo build --all --release
+          cd target/release
+          strip viceroy
+          tar czf viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz viceroy
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/viceroy_darwin-amd64
+            target/release/viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
