@@ -1,6 +1,7 @@
 //! Command line arguments.
 
 use {
+    std::net::{IpAddr, Ipv4Addr},
     std::{
         net::SocketAddr,
         path::{Path, PathBuf},
@@ -51,7 +52,7 @@ impl Opts {
     /// The address that the service should be bound to.
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
-            .unwrap_or_else(|| "127.0.0.1:7878".parse().unwrap())
+            .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878))
     }
 
     /// The path to the service's Wasm binary.
