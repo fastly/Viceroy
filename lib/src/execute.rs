@@ -68,6 +68,8 @@ impl ExecuteCtx {
             types: 200,
             // AssemblyScript applications tend to create a fair number of globals
             globals: 64,
+            // Some applications create a large number of functions, in particular in debug mode
+            functions: 20000,
             ..ModuleLimits::default()
         };
 
