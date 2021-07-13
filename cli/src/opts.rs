@@ -20,8 +20,8 @@ use {
 #[structopt(name = "viceroy", author)]
 pub struct Opts {
     /// The IP address that the service should be bound to.
-    #[structopt(long = "addr", default_value = "127.0.0.1:7878")]
-    socket_addr: SocketAddr,
+    #[structopt(long = "addr")]
+    socket_addr: Option<SocketAddr>,
     /// The path to the service's Wasm binary.
     #[structopt(
         parse(
@@ -51,6 +51,7 @@ impl Opts {
     /// The address that the service should be bound to.
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
+            .unwrap_or_else(|| "127.0.0.1:7878".parse().unwrap())
     }
 
     /// The path to the service's Wasm binary.
