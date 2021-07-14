@@ -90,7 +90,7 @@ impl FastlyHttpReq for Session {
         cipher_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        todo!()
+        Err(Error::NotAvailable("Client TLS data"))
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
@@ -100,7 +100,7 @@ impl FastlyHttpReq for Session {
         protocol_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        todo!()
+        Err(Error::NotAvailable("Client TLS data"))
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
@@ -110,7 +110,7 @@ impl FastlyHttpReq for Session {
         chello_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        todo!()
+        Err(Error::NotAvailable("Client TLS data"))
     }
 
     fn new(&mut self) -> Result<RequestHandle, Error> {

@@ -12,7 +12,7 @@ use {
 impl FastlyDictionary for Session {
     #[allow(unused_variables)] // FIXME: Remove this directive once implemented.
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        todo!()
+        Err(Error::NotAvailable("Dictionary lookup"))
     }
 
     #[allow(unused_variables)] // FIXME: Remove this directive once implemented.
@@ -23,6 +23,6 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        todo!()
+        Err(Error::NotAvailable("Dictionary lookup"))
     }
 }

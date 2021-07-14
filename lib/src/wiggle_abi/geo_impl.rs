@@ -15,6 +15,6 @@ impl FastlyGeo for Session {
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        todo!()
+        Err(Error::NotAvailable("GeoIP"))
     }
 }
