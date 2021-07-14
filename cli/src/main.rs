@@ -35,7 +35,7 @@ use {
 ///
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(opts: Opts) -> Result<(), Error> {
-    // Load the wasm module into an exeuction context
+    // Load the wasm module into an execution context
     let mut ctx = ExecuteCtx::new(opts.input())?
         .with_log_stderr(opts.log_stderr())
         .with_log_stdout(opts.log_stdout());
