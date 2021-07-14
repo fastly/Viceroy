@@ -16,9 +16,9 @@ pub enum Error {
     #[error("Fatal error: [{0}]")]
     FatalError(String),
 
-    /// Error when viceroy has been given a file with an unexpected extension.
-    #[error("expected a file with a `.wasm` file extension")]
-    FileExtension,
+    /// Error when viceroy has been given an invalid file.
+    #[error("expected a valid Wasm file")]
+    FileFormat,
 
     #[error(transparent)]
     FastlyConfig(#[from] FastlyConfigError),

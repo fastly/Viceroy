@@ -23,12 +23,8 @@ pub struct Opts {
     /// The IP address that the service should be bound to.
     #[structopt(long = "addr")]
     socket_addr: Option<SocketAddr>,
-    /// The path to the service's Wasm binary.
-    #[structopt(
-        parse(
-            try_from_str = check_binary_extension
-        )
-    )]
+    /// The path to the service's Wasm module.
+    #[structopt(parse(try_from_str = check_module))]
     input: PathBuf,
     /// The path to a TOML file containing `local_server` configuration.
     #[structopt(short = "C", long = "config")]
@@ -83,14 +79,16 @@ impl Opts {
     }
 }
 
-/// A parsing function used by [`Opts`][opts] to check that the input is a Wasm binary.
+/// A parsing function used by [`Opts`][opts] to check that the input is a valid Wasm module in
+/// binary or text format.
 ///
 /// [opts]: struct.Opts.html
-fn check_binary_extension(s: &str) -> Result<PathBuf, Error> {
+fn check_module(s: &str) -> Result<PathBuf, Error> {
     let path = PathBuf::from(s);
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("wasm") => Ok(path),
-        _ => Err(Error::FileExtension),
+    let contents = std::fs::read(&path)?;
+    match wat::parse_bytes(&contents) {
+        Ok(_) => Ok(path),
+        _ => Err(Error::FileFormat),
     }
 }
 
@@ -106,11 +104,21 @@ mod opts_tests {
     use {
         super::Opts,
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+        std::path::PathBuf,
         structopt::{
             clap::{Error, ErrorKind},
             StructOpt,
         },
     };
+
+    fn test_file(name: &str) -> String {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("wasm");
+        path.push(name);
+        assert!(path.exists(), "test file does not exist");
+        path.into_os_string().into_string().unwrap()
+    }
 
     /// A small type alias for test results, with a boxed error type.
     type TestResult = Result<(), anyhow::Error>;
@@ -118,7 +126,7 @@ mod opts_tests {
     /// Test that the default address works as expected.
     #[test]
     fn default_addr_works() -> TestResult {
-        let empty_args: &[&str] = &["dummy-program-name", "path/to/a/guest-program.wasm"];
+        let empty_args = &["dummy-program-name", &test_file("minimal.wat")];
         let opts = Opts::from_iter_safe(empty_args)?;
         let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878);
         assert_eq!(opts.addr(), expected);
@@ -132,7 +140,7 @@ mod opts_tests {
             "dummy-program-name",
             "--addr",
             "999.0.0.1:7878",
-            "path/to/a/guest-program.wasm",
+            &test_file("minimal.wat"),
         ];
         match Opts::from_iter_safe(args_with_bad_addr) {
             Err(Error {
@@ -151,7 +159,7 @@ mod opts_tests {
             "dummy-program-name",
             "--addr",
             "[::1]:7878",
-            "path/to/a/guest-program.wasm",
+            &test_file("minimal.wat"),
         ];
         let opts = Opts::from_iter_safe(args_with_ipv6_addr)?;
         let addr_v6 = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
@@ -160,12 +168,26 @@ mod opts_tests {
         Ok(())
     }
 
-    /// Test that a file with a non-wasm file extension will be rejected properly.
+    /// Test that a nonexistent file is rejected properly.
     #[test]
-    fn invalid_extension_is_rejected() -> TestResult {
-        let args_with_bad_ext = &["dummy-program-name", "path/to/a/invalid-binary.exe"];
-        let expected_msg = format!("{}", viceroy_lib::Error::FileExtension);
-        match Opts::from_iter_safe(args_with_bad_ext) {
+    fn nonexistent_file_is_rejected() -> TestResult {
+        let args_with_nonexistent_file = &["dummy-program-name", "path/to/a/nonexistent/file"];
+        match Opts::from_iter_safe(args_with_nonexistent_file) {
+            Err(Error {
+                kind: ErrorKind::ValueValidation,
+                message,
+                ..
+            }) if message.contains("No such file or directory") => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that an invalid file is rejected.
+    #[test]
+    fn invalid_file_is_rejected() -> TestResult {
+        let args_with_invalid_file = &["dummy-program-name", &test_file("invalid.wat")];
+        let expected_msg = format!("{}", viceroy_lib::Error::FileFormat);
+        match Opts::from_iter_safe(args_with_invalid_file) {
             Err(Error {
                 kind: ErrorKind::ValueValidation,
                 message,
@@ -175,10 +197,20 @@ mod opts_tests {
         }
     }
 
-    /// Test that a file with a wasm file extension will be accepted.
+    /// Test that a Wasm module in text format is accepted.
     #[test]
-    fn valid_extension_is_accepted() -> TestResult {
-        let args = &["dummy-program-name", "path/to/a/valid-binary.wasm"];
+    fn text_format_is_accepted() -> TestResult {
+        let args = &["dummy-program-name", &test_file("minimal.wat")];
+        match Opts::from_iter_safe(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that a Wasm module in binary format is accepted.
+    #[test]
+    fn binary_format_is_accepted() -> TestResult {
+        let args = &["dummy-program-name", &test_file("minimal.wasm")];
         match Opts::from_iter_safe(args) {
             Ok(_) => Ok(()),
             res => panic!("unexpected result: {:?}", res),
