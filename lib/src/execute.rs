@@ -19,7 +19,7 @@ use {
         sync::Arc,
     },
     tokio::sync::oneshot::{self, Sender},
-    tracing::{event, info_span, Instrument, Level},
+    tracing::{event, info, info_span, Instrument, Level},
     wasmtime::{Engine, InstancePre, Linker, Module},
 };
 
@@ -229,12 +229,7 @@ impl ExecuteCtx {
         sender: Sender<Response<Body>>,
         remote: IpAddr,
     ) -> Result<(), ExecutionError> {
-        event!(
-            Level::INFO,
-            "handling request {} {}",
-            req.method(),
-            req.uri()
-        );
+        info!("handling request {} {}", req.method(), req.uri());
 
         let session = Session::new(
             req_id,
@@ -281,9 +276,8 @@ impl ExecuteCtx {
             .expect("`memory` is exported")
             .size(&store);
 
-        event!(
-            Level::INFO,
-            "Request completed, using {} bytes of wasm heap",
+        info!(
+            "request completed using {} bytes of WebAssembly heap",
             heap_pages * 64 * 1024
         );
 
