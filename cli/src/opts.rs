@@ -175,7 +175,11 @@ mod opts_tests {
                 kind: ErrorKind::ValueValidation,
                 message,
                 ..
-            }) if message.contains("No such file or directory") => Ok(()),
+            }) if message.contains("No such file or directory")
+                || message.contains("cannot find the path specified") =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }
