@@ -1,5 +1,5 @@
 [package]
-name = "viceroy-cli"
+name = "viceroy"
 description = "Viceroy is a local testing daemon for Compute@Edge."
 version = "0.2.2"
 authors = ["Fastly"]
