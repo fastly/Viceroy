@@ -5,48 +5,19 @@ allows you to run services written against the Compute@Edge APIs on your local
 development machine, and allows you to configure testing backends for your
 service to communicate with.
 
-In the near future, Viceroy will be packaged as part of the Fastly CLI and
-integrate with other Compute@Edge workflows. But for the moment, you can use it
-by hand, as described below.
+Viceroy is normally used through the [Fastly CLI's `fastly compute serve`
+command][cli], where it it fully integrated into the Compute@Edge workflows.
+However, it is also a standalone open source tool with its own CLI and a
+Rust library that can be embedded into your own testing infrastructure.
+
+[cli]: https://developer.fastly.com/learning/compute/testing/#running-a-local-testing-server
 
 ## Installation
 
 To install Viceroy, you'll need to first
 [install Rust](https://www.rust-lang.org/tools/install) if you haven't already.
-
-### Clone the repo
-
-You'll need to get a copy of the Viceroy source code locally, by cloning the
-[Viceroy repo](https://github.com/fastly/Viceroy/) like so:
-
-```
-git clone git@github.com:fastly/Viceroy.git
-cd Viceroy
-git submodule update --recursive --init
-```
-
-### Install via Cargo
-
-Next, navigate to the `Viceroy` directory resulting from the `git clone` above,
-and run:
-
-```
-cargo install --path cli
-```
-
-You should see a message that says `Installing viceroy-cli` followed by a large
-number of compilation messages. The end result is that the `viceroy` command
-is made available on your system.
-
-### Updating Viceroy
-
-To update Viceroy, navigate to the `Viceroy` directory you cloned above, and then:
-
-```
-git pull
-git submodule update --recursive --init
-cargo install --path cli
-```
+Then run `cargo install viceroy`, which will download and build the latest
+Viceroy release.
 
 ## Usage
 
@@ -59,27 +30,21 @@ built by `fastly compute build`. The Fastly CLI should put the blob at
 viceroy bin/main.wasm
 ```
 
-This will start a local server (by default at: `http://127.0.0.1:7878`), which can be used to make requests to, and execute, your C@E Wasm module. This can be done by using [curl](https://curl.se/), or you can send a simple GET request by visiting the URL in your web browser.
-
-**NOTE:** Viceroy expects to find a `fastly.toml` manifest. It will look only in the
-current directory by default; you can specify a path to the file using the
-`--manifest-path` option. The manifest is used to configure backends, which we
-describe next.
+This will start a local server (by default at: `http://127.0.0.1:7878`), which can
+be used to make requests to your Compute@Edge service locally. You can make requests
+by using [curl](https://curl.se/), or you can send a simple GET request by visiting
+the URL in your web browser.
 
 ### Configuring backends
 
 Most Compute@Edge services need to make requests to named backends (origin
 servers), which are normally configured using the Fastly UI. For testing with
-Viceroy, you can specify backends in a **dedicated** TOML file, which you
+Viceroy, you can specify backends in your `fastly.toml` file, which you
 provide to Viceroy using the `-C` flag:
 
 ```
-viceroy bin/main.wasm -C backends.toml
+viceroy bin/main.wasm -C fastly.toml
 ```
-
-In the future, testing backends will be part of the `fastly.toml` manifest
-managed by the Fastly CLI, but for now you should **not** use the `fastly.toml`
-manifest, because the Fastly CLI will remove any additions you make.
 
 Backends are specified in the TOML file within a `local_server.backends`
 section:
@@ -140,6 +105,16 @@ particular:
 * Dictionaries are unsupported.
 * Caching directives are ignored; no caching is ever performed.
 * Information about the TLS connection from the client is not available.
+
+## Working with Viceroy's source
+
+Note that this repository uses Git submodules, so you will need to run
+
+```
+git submodule update --recursive --init
+```
+
+to pull down or update submodules.
 
 ## Colophon
 
