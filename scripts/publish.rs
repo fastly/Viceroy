@@ -20,7 +20,7 @@ const VERIFY_TEMPDIR: &str = "verify-publishable";
 /// The crates that we will publish.
 //
 // N.B. This list must be topologically sorted by dependencies.
-const CRATES_TO_PUBLISH: &[&str] = &["viceroy-lib", "viceroy-cli"];
+const CRATES_TO_PUBLISH: &[&str] = &["viceroy-lib", "viceroy"];
 
 /// The crates that we will NOT publish.
 //
