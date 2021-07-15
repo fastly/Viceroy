@@ -18,5 +18,3 @@ async fn empty_ok_response_by_default_after_sleep() -> TestResult {
 
     Ok(())
 }
-
-
