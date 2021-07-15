@@ -79,7 +79,7 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
 }
 
 pub fn link_host_functions(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
-    wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
+    wasmtime_wasi::tokio::add_to_linker(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
