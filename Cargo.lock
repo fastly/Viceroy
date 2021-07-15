@@ -130,6 +130,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b700ce4376041dcd0a327fd0097c41095743c4c8af8887265942faf1100bd040"
 
 [[package]]
+name = "bytesize"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81a18687293a1546b67c246452202bbbf143d239cb43494cc163da14979082da"
+
+[[package]]
 name = "cap-fs-ext"
 version = "0.13.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2102,6 +2108,7 @@ version = "0.2.2"
 dependencies = [
  "anyhow",
  "bytes",
+ "bytesize",
  "cfg-if",
  "cranelift-entity 0.65.0",
  "fastly-shared",

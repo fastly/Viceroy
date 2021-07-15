@@ -5,7 +5,7 @@ use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Thrown by hostcalls when a buffer is larger than its `*_len` limit.
-    #[error("BufferLengthError: {buf} too long to fit in {len}")]
+    #[error("Buffer length error: {buf} too long to fit in {len}")]
     BufferLengthError {
         buf: &'static str,
         len: &'static str,
@@ -17,7 +17,7 @@ pub enum Error {
     FatalError(String),
 
     /// Error when viceroy has been given an invalid file.
-    #[error("expected a valid Wasm file")]
+    #[error("Expected a valid Wasm file")]
     FileFormat,
 
     #[error(transparent)]
@@ -88,6 +88,9 @@ pub enum Error {
 
     #[error(transparent)]
     DownstreamRequestError(#[from] DownstreamRequestError),
+
+    #[error("{0} is not currently supported for local testing")]
+    NotAvailable(&'static str),
 }
 
 impl Error {

@@ -23,6 +23,6 @@ impl FastlyUap for Session {
         patch_len: u32,
         patch_nwritten_out: &GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
-        todo!()
+        Err(Error::NotAvailable("Useragent parsing"))
     }
 }
