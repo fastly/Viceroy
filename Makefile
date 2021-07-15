@@ -15,15 +15,15 @@ test: test-crates trap-test
 
 .PHONY: test-crates
 test-crates: fix-build
-	cargo test --all
+	cargo test --all --locked
 
 .PHONY: fix-build
 fix-build:
-	cd test-fixtures && cargo build --target=wasm32-wasi
+	cd test-fixtures && cargo build --target=wasm32-wasi --locked
 
 .PHONY: trap-test
 trap-test: fix-build
-	cd cli/tests/trap-test && cargo test fatal_error_traps -- --nocapture
+	cd cli/tests/trap-test && cargo test fatal_error_traps --locked -- --nocapture
 
 .PHONY: ci
 ci: format-check clippy test
