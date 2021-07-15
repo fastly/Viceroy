@@ -14,12 +14,27 @@ Rust library that can be embedded into your own testing infrastructure.
 
 ## Installation
 
-To install Viceroy, you'll need to first
+### Via the Fastly CLI
+
+As mentioned above, most users of Compute@Edge should do local testing via the
+Fastly CLI, rather than working with Viceroy directly. Any [CLI release] of
+version 0.34 or above supports local testing, and the workflow is documented
+[here][cli].
+
+[CLI release]: https://github.com/fastly/cli/releases
+
+### As a standalone tool from crates.io
+
+To install Viceroy as a standalone tool, you'll need to first
 [install Rust](https://www.rust-lang.org/tools/install) if you haven't already.
 Then run `cargo install viceroy`, which will download and build the latest
 Viceroy release.
 
-## Usage
+## Usage as a standalone tool
+
+**NOTE**: the Viceroy standalone CLI has a somewhat different interface from that
+of [the Fastly CLI][cli]. Command-line options below describe the standalone
+Viceroy interface.
 
 After installation, the `viceroy` command should be available on your path. The
 only required argument is the path to a compiled `.wasm` blob, which can be
