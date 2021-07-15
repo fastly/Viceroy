@@ -6,7 +6,7 @@ development machine, and allows you to configure testing backends for your
 service to communicate with.
 
 Viceroy is normally used through the [Fastly CLI's `fastly compute serve`
-command][cli], where it it fully integrated into the Compute@Edge workflows.
+command][cli], where it is fully integrated into Compute@Edge workflows.
 However, it is also a standalone open source tool with its own CLI and a
 Rust library that can be embedded into your own testing infrastructure.
 
