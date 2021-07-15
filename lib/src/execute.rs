@@ -277,8 +277,8 @@ impl ExecuteCtx {
             .size(&store);
 
         info!(
-            "request completed using {} bytes of WebAssembly heap",
-            heap_pages * 64 * 1024
+            "request completed using {} of WebAssembly heap",
+            bytesize::ByteSize::kib(heap_pages as u64 * 64)
         );
 
         outcome
