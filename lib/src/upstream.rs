@@ -86,6 +86,12 @@ pub fn send_request(
         req = Request::from_parts(req_parts, req_body);
     }
 
+    // if requested override the host header
+    if let Some(override_host) = &backend.override_host {
+        req.headers_mut()
+            .insert(hyper::header::HOST, override_host.clone());
+    }
+
     filter_outgoing_headers(req.headers_mut());
 
     Ok(async move {

@@ -231,6 +231,15 @@ pub enum BackendConfigError {
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
+    #[error("invalid override_host: {0}")]
+    InvalidOverrideHost(#[from] http::header::InvalidHeaderValue),
+
+    #[error("'override_host' field is empty")]
+    EmptyOverrideHost,
+
+    #[error("'override_host' field was not a string")]
+    InvalidOverrideHostEntry,
+
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
 

@@ -10,7 +10,7 @@ async fn upstream_async_methods() -> TestResult {
     // Set up the test harness
     let test = Test::using_fixture("upstream-async.wasm")
         // Set up the backends, which just return responses with an identifying header
-        .backend("backend1", "http://127.0.0.1:9000/")
+        .backend("backend1", "http://127.0.0.1:9000/", None)
         .host(9000, |_| {
             Response::builder()
                 .header("Backend-1-Response", "")
@@ -18,7 +18,7 @@ async fn upstream_async_methods() -> TestResult {
                 .body(vec![])
                 .unwrap()
         })
-        .backend("backend2", "http://127.0.0.1:9001/")
+        .backend("backend2", "http://127.0.0.1:9001/", None)
         .host(9001, |_| {
             Response::builder()
                 .header("Backend-2-Response", "")

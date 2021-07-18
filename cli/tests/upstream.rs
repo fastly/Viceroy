@@ -2,7 +2,7 @@ mod common;
 
 use {
     common::{Test, TestResult},
-    hyper::{Request, Response, StatusCode},
+    hyper::{header, Request, Response, StatusCode},
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -13,18 +13,31 @@ async fn upstream_sync() -> TestResult {
 
     // Set up the test harness
     let test = Test::using_fixture("upstream.wasm")
-        .backend("origin", "http://127.0.0.1:9000/")
+        .backend("origin", "http://127.0.0.1:9000/", None)
         // The "origin" backend simply echos the request body
         .host(9000, |req| {
             let body = req.into_body();
             Response::new(body)
         })
         // The "prefix-*" backends return the request URL as the response body
-        .backend("prefix-hello", "http://127.0.0.1:9001/hello")
-        .backend("prefix-hello-slash", "http://127.0.0.1:9001/hello/")
+        .backend("prefix-hello", "http://127.0.0.1:9001/hello", None)
+        .backend("prefix-hello-slash", "http://127.0.0.1:9001/hello/", None)
         .host(9001, |req| {
             let body = req.uri().to_string().into_bytes();
             Response::new(body)
+        })
+        // The "override-host" backend checks the Host header
+        .backend(
+            "override-host",
+            "http://127.0.0.1:9002/",
+            Some("otherhost.com"),
+        )
+        .host(9002, |req| {
+            assert_eq!(
+                req.headers().get(header::HOST),
+                Some(&hyper::header::HeaderValue::from_static("otherhost.com"))
+            );
+            Response::new(vec![])
         });
 
     ////////////////////////////////////////////////////////////////////////////////////
@@ -99,6 +112,20 @@ async fn upstream_sync() -> TestResult {
         resp.into_body().read_into_string().await?,
         "/hello/greeting.html"
     );
+
+    ////////////////////////////////////////////////////////////////////////////////////
+    // Test that override_host works as intended
+    ////////////////////////////////////////////////////////////////////////////////////
+
+    let resp = test
+        .against(
+            Request::get("http://localhost/override")
+                .header("Viceroy-Backend", "override-host")
+                .body("")
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 
     ////////////////////////////////////////////////////////////////////////////////////
     // Test that non-existent backends produce an error
