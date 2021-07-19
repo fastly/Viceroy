@@ -12,7 +12,7 @@ async fn framing_headers_are_overridden() -> TestResult {
     // Set up the test harness
     let test = Test::using_fixture("bad-framing-headers.wasm")
         // The "TheOrigin" backend checks framing headers on the request and then echos its body.
-        .backend("TheOrigin", "http://127.0.0.1:9000/")
+        .backend("TheOrigin", "http://127.0.0.1:9000/", None)
         .host(9000, |req| {
             assert!(!req.headers().contains_key(header::TRANSFER_ENCODING));
             assert_eq!(
@@ -47,7 +47,7 @@ async fn content_length_is_computed_correctly() -> TestResult {
     // Set up the test harness
     let test = Test::using_fixture("content-length.wasm")
         // The "TheOrigin" backend supplies a fixed-size body.
-        .backend("TheOrigin", "http://127.0.0.1:9000/")
+        .backend("TheOrigin", "http://127.0.0.1:9000/", None)
         .host(9000, |_| {
             Response::new(Vec::from(&b"ABCDEFGHIJKLMNOPQRST"[..]))
         });

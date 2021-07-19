@@ -1,5 +1,5 @@
 use {
-    hyper::Uri,
+    hyper::{header::HeaderValue, Uri},
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -9,6 +9,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct Backend {
     pub uri: Uri,
+    pub override_host: Option<HeaderValue>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -24,7 +25,7 @@ mod deserialization {
     use {
         super::{Backend, BackendsConfig},
         crate::error::{BackendConfigError, FastlyConfigError},
-        hyper::Uri,
+        hyper::{header::HeaderValue, Uri},
         std::{convert::TryFrom, sync::Arc},
         toml::value::{Table, Value},
     };
@@ -87,10 +88,21 @@ mod deserialization {
                     Value::String(url) => url.parse::<Uri>().map_err(BackendConfigError::from),
                     _ => Err(BackendConfigError::InvalidUrlEntry),
                 })?;
+            let override_host = if let Some(override_host) = toml.remove("override_host") {
+                Some(match override_host {
+                    Value::String(override_host) if !override_host.trim().is_empty() => {
+                        HeaderValue::from_str(&override_host).map_err(BackendConfigError::from)
+                    }
+                    Value::String(_) => Err(BackendConfigError::EmptyOverrideHost),
+                    _ => Err(BackendConfigError::InvalidOverrideHostEntry),
+                }?)
+            } else {
+                None
+            };
 
             check_for_unrecognized_keys(&toml)?;
 
-            Ok(Self { uri })
+            Ok(Self { uri, override_host })
         }
     }
 }

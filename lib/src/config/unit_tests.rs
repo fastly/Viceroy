@@ -50,6 +50,7 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
   
                 [local_server.backends."shark.server"]
                 url = "http://localhost:7878/shark-mocks"
+                override_host = "somehost.com"
 
                 [local_server.backends.detective]
                 url = "http://www.elementary.org/"
@@ -57,21 +58,21 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
     )
     .expect("can read toml data containing backend configurations");
 
+    let backend = config
+        .backends()
+        .get("dog")
+        .expect("backend configurations can be accessed");
+    assert_eq!(backend.uri, "http://localhost:7878/dog-mocks");
+    assert_eq!(backend.override_host, None);
+
+    let backend = config
+        .backends()
+        .get("shark.server")
+        .expect("backend configurations can be accessed");
+    assert_eq!(backend.uri, "http://localhost:7878/shark-mocks");
     assert_eq!(
-        config
-            .backends()
-            .get("dog")
-            .expect("backend configurations can be accessed")
-            .uri,
-        "http://localhost:7878/dog-mocks"
-    );
-    assert_eq!(
-        config
-            .backends()
-            .get("shark.server")
-            .expect("backend configurations can be accessed")
-            .uri,
-        "http://localhost:7878/shark-mocks"
+        backend.override_host,
+        Some("somehost.com".parse().expect("can parse override_host"))
     );
 }
 
@@ -183,13 +184,61 @@ mod testing_config_tests {
     #[test]
     fn backend_configs_must_provide_a_valid_url() {
         use BackendConfigError::InvalidUrl;
-        static NO_URL: &str = r#"
+        static BAD_URL_FIELD: &str = r#"
             [backends]
             "shark" = { url = "http:://[:::1]" }
         "#;
-        match read_toml_config(NO_URL) {
+        match read_toml_config(BAD_URL_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidUrl(_), ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that override_host field is a string.
+    #[test]
+    fn backend_configs_must_provide_override_host_as_a_string() {
+        use BackendConfigError::InvalidOverrideHostEntry;
+        static BAD_OVERRIDE_HOST_FIELD: &str = r#"
+            [backends]
+            "shark" = { url = "http://a.com", override_host = 3 }
+        "#;
+        match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
+            Err(InvalidBackendDefinition {
+                err: InvalidOverrideHostEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that override_host field is non empty.
+    #[test]
+    fn backend_configs_must_provide_a_non_empty_override_host() {
+        use BackendConfigError::EmptyOverrideHost;
+        static EMPTY_OVERRIDE_HOST_FIELD: &str = r#"
+            [backends]
+            "shark" = { url = "http://a.com", override_host = "" }
+        "#;
+        match read_toml_config(EMPTY_OVERRIDE_HOST_FIELD) {
+            Err(InvalidBackendDefinition {
+                err: EmptyOverrideHost,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that override_host field is valid.
+    #[test]
+    fn backend_configs_must_provide_a_valid_override_host() {
+        use BackendConfigError::InvalidOverrideHost;
+        static BAD_OVERRIDE_HOST_FIELD: &str = r#"
+            [backends]
+            "shark" = { url = "http://a.com", override_host = "somehost.com\n" }
+        "#;
+        match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
+            Err(InvalidBackendDefinition {
+                err: InvalidOverrideHost(_),
+                ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),
         }
