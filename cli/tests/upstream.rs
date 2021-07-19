@@ -2,7 +2,10 @@ mod common;
 
 use {
     common::{Test, TestResult},
-    hyper::{header, Request, Response, StatusCode},
+    hyper::{
+        header::{self, HeaderValue},
+        Request, Response, StatusCode,
+    },
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -129,7 +132,7 @@ async fn override_host_works() -> TestResult {
         .host(9000, |req| {
             assert_eq!(
                 req.headers().get(header::HOST),
-                Some(&hyper::header::HeaderValue::from_static("otherhost.com"))
+                Some(&HeaderValue::from_static("otherhost.com"))
             );
             Response::new(vec![])
         });
