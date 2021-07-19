@@ -25,19 +25,6 @@ async fn upstream_sync() -> TestResult {
         .host(9001, |req| {
             let body = req.uri().to_string().into_bytes();
             Response::new(body)
-        })
-        // The "override-host" backend checks the Host header
-        .backend(
-            "override-host",
-            "http://127.0.0.1:9002/",
-            Some("otherhost.com"),
-        )
-        .host(9002, |req| {
-            assert_eq!(
-                req.headers().get(header::HOST),
-                Some(&hyper::header::HeaderValue::from_static("otherhost.com"))
-            );
-            Response::new(vec![])
         });
 
     ////////////////////////////////////////////////////////////////////////////////////
@@ -114,20 +101,6 @@ async fn upstream_sync() -> TestResult {
     );
 
     ////////////////////////////////////////////////////////////////////////////////////
-    // Test that override_host works as intended
-    ////////////////////////////////////////////////////////////////////////////////////
-
-    let resp = test
-        .against(
-            Request::get("http://localhost/override")
-                .header("Viceroy-Backend", "override-host")
-                .body("")
-                .unwrap(),
-        )
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    ////////////////////////////////////////////////////////////////////////////////////
     // Test that non-existent backends produce an error
     ////////////////////////////////////////////////////////////////////////////////////
 
@@ -140,6 +113,38 @@ async fn upstream_sync() -> TestResult {
         )
         .await;
     assert!(resp.status().is_server_error());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn override_host_works() -> TestResult {
+    // Set up the test harness
+    let test = Test::using_fixture("upstream.wasm")
+        .backend(
+            "override-host",
+            "http://127.0.0.1:9000/",
+            Some("otherhost.com"),
+        )
+        .host(9000, |req| {
+            assert_eq!(
+                req.headers().get(header::HOST),
+                Some(&hyper::header::HeaderValue::from_static("otherhost.com"))
+            );
+            Response::new(vec![])
+        });
+
+    let resp = test
+        .via_hyper()
+        .against(
+            Request::get("http://localhost:7878/override")
+                .header("Viceroy-Backend", "override-host")
+                .body("")
+                .unwrap(),
+        )
+        .await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
 
     Ok(())
 }
