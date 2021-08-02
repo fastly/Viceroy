@@ -4,7 +4,7 @@ jobs:
   test:
     strategy:
       matrix:
-        rust-toolchain: [1.52.1]
+        rust-toolchain: [stable]
         platform: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
