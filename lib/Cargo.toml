@@ -36,10 +36,10 @@ toml = "0.5.6"
 tracing = "0.1.26"
 tracing-futures = "0.2.5"
 url = "2.2.0"
-wasi-common = "0.28.0"
-wasmtime = "0.28.0"
-wasmtime-wasi = {version = "0.28.0", features = ["tokio"]}
-wiggle = {version = "0.28.0", features = ["wasmtime_async"]}
+wasi-common = "0.29.0"
+wasmtime = "0.29.0"
+wasmtime-wasi = {version = "0.29.0", features = ["tokio"]}
+wiggle = {version = "0.29.0", features = ["wasmtime_async"]}
 
 [features]
 default = []
