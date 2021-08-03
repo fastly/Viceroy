@@ -4,7 +4,6 @@ jobs:
   test:
     strategy:
       matrix:
-        rust-toolchain: [1.52.1]
         platform: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
@@ -14,8 +13,6 @@ jobs:
         submodules: true
     - name: Install Rust
       uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust-toolchain }}
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
     - name: Cache cargo registry
