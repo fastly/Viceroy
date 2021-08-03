@@ -39,7 +39,7 @@ pub(crate) fn create_store(
     let wasi = make_wasi_ctx(ctx, &session).context("creating Wasi context")?;
     let wasm_ctx = WasmCtx { wasi, session };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
-    store.out_of_fuel_async_yield(u32::MAX, 10000);
+    store.out_of_fuel_async_yield(u64::MAX, 10000);
     Ok(store)
 }
 
