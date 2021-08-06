@@ -12,6 +12,12 @@ use {
 #[cfg(test)]
 mod unit_tests;
 
+/// Types and deserializers for dictionaries configuration settings.
+mod dictionaries;
+use self::dictionaries::DictionariesConfig;
+pub use self::dictionaries::Dictionary;
+pub type Dictionaries = HashMap<String, Arc<Dictionary>>;
+
 /// Types and deserializers for backend configuration settings.
 mod backends;
 pub use self::backends::Backend;
@@ -27,6 +33,7 @@ pub struct FastlyConfig {
     authors: Vec<String>,
     language: String,
     local_server: LocalServerConfig,
+    dictionaries: DictionaryConfig,
 }
 
 impl FastlyConfig {
@@ -53,6 +60,11 @@ impl FastlyConfig {
     /// Get the backend configuration.
     pub fn backends(&self) -> &Backends {
         &self.local_server.backends.0
+    }
+
+    /// Get the backend configuration.
+    pub fn dictionaries(&self) -> &Dictionaries {
+        &self.dictionaries.dictionaries.0
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -87,6 +99,7 @@ impl FromStr for FastlyConfig {
 #[derive(Deserialize)]
 struct TomlFastlyConfig {
     local_server: Option<RawLocalServerConfig>,
+    dictionaries: Option<RawDictionaryConfig>,
     // AJT 2020.03.10: the following fields are marked as optional because, for the time being,
     // we are not expecting to actually use the fastly.toml manifest, but instead use a separate
     // TOML file for backend configuration.
@@ -107,8 +120,13 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             authors,
             language,
             local_server,
+            dictionaries,
         } = self;
         let local_server = local_server
+            .map(TryInto::try_into)
+            .transpose()?
+            .unwrap_or_default();
+        let dictionaries = dictionaries
             .map(TryInto::try_into)
             .transpose()?
             .unwrap_or_default();
@@ -118,6 +136,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             authors: authors.unwrap_or_else(Vec::new),
             language: language.unwrap_or_else(String::new),
             local_server,
+            dictionaries,
         })
     }
 }
@@ -148,5 +167,34 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         backends
             .try_into()
             .map(|backends| LocalServerConfig { backends })
+    }
+}
+
+/// Configuration settings used for tests.
+///
+/// This represents all of the `fastly.toml` fields whose keys begin with `testing`. Currently this
+/// section of the manifest is only used for providing backend definitions, but additional fields
+/// may be added in the future.
+#[derive(Clone, Debug, Default)]
+pub struct DictionaryConfig {
+    dictionaries: DictionariesConfig,
+}
+
+/// Internal deserializer used to read the `[dictionaries]` section of a `fastly.toml` file.
+///
+/// Once a TOML file has been read using [`toml::from_str`], this can be converted into
+/// a [`DictionaryConfig`] with [`TryInto::try_into`].
+#[derive(Deserialize)]
+struct RawDictionaryConfig {
+    dictionaries: Table,
+}
+
+impl TryInto<DictionaryConfig> for RawDictionaryConfig {
+    type Error = FastlyConfigError;
+    fn try_into(self) -> Result<DictionaryConfig, Self::Error> {
+        let Self { dictionaries } = self;
+        dictionaries
+            .try_into()
+            .map(|dictionaries| DictionaryConfig { dictionaries })
     }
 }

@@ -1,5 +1,9 @@
 //! fastly_dictionary` hostcall implementations.
 
+use cranelift_entity::PrimaryMap;
+
+use crate::config::{Dictionary, FastlyConfig};
+
 use {
     crate::{
         error::Error,
@@ -12,7 +16,16 @@ use {
 impl FastlyDictionary for Session {
     #[allow(unused_variables)] // FIXME: Remove this directive once implemented.
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        Err(Error::NotAvailable("Dictionary lookup"))
+        let dicts = self.dictionaries.as_ref();
+        let n = name.as_str().unwrap().to_owned();
+        match dicts.get(&n) {
+            Some(dict) => {
+                Ok(
+                    DictionaryHandle::from(dict.id)
+                )
+            },
+            None => Err(Error::UnknownDictionary(n.clone())),
+        }
     }
 
     #[allow(unused_variables)] // FIXME: Remove this directive once implemented.

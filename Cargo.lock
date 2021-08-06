@@ -2112,6 +2112,7 @@ dependencies = [
  "hyper-tls",
  "itertools",
  "lazy_static",
+ "once_cell",
  "regex",
  "semver 0.10.0",
  "serde",
