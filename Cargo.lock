@@ -2105,6 +2105,7 @@ dependencies = [
  "semver 0.10.0",
  "serde",
  "serde_derive",
+ "serde_json",
  "thiserror",
  "tokio",
  "toml",

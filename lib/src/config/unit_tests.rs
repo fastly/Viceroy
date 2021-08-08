@@ -1,3 +1,5 @@
+use crate::config::dictionaries::DictionaryName;
+
 use super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig};
 
 #[test]
@@ -28,7 +30,7 @@ fn fastly_toml_files_can_be_read() {
 
 /// Show that we can successfully parse a `fastly.toml` with backend configurations.
 ///
-/// This provides an example `fastly.toml` file including a `#[testing.backends]` section. This
+/// This provides an example `fastly.toml` file including a `#[local_server.backends]` section. This
 /// includes various backend definitions, that may or may not include an environment key.
 #[test]
 fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
@@ -76,18 +78,51 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
     );
 }
 
-/// Unit tests for the `testing` section of a `fastly.toml` package manifest.
+/// Show that we can successfully parse a `fastly.toml` with local_server.dictionaries configurations.
+///
+/// This provides an example `fastly.toml` file including a `#[local_server.dictionaries]` section.
+#[test]
+fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
+    let config = FastlyConfig::from_str(
+        r#"
+            manifest_version = "1.2.3"
+            name = "dictionary-config-example"
+            description = "a toml example with dictionary configuration"
+            authors = [
+                "Amelia Watson <awatson@fastly.com>",
+                "Inugami Korone <kinugami@fastly.com>",
+            ]
+            language = "rust"
+
+            [local_server]
+                [local_server.dictionaries]
+                    [local_server.dictionaries.a]
+                    name="a"
+                    file="./a.json"
+    "#,
+    )
+    .expect("can read toml data containing local dictionary configurations");
+
+    let dictionary = config
+        .dictionaries()
+        .get("a")
+        .expect("dictionary configurations can be accessed");
+    assert_eq!(dictionary.name, DictionaryName("a".to_string()));
+    assert_eq!(dictionary.file, "./a.json");
+}
+
+/// Unit tests for the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// In particular, these tests check that we deserialize and validate the backend configurations
 /// section of the TOML data properly. In the interest of brevity, this section works with TOML data
-/// that would be placed beneath the `testing` key, rather than an entire package manifest as in
+/// that would be placed beneath the `local_server` key, rather than an entire package manifest as in
 /// the tests above.
-mod testing_config_tests {
+mod local_server_config_tests {
     use {
         super::{LocalServerConfig, RawLocalServerConfig},
         crate::error::{
-            BackendConfigError,
-            FastlyConfigError::{self, InvalidBackendDefinition},
+            BackendConfigError, DictionaryConfigError,
+            FastlyConfigError::{self, InvalidBackendDefinition, InvalidDictionaryDefinition},
         },
         std::convert::TryInto,
     };
@@ -98,17 +133,21 @@ mod testing_config_tests {
             .try_into()
     }
 
-    /// Check that the `testing` section can be deserialized.
+    /// Check that the `local_server` section can be deserialized.
     // This case is technically redundant, but it is nice to have a unit test that demonstrates the
     // happy path for this group of unit tests.
     #[test]
-    fn backend_configs_can_be_deserialized() {
-        static BACKENDS: &str = r#"
+    fn local_server_configs_can_be_deserialized() {
+        static LOCAL_SERVER: &str = r#"
             [backends]            
               [backends.dog]
               url = "http://localhost:7878/dog-mocks"
+            [dicionaries]            
+              [dicionaries.secrets]
+              name = "secrets"
+              file = "./secrets.json"
         "#;
-        match read_toml_config(BACKENDS) {
+        match read_toml_config(LOCAL_SERVER) {
             Ok(_) => {}
             res => panic!("unexpected result: {:?}", res),
         }
@@ -238,6 +277,120 @@ mod testing_config_tests {
         match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidOverrideHost(_),
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions must be given as TOML tables.
+    #[test]
+    fn dictionary_configs_must_use_toml_tables() {
+        use DictionaryConfigError::InvalidEntryType;
+        static BAD_DEF: &str = r#"
+            [dictionaries]
+            "thing" = "stuff"
+        "#;
+        match read_toml_config(BAD_DEF) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidEntryType,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions cannot contain unrecognized keys.
+    #[test]
+    fn dictionary_configs_cannot_contain_unrecognized_keys() {
+        use DictionaryConfigError::UnrecognizedKey;
+        static BAD_DEFAULT: &str = r#"
+            [dictionaries]
+            thing = { name = "thing", file = "./file.json", shrimp = true }
+        "#;
+        match read_toml_config(BAD_DEFAULT) {
+            Err(InvalidDictionaryDefinition {
+                err: UnrecognizedKey(key),
+                ..
+            }) if key == "shrimp" => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions *must* include a `name` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_name() {
+        use DictionaryConfigError::MissingName;
+        static NO_NAME: &str = r#"
+            [dictionaries]
+            thing = { file = "./file.json" }
+        "#;
+        match read_toml_config(NO_NAME) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingName, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions *must* include a `file` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_file() {
+        use DictionaryConfigError::MissingFile;
+        static NO_NAME: &str = r#"
+            [dictionaries]
+            thing = { name = "thing" }
+        "#;
+        match read_toml_config(NO_NAME) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFile, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that dictionary definitions must include a *valid* `name` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_valid_name() {
+        use DictionaryConfigError::InvalidName;
+        static BAD_NAME_FIELD: &str = r#"
+            [dictionaries]
+            "thing" = { name = "1", file = "a.json" }
+        "#;
+        match read_toml_config(BAD_NAME_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidName(_),
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that file field is a string.
+    #[test]
+    fn dictionary_configs_must_provide_file_as_a_string() {
+        use DictionaryConfigError::InvalidFileEntry;
+        static BAD_FILE_FIELD: &str = r#"
+            [dictionaries]
+            "thing" = { file = 3, name = "thing"}
+        "#;
+        match read_toml_config(BAD_FILE_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidFileEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that file field is non empty.
+    #[test]
+    fn dictionary_configs_must_provide_a_non_empty_file() {
+        use DictionaryConfigError::EmptyFileEntry;
+        static EMPTY_FILE_FIELD: &str = r#"
+            [dictionaries]
+            "thing" = { name = "a", file = "" }
+        "#;
+        match read_toml_config(EMPTY_FILE_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: EmptyFileEntry,
                 ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),

@@ -1,5 +1,7 @@
 //! Guest code execution.
 
+use crate::config::{Dictionaries, DictionariesById};
+
 use {
     crate::{
         body::Body,
@@ -36,6 +38,10 @@ pub struct ExecuteCtx {
     instance_pre: Arc<InstancePre<WasmCtx>>,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// The dictionaries for this execution.
+    dictionaries: Arc<Dictionaries>,
+    /// The dictionaries for this execution.
+    dictionaries_by_id: Arc<DictionariesById>,
     /// Path to the config, defaults to None
     config_path: Arc<Option<PathBuf>>,
     /// Whether to treat stdout as a logging endpoint
@@ -91,6 +97,8 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
+            dictionaries: Arc::new(Dictionaries::default()),
+            dictionaries_by_id: Arc::new(DictionariesById::default()),
             config_path: Arc::new(None),
             log_stdout: false,
             log_stderr: false,
@@ -112,6 +120,35 @@ impl ExecuteCtx {
     pub fn with_backends(self, backends: Backends) -> Self {
         Self {
             backends: Arc::new(backends),
+            ..self
+        }
+    }
+
+    /// Get the dictionaries for this execution context.
+    pub fn dictionaries(&self) -> &Dictionaries {
+        &self.dictionaries
+    }
+
+    /// Set the dictionaries for this execution context.
+    pub fn with_dictionaries(self, dictionaries: Dictionaries) -> Self {
+        Self {
+            dictionaries: Arc::new(dictionaries),
+            ..self
+        }
+    }
+
+    /// Get the dictionaries for this execution context.
+    pub fn dictionaries_by_id(&self) -> &DictionariesById {
+        &self.dictionaries_by_id
+    }
+
+    /// Set the dictionaries for this execution context.
+    pub fn with_dictionaries_by_id(self, dictionaries: Dictionaries) -> Self {
+        let dicts = dictionaries.clone();
+
+        let dictionaries_by_id = dicts.into_iter().map(|a| (a.1.id, a.1.clone())).collect();
+        Self {
+            dictionaries_by_id: Arc::new(dictionaries_by_id),
             ..self
         }
     }
@@ -237,6 +274,8 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.dictionaries.clone(),
+            self.dictionaries_by_id.clone(),
             self.config_path.clone(),
         );
         // We currently have to postpone linking and instantiation to the guest task

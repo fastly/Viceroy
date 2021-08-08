@@ -1,5 +1,7 @@
 //! Session type and related facilities.
 
+use crate::config::DictionariesById;
+
 mod body_variant;
 mod downstream;
 
@@ -7,7 +9,7 @@ use {
     self::{body_variant::BodyVariant, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{Backend, Backends},
+        config::{Backend, Backends, Dictionaries},
         error::{Error, HandleError},
         logging::LogEndpoint,
         streaming_body::StreamingBody,
@@ -67,6 +69,14 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     pub(crate) backends: Arc<Backends>,
+    /// The dictionaries configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    pub(crate) dictionaries: Arc<Dictionaries>,
+    /// The dictionaries configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    pub(crate) dictionaries_by_id: Arc<DictionariesById>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -85,6 +95,8 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
+        dictionaries: Arc<Dictionaries>,
+        dictionaries_by_id: Arc<DictionariesById>,
         config_path: Arc<Option<PathBuf>>,
     ) -> Session {
         let (parts, body) = req.into_parts();
@@ -108,6 +120,8 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            dictionaries,
+            dictionaries_by_id,
             config_path,
             pending_reqs: PrimaryMap::new(),
             req_id,
@@ -127,6 +141,8 @@ impl Session {
             Request::new(Body::empty()),
             sender,
             "0.0.0.0".parse().unwrap(),
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
             Arc::new(HashMap::new()),
             Arc::new(None),
         )
