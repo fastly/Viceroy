@@ -87,8 +87,17 @@ pub enum Error {
     #[error("Unknown dictionary: {0}")]
     UnknownDictionary(String),
 
+    #[error("The dictionary named '{name}' has too many items, max amount is {size}")]
+    DictionaryCountTooLong{ name: String, size: i32 },
+
     #[error("Unknown dictionary item: {0}")]
     UnknownDictionaryItem(String),
+    
+    #[error("Item key named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
+    DictionaryItemKeyTooLong{ key: String, name: String, size: i32 },
+    
+    #[error("Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
+    DictionaryItemValueTooLong{ key: String, name: String, size: i32 },
 
     #[error("Unknown dictionary handle: {0}")]
     UnknownDictionaryHandle(DictionaryHandle),

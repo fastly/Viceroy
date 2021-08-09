@@ -13,6 +13,8 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+use std::convert::TryInto;
+
 mod opts;
 
 use {
@@ -20,7 +22,7 @@ use {
     hyper::{client::Client, Body, Request},
     hyper_tls::HttpsConnector,
     std::{
-        env,
+        env, fs,
         io::{self, Stderr, Stdout},
         time::Duration,
     },
@@ -89,6 +91,52 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
                     backend.uri
                 ),
                 Ok(_) => event!(Level::INFO, "backend '{}' is up", name),
+            }
+        }
+
+        let dictionary_max_len: usize = 1000;
+        let dictionary_item_key_max_len: usize = 256;
+        let dictionary_item_value_max_len: usize = 8000;
+        for (name, dictionary) in dictionaries.iter() {
+            event!(
+                Level::INFO,
+                "checking if the dictionary '{}' adheres to Fastly's API",
+                name
+            );
+            let data = fs::read_to_string(&dictionary.file).expect("Unable to read file");
+            let json: serde_json::Value =
+                serde_json::from_str(&data).expect("JSON was not well-formatted");
+            let obj = json.as_object().expect("Expected the JSON to be an Object");
+            if obj.len() > dictionary_max_len {
+                return Err(Error::DictionaryCountTooLong {
+                    name: name.clone(),
+                    size: dictionary_max_len.try_into().unwrap(),
+                });
+            }
+
+            event!(
+                Level::INFO,
+                "checking if the items in dictionary '{}' adhere to Fastly's API",
+                name
+            );
+            for (key, value) in obj.iter() {
+                if key.chars().count() > dictionary_item_key_max_len {
+                    return Err(Error::DictionaryItemKeyTooLong {
+                        name: name.clone(),
+                        key: key.clone(),
+                        size: dictionary_item_key_max_len.try_into().unwrap(),
+                    });
+                }
+                let value = value
+                    .as_str()
+                    .expect("Expected the property value to be a String");
+                if value.chars().count() > dictionary_item_value_max_len {
+                    return Err(Error::DictionaryItemValueTooLong {
+                        name: name.clone(),
+                        key: key.clone(),
+                        size: dictionary_item_value_max_len.try_into().unwrap(),
+                    });
+                }
             }
         }
     } else {
