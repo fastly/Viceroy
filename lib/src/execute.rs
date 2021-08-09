@@ -144,7 +144,7 @@ impl ExecuteCtx {
 
     /// Set the dictionaries for this execution context.
     pub fn with_dictionaries_by_id(self, dictionaries: Dictionaries) -> Self {
-        let dicts = dictionaries.clone();
+        let dicts = dictionaries;
 
         let dictionaries_by_id = dicts.into_iter().map(|a| (a.1.id, a.1.clone())).collect();
         Self {
