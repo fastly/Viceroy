@@ -13,6 +13,17 @@ use {
     wiggle::GuestPtr,
 };
 
+use memoize::memoize;
+
+#[memoize]
+fn read_json_file(file: String) -> serde_json::Map<String, serde_json::Value> {
+    let data = fs::read_to_string(file).expect("Unable to read file");
+    let json: serde_json::Value =
+        serde_json::from_str(&data).expect("JSON was not well-formatted");
+    let obj = json.as_object().expect("Expected the JSON to be an Object");
+    obj.clone()
+}
+
 impl FastlyDictionary for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
         let dicts = self.dictionaries.as_ref();
@@ -35,10 +46,7 @@ impl FastlyDictionary for Session {
         match dicts.get(&dictionary) {
             Some(dict) => {
                 let file = dict.file.clone();
-                let data = fs::read_to_string(file).expect("Unable to read file");
-                let json: serde_json::Value =
-                    serde_json::from_str(&data).expect("JSON was not well-formatted");
-                let obj = json.as_object().expect("Expected the JSON to be an Object");
+                let obj = read_json_file(file);
                 if !obj.contains_key(&key) {
                     return Err(Error::UnknownDictionaryItem(key));
                 }
