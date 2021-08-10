@@ -1,14 +1,18 @@
 //! fastly_dictionary` hostcall implementations.
 
-use std::convert::TryFrom;
-use std::convert::TryInto;
-use std::fs;
-use std::path::Path;
 use {
     crate::{
         error::Error,
         session::Session,
         wiggle_abi::{fastly_dictionary::FastlyDictionary, types::DictionaryHandle},
+    },
+    std::{
+        convert::{
+            TryFrom,
+            TryInto,
+        },
+        fs,
+        path::Path
     },
     wiggle::GuestPtr,
 };

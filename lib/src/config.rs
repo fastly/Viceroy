@@ -1,7 +1,10 @@
 //! Fastly-specific configuration utilities.
 
 use {
-    self::backends::BackendsConfig,
+    self::{
+        backends::BackendsConfig,
+        dictionaries::DictionariesConfig
+    },
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,
     std::{collections::HashMap, convert::TryInto, fs, path::Path, str::FromStr, sync::Arc},
@@ -14,7 +17,6 @@ mod unit_tests;
 
 /// Types and deserializers for dictionaries configuration settings.
 mod dictionaries;
-use self::dictionaries::DictionariesConfig;
 pub use self::dictionaries::Dictionary;
 pub use self::dictionaries::DictionaryName;
 pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
