@@ -12,9 +12,6 @@ use {
     wiggle::GuestPtr,
 };
 
-use memoize::memoize;
-
-#[memoize]
 fn read_json_file(file: String) -> serde_json::Map<String, serde_json::Value> {
     let data = fs::read_to_string(file).expect("Unable to read file");
     let json: serde_json::Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
