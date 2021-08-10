@@ -3,6 +3,7 @@
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::fs;
+use std::path::Path;
 use {
     crate::{
         error::Error,
@@ -12,7 +13,7 @@ use {
     wiggle::GuestPtr,
 };
 
-fn read_json_file(file: String) -> serde_json::Map<String, serde_json::Value> {
+fn read_json_file<P: AsRef<Path>>(file: P) -> serde_json::Map<String, serde_json::Value> {
     let data = fs::read_to_string(file).expect("Unable to read file");
     let json: serde_json::Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
     let obj = json.as_object().expect("Expected the JSON to be an Object");

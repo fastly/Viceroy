@@ -1,6 +1,9 @@
 use {
     core::fmt,
-    std::collections::HashMap,
+    std::{
+        collections::HashMap,
+        path::PathBuf,
+    },
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -25,7 +28,7 @@ impl DictionaryName {
 pub struct Dictionary {
     // Name must start with alphabetical and contain only alphanumeric, underscore, and whitespace
     pub name: DictionaryName,
-    pub file: String,
+    pub file: PathBuf,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -118,7 +121,7 @@ mod deserialization {
                         if file.is_empty() {
                             Err(DictionaryConfigError::EmptyFileEntry)
                         } else {
-                            Ok(file)
+                            Ok(file.into())
                         }
                     }
                     _ => Err(DictionaryConfigError::InvalidFileEntry),
