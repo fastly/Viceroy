@@ -1,8 +1,13 @@
-use std::fs::File;
-use std::io::Write;
+use {
+    crate::config::DictionaryName,
+    std::{
+        fs::File,
+        io::Write,
+    },
+    super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
+    tempfile::tempdir,
+};
 
-use super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig};
-use tempfile::tempdir;
 
 #[test]
 fn fastly_toml_files_can_be_read() {
@@ -113,7 +118,7 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
 
     let dictionary = config
         .dictionaries()
-        .get("a")
+        .get(&DictionaryName::new("a".to_string()))
         .expect("dictionary configurations can be accessed");
     assert_eq!(dictionary.name.to_string(), "a".to_string());
     assert_eq!(dictionary.file, file_path.to_str().unwrap());

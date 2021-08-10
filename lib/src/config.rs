@@ -3,7 +3,6 @@
 use {
     self::backends::BackendsConfig,
     crate::error::FastlyConfigError,
-    crate::wiggle_abi::types::DictionaryHandle,
     serde_derive::Deserialize,
     std::{collections::HashMap, convert::TryInto, fs, path::Path, str::FromStr, sync::Arc},
     toml::value::Table,
@@ -17,8 +16,8 @@ mod unit_tests;
 mod dictionaries;
 use self::dictionaries::DictionariesConfig;
 pub use self::dictionaries::Dictionary;
-pub type Dictionaries = HashMap<String, Arc<Dictionary>>;
-pub type DictionariesById = HashMap<DictionaryHandle, Arc<Dictionary>>;
+pub use self::dictionaries::DictionaryName;
+pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;
@@ -66,13 +65,6 @@ impl FastlyConfig {
     /// Get the backend configuration.
     pub fn dictionaries(&self) -> &Dictionaries {
         &self.local_server.dictionaries.0
-    }
-
-    /// Get the backend configuration.
-    pub fn dictionaries_by_id(&self) -> DictionariesById {
-        let dicts = self.local_server.dictionaries.0.clone();
-
-        dicts.into_iter().map(|a| (a.1.id, a.1.clone())).collect()
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.

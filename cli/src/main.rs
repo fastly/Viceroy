@@ -49,7 +49,6 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         ctx = ctx
             .with_backends(backends.clone())
             .with_dictionaries(dictionaries.clone())
-            .with_dictionaries_by_id(dictionaries.clone())
             .with_config_path(config_path.into());
 
         if backend_names.is_empty() {

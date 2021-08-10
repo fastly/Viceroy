@@ -1,7 +1,10 @@
 //! Error types.
 
 use {
-    crate::wiggle_abi::types::{DictionaryHandle, FastlyStatus},
+    crate::{
+        config::DictionaryName,
+        wiggle_abi::types::{DictionaryHandle, FastlyStatus}
+    },
     url::Url,
     wiggle::GuestError,
 };
@@ -85,7 +88,7 @@ pub enum Error {
     UnknownBackend(String),
 
     #[error("Unknown dictionary: {0}")]
-    UnknownDictionary(String),
+    UnknownDictionary(DictionaryName),
 
     #[error("Unknown dictionary item: {0}")]
     UnknownDictionaryItem(String),

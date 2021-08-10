@@ -1,7 +1,5 @@
 //! Session type and related facilities.
 
-use crate::config::DictionariesById;
-
 mod body_variant;
 mod downstream;
 
@@ -9,13 +7,13 @@ use {
     self::{body_variant::BodyVariant, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{Backend, Backends, Dictionaries},
+        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
         error::{Error, HandleError},
         logging::LogEndpoint,
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget},
         wiggle_abi::types::{
-            BodyHandle, EndpointHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
+            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::PrimaryMap,
@@ -76,7 +74,7 @@ pub struct Session {
     /// The dictionaries configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    pub(crate) dictionaries_by_id: Arc<DictionariesById>,
+    dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -96,7 +94,6 @@ impl Session {
         client_ip: IpAddr,
         backends: Arc<Backends>,
         dictionaries: Arc<Dictionaries>,
-        dictionaries_by_id: Arc<DictionariesById>,
         config_path: Arc<Option<PathBuf>>,
     ) -> Session {
         let (parts, body) = req.into_parts();
@@ -108,6 +105,10 @@ impl Session {
         let downstream_req_handle = req_parts.push(Some(parts));
         let downstream_req_body_handle = bodies.push(Some(BodyVariant::Body(body)));
 
+        let mut dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName> = PrimaryMap::new();
+        for name in dictionaries.keys() {
+            dictionaries_by_name.push(name.clone());
+        }
         Session {
             downstream_client_ip: client_ip,
             downstream_req_handle,
@@ -121,7 +122,7 @@ impl Session {
             log_endpoints_by_name: HashMap::new(),
             backends,
             dictionaries,
-            dictionaries_by_id,
+            dictionaries_by_name,
             config_path,
             pending_reqs: PrimaryMap::new(),
             req_id,
@@ -141,7 +142,6 @@ impl Session {
             Request::new(Body::empty()),
             sender,
             "0.0.0.0".parse().unwrap(),
-            Arc::new(HashMap::new()),
             Arc::new(HashMap::new()),
             Arc::new(HashMap::new()),
             Arc::new(None),
@@ -508,6 +508,33 @@ impl Session {
     /// Look up a backend by name.
     pub fn backend(&self, name: &str) -> Option<&Backend> {
         self.backends.get(name).map(std::ops::Deref::deref)
+    }
+    
+    // ----- Dictionaries API -----
+
+    /// Look up a dictionary-handle by name.
+    pub fn dictionary_handle(&self, name: &str) -> Result<DictionaryHandle, Error> {
+        let name = DictionaryName::new(name.to_string());
+        for (handle, dictionary_name) in self.dictionaries_by_name.iter() {
+            if &name == dictionary_name {
+                return Ok(handle);
+            }
+        }
+        Err(Error::UnknownDictionary(name))
+        // DictionaryHandle::from(-2)
+    }
+    
+    /// Look up a dictionary by dictionary-handle.
+    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, Error> {
+        match self.dictionaries_by_name.get(handle) {
+            Some(name) => {
+                match self.dictionaries.get(name) {
+                    Some(dictionary) => Ok(dictionary),
+                    None => Err(Error::UnknownDictionaryHandle(handle)),
+                }
+            },
+            None => Err(Error::UnknownDictionaryHandle(handle)),
+        }
     }
 
     // ----- Pending Requests API -----

@@ -24,12 +24,8 @@ fn read_json_file(file: String) -> serde_json::Map<String, serde_json::Value> {
 
 impl FastlyDictionary for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        let dicts = self.dictionaries.as_ref();
         let name = name.as_str()?.to_owned();
-        match dicts.get(&name) {
-            Some(dictionary) => Ok(dictionary.id),
-            None => Err(Error::UnknownDictionary(name)),
-        }
+        self.dictionary_handle(&name)
     }
 
     fn get(
@@ -39,36 +35,31 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let dicts = self.dictionaries_by_id.as_ref();
         let key = key.as_str()?.to_owned();
-        match dicts.get(&dictionary) {
-            Some(dict) => {
-                let file = dict.file.clone();
-                let obj = read_json_file(file);
-                if !obj.contains_key(&key) {
-                    return Err(Error::UnknownDictionaryItem(key));
-                }
-                let item = obj.get(&key).unwrap(); // Safe to do due to `!obj.contains_key(&key)` above
-                let item = serde_json::to_string(item).unwrap();
-                let item_bytes = item.as_bytes();
-
-                if item_bytes.len() > buf_len as usize {
-                    // Write out the number of bytes necessary to fit this dictionary_item, or zero on overflow to
-                    // signal an error condition.
-                    buf.write(item_bytes.len().try_into().unwrap_or(0))?;
-                    return Err(Error::BufferLengthError {
-                        buf: "dictionary_item",
-                        len: "dictionary_item_max_len",
-                    });
-                }
-                let item_len = u32::try_from(item_bytes.len())
-                    .expect("smaller than dictionary_item_max_len means it must fit");
-
-                let mut buf_slice = buf.as_array(item_len).as_slice_mut()?;
-                buf_slice.copy_from_slice(item_bytes);
-                Ok(item_len)
-            }
-            None => Err(Error::UnknownDictionaryHandle(dictionary)),
+        let dict = self.dictionary(dictionary)?;
+        let file = dict.file.clone();
+        let obj = read_json_file(file);
+        if !obj.contains_key(&key) {
+            return Err(Error::UnknownDictionaryItem(key));
         }
+        let item = obj.get(&key).unwrap(); // Safe to do due to `!obj.contains_key(&key)` above
+        let item = serde_json::to_string(item).unwrap();
+        let item_bytes = item.as_bytes();
+
+        if item_bytes.len() > buf_len as usize {
+            // Write out the number of bytes necessary to fit this dictionary_item, or zero on overflow to
+            // signal an error condition.
+            buf.write(item_bytes.len().try_into().unwrap_or(0))?;
+            return Err(Error::BufferLengthError {
+                buf: "dictionary_item",
+                len: "dictionary_item_max_len",
+            });
+        }
+        let item_len = u32::try_from(item_bytes.len())
+            .expect("smaller than dictionary_item_max_len means it must fit");
+
+        let mut buf_slice = buf.as_array(item_len).as_slice_mut()?;
+        buf_slice.copy_from_slice(item_bytes);
+        Ok(item_len)
     }
 }

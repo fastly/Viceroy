@@ -1,20 +1,20 @@
 use {
-    crate::wiggle_abi::types::DictionaryHandle,
     core::fmt,
-    std::{
-        collections::HashMap,
-        sync::{atomic::AtomicU32, Arc},
-    },
+    std::collections::HashMap,
 };
 
-static COUNTER: AtomicU32 = AtomicU32::new(1);
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DictionaryName(String);
 
 impl fmt::Display for DictionaryName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl DictionaryName {
+    pub fn new(name: String) -> Self {
+        Self(name)
     }
 }
 
@@ -25,13 +25,12 @@ impl fmt::Display for DictionaryName {
 pub struct Dictionary {
     // Name must start with alphabetical and contain only alphanumeric, underscore, and whitespace
     pub name: DictionaryName,
-    pub id: DictionaryHandle,
     pub file: String,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
 #[derive(Clone, Debug, Default)]
-pub struct DictionariesConfig(pub HashMap<String, Arc<Dictionary>>);
+pub struct DictionariesConfig(pub HashMap<DictionaryName, Dictionary>);
 
 /// This module contains [`TryFrom`] implementations used when deserializing a `fastly.toml`.
 ///
@@ -41,14 +40,12 @@ pub struct DictionariesConfig(pub HashMap<String, Arc<Dictionary>>);
 mod deserialization {
 
     use {
-        super::{DictionariesConfig, Dictionary, DictionaryName, COUNTER},
+        super::{DictionariesConfig, Dictionary, DictionaryName},
         crate::error::{DictionaryConfigError, FastlyConfigError},
-        crate::wiggle_abi::types::DictionaryHandle,
         std::{
             convert::TryFrom,
             convert::TryInto,
             fs,
-            sync::{atomic::Ordering, Arc},
         },
         toml::value::{Table, Value},
         tracing::{event, Level},
@@ -85,14 +82,14 @@ mod deserialization {
             /// Process a backend's definitions, or return a [`FastlyConfigError`].
             fn process_entry(
                 (name, defs): (String, Value),
-            ) -> Result<(String, Arc<Dictionary>), FastlyConfigError> {
+            ) -> Result<(DictionaryName, Dictionary), FastlyConfigError> {
                 into_table(defs)
                     .and_then(Dictionary::try_from)
                     .map_err(|err| FastlyConfigError::InvalidDictionaryDefinition {
                         name: name.clone(),
                         err,
                     })
-                    .map(|def| (name, Arc::new(def)))
+                    .map(|def| (def.name.clone(), def))
             }
 
             toml.into_iter()
@@ -170,10 +167,8 @@ mod deserialization {
                     });
                 }
             }
-            let count = COUNTER.fetch_add(1, Ordering::SeqCst);
-            let id = DictionaryHandle::from(count);
 
-            Ok(Self { name, id, file })
+            Ok(Self { name, file })
         }
     }
 
