@@ -185,32 +185,3 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         })
     }
 }
-
-/// Configuration settings used for tests.
-///
-/// This represents all of the `fastly.toml` fields whose keys begin with `testing`. Currently this
-/// section of the manifest is only used for providing backend definitions, but additional fields
-/// may be added in the future.
-#[derive(Clone, Debug, Default)]
-pub struct DictionaryConfig {
-    dictionaries: DictionariesConfig,
-}
-
-/// Internal deserializer used to read the `[dictionaries]` section of a `fastly.toml` file.
-///
-/// Once a TOML file has been read using [`toml::from_str`], this can be converted into
-/// a [`DictionaryConfig`] with [`TryInto::try_into`].
-#[derive(Deserialize)]
-struct RawDictionaryConfig {
-    dictionaries: Table,
-}
-
-impl TryInto<DictionaryConfig> for RawDictionaryConfig {
-    type Error = FastlyConfigError;
-    fn try_into(self) -> Result<DictionaryConfig, Self::Error> {
-        let Self { dictionaries } = self;
-        dictionaries
-            .try_into()
-            .map(|dictionaries| DictionaryConfig { dictionaries })
-    }
-}
