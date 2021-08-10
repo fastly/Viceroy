@@ -1,6 +1,8 @@
-use crate::config::dictionaries::DictionaryName;
+use std::fs::File;
+use std::io::Write;
 
 use super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig};
+use tempfile::tempdir;
 
 #[test]
 fn fastly_toml_files_can_be_read() {
@@ -83,7 +85,12 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
 /// This provides an example `fastly.toml` file including a `#[local_server.dictionaries]` section.
 #[test]
 fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
-    let config = FastlyConfig::from_str(
+    let dir = tempdir().unwrap();
+
+    let file_path = dir.path().join("a.json");
+    let mut file = File::create(&file_path).unwrap();
+    writeln!(file, "{{}}").unwrap();
+    let config = FastlyConfig::from_str(format!(
         r#"
             manifest_version = "1.2.3"
             name = "dictionary-config-example"
@@ -98,17 +105,18 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
                 [local_server.dictionaries]
                     [local_server.dictionaries.a]
                     name="a"
-                    file="./a.json"
+                    file="{}"
     "#,
-    )
+        &file_path.to_str().unwrap()
+    ))
     .expect("can read toml data containing local dictionary configurations");
 
     let dictionary = config
         .dictionaries()
         .get("a")
         .expect("dictionary configurations can be accessed");
-    assert_eq!(dictionary.name, DictionaryName("a".to_string()));
-    assert_eq!(dictionary.file, "./a.json");
+    assert_eq!(dictionary.name.to_string(), "a".to_string());
+    assert_eq!(dictionary.file, file_path.to_str().unwrap());
 }
 
 /// Unit tests for the `local_server` section of a `fastly.toml` package manifest.
@@ -118,6 +126,10 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
 /// that would be placed beneath the `local_server` key, rather than an entire package manifest as in
 /// the tests above.
 mod local_server_config_tests {
+    use std::fs::File;
+    use std::io::Write;    
+    use tempfile::tempdir;
+
     use {
         super::{LocalServerConfig, RawLocalServerConfig},
         crate::error::{
@@ -138,16 +150,24 @@ mod local_server_config_tests {
     // happy path for this group of unit tests.
     #[test]
     fn local_server_configs_can_be_deserialized() {
-        static LOCAL_SERVER: &str = r#"
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let local_server = format!(
+            r#"
             [backends]            
               [backends.dog]
               url = "http://localhost:7878/dog-mocks"
             [dicionaries]            
               [dicionaries.secrets]
               name = "secrets"
-              file = "./secrets.json"
-        "#;
-        match read_toml_config(LOCAL_SERVER) {
+              file = "{}"
+        "#,
+            file_path.to_str().unwrap()
+        );
+        match read_toml_config(&local_server) {
             Ok(_) => {}
             res => panic!("unexpected result: {:?}", res),
         }
@@ -303,12 +323,17 @@ mod local_server_config_tests {
     /// Check that dictionary definitions cannot contain unrecognized keys.
     #[test]
     fn dictionary_configs_cannot_contain_unrecognized_keys() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
         use DictionaryConfigError::UnrecognizedKey;
-        static BAD_DEFAULT: &str = r#"
+        let bad_default = format!(r#"
             [dictionaries]
-            thing = { name = "thing", file = "./file.json", shrimp = true }
-        "#;
-        match read_toml_config(BAD_DEFAULT) {
+            thing = {{ name = "thing", file = "{}", shrimp = true }}
+        "#, file_path.to_str().unwrap());
+        match read_toml_config(&bad_default) {
             Err(InvalidDictionaryDefinition {
                 err: UnrecognizedKey(key),
                 ..
@@ -320,12 +345,16 @@ mod local_server_config_tests {
     /// Check that dictionary definitions *must* include a `name` field.
     #[test]
     fn dictionary_configs_must_provide_a_name() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
         use DictionaryConfigError::MissingName;
-        static NO_NAME: &str = r#"
+        let no_name = format!(r#"
             [dictionaries]
-            thing = { file = "./file.json" }
-        "#;
-        match read_toml_config(NO_NAME) {
+            thing = {{ file = "{}" }}
+        "#, file_path.to_str().unwrap());
+        match read_toml_config(&no_name) {
             Err(InvalidDictionaryDefinition {
                 err: MissingName, ..
             }) => {}
@@ -352,11 +381,16 @@ mod local_server_config_tests {
     #[test]
     fn dictionary_configs_must_provide_a_valid_name() {
         use DictionaryConfigError::InvalidName;
-        static BAD_NAME_FIELD: &str = r#"
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let bad_name_field = format!(r#"
             [dictionaries]
-            "thing" = { name = "1", file = "a.json" }
-        "#;
-        match read_toml_config(BAD_NAME_FIELD) {
+            "thing" = {{ name = "1", file = "{}" }}
+        "#, file_path.to_str().unwrap());
+        match read_toml_config(&bad_name_field) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidName(_),
                 ..

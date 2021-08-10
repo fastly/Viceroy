@@ -1,5 +1,6 @@
 use {
     crate::wiggle_abi::types::DictionaryHandle,
+    core::fmt,
     std::{
         collections::HashMap,
         sync::{atomic::AtomicU32, Arc},
@@ -9,7 +10,13 @@ use {
 static COUNTER: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DictionaryName(pub String);
+pub struct DictionaryName(String);
+
+impl fmt::Display for DictionaryName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// A single Dictionary definition.
 ///
@@ -32,17 +39,19 @@ pub struct DictionariesConfig(pub HashMap<String, Arc<Dictionary>>);
 /// and help validate that we have been given an appropriate TOML schema. If the configuration is
 /// not valid, a [`FastlyConfigError`] will be returned.
 mod deserialization {
-    use super::DictionaryName;
 
     use {
-        super::{DictionariesConfig, Dictionary, COUNTER},
+        super::{DictionariesConfig, Dictionary, DictionaryName, COUNTER},
         crate::error::{DictionaryConfigError, FastlyConfigError},
         crate::wiggle_abi::types::DictionaryHandle,
         std::{
             convert::TryFrom,
+            convert::TryInto,
+            fs,
             sync::{atomic::Ordering, Arc},
         },
         toml::value::{Table, Value},
+        tracing::{event, Level},
     };
 
     /// Helper function for converting a TOML [`Value`] into a [`Table`].
@@ -118,6 +127,49 @@ mod deserialization {
                     _ => Err(DictionaryConfigError::InvalidFileEntry),
                 })?;
             check_for_unrecognized_keys(&toml)?;
+            let dictionary_max_len: usize = 1000;
+            let dictionary_item_key_max_len: usize = 256;
+            let dictionary_item_value_max_len: usize = 8000;
+            event!(
+                Level::INFO,
+                "checking if the dictionary '{}' adheres to Fastly's API",
+                name
+            );
+            let data = fs::read_to_string(&file).expect("Unable to read file");
+            let json: serde_json::Value =
+                serde_json::from_str(&data).expect("JSON was not well-formatted");
+            let obj = json.as_object().expect("Expected the JSON to be an Object");
+            if obj.len() > dictionary_max_len {
+                return Err(DictionaryConfigError::DictionaryCountTooLong {
+                    name: name.to_string(),
+                    size: dictionary_max_len.try_into().unwrap(),
+                });
+            }
+
+            event!(
+                Level::INFO,
+                "checking if the items in dictionary '{}' adhere to Fastly's API",
+                name
+            );
+            for (key, value) in obj.iter() {
+                if key.chars().count() > dictionary_item_key_max_len {
+                    return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
+                        name: name.to_string(),
+                        key: key.clone(),
+                        size: dictionary_item_key_max_len.try_into().unwrap(),
+                    });
+                }
+                let value = value
+                    .as_str()
+                    .expect("Expected the property value to be a String");
+                if value.chars().count() > dictionary_item_value_max_len {
+                    return Err(DictionaryConfigError::DictionaryItemValueTooLong {
+                        name: name.to_string(),
+                        key: key.clone(),
+                        size: dictionary_item_value_max_len.try_into().unwrap(),
+                    });
+                }
+            }
             let count = COUNTER.fetch_add(1, Ordering::SeqCst);
             let id = DictionaryHandle::from(count);
 
