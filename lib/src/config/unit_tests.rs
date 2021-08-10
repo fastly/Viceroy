@@ -109,7 +109,6 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
             [local_server]
                 [local_server.dictionaries]
                     [local_server.dictionaries.a]
-                    name="a"
                     file="{}"
     "#,
         &file_path.to_str().unwrap()
@@ -167,7 +166,6 @@ mod local_server_config_tests {
               url = "http://localhost:7878/dog-mocks"
             [dicionaries]            
               [dicionaries.secrets]
-              name = "secrets"
               file = "{}"
         "#,
             file_path.to_str().unwrap()
@@ -336,7 +334,7 @@ mod local_server_config_tests {
         use DictionaryConfigError::UnrecognizedKey;
         let bad_default = format!(r#"
             [dictionaries]
-            thing = {{ name = "thing", file = "{}", shrimp = true }}
+            thing = {{ file = "{}", shrimp = true }}
         "#, file_path.to_str().unwrap());
         match read_toml_config(&bad_default) {
             Err(InvalidDictionaryDefinition {
@@ -347,35 +345,15 @@ mod local_server_config_tests {
         }
     }
 
-    /// Check that dictionary definitions *must* include a `name` field.
-    #[test]
-    fn dictionary_configs_must_provide_a_name() {
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("secrets.json");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "{{}}").unwrap();
-        use DictionaryConfigError::MissingName;
-        let no_name = format!(r#"
-            [dictionaries]
-            thing = {{ file = "{}" }}
-        "#, file_path.to_str().unwrap());
-        match read_toml_config(&no_name) {
-            Err(InvalidDictionaryDefinition {
-                err: MissingName, ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
-
     /// Check that dictionary definitions *must* include a `file` field.
     #[test]
     fn dictionary_configs_must_provide_a_file() {
         use DictionaryConfigError::MissingFile;
-        static NO_NAME: &str = r#"
+        static NO_FILE: &str = r#"
             [dictionaries]
-            thing = { name = "thing" }
+            thing = {}
         "#;
-        match read_toml_config(NO_NAME) {
+        match read_toml_config(NO_FILE) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFile, ..
             }) => {}
@@ -393,7 +371,7 @@ mod local_server_config_tests {
 
         let bad_name_field = format!(r#"
             [dictionaries]
-            "thing" = {{ name = "1", file = "{}" }}
+            "1" = {{ file = "{}" }}
         "#, file_path.to_str().unwrap());
         match read_toml_config(&bad_name_field) {
             Err(InvalidDictionaryDefinition {
@@ -409,7 +387,7 @@ mod local_server_config_tests {
         use DictionaryConfigError::InvalidFileEntry;
         static BAD_FILE_FIELD: &str = r#"
             [dictionaries]
-            "thing" = { file = 3, name = "thing"}
+            "thing" = { file = 3}
         "#;
         match read_toml_config(BAD_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
@@ -425,7 +403,7 @@ mod local_server_config_tests {
         use DictionaryConfigError::EmptyFileEntry;
         static EMPTY_FILE_FIELD: &str = r#"
             [dictionaries]
-            "thing" = { name = "a", file = "" }
+            "thing" = { file = "" }
         "#;
         match read_toml_config(EMPTY_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {

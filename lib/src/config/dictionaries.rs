@@ -1,9 +1,6 @@
 use {
     core::fmt,
-    std::{
-        collections::HashMap,
-        path::PathBuf,
-    },
+    std::{collections::HashMap, path::PathBuf},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -45,11 +42,7 @@ mod deserialization {
     use {
         super::{DictionariesConfig, Dictionary, DictionaryName},
         crate::error::{DictionaryConfigError, FastlyConfigError},
-        std::{
-            convert::TryFrom,
-            convert::TryInto,
-            fs,
-        },
+        std::{convert::TryFrom, convert::TryInto, fs},
         toml::value::{Table, Value},
         tracing::{event, Level},
     };
@@ -87,7 +80,69 @@ mod deserialization {
                 (name, defs): (String, Value),
             ) -> Result<(DictionaryName, Dictionary), FastlyConfigError> {
                 into_table(defs)
-                    .and_then(Dictionary::try_from)
+                    .and_then(|mut toml| {
+                        let file = toml
+                            .remove("file")
+                            .ok_or(DictionaryConfigError::MissingFile)
+                            .and_then(|file| match file {
+                                Value::String(file) => {
+                                    if file.is_empty() {
+                                        Err(DictionaryConfigError::EmptyFileEntry)
+                                    } else {
+                                        Ok(file.into())
+                                    }
+                                }
+                                _ => Err(DictionaryConfigError::InvalidFileEntry),
+                            })?;
+                        check_for_unrecognized_keys(&toml)?;
+                        let dictionary_max_len: usize = 1000;
+                        let dictionary_item_key_max_len: usize = 256;
+                        let dictionary_item_value_max_len: usize = 8000;
+                        event!(
+                            Level::INFO,
+                            "checking if the dictionary '{}' adheres to Fastly's API",
+                            name
+                        );
+                        let data = fs::read_to_string(&file).expect("Unable to read file");
+                        let json: serde_json::Value =
+                            serde_json::from_str(&data).expect("JSON was not well-formatted");
+                        let obj = json.as_object().expect("Expected the JSON to be an Object");
+                        if obj.len() > dictionary_max_len {
+                            return Err(DictionaryConfigError::DictionaryCountTooLong {
+                                name: name.to_string(),
+                                size: dictionary_max_len.try_into().unwrap(),
+                            });
+                        }
+
+                        event!(
+                            Level::INFO,
+                            "checking if the items in dictionary '{}' adhere to Fastly's API",
+                            name
+                        );
+                        for (key, value) in obj.iter() {
+                            if key.chars().count() > dictionary_item_key_max_len {
+                                return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
+                                    name: name.to_string(),
+                                    key: key.clone(),
+                                    size: dictionary_item_key_max_len.try_into().unwrap(),
+                                });
+                            }
+                            let value = value
+                                .as_str()
+                                .expect("Expected the property value to be a String");
+                            if value.chars().count() > dictionary_item_value_max_len {
+                                return Err(DictionaryConfigError::DictionaryItemValueTooLong {
+                                    name: name.to_string(),
+                                    key: key.clone(),
+                                    size: dictionary_item_value_max_len.try_into().unwrap(),
+                                });
+                            }
+                        }
+                        Ok(Dictionary {
+                            name: name.clone().try_into()?,
+                            file,
+                        })
+                    })
                     .map_err(|err| FastlyConfigError::InvalidDictionaryDefinition {
                         name: name.clone(),
                         err,
@@ -99,79 +154,6 @@ mod deserialization {
                 .map(process_entry)
                 .collect::<Result<_, _>>()
                 .map(Self)
-        }
-    }
-
-    impl TryFrom<Table> for Dictionary {
-        type Error = DictionaryConfigError;
-        fn try_from(mut toml: Table) -> Result<Self, Self::Error> {
-            let name = toml
-                .remove("name")
-                .ok_or(DictionaryConfigError::MissingName)
-                .and_then(|name| match name {
-                    // Value::String(name) => url.parse::<Uri>().map_err(DictionaryConfigError::from),
-                    Value::String(name) => DictionaryName::try_from(name),
-                    _ => Err(DictionaryConfigError::InvalidNameEntry),
-                })?;
-            let file = toml
-                .remove("file")
-                .ok_or(DictionaryConfigError::MissingFile)
-                .and_then(|file| match file {
-                    Value::String(file) => {
-                        if file.is_empty() {
-                            Err(DictionaryConfigError::EmptyFileEntry)
-                        } else {
-                            Ok(file.into())
-                        }
-                    }
-                    _ => Err(DictionaryConfigError::InvalidFileEntry),
-                })?;
-            check_for_unrecognized_keys(&toml)?;
-            let dictionary_max_len: usize = 1000;
-            let dictionary_item_key_max_len: usize = 256;
-            let dictionary_item_value_max_len: usize = 8000;
-            event!(
-                Level::INFO,
-                "checking if the dictionary '{}' adheres to Fastly's API",
-                name
-            );
-            let data = fs::read_to_string(&file).expect("Unable to read file");
-            let json: serde_json::Value =
-                serde_json::from_str(&data).expect("JSON was not well-formatted");
-            let obj = json.as_object().expect("Expected the JSON to be an Object");
-            if obj.len() > dictionary_max_len {
-                return Err(DictionaryConfigError::DictionaryCountTooLong {
-                    name: name.to_string(),
-                    size: dictionary_max_len.try_into().unwrap(),
-                });
-            }
-
-            event!(
-                Level::INFO,
-                "checking if the items in dictionary '{}' adhere to Fastly's API",
-                name
-            );
-            for (key, value) in obj.iter() {
-                if key.chars().count() > dictionary_item_key_max_len {
-                    return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
-                        name: name.to_string(),
-                        key: key.clone(),
-                        size: dictionary_item_key_max_len.try_into().unwrap(),
-                    });
-                }
-                let value = value
-                    .as_str()
-                    .expect("Expected the property value to be a String");
-                if value.chars().count() > dictionary_item_value_max_len {
-                    return Err(DictionaryConfigError::DictionaryItemValueTooLong {
-                        name: name.to_string(),
-                        key: key.clone(),
-                        size: dictionary_item_value_max_len.try_into().unwrap(),
-                    });
-                }
-            }
-
-            Ok(Self { name, file })
         }
     }
 
