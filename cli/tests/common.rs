@@ -60,8 +60,7 @@ impl Test {
     pub fn backend(mut self, name: &str, url: &str, override_host: Option<&str>) -> Self {
         let backend = Backend {
             uri: url.parse().expect("invalid backend URL"),
-            override_host: override_host
-                .and_then(|s| Some(s.parse().expect("can parse override_host"))),
+            override_host: override_host.map(|s| s.parse().expect("can parse override_host")),
         };
         self.backends.insert(name.to_owned(), Arc::new(backend));
         self

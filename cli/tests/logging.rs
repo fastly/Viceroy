@@ -16,7 +16,7 @@ impl Write for LogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self.0.send(buf.to_owned()) {
             Ok(()) => Ok(buf.len()),
-            Err(_) => Err(io::ErrorKind::ConnectionReset)?,
+            Err(_) => Err(io::ErrorKind::ConnectionReset.into()),
         }
     }
 
