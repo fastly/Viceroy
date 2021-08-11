@@ -26,8 +26,7 @@ fn read_json_file<P: AsRef<Path>>(file: P) -> serde_json::Map<String, serde_json
 
 impl FastlyDictionary for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        let name = name.as_str()?.to_owned();
-        self.dictionary_handle(&name)
+        self.dictionary_handle(&name.as_str()?)
     }
 
     fn get(
