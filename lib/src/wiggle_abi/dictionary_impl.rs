@@ -36,14 +36,14 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let key = key.as_str()?.to_owned();
+        let key: &str = &key.as_str()?;
         let dict = self.dictionary(dictionary)?;
         let file = dict.file.clone();
         let obj = read_json_file(file);
-        if !obj.contains_key(&key) {
-            return Err(Error::UnknownDictionaryItem(key));
+        if !obj.contains_key(key) {
+            return Err(Error::UnknownDictionaryItem(key.to_string()));
         }
-        let item = obj.get(&key).unwrap(); // Safe to do due to `!obj.contains_key(&key)` above
+        let item = obj.get(key).unwrap(); // Safe to do due to `!obj.contains_key(&key)` above
         let item = serde_json::to_string(item).unwrap();
         let item_bytes = item.as_bytes();
 
