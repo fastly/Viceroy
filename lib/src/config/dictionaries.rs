@@ -28,7 +28,7 @@ pub struct Dictionary {
     pub file: PathBuf,
 }
 
-/// A map of [`Backend`] definitions, keyed by their name.
+/// A map of [`Dictionary`] definitions, keyed by their name.
 #[derive(Clone, Debug, Default)]
 pub struct DictionariesConfig(pub HashMap<DictionaryName, Dictionary>);
 
