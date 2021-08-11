@@ -64,7 +64,7 @@ impl FastlyConfig {
         &self.local_server.backends.0
     }
 
-    /// Get the backend configuration.
+    /// Get the dictionaries configuration.
     pub fn dictionaries(&self) -> &Dictionaries {
         &self.local_server.dictionaries.0
     }
