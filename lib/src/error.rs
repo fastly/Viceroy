@@ -317,6 +317,9 @@ pub enum DictionaryConfigError {
 
     #[error("Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
     DictionaryItemValueTooLong{ key: String, name: String, size: i32 },
+
+    #[error("The file for the dictionary named '{name}' is of the wrong format. The file is expected to contain a single JSON Object")]
+    DictionaryFileWrongFormat{ name: String},
 }
 
 /// Errors related to the downstream request.

@@ -106,7 +106,11 @@ mod deserialization {
                         let data = fs::read_to_string(&file).expect("Unable to read file");
                         let json: serde_json::Value =
                             serde_json::from_str(&data).expect("JSON was not well-formatted");
-                        let obj = json.as_object().expect("Expected the JSON to be an Object");
+                        let obj = json.as_object().ok_or_else(|| {
+                            DictionaryConfigError::DictionaryFileWrongFormat {
+                                name: name.to_string(),
+                            }
+                        })?;
                         if obj.len() > dictionary_max_len {
                             return Err(DictionaryConfigError::DictionaryCountTooLong {
                                 name: name.to_string(),
