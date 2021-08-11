@@ -105,10 +105,6 @@ impl Session {
         let downstream_req_handle = req_parts.push(Some(parts));
         let downstream_req_body_handle = bodies.push(Some(BodyVariant::Body(body)));
 
-        let mut dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName> = PrimaryMap::new();
-        for name in dictionaries.keys() {
-            dictionaries_by_name.push(name.clone());
-        }
         Session {
             downstream_client_ip: client_ip,
             downstream_req_handle,
@@ -122,7 +118,7 @@ impl Session {
             log_endpoints_by_name: HashMap::new(),
             backends,
             dictionaries,
-            dictionaries_by_name,
+            dictionaries_by_name: PrimaryMap::new(),
             config_path,
             pending_reqs: PrimaryMap::new(),
             req_id,
@@ -513,15 +509,9 @@ impl Session {
     // ----- Dictionaries API -----
 
     /// Look up a dictionary-handle by name.
-    pub fn dictionary_handle(&self, name: &str) -> Result<DictionaryHandle, Error> {
+    pub fn dictionary_handle(&mut self, name: &str) -> Result<DictionaryHandle, Error> {
         let name = DictionaryName::new(name.to_string());
-        for (handle, dictionary_name) in self.dictionaries_by_name.iter() {
-            if &name == dictionary_name {
-                return Ok(handle);
-            }
-        }
-        Err(Error::UnknownDictionary(name))
-        // DictionaryHandle::from(-2)
+        Ok(self.dictionaries_by_name.push(name))
     }
     
     /// Look up a dictionary by dictionary-handle.
