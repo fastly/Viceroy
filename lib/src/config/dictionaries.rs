@@ -103,15 +103,20 @@ mod deserialization {
                             "checking if the dictionary '{}' adheres to Fastly's API",
                             name
                         );
-                        let data = fs::read_to_string(&file).expect("Unable to read file");
+                        let data = fs::read_to_string(&file).map_err(|err| DictionaryConfigError::IoError {
+                                name: name.to_string(),
+                                error: err.to_string(),
+                            })?;
                         let json: serde_json::Value =
-                            serde_json::from_str(&data).expect("JSON was not well-formatted");
-                        let obj = json.as_object().ok_or_else(|| {
+                            serde_json::from_str(&data).map_err(|_| DictionaryConfigError::DictionaryFileWrongFormat {
+                                name: name.to_string(),
+                            })?;
+                        let dict = json.as_object().ok_or_else(|| {
                             DictionaryConfigError::DictionaryFileWrongFormat {
                                 name: name.to_string(),
                             }
                         })?;
-                        if obj.len() > dictionary_max_len {
+                        if dict.len() > dictionary_max_len {
                             return Err(DictionaryConfigError::DictionaryCountTooLong {
                                 name: name.to_string(),
                                 size: dictionary_max_len.try_into().unwrap(),
@@ -123,7 +128,7 @@ mod deserialization {
                             "checking if the items in dictionary '{}' adhere to Fastly's API",
                             name
                         );
-                        for (key, value) in obj.iter() {
+                        for (key, value) in dict.iter() {
                             if key.chars().count() > dictionary_item_key_max_len {
                                 return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
                                     name: name.to_string(),
@@ -133,7 +138,12 @@ mod deserialization {
                             }
                             let value = value
                                 .as_str()
-                                .unwrap_or_else(|| panic!("Expected the property value for the key named `{}` to be a String", key));
+                                .ok_or_else(|| {
+                                    DictionaryConfigError::DictionaryItemValueWrongFormat {
+                                        name: name.to_string(),
+                                        key: key.clone(),
+                                    }
+                                })?;
                             if value.chars().count() > dictionary_item_value_max_len {
                                 return Err(DictionaryConfigError::DictionaryItemValueTooLong {
                                     name: name.to_string(),

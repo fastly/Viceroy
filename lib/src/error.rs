@@ -282,6 +282,13 @@ pub enum BackendConfigError {
 /// Errors that may occur while validating dictionary configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error("error reading `{name}`: {error}")]
+    IoError {
+        name: String,
+        error: String,
+    },
+    
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
@@ -314,6 +321,9 @@ pub enum DictionaryConfigError {
 
     #[error("The dictionary named '{name}' has too many items, max amount is {size}")]
     DictionaryCountTooLong{ name: String, size: i32 },
+
+    #[error("Item value under key named '{key}' in dictionary named '{name}' is of the wrong format. The value is expected to be a JSON String")]
+    DictionaryItemValueWrongFormat{ key: String, name: String },
 
     #[error("Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
     DictionaryItemValueTooLong{ key: String, name: String, size: i32 },
