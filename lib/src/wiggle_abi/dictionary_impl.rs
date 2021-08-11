@@ -44,7 +44,7 @@ impl FastlyDictionary for Session {
             return Err(Error::UnknownDictionaryItem(key.to_string()));
         }
         let item = obj.get(key).unwrap(); // Safe to do due to `!obj.contains_key(&key)` above
-        let item = serde_json::to_string(item).unwrap();
+        let item = item.as_str().unwrap();
         let item_bytes = item.as_bytes();
 
         if item_bytes.len() > buf_len as usize {
