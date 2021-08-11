@@ -129,7 +129,7 @@ mod deserialization {
                             }
                             let value = value
                                 .as_str()
-                                .expect("Expected the property value to be a String");
+                                .unwrap_or_else(|| panic!("Expected the property value for the key named `{}` to be a String", key));
                             if value.chars().count() > dictionary_item_value_max_len {
                                 return Err(DictionaryConfigError::DictionaryItemValueTooLong {
                                     name: name.to_string(),
