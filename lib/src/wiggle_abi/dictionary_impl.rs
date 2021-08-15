@@ -48,9 +48,6 @@ impl FastlyDictionary for Session {
         let item_bytes = item.as_bytes();
 
         if item_bytes.len() > buf_len as usize {
-            // Write out the number of bytes necessary to fit this dictionary_item, or zero on overflow to
-            // signal an error condition.
-            buf.write(item_bytes.len().try_into().unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "dictionary_item",
                 len: "dictionary_item_max_len",
