@@ -41,7 +41,14 @@ mod deserialization {
 
     use {
         super::{DictionariesConfig, Dictionary, DictionaryName},
-        crate::error::{DictionaryConfigError, FastlyConfigError},
+        crate::{
+            config::limits::{
+                DICTIONARY_MAX_LEN,
+                DICTIONARY_ITEM_KEY_MAX_LEN,
+                DICTIONARY_ITEM_VALUE_MAX_LEN
+            },
+            error::{DictionaryConfigError, FastlyConfigError},
+        },
         std::{convert::TryFrom, convert::TryInto, fs},
         toml::value::{Table, Value},
         tracing::{event, Level},
@@ -95,9 +102,6 @@ mod deserialization {
                                 _ => Err(DictionaryConfigError::InvalidFileEntry),
                             })?;
                         check_for_unrecognized_keys(&toml)?;
-                        let dictionary_max_len: usize = 1000;
-                        let dictionary_item_key_max_len: usize = 256;
-                        let dictionary_item_value_max_len: usize = 8000;
                         event!(
                             Level::INFO,
                             "checking if the dictionary '{}' adheres to Fastly's API",
@@ -116,10 +120,10 @@ mod deserialization {
                                 name: name.to_string(),
                             }
                         })?;
-                        if dict.len() > dictionary_max_len {
+                        if dict.len() > DICTIONARY_MAX_LEN {
                             return Err(DictionaryConfigError::DictionaryCountTooLong {
                                 name: name.to_string(),
-                                size: dictionary_max_len.try_into().unwrap(),
+                                size: DICTIONARY_MAX_LEN.try_into().unwrap(),
                             });
                         }
 
@@ -129,11 +133,11 @@ mod deserialization {
                             name
                         );
                         for (key, value) in dict.iter() {
-                            if key.chars().count() > dictionary_item_key_max_len {
+                            if key.chars().count() > DICTIONARY_ITEM_KEY_MAX_LEN {
                                 return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
                                     name: name.to_string(),
                                     key: key.clone(),
-                                    size: dictionary_item_key_max_len.try_into().unwrap(),
+                                    size: DICTIONARY_ITEM_KEY_MAX_LEN.try_into().unwrap(),
                                 });
                             }
                             let value = value
@@ -144,11 +148,11 @@ mod deserialization {
                                         key: key.clone(),
                                     }
                                 })?;
-                            if value.chars().count() > dictionary_item_value_max_len {
+                            if value.chars().count() > DICTIONARY_ITEM_VALUE_MAX_LEN {
                                 return Err(DictionaryConfigError::DictionaryItemValueTooLong {
                                     name: name.to_string(),
                                     key: key.clone(),
-                                    size: dictionary_item_value_max_len.try_into().unwrap(),
+                                    size: DICTIONARY_ITEM_VALUE_MAX_LEN.try_into().unwrap(),
                                 });
                             }
                         }

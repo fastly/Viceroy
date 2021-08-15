@@ -15,6 +15,9 @@ use {
 #[cfg(test)]
 mod unit_tests;
 
+/// Fastly limits
+mod limits;
+
 /// Types and deserializers for dictionaries configuration settings.
 mod dictionaries;
 pub use self::dictionaries::Dictionary;
