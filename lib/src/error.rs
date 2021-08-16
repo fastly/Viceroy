@@ -298,11 +298,20 @@ pub enum DictionaryConfigError {
     #[error("'name' field was not a string")]
     InvalidNameEntry,
 
+    #[error("'{0}' is not a valid format for the dictionary file. Supported format(s) are: JSON.")]
+    InvalidDictionaryFileFormat(String),
+
     #[error("'file' field is empty")]
     EmptyFileEntry,
+    
+    #[error("'format' field is empty")]
+    EmptyFormatEntry,
 
     #[error("'file' field was not a string")]
     InvalidFileEntry,
+
+    #[error("'format' field was not a string")]
+    InvalidFormatEntry,
 
     #[error("no default definition provided")]
     MissingDefault,
@@ -312,6 +321,9 @@ pub enum DictionaryConfigError {
 
     #[error("missing 'file' field")]
     MissingFile,
+
+    #[error("missing 'format' field")]
+    MissingFormat,
 
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),

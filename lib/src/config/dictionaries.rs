@@ -17,10 +17,16 @@ impl DictionaryName {
 
 /// A single Dictionary definition.
 ///
-/// A Dictionary consists of a name and an id, but more fields may be added in the future.
+/// A Dictionary consists of a file and format, but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub struct Dictionary {
     pub file: PathBuf,
+    pub format: DictionaryFormat,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DictionaryFormat {
+    JSON,
 }
 
 /// A map of [`Dictionary`] definitions, keyed by their name.
@@ -35,7 +41,7 @@ pub struct DictionariesConfig(pub HashMap<DictionaryName, Dictionary>);
 mod deserialization {
 
     use {
-        super::{DictionariesConfig, Dictionary, DictionaryName},
+        super::{DictionariesConfig, Dictionary, DictionaryFormat, DictionaryName},
         crate::{
             config::limits::{
                 DICTIONARY_ITEM_KEY_MAX_LEN, DICTIONARY_ITEM_VALUE_MAX_LEN, DICTIONARY_MAX_LEN,
@@ -81,6 +87,14 @@ mod deserialization {
             ) -> Result<(DictionaryName, Dictionary), FastlyConfigError> {
                 into_table(defs)
                     .and_then(|mut toml| {
+                        let format = toml
+                            .remove("format")
+                            .ok_or(DictionaryConfigError::MissingFormat)
+                            .and_then(|format| match format {
+                                Value::String(format) => Ok(format.parse()?),
+                                _ => Err(DictionaryConfigError::InvalidFormatEntry),
+                            })?;
+
                         let file = toml
                             .remove("file")
                             .ok_or(DictionaryConfigError::MissingFile)
@@ -106,53 +120,13 @@ mod deserialization {
                                 error: err.to_string(),
                             }
                         })?;
-                        let json: serde_json::Value =
-                            serde_json::from_str(&data).map_err(|_| {
-                                DictionaryConfigError::DictionaryFileWrongFormat {
-                                    name: name.to_string(),
-                                }
-                            })?;
-                        let dict = json.as_object().ok_or_else(|| {
-                            DictionaryConfigError::DictionaryFileWrongFormat {
-                                name: name.to_string(),
-                            }
-                        })?;
-                        if dict.len() > DICTIONARY_MAX_LEN {
-                            return Err(DictionaryConfigError::DictionaryCountTooLong {
-                                name: name.to_string(),
-                                size: DICTIONARY_MAX_LEN.try_into().unwrap(),
-                            });
+
+                        match format {
+                            DictionaryFormat::JSON => parse_dict_as_json(&name, &data)?,
                         }
 
-                        event!(
-                            Level::INFO,
-                            "checking if the items in dictionary '{}' adhere to Fastly's API",
-                            name
-                        );
-                        for (key, value) in dict.iter() {
-                            if key.chars().count() > DICTIONARY_ITEM_KEY_MAX_LEN {
-                                return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
-                                    name: name.to_string(),
-                                    key: key.clone(),
-                                    size: DICTIONARY_ITEM_KEY_MAX_LEN.try_into().unwrap(),
-                                });
-                            }
-                            let value = value.as_str().ok_or_else(|| {
-                                DictionaryConfigError::DictionaryItemValueWrongFormat {
-                                    name: name.to_string(),
-                                    key: key.clone(),
-                                }
-                            })?;
-                            if value.chars().count() > DICTIONARY_ITEM_VALUE_MAX_LEN {
-                                return Err(DictionaryConfigError::DictionaryItemValueTooLong {
-                                    name: name.to_string(),
-                                    key: key.clone(),
-                                    size: DICTIONARY_ITEM_VALUE_MAX_LEN.try_into().unwrap(),
-                                });
-                            }
-                        }
                         let name = name.parse()?;
-                        Ok((name, Dictionary { file }))
+                        Ok((name, Dictionary { file, format }))
                     })
                     .map_err(|err| FastlyConfigError::InvalidDictionaryDefinition {
                         name: name.clone(),
@@ -165,6 +139,54 @@ mod deserialization {
                 .collect::<Result<_, _>>()
                 .map(Self)
         }
+    }
+
+    fn parse_dict_as_json(name: &str, data: &str) -> Result<(), DictionaryConfigError> {
+        let json: serde_json::Value = serde_json::from_str(data).map_err(|_| {
+            DictionaryConfigError::DictionaryFileWrongFormat {
+                name: name.to_string(),
+            }
+        })?;
+        let dict =
+            json.as_object()
+                .ok_or_else(|| DictionaryConfigError::DictionaryFileWrongFormat {
+                    name: name.to_string(),
+                })?;
+        if dict.len() > DICTIONARY_MAX_LEN {
+            return Err(DictionaryConfigError::DictionaryCountTooLong {
+                name: name.to_string(),
+                size: DICTIONARY_MAX_LEN.try_into().unwrap(),
+            });
+        }
+
+        event!(
+            Level::INFO,
+            "checking if the items in dictionary '{}' adhere to Fastly's API",
+            name
+        );
+        for (key, value) in dict.iter() {
+            if key.chars().count() > DICTIONARY_ITEM_KEY_MAX_LEN {
+                return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
+                    name: name.to_string(),
+                    key: key.clone(),
+                    size: DICTIONARY_ITEM_KEY_MAX_LEN.try_into().unwrap(),
+                });
+            }
+            let value = value.as_str().ok_or_else(|| {
+                DictionaryConfigError::DictionaryItemValueWrongFormat {
+                    name: name.to_string(),
+                    key: key.clone(),
+                }
+            })?;
+            if value.chars().count() > DICTIONARY_ITEM_VALUE_MAX_LEN {
+                return Err(DictionaryConfigError::DictionaryItemValueTooLong {
+                    name: name.to_string(),
+                    key: key.clone(),
+                    size: DICTIONARY_ITEM_VALUE_MAX_LEN.try_into().unwrap(),
+                });
+            }
+        }
+        Ok(())
     }
 
     impl FromStr for DictionaryName {
@@ -183,4 +205,18 @@ mod deserialization {
         }
     }
 
+    impl FromStr for DictionaryFormat {
+        type Err = DictionaryConfigError;
+        fn from_str(name: &str) -> Result<Self, Self::Err> {
+            if name.is_empty() {
+                return Err(DictionaryConfigError::EmptyFormatEntry);
+            }
+            match name {
+                "json" => Ok(DictionaryFormat::JSON),
+                _ => Err(DictionaryConfigError::InvalidDictionaryFileFormat(
+                    name.to_owned(),
+                )),
+            }
+        }
+    }
 }

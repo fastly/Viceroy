@@ -1,3 +1,5 @@
+use crate::config::dictionaries::DictionaryFormat;
+
 use {
     crate::config::DictionaryName,
     std::{
@@ -110,6 +112,7 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
                 [local_server.dictionaries]
                     [local_server.dictionaries.a]
                     file="{}"
+                    format = "json"
     "#,
         &file_path.to_str().unwrap()
     ))
@@ -120,6 +123,7 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
         .get(&DictionaryName::new("a".to_string()))
         .expect("dictionary configurations can be accessed");
     assert_eq!(dictionary.file, file_path);
+    assert_eq!(dictionary.format, DictionaryFormat::JSON);
 }
 
 /// Unit tests for the `local_server` section of a `fastly.toml` package manifest.
@@ -166,6 +170,7 @@ mod local_server_config_tests {
             [dicionaries]            
               [dicionaries.secrets]
               file = "{}"
+              format = "json"
         "#,
             file_path.to_str().unwrap()
         );
@@ -333,7 +338,7 @@ mod local_server_config_tests {
         use DictionaryConfigError::UnrecognizedKey;
         let bad_default = format!(r#"
             [dictionaries]
-            thing = {{ file = "{}", shrimp = true }}
+            thing = {{ file = "{}", format = "json", shrimp = true }}
         "#, file_path.to_str().unwrap());
         match read_toml_config(&bad_default) {
             Err(InvalidDictionaryDefinition {
@@ -350,11 +355,31 @@ mod local_server_config_tests {
         use DictionaryConfigError::MissingFile;
         static NO_FILE: &str = r#"
             [dictionaries]
-            thing = {}
+            thing = {format = "json"}
         "#;
         match read_toml_config(NO_FILE) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFile, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that dictionary definitions *must* include a `format` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_format() {
+        use DictionaryConfigError::MissingFormat;
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let no_format_field = format!(r#"
+            [dictionaries]
+            "thing" = {{ file = "{}" }}
+        "#, file_path.to_str().unwrap());
+        match read_toml_config(&no_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFormat, ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),
         }
@@ -370,7 +395,7 @@ mod local_server_config_tests {
 
         let bad_name_field = format!(r#"
             [dictionaries]
-            "1" = {{ file = "{}" }}
+            "1" = {{ file = "{}", format = "json" }}
         "#, file_path.to_str().unwrap());
         match read_toml_config(&bad_name_field) {
             Err(InvalidDictionaryDefinition {
@@ -386,7 +411,7 @@ mod local_server_config_tests {
         use DictionaryConfigError::InvalidFileEntry;
         static BAD_FILE_FIELD: &str = r#"
             [dictionaries]
-            "thing" = { file = 3}
+            "thing" = { file = 3, format = "json" }
         "#;
         match read_toml_config(BAD_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
@@ -402,7 +427,7 @@ mod local_server_config_tests {
         use DictionaryConfigError::EmptyFileEntry;
         static EMPTY_FILE_FIELD: &str = r#"
             [dictionaries]
-            "thing" = { file = "" }
+            "thing" = { file = "", format = "json" }
         "#;
         match read_toml_config(EMPTY_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
@@ -411,5 +436,52 @@ mod local_server_config_tests {
             }) => {}
             res => panic!("unexpected result: {:?}", res),
         }
+    }
+    /// Check that format field is a string.
+    #[test]
+    fn dictionary_configs_must_provide_format_as_a_string() {
+        use DictionaryConfigError::InvalidFormatEntry;
+        static BAD_FORMAT_FIELD: &str = r#"
+            [dictionaries]
+            "thing" = { format = 3}
+        "#;
+        match read_toml_config(BAD_FORMAT_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidFormatEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that format field is non empty.
+    #[test]
+    fn dictionary_configs_must_provide_a_non_empty_format() {
+        use DictionaryConfigError::EmptyFormatEntry;
+        static EMPTY_FORMAT_FIELD: &str = r#"
+            [dictionaries]
+            "thing" = { format = "" }
+        "#;
+        match read_toml_config(EMPTY_FORMAT_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: EmptyFormatEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+    /// Check that format field set to json is valid.
+    #[test]
+    fn valid_dictionary_config_with_format_set_to_json() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let dictionary = format!(r#"
+            [dictionaries]
+            "thing" = {{ file = "{}", format = "json" }}
+        "#, file_path.to_str().unwrap());
+        read_toml_config(&dictionary)
+            .expect("can read toml data containing local dictionary configurations using json format");
     }
 }
