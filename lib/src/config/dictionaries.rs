@@ -75,7 +75,7 @@ mod deserialization {
     impl TryFrom<Table> for DictionariesConfig {
         type Error = FastlyConfigError;
         fn try_from(toml: Table) -> Result<Self, Self::Error> {
-            /// Process a backend's definitions, or return a [`FastlyConfigError`].
+            /// Process a dictionary's definitions, or return a [`FastlyConfigError`].
             fn process_entry(
                 (name, defs): (String, Value),
             ) -> Result<(DictionaryName, Dictionary), FastlyConfigError> {
