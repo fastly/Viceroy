@@ -33,10 +33,9 @@ impl FastlyDictionary for Session {
         let dict = self.dictionary(dictionary)?;
         let file = dict.file.clone();
         let obj = read_json_file(file);
-        if !obj.contains_key(key) {
-            return Err(Error::UnknownDictionaryItem(key.to_string()));
-        }
-        let item = obj.get(key).unwrap(); // Safe to do due to `!obj.contains_key(&key)` above
+        let item = obj
+            .get(key)
+            .ok_or_else(|| Error::UnknownDictionaryItem(key.to_string()))?;
         let item = item.as_str().unwrap();
         let item_bytes = item.as_bytes();
 
