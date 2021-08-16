@@ -168,18 +168,14 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             dictionaries,
         } = self;
         let backends = if let Some(backends) = backends {
-            let backends: Result<BackendsConfig, FastlyConfigError> = backends.try_into();
-            backends?
+            backends.try_into()?
         } else {
-            BackendsConfig(Default::default())
+            BackendsConfig::default()
         };
-
         let dictionaries = if let Some(dictionaries) = dictionaries {
-            let dictionaries: Result<DictionariesConfig, FastlyConfigError> =
-                dictionaries.try_into();
-            dictionaries?
+            dictionaries.try_into()?
         } else {
-            DictionariesConfig(Default::default())
+            DictionariesConfig::default()
         };
 
         Ok(LocalServerConfig {
