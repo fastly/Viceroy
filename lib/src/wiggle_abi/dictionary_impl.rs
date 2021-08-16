@@ -6,14 +6,7 @@ use {
         session::Session,
         wiggle_abi::{fastly_dictionary::FastlyDictionary, types::DictionaryHandle},
     },
-    std::{
-        convert::{
-            TryFrom,
-            TryInto,
-        },
-        fs,
-        path::Path
-    },
+    std::{convert::TryFrom, fs, path::Path},
     wiggle::GuestPtr,
 };
 

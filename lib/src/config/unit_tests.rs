@@ -119,7 +119,6 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
         .dictionaries()
         .get(&DictionaryName::new("a".to_string()))
         .expect("dictionary configurations can be accessed");
-    assert_eq!(dictionary.name.to_string(), "a".to_string());
     assert_eq!(dictionary.file, file_path);
 }
 

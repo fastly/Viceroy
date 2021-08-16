@@ -20,8 +20,6 @@ impl DictionaryName {
 /// A Dictionary consists of a name and an id, but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub struct Dictionary {
-    // Name must start with alphabetical and contain only alphanumeric, underscore, and whitespace
-    pub name: DictionaryName,
     pub file: PathBuf,
 }
 
@@ -44,7 +42,7 @@ mod deserialization {
             },
             error::{DictionaryConfigError, FastlyConfigError},
         },
-        std::{convert::TryFrom, convert::TryInto, fs},
+        std::{convert::TryFrom, convert::TryInto, fs, str::FromStr},
         toml::value::{Table, Value},
         tracing::{event, Level},
     };
@@ -153,16 +151,13 @@ mod deserialization {
                                 });
                             }
                         }
-                        Ok(Dictionary {
-                            name: name.clone().try_into()?,
-                            file,
-                        })
+                        let name = name.parse()?;
+                        Ok((name, Dictionary { file }))
                     })
                     .map_err(|err| FastlyConfigError::InvalidDictionaryDefinition {
                         name: name.clone(),
                         err,
                     })
-                    .map(|def| (def.name.clone(), def))
             }
 
             toml.into_iter()
@@ -172,19 +167,20 @@ mod deserialization {
         }
     }
 
-    impl TryFrom<String> for DictionaryName {
-        type Error = DictionaryConfigError;
-        fn try_from(name: String) -> Result<Self, Self::Error> {
+    impl FromStr for DictionaryName {
+        type Err = DictionaryConfigError;
+        fn from_str(name: &str) -> Result<Self, Self::Err> {
             // Name must start with alphabetical and contain only alphanumeric, underscore, and whitespace
             if name.starts_with(char::is_alphabetic)
                 && name
                     .chars()
                     .all(|c| char::is_alphanumeric(c) || c == '_' || char::is_whitespace(c))
             {
-                Ok(Self(name))
+                Ok(Self(name.to_owned()))
             } else {
-                Err(DictionaryConfigError::InvalidName(name))
+                Err(DictionaryConfigError::InvalidName(name.to_owned()))
             }
         }
     }
+
 }
