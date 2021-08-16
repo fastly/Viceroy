@@ -1,7 +1,4 @@
-use {
-    core::fmt,
-    std::{collections::HashMap, path::PathBuf},
-};
+use std::{collections::HashMap, fmt, path::PathBuf};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DictionaryName(String);
@@ -43,9 +40,7 @@ mod deserialization {
         super::{DictionariesConfig, Dictionary, DictionaryName},
         crate::{
             config::limits::{
-                DICTIONARY_MAX_LEN,
-                DICTIONARY_ITEM_KEY_MAX_LEN,
-                DICTIONARY_ITEM_VALUE_MAX_LEN
+                DICTIONARY_ITEM_KEY_MAX_LEN, DICTIONARY_ITEM_VALUE_MAX_LEN, DICTIONARY_MAX_LEN,
             },
             error::{DictionaryConfigError, FastlyConfigError},
         },
@@ -107,13 +102,17 @@ mod deserialization {
                             "checking if the dictionary '{}' adheres to Fastly's API",
                             name
                         );
-                        let data = fs::read_to_string(&file).map_err(|err| DictionaryConfigError::IoError {
+                        let data = fs::read_to_string(&file).map_err(|err| {
+                            DictionaryConfigError::IoError {
                                 name: name.to_string(),
                                 error: err.to_string(),
-                            })?;
+                            }
+                        })?;
                         let json: serde_json::Value =
-                            serde_json::from_str(&data).map_err(|_| DictionaryConfigError::DictionaryFileWrongFormat {
-                                name: name.to_string(),
+                            serde_json::from_str(&data).map_err(|_| {
+                                DictionaryConfigError::DictionaryFileWrongFormat {
+                                    name: name.to_string(),
+                                }
                             })?;
                         let dict = json.as_object().ok_or_else(|| {
                             DictionaryConfigError::DictionaryFileWrongFormat {
@@ -140,14 +139,12 @@ mod deserialization {
                                     size: DICTIONARY_ITEM_KEY_MAX_LEN.try_into().unwrap(),
                                 });
                             }
-                            let value = value
-                                .as_str()
-                                .ok_or_else(|| {
-                                    DictionaryConfigError::DictionaryItemValueWrongFormat {
-                                        name: name.to_string(),
-                                        key: key.clone(),
-                                    }
-                                })?;
+                            let value = value.as_str().ok_or_else(|| {
+                                DictionaryConfigError::DictionaryItemValueWrongFormat {
+                                    name: name.to_string(),
+                                    key: key.clone(),
+                                }
+                            })?;
                             if value.chars().count() > DICTIONARY_ITEM_VALUE_MAX_LEN {
                                 return Err(DictionaryConfigError::DictionaryItemValueTooLong {
                                     name: name.to_string(),
