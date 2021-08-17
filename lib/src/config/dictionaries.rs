@@ -26,7 +26,7 @@ pub struct Dictionary {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DictionaryFormat {
-    JSON,
+    Json,
 }
 
 /// A map of [`Dictionary`] definitions, keyed by their name.
@@ -122,7 +122,7 @@ mod deserialization {
                         })?;
 
                         match format {
-                            DictionaryFormat::JSON => parse_dict_as_json(&name, &data)?,
+                            DictionaryFormat::Json => parse_dict_as_json(&name, &data)?,
                         }
 
                         let name = name.parse()?;
@@ -212,7 +212,7 @@ mod deserialization {
                 return Err(DictionaryConfigError::EmptyFormatEntry);
             }
             match name {
-                "json" => Ok(DictionaryFormat::JSON),
+                "json" => Ok(DictionaryFormat::Json),
                 _ => Err(DictionaryConfigError::InvalidDictionaryFileFormat(
                     name.to_owned(),
                 )),
