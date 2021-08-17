@@ -1,10 +1,7 @@
 //! Fastly-specific configuration utilities.
 
 use {
-    self::{
-        backends::BackendsConfig,
-        dictionaries::DictionariesConfig
-    },
+    self::{backends::BackendsConfig, dictionaries::DictionariesConfig},
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,
     std::{collections::HashMap, convert::TryInto, fs, path::Path, str::FromStr, sync::Arc},

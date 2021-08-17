@@ -3,10 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{
-            Backends,
-            Dictionaries
-        },
+        config::{Backends, Dictionaries},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},

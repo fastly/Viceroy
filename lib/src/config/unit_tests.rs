@@ -1,15 +1,11 @@
 use crate::config::dictionaries::DictionaryFormat;
 
 use {
-    crate::config::DictionaryName,
-    std::{
-        fs::File,
-        io::Write,
-    },
     super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
+    crate::config::DictionaryName,
+    std::{fs::File, io::Write},
     tempfile::tempdir,
 };
-
 
 #[test]
 fn fastly_toml_files_can_be_read() {
@@ -134,7 +130,7 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
 /// the tests above.
 mod local_server_config_tests {
     use std::fs::File;
-    use std::io::Write;    
+    use std::io::Write;
     use tempfile::tempdir;
 
     use {
@@ -336,10 +332,13 @@ mod local_server_config_tests {
         writeln!(file, "{{}}").unwrap();
 
         use DictionaryConfigError::UnrecognizedKey;
-        let bad_default = format!(r#"
+        let bad_default = format!(
+            r#"
             [dictionaries]
             thing = {{ file = "{}", format = "json", shrimp = true }}
-        "#, file_path.to_str().unwrap());
+        "#,
+            file_path.to_str().unwrap()
+        );
         match read_toml_config(&bad_default) {
             Err(InvalidDictionaryDefinition {
                 err: UnrecognizedKey(key),
@@ -373,10 +372,13 @@ mod local_server_config_tests {
         let mut file = File::create(&file_path).unwrap();
         writeln!(file, "{{}}").unwrap();
 
-        let no_format_field = format!(r#"
+        let no_format_field = format!(
+            r#"
             [dictionaries]
             "thing" = {{ file = "{}" }}
-        "#, file_path.to_str().unwrap());
+        "#,
+            file_path.to_str().unwrap()
+        );
         match read_toml_config(&no_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFormat, ..
@@ -393,10 +395,13 @@ mod local_server_config_tests {
         let mut file = File::create(&file_path).unwrap();
         writeln!(file, "{{}}").unwrap();
 
-        let bad_name_field = format!(r#"
+        let bad_name_field = format!(
+            r#"
             [dictionaries]
             "1" = {{ file = "{}", format = "json" }}
-        "#, file_path.to_str().unwrap());
+        "#,
+            file_path.to_str().unwrap()
+        );
         match read_toml_config(&bad_name_field) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidName(_),
@@ -477,11 +482,15 @@ mod local_server_config_tests {
         let mut file = File::create(&file_path).unwrap();
         writeln!(file, "{{}}").unwrap();
 
-        let dictionary = format!(r#"
+        let dictionary = format!(
+            r#"
             [dictionaries]
             "thing" = {{ file = "{}", format = "json" }}
-        "#, file_path.to_str().unwrap());
-        read_toml_config(&dictionary)
-            .expect("can read toml data containing local dictionary configurations using json format");
+        "#,
+            file_path.to_str().unwrap()
+        );
+        read_toml_config(&dictionary).expect(
+            "can read toml data containing local dictionary configurations using json format",
+        );
     }
 }

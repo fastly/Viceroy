@@ -13,7 +13,8 @@ use {
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget},
         wiggle_abi::types::{
-            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
+            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle,
+            ResponseHandle,
         },
     },
     cranelift_entity::PrimaryMap,
@@ -505,7 +506,7 @@ impl Session {
     pub fn backend(&self, name: &str) -> Option<&Backend> {
         self.backends.get(name).map(std::ops::Deref::deref)
     }
-    
+
     // ----- Dictionaries API -----
 
     /// Look up a dictionary-handle by name.
@@ -513,15 +514,13 @@ impl Session {
         let name = DictionaryName::new(name.to_string());
         Ok(self.dictionaries_by_name.push(name))
     }
-    
+
     /// Look up a dictionary by dictionary-handle.
     pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, Error> {
         match self.dictionaries_by_name.get(handle) {
-            Some(name) => {
-                match self.dictionaries.get(name) {
-                    Some(dictionary) => Ok(dictionary),
-                    None => Err(Error::UnknownDictionaryHandle(handle)),
-                }
+            Some(name) => match self.dictionaries.get(name) {
+                Some(dictionary) => Ok(dictionary),
+                None => Err(Error::UnknownDictionaryHandle(handle)),
             },
             None => Err(Error::UnknownDictionaryHandle(handle)),
         }

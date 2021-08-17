@@ -3,7 +3,7 @@
 use {
     crate::{
         config::DictionaryName,
-        wiggle_abi::types::{DictionaryHandle, FastlyStatus}
+        wiggle_abi::types::{DictionaryHandle, FastlyStatus},
     },
     url::Url,
     wiggle::GuestError,
@@ -284,11 +284,8 @@ pub enum BackendConfigError {
 pub enum DictionaryConfigError {
     /// An I/O error that occured while reading the file.
     #[error("error reading `{name}`: {error}")]
-    IoError {
-        name: String,
-        error: String,
-    },
-    
+    IoError { name: String, error: String },
+
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
@@ -303,7 +300,7 @@ pub enum DictionaryConfigError {
 
     #[error("'file' field is empty")]
     EmptyFileEntry,
-    
+
     #[error("'format' field is empty")]
     EmptyFormatEntry,
 
@@ -329,19 +326,29 @@ pub enum DictionaryConfigError {
     UnrecognizedKey(String),
 
     #[error("Item key named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
-    DictionaryItemKeyTooLong{ key: String, name: String, size: i32 },
+    DictionaryItemKeyTooLong {
+        key: String,
+        name: String,
+        size: i32,
+    },
 
     #[error("The dictionary named '{name}' has too many items, max amount is {size}")]
-    DictionaryCountTooLong{ name: String, size: i32 },
+    DictionaryCountTooLong { name: String, size: i32 },
 
     #[error("Item value under key named '{key}' in dictionary named '{name}' is of the wrong format. The value is expected to be a JSON String")]
-    DictionaryItemValueWrongFormat{ key: String, name: String },
+    DictionaryItemValueWrongFormat { key: String, name: String },
 
-    #[error("Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
-    DictionaryItemValueTooLong{ key: String, name: String, size: i32 },
+    #[error(
+        "Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}"
+    )]
+    DictionaryItemValueTooLong {
+        key: String,
+        name: String,
+        size: i32,
+    },
 
     #[error("The file for the dictionary named '{name}' is of the wrong format. The file is expected to contain a single JSON Object")]
-    DictionaryFileWrongFormat{ name: String},
+    DictionaryFileWrongFormat { name: String },
 }
 
 /// Errors related to the downstream request.
