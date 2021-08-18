@@ -107,7 +107,7 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
             [local_server]
                 [local_server.dictionaries]
                     [local_server.dictionaries.a]
-                    file="{}"
+                    file='{}'
                     format = "json"
     "#,
         &file_path.to_str().unwrap()
@@ -165,7 +165,7 @@ mod local_server_config_tests {
               url = "http://localhost:7878/dog-mocks"
             [dicionaries]            
               [dicionaries.secrets]
-              file = "{}"
+              file = '{}'
               format = "json"
         "#,
             file_path.to_str().unwrap()
@@ -335,7 +335,7 @@ mod local_server_config_tests {
         let bad_default = format!(
             r#"
             [dictionaries]
-            thing = {{ file = "{}", format = "json", shrimp = true }}
+            thing = {{ file = '{}', format = "json", shrimp = true }}
         "#,
             file_path.to_str().unwrap()
         );
@@ -375,7 +375,7 @@ mod local_server_config_tests {
         let no_format_field = format!(
             r#"
             [dictionaries]
-            "thing" = {{ file = "{}" }}
+            "thing" = {{ file = '{}' }}
         "#,
             file_path.to_str().unwrap()
         );
@@ -398,7 +398,7 @@ mod local_server_config_tests {
         let bad_name_field = format!(
             r#"
             [dictionaries]
-            "1" = {{ file = "{}", format = "json" }}
+            "1" = {{ file = '{}', format = "json" }}
         "#,
             file_path.to_str().unwrap()
         );
@@ -485,7 +485,7 @@ mod local_server_config_tests {
         let dictionary = format!(
             r#"
             [dictionaries]
-            "thing" = {{ file = "{}", format = "json" }}
+            "thing" = {{ file = '{}', format = "json" }}
         "#,
             file_path.to_str().unwrap()
         );
