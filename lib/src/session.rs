@@ -7,13 +7,14 @@ use {
     self::{body_variant::BodyVariant, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{Backend, Backends},
+        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
         error::{Error, HandleError},
         logging::LogEndpoint,
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget},
         wiggle_abi::types::{
-            BodyHandle, EndpointHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
+            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle,
+            ResponseHandle,
         },
     },
     cranelift_entity::PrimaryMap,
@@ -67,6 +68,14 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     pub(crate) backends: Arc<Backends>,
+    /// The dictionaries configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    pub(crate) dictionaries: Arc<Dictionaries>,
+    /// The dictionaries configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -85,6 +94,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
+        dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
     ) -> Session {
         let (parts, body) = req.into_parts();
@@ -108,6 +118,8 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            dictionaries,
+            dictionaries_by_name: PrimaryMap::new(),
             config_path,
             pending_reqs: PrimaryMap::new(),
             req_id,
@@ -127,6 +139,7 @@ impl Session {
             Request::new(Body::empty()),
             sender,
             "0.0.0.0".parse().unwrap(),
+            Arc::new(HashMap::new()),
             Arc::new(HashMap::new()),
             Arc::new(None),
         )
@@ -492,6 +505,25 @@ impl Session {
     /// Look up a backend by name.
     pub fn backend(&self, name: &str) -> Option<&Backend> {
         self.backends.get(name).map(std::ops::Deref::deref)
+    }
+
+    // ----- Dictionaries API -----
+
+    /// Look up a dictionary-handle by name.
+    pub fn dictionary_handle(&mut self, name: &str) -> Result<DictionaryHandle, Error> {
+        let name = DictionaryName::new(name.to_string());
+        Ok(self.dictionaries_by_name.push(name))
+    }
+
+    /// Look up a dictionary by dictionary-handle.
+    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, Error> {
+        match self.dictionaries_by_name.get(handle) {
+            Some(name) => match self.dictionaries.get(name) {
+                Some(dictionary) => Ok(dictionary),
+                None => Err(Error::UnknownDictionaryHandle(handle)),
+            },
+            None => Err(Error::UnknownDictionaryHandle(handle)),
+        }
     }
 
     // ----- Pending Requests API -----

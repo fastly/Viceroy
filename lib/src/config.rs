@@ -1,7 +1,7 @@
 //! Fastly-specific configuration utilities.
 
 use {
-    self::backends::BackendsConfig,
+    self::{backends::BackendsConfig, dictionaries::DictionariesConfig},
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,
     std::{collections::HashMap, convert::TryInto, fs, path::Path, str::FromStr, sync::Arc},
@@ -11,6 +11,15 @@ use {
 /// Unit tests for the [`FastlyConfig`] and [`TestingConfig`] types.
 #[cfg(test)]
 mod unit_tests;
+
+/// Fastly limits
+mod limits;
+
+/// Types and deserializers for dictionaries configuration settings.
+mod dictionaries;
+pub use self::dictionaries::Dictionary;
+pub use self::dictionaries::DictionaryName;
+pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;
@@ -53,6 +62,11 @@ impl FastlyConfig {
     /// Get the backend configuration.
     pub fn backends(&self) -> &Backends {
         &self.local_server.backends.0
+    }
+
+    /// Get the dictionaries configuration.
+    pub fn dictionaries(&self) -> &Dictionaries {
+        &self.local_server.dictionaries.0
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -130,6 +144,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
     backends: BackendsConfig,
+    dictionaries: DictionariesConfig,
 }
 
 /// Internal deserializer used to read the `[testing]` section of a `fastly.toml` file.
@@ -138,15 +153,31 @@ pub struct LocalServerConfig {
 /// a [`LocalServerConfig`] with [`TryInto::try_into`].
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
-    backends: Table,
+    backends: Option<Table>,
+    dictionaries: Option<Table>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     type Error = FastlyConfigError;
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
-        let Self { backends } = self;
-        backends
-            .try_into()
-            .map(|backends| LocalServerConfig { backends })
+        let Self {
+            backends,
+            dictionaries,
+        } = self;
+        let backends = if let Some(backends) = backends {
+            backends.try_into()?
+        } else {
+            BackendsConfig::default()
+        };
+        let dictionaries = if let Some(dictionaries) = dictionaries {
+            dictionaries.try_into()?
+        } else {
+            DictionariesConfig::default()
+        };
+
+        Ok(LocalServerConfig {
+            backends,
+            dictionaries,
+        })
     }
 }

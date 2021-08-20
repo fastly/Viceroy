@@ -1,6 +1,13 @@
 //! Error types.
 
-use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
+use {
+    crate::{
+        config::DictionaryName,
+        wiggle_abi::types::{DictionaryHandle, FastlyStatus},
+    },
+    url::Url,
+    wiggle::GuestError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -79,6 +86,15 @@ pub enum Error {
 
     #[error("Unknown backend: {0}")]
     UnknownBackend(String),
+
+    #[error("Unknown dictionary: {0}")]
+    UnknownDictionary(DictionaryName),
+
+    #[error("Unknown dictionary item: {0}")]
+    UnknownDictionaryItem(String),
+
+    #[error("Unknown dictionary handle: {0}")]
+    UnknownDictionaryHandle(DictionaryHandle),
 
     #[error{"Expected UTF-8"}]
     Utf8Expected(#[from] std::str::Utf8Error),
@@ -209,6 +225,13 @@ pub enum FastlyConfigError {
         err: BackendConfigError,
     },
 
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidDictionaryDefinition {
+        name: String,
+        #[source]
+        err: DictionaryConfigError,
+    },
+
     /// An error that occurred while deserializing the file.
     ///
     /// This represents errors caused by syntactically invalid TOML data, missing fields, etc.
@@ -254,6 +277,78 @@ pub enum BackendConfigError {
 
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
+}
+
+/// Errors that may occur while validating dictionary configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum DictionaryConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error("error reading `{name}`: {error}")]
+    IoError { name: String, error: String },
+
+    #[error("definition was not provided as a TOML table")]
+    InvalidEntryType,
+
+    #[error("invalid string: {0}")]
+    InvalidName(String),
+
+    #[error("'name' field was not a string")]
+    InvalidNameEntry,
+
+    #[error("'{0}' is not a valid format for the dictionary file. Supported format(s) are: JSON.")]
+    InvalidDictionaryFileFormat(String),
+
+    #[error("'file' field is empty")]
+    EmptyFileEntry,
+
+    #[error("'format' field is empty")]
+    EmptyFormatEntry,
+
+    #[error("'file' field was not a string")]
+    InvalidFileEntry,
+
+    #[error("'format' field was not a string")]
+    InvalidFormatEntry,
+
+    #[error("no default definition provided")]
+    MissingDefault,
+
+    #[error("missing 'name' field")]
+    MissingName,
+
+    #[error("missing 'file' field")]
+    MissingFile,
+
+    #[error("missing 'format' field")]
+    MissingFormat,
+
+    #[error("unrecognized key '{0}'")]
+    UnrecognizedKey(String),
+
+    #[error("Item key named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
+    DictionaryItemKeyTooLong {
+        key: String,
+        name: String,
+        size: i32,
+    },
+
+    #[error("The dictionary named '{name}' has too many items, max amount is {size}")]
+    DictionaryCountTooLong { name: String, size: i32 },
+
+    #[error("Item value under key named '{key}' in dictionary named '{name}' is of the wrong format. The value is expected to be a JSON String")]
+    DictionaryItemValueWrongFormat { key: String, name: String },
+
+    #[error(
+        "Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}"
+    )]
+    DictionaryItemValueTooLong {
+        key: String,
+        name: String,
+        size: i32,
+    },
+
+    #[error("The file for the dictionary named '{name}' is of the wrong format. The file is expected to contain a single JSON Object")]
+    DictionaryFileWrongFormat { name: String },
 }
 
 /// Errors related to the downstream request.

@@ -21,6 +21,7 @@ tracing-futures = "0.2.5"
 hyper = {version = "0.14.0", features = ["full"]}
 hyper-tls = "0.5.0"
 wat = "1.0.38"
+serde_json = "1.0.66"
 
 [dev-dependencies]
 anyhow = "1.0.31"
