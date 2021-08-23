@@ -252,6 +252,17 @@ impl Session {
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
+    /// Drop a [`Body`][crate::body::Body] from the [`Session`], given its [`BodyHandle`][crate::wiggle_abi::types::BodyHandle].
+    ///
+    /// Returns a [`HandleError`][crate::error::HandleError] if the handle is not associated with a body in the session.
+    pub fn drop_body(&mut self, handle: BodyHandle) -> Result<(), HandleError> {
+        self.bodies
+            .get_mut(handle)
+            .and_then(Option::take)
+            .map(drop)
+            .ok_or(HandleError::InvalidBodyHandle(handle))
+    }
+
     /// Transition a normal [`Body`][body] into the write end of a streaming body, returning
     /// the original body with the read end appended.
     ///

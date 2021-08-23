@@ -165,4 +165,11 @@ impl FastlyHttpResp for Session {
         resp.status = status;
         Ok(())
     }
+
+    fn close(&mut self, resp_handle: ResponseHandle) -> Result<(), Error> {
+        // We don't do anything with the parts, but we do pass the error up if
+        // the handle given doesn't exist
+        self.take_response_parts(resp_handle)?;
+        Ok(())
+    }
 }
