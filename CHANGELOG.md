@@ -1,5 +1,17 @@
 ## Unreleased
 
+## 0.2.3 (2021-08-23)
+
+### Additions
+- Added the close functionality for `RequestHandle`, `ResponseHandle`,
+  `BodyHandle`, and `StreamingBodyHandle` in the upcoming Rust C@E `0.8.0` SDK
+  release ([#65](https://github.com/fastly/Viceroy/pull/65))
+- Added local dictionary support so that C@E programs that need dictionaries can work in Viceroy ([#61](https://github.com/fastly/Viceroy/pull/61))
+- Added the ability to do host overrides from the TOML configuration ([#48](https://github.com/fastly/Viceroy/pull/48))
+
+### Changes
+- Viceroy now tracks the latest stable Rust which as of this release is 1.54.0
+
 ## 0.2.2 (2021-07-15)
 
 ### Enhancements
