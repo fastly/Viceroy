@@ -15,11 +15,9 @@ use {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryError {
-    #[error("Unknown dictionary item: {0}")]
-    UnknownDictionaryItem(String),
-
-    #[error("Unknown dictionary handle: {0}")]
-    UnknownDictionaryHandle(DictionaryHandle),
+    /// A dictionary item with the given key was not found.
+    #[error("Unknown dictionary item")]
+    UnknownDictionaryItem,
 }
 
 impl DictionaryError {
@@ -27,7 +25,7 @@ impl DictionaryError {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         use DictionaryError::*;
         match self {
-            UnknownDictionaryHandle(_) | UnknownDictionaryItem(_) => FastlyStatus::Error,
+            UnknownDictionaryItem => FastlyStatus::Error,
         }
     }
 }
@@ -55,9 +53,7 @@ impl FastlyDictionary for Session {
         let dict = self.dictionary(dictionary)?;
         let file = dict.file.clone();
         let obj = read_json_file(file);
-        let item = obj.get(key).ok_or_else(|| {
-            Error::DictionaryError(DictionaryError::UnknownDictionaryItem(key.to_string()))
-        })?;
+        let item = obj.get(key).ok_or(DictionaryError::UnknownDictionaryItem)?;
         let item = item.as_str().unwrap();
         let item_bytes = item.as_bytes();
 
