@@ -528,12 +528,17 @@ impl Session {
 
     /// Look up a dictionary by dictionary-handle.
     pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, Error> {
+        // FIXME KTM: this should return an `Result<Dictionary, HandleError>`.
         match self.dictionaries_by_name.get(handle) {
             Some(name) => match self.dictionaries.get(name) {
                 Some(dictionary) => Ok(dictionary),
-                None => Err(Error::UnknownDictionaryHandle(handle)),
+                None => Err(Error::DictionaryError(
+                    crate::wiggle_abi::DictionaryError::UnknownDictionaryHandle(handle),
+                )),
             },
-            None => Err(Error::UnknownDictionaryHandle(handle)),
+            None => Err(Error::DictionaryError(
+                crate::wiggle_abi::DictionaryError::UnknownDictionaryHandle(handle),
+            )),
         }
     }
 

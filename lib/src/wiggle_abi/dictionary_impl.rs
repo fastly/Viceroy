@@ -2,13 +2,41 @@
 
 use {
     crate::{
+        config::DictionaryName,
         error::Error,
         session::Session,
-        wiggle_abi::{fastly_dictionary::FastlyDictionary, types::DictionaryHandle},
+        wiggle_abi::{
+            fastly_dictionary::FastlyDictionary,
+            types::{DictionaryHandle, FastlyStatus},
+        },
     },
     std::{convert::TryFrom, fs, path::Path},
     wiggle::GuestPtr,
 };
+
+#[derive(Debug, thiserror::Error)]
+pub enum DictionaryError {
+    #[error("Unknown dictionary: {0}")]
+    UnknownDictionary(DictionaryName),
+
+    #[error("Unknown dictionary item: {0}")]
+    UnknownDictionaryItem(String),
+
+    #[error("Unknown dictionary handle: {0}")]
+    UnknownDictionaryHandle(DictionaryHandle),
+}
+
+impl DictionaryError {
+    /// Convert to an error code representation suitable for passing across the ABI boundary.
+    pub fn to_fastly_status(&self) -> FastlyStatus {
+        use DictionaryError::*;
+        match self {
+            UnknownDictionary(_) | UnknownDictionaryHandle(_) | UnknownDictionaryItem(_) => {
+                FastlyStatus::Error
+            }
+        }
+    }
+}
 
 fn read_json_file<P: AsRef<Path>>(file: P) -> serde_json::Map<String, serde_json::Value> {
     let data = fs::read_to_string(file).expect("Unable to read file");
@@ -33,9 +61,9 @@ impl FastlyDictionary for Session {
         let dict = self.dictionary(dictionary)?;
         let file = dict.file.clone();
         let obj = read_json_file(file);
-        let item = obj
-            .get(key)
-            .ok_or_else(|| Error::UnknownDictionaryItem(key.to_string()))?;
+        let item = obj.get(key).ok_or_else(|| {
+            Error::DictionaryError(DictionaryError::UnknownDictionaryItem(key.to_string()))
+        })?;
         let item = item.as_str().unwrap();
         let item_bytes = item.as_bytes();
 

@@ -2,8 +2,7 @@
 
 use {
     crate::{
-        config::DictionaryName,
-        wiggle_abi::types::{DictionaryHandle, FastlyStatus},
+        wiggle_abi::types::{FastlyStatus},
     },
     url::Url,
     wiggle::GuestError,
@@ -87,14 +86,8 @@ pub enum Error {
     #[error("Unknown backend: {0}")]
     UnknownBackend(String),
 
-    #[error("Unknown dictionary: {0}")]
-    UnknownDictionary(DictionaryName),
-
-    #[error("Unknown dictionary item: {0}")]
-    UnknownDictionaryItem(String),
-
-    #[error("Unknown dictionary handle: {0}")]
-    UnknownDictionaryHandle(DictionaryHandle),
+    #[error(transparent)]
+    DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
     #[error{"Expected UTF-8"}]
     Utf8Expected(#[from] std::str::Utf8Error),
@@ -130,6 +123,8 @@ impl Error {
             Error::HyperError(_) => FastlyStatus::Error,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
+            // We delegate to some error types' own implementation of `to_fastly_status`.
+            Error::DictionaryError(e) => e.to_fastly_status(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -148,9 +143,6 @@ impl Error {
             | Error::Other(_)
             | Error::StreamingChunkSend
             | Error::UnknownBackend(_)
-            | Error::UnknownDictionary(_)
-            | Error::UnknownDictionaryHandle(_)
-            | Error::UnknownDictionaryItem(_)
             | Error::Utf8Expected(_) => FastlyStatus::Error,
         }
     }
