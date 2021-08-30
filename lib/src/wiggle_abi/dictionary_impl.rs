@@ -25,7 +25,7 @@ impl DictionaryError {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         use DictionaryError::*;
         match self {
-            UnknownDictionaryItem => FastlyStatus::Error,
+            UnknownDictionaryItem => FastlyStatus::None,
         }
     }
 }
