@@ -2,7 +2,6 @@
 
 use {
     crate::{
-        config::DictionaryName,
         error::Error,
         session::Session,
         wiggle_abi::{
@@ -16,9 +15,6 @@ use {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryError {
-    #[error("Unknown dictionary: {0}")]
-    UnknownDictionary(DictionaryName),
-
     #[error("Unknown dictionary item: {0}")]
     UnknownDictionaryItem(String),
 
@@ -31,9 +27,7 @@ impl DictionaryError {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         use DictionaryError::*;
         match self {
-            UnknownDictionary(_) | UnknownDictionaryHandle(_) | UnknownDictionaryItem(_) => {
-                FastlyStatus::Error
-            }
+            UnknownDictionaryHandle(_) | UnknownDictionaryItem(_) => FastlyStatus::Error,
         }
     }
 }
