@@ -1,12 +1,6 @@
 //! Error types.
 
-use {
-    crate::{
-        wiggle_abi::types::{FastlyStatus},
-    },
-    url::Url,
-    wiggle::GuestError,
-};
+use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -192,6 +186,10 @@ pub enum HandleError {
     /// A request handle was not valid.
     #[error("Invalid pending request handle: {0}")]
     InvalidPendingRequestHandle(crate::wiggle_abi::types::PendingRequestHandle),
+
+    /// A dictionary handle was not valid.
+    #[error("Invalid dictionary handle: {0}")]
+    InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.
