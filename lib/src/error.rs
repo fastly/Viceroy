@@ -127,10 +127,31 @@ impl Error {
             Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
             Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,
             Error::HyperError(e) if e.is_incomplete_message() => FastlyStatus::Httpincomplete,
+            Error::HyperError(_) => FastlyStatus::Error,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // All other hostcall errors map to a generic `ERROR` value.
-            _ => FastlyStatus::Error,
+            Error::AbiVersionMismatch
+            | Error::BackendUrl(_)
+            | Error::DownstreamRequestError(_)
+            | Error::DownstreamRespSending
+            | Error::FastlyConfig(_)
+            | Error::FatalError(_)
+            | Error::FileFormat
+            | Error::Infallible(_)
+            | Error::InvalidHeaderName(_)
+            | Error::InvalidHeaderValue(_)
+            | Error::InvalidMethod(_)
+            | Error::InvalidUri(_)
+            | Error::IoError(_)
+            | Error::NotAvailable(_)
+            | Error::Other(_)
+            | Error::StreamingChunkSend
+            | Error::UnknownBackend(_)
+            | Error::UnknownDictionary(_)
+            | Error::UnknownDictionaryHandle(_)
+            | Error::UnknownDictionaryItem(_)
+            | Error::Utf8Expected(_) => FastlyStatus::Error,
         }
     }
 
