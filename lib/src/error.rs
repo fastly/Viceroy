@@ -1,13 +1,6 @@
 //! Error types.
 
-use {
-    crate::{
-        config::DictionaryName,
-        wiggle_abi::types::{DictionaryHandle, FastlyStatus},
-    },
-    url::Url,
-    wiggle::GuestError,
-};
+use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -87,14 +80,8 @@ pub enum Error {
     #[error("Unknown backend: {0}")]
     UnknownBackend(String),
 
-    #[error("Unknown dictionary: {0}")]
-    UnknownDictionary(DictionaryName),
-
-    #[error("Unknown dictionary item: {0}")]
-    UnknownDictionaryItem(String),
-
-    #[error("Unknown dictionary handle: {0}")]
-    UnknownDictionaryHandle(DictionaryHandle),
+    #[error(transparent)]
+    DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
     #[error{"Expected UTF-8"}]
     Utf8Expected(#[from] std::str::Utf8Error),
@@ -127,10 +114,30 @@ impl Error {
             Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
             Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,
             Error::HyperError(e) if e.is_incomplete_message() => FastlyStatus::Httpincomplete,
+            Error::HyperError(_) => FastlyStatus::Error,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
+            // We delegate to some error types' own implementation of `to_fastly_status`.
+            Error::DictionaryError(e) => e.to_fastly_status(),
             // All other hostcall errors map to a generic `ERROR` value.
-            _ => FastlyStatus::Error,
+            Error::AbiVersionMismatch
+            | Error::BackendUrl(_)
+            | Error::DownstreamRequestError(_)
+            | Error::DownstreamRespSending
+            | Error::FastlyConfig(_)
+            | Error::FatalError(_)
+            | Error::FileFormat
+            | Error::Infallible(_)
+            | Error::InvalidHeaderName(_)
+            | Error::InvalidHeaderValue(_)
+            | Error::InvalidMethod(_)
+            | Error::InvalidUri(_)
+            | Error::IoError(_)
+            | Error::NotAvailable(_)
+            | Error::Other(_)
+            | Error::StreamingChunkSend
+            | Error::UnknownBackend(_)
+            | Error::Utf8Expected(_) => FastlyStatus::Error,
         }
     }
 
@@ -179,6 +186,10 @@ pub enum HandleError {
     /// A request handle was not valid.
     #[error("Invalid pending request handle: {0}")]
     InvalidPendingRequestHandle(crate::wiggle_abi::types::PendingRequestHandle),
+
+    /// A dictionary handle was not valid.
+    #[error("Invalid dictionary handle: {0}")]
+    InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.

@@ -527,14 +527,11 @@ impl Session {
     }
 
     /// Look up a dictionary by dictionary-handle.
-    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, Error> {
-        match self.dictionaries_by_name.get(handle) {
-            Some(name) => match self.dictionaries.get(name) {
-                Some(dictionary) => Ok(dictionary),
-                None => Err(Error::UnknownDictionaryHandle(handle)),
-            },
-            None => Err(Error::UnknownDictionaryHandle(handle)),
-        }
+    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, HandleError> {
+        self.dictionaries_by_name
+            .get(handle)
+            .and_then(|name| self.dictionaries.get(name))
+            .ok_or(HandleError::InvalidDictionaryHandle(handle))
     }
 
     // ----- Pending Requests API -----
