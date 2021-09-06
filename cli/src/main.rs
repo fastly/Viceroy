@@ -40,61 +40,55 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         .with_log_stderr(opts.log_stderr())
         .with_log_stdout(opts.log_stdout());
 
-    if let Some(config_path) = opts.config_path() {
-        let config = FastlyConfig::from_file(config_path)?;
-        let backends = config.backends();
-        let dictionaries = config.dictionaries();
-        let backend_names = itertools::join(backends.keys(), ", ");
+    let config_path = opts.config_path();
+    let config = FastlyConfig::from_file(config_path)?;
+    let backends = config.backends();
+    let dictionaries = config.dictionaries();
+    let backend_names = itertools::join(backends.keys(), ", ");
 
-        ctx = ctx
-            .with_backends(backends.clone())
-            .with_dictionaries(dictionaries.clone())
-            .with_config_path(config_path.into());
+    ctx = ctx
+        .with_backends(backends.clone())
+        .with_dictionaries(dictionaries.clone())
+        .with_config_path(config_path.into());
 
-        if backend_names.is_empty() {
-            event!(
-                Level::WARN,
-                "no backend definitions found in {}",
-                config_path.display()
-            );
-        }
-
-        let client = Client::builder().build(HttpsConnector::new());
-        for (name, backend) in backends.iter() {
-            let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
-
-            event!(Level::INFO, "checking if backend '{}' is up", name);
-            match timeout(Duration::from_secs(5), client.request(req)).await {
-                // In the case that we don't time out but we have an error, we
-                // check that it's specifically a connection error as this is
-                // the only one that happens if the server is not up.
-                //
-                // We can't combine this with the case above due to needing the
-                // inner error to check if it's a connection error. The type
-                // checker complains about it.
-                Ok(Err(ref e)) if e.is_connect() => event!(
-                    Level::WARN,
-                    "backend '{}' on '{}' is not up right now",
-                    name,
-                    backend.uri
-                ),
-                // In the case we timeout we assume the backend is not up as 5
-                // seconds to do a simple get should be enough for a healthy
-                // service
-                Err(_) => event!(
-                    Level::WARN,
-                    "backend '{}' on '{}' is not up right now",
-                    name,
-                    backend.uri
-                ),
-                Ok(_) => event!(Level::INFO, "backend '{}' is up", name),
-            }
-        }
-    } else {
+    if backend_names.is_empty() {
         event!(
             Level::WARN,
-            "no configuration provided, invoke with `-C <TOML_FILE>` to provide a configuration"
+            "no backend definitions found in {}",
+            config_path.display()
         );
+    }
+
+    let client = Client::builder().build(HttpsConnector::new());
+    for (name, backend) in backends.iter() {
+        let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
+
+        event!(Level::INFO, "checking if backend '{}' is up", name);
+        match timeout(Duration::from_secs(5), client.request(req)).await {
+            // In the case that we don't time out but we have an error, we
+            // check that it's specifically a connection error as this is
+            // the only one that happens if the server is not up.
+            //
+            // We can't combine this with the case above due to needing the
+            // inner error to check if it's a connection error. The type
+            // checker complains about it.
+            Ok(Err(ref e)) if e.is_connect() => event!(
+                Level::WARN,
+                "backend '{}' on '{}' is not up right now",
+                name,
+                backend.uri
+            ),
+            // In the case we timeout we assume the backend is not up as 5
+            // seconds to do a simple get should be enough for a healthy
+            // service
+            Err(_) => event!(
+                Level::WARN,
+                "backend '{}' on '{}' is not up right now",
+                name,
+                backend.uri
+            ),
+            Ok(_) => event!(Level::INFO, "backend '{}' is up", name),
+        }
     }
 
     let addr = opts.addr();

@@ -57,8 +57,10 @@ impl Opts {
     }
 
     /// The path to a `local_server` configuration file.
-    pub fn config_path(&self) -> Option<&Path> {
-        self.config_path.as_deref()
+    pub fn config_path(&self) -> &Path {
+        self.config_path
+            .as_deref()
+            .unwrap_or_else(|| Path::new("./fastly.toml"))
     }
 
     /// Whether to treat stdout as a logging entpoint
