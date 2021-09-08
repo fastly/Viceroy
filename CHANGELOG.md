@@ -1,4 +1,7 @@
-## Unreleased
+## 0.2.4 (2021-09-08)
+
+- Improved error messages when a file could not be read. ([#70](https://github.com/fastly/Viceroy/pull/70))
+- Fixed a bug for dictionary lookups that returned and error rather than `None`. ([#69](https://github.com/fastly/Viceroy/pull/69))
 
 ## 0.2.3 (2021-08-23)
 
