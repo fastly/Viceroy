@@ -72,7 +72,10 @@ impl FastlyConfig {
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, FastlyConfigError> {
         fs::read_to_string(path.as_ref())
-            .map_err(Into::into)
+            .map_err(|err| FastlyConfigError::IoError {
+                path: path.as_ref().display().to_string(),
+                err,
+            })
             .and_then(Self::from_str)
     }
 

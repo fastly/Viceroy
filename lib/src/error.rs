@@ -222,12 +222,16 @@ pub(crate) enum ExecutionError {
     Instantiation(anyhow::Error),
 }
 
-/// Errors that can occur while parsing a `fastly.coml` file.
+/// Errors that can occur while parsing a `fastly.toml` file.
 #[derive(Debug, thiserror::Error)]
 pub enum FastlyConfigError {
     /// An I/O error that occured while reading the file.
-    #[error("error reading `fastly.toml`: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("error reading '{path}': {err}")]
+    IoError {
+        path: String,
+        #[source]
+        err: std::io::Error,
+    },
 
     #[error("invalid configuration for '{name}': {err}")]
     InvalidBackendDefinition {

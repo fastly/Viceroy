@@ -2,10 +2,18 @@ use crate::config::dictionaries::DictionaryFormat;
 
 use {
     super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
-    crate::config::DictionaryName,
+    crate::{config::DictionaryName, error::FastlyConfigError},
     std::{fs::File, io::Write},
     tempfile::tempdir,
 };
+
+#[test]
+fn error_when_fastly_toml_files_cannot_be_read() {
+    match FastlyConfig::from_file("nonexistent.toml") {
+        Err(FastlyConfigError::IoError { path, .. }) if path == "nonexistent.toml" => {}
+        res => panic!("unexpected result: {:?}", res),
+    }
+}
 
 #[test]
 fn fastly_toml_files_can_be_read() {
