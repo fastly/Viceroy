@@ -18,7 +18,7 @@ mod opts;
 use {
     crate::opts::Opts,
     hyper::{client::Client, Body, Request},
-    hyper_tls::HttpsConnector,
+    hyper_rustls::HttpsConnector,
     std::{
         env,
         io::{self, Stderr, Stdout},
@@ -59,7 +59,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
             );
         }
 
-        let client = Client::builder().build(HttpsConnector::new());
+        let client = Client::builder().build(HttpsConnector::with_native_roots());
         for (name, backend) in backends.iter() {
             let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
 
