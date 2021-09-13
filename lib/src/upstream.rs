@@ -31,10 +31,12 @@ impl Connector {
     }
 }
 
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 impl hyper::service::Service<Uri> for Connector {
     type Response = MaybeHttpsStream<TcpStream>;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, BoxError>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.https.poll_ready(cx)
