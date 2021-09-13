@@ -5,7 +5,8 @@ use crate::{
 use futures::Future;
 use http::uri;
 use hyper::{client::HttpConnector, Client, Request, Response, Uri};
-use hyper_tls::{HttpsConnecting, HttpsConnector, MaybeHttpsStream};
+use hyper_rustls::{HttpsConnector, MaybeHttpsStream};
+use std::pin::Pin;
 use std::task::{self, Poll};
 use tokio::{net::TcpStream, sync::oneshot};
 
@@ -25,15 +26,17 @@ impl Connector {
     fn new(backend: &Backend) -> Self {
         Self {
             backend_uri: backend.uri.clone(),
-            https: HttpsConnector::new(),
+            https: HttpsConnector::with_native_roots(),
         }
     }
 }
 
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 impl hyper::service::Service<Uri> for Connector {
     type Response = MaybeHttpsStream<TcpStream>;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-    type Future = HttpsConnecting<TcpStream>;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, BoxError>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.https.poll_ready(cx)
