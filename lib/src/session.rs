@@ -8,16 +8,18 @@ use {
     crate::{
         body::Body,
         config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
+        dns::DnsLookup,
         error::{Error, HandleError},
         logging::LogEndpoint,
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget},
         wiggle_abi::types::{
-            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle,
-            ResponseHandle,
+            BodyHandle, DictionaryHandle, DnsLookupHandle, EndpointHandle, PendingRequestHandle,
+            RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
+    dnsclient::r#async::DNSClient,
     http::{request, response, HeaderMap, Request, Response},
     std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc},
     tokio::sync::oneshot::Sender,
@@ -77,8 +79,12 @@ pub struct Session {
     ///
     /// Created prior to guest execution, and never modified.
     pub(crate) config_path: Arc<Option<PathBuf>>,
+    /// A handle map for pending DNS lookups.
+    dns_lookups: PrimaryMap<DnsLookupHandle, Option<DnsLookup>>,
     /// The ID for the client request being processed.
     req_id: u64,
+    /// The DNS client.
+    dns_client: DNSClient,
 }
 
 impl Session {
@@ -116,7 +122,9 @@ impl Session {
             dictionaries,
             dictionaries_by_name: PrimaryMap::new(),
             config_path,
+            dns_lookups: PrimaryMap::new(),
             req_id,
+            dns_client: DNSClient::new_with_system_resolvers().expect("DNS resolver"),
         }
     }
 
@@ -528,6 +536,18 @@ impl Session {
             .ok_or(HandleError::InvalidDictionaryHandle(handle))
     }
 
+    // ----- DNS lookups -----
+    pub fn insert_dns_lookup(&mut self, pending: DnsLookup) -> DnsLookupHandle {
+        self.dns_lookups.push(Some(pending))
+    }
+
+    pub fn take_dns_lookup(&mut self, handle: DnsLookupHandle) -> Result<DnsLookup, HandleError> {
+        self.dns_lookups
+            .get_mut(handle)
+            .and_then(Option::take)
+            .ok_or(HandleError::InvalidDnsLookupHandle(handle))
+    }
+
     // ----- Pending Requests API -----
 
     /// Insert a [`PendingRequest`] into the session.
@@ -625,6 +645,11 @@ impl Session {
     /// Returns the unique identifier for the request this session is processing.
     pub fn req_id(&self) -> u64 {
         self.req_id
+    }
+
+    /// Returns the DNS client.
+    pub fn dns_client(&self) -> &DNSClient {
+        &self.dns_client
     }
 }
 

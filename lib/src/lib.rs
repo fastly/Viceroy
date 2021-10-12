@@ -19,6 +19,7 @@ pub mod error;
 pub mod logging;
 pub mod session;
 
+mod dns;
 mod downstream;
 mod execute;
 mod headers;

@@ -45,6 +45,7 @@ macro_rules! multi_value_result {
 
 mod body_impl;
 mod dictionary_impl;
+mod dns_impl;
 mod entity;
 mod geo_impl;
 mod headers;
@@ -62,6 +63,7 @@ wiggle::from_witx!({
     async: {
         fastly_http_body::{append, read, write},
         fastly_http_req::{pending_req_select, pending_req_wait, send},
+        fastly_dns::{lookup_addr, lookup_reverse, lookup_txt, lookup_wait, lookup_raw, lookup_wait_raw},
     }
 });
 

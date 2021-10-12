@@ -94,6 +94,9 @@ pub enum Error {
 
     #[error("{0} is not currently supported for local testing")]
     NotAvailable(&'static str),
+
+    #[error("DNS lookup error")]
+    LookupError,
 }
 
 impl Error {
@@ -137,7 +140,8 @@ impl Error {
             | Error::Other(_)
             | Error::StreamingChunkSend
             | Error::UnknownBackend(_)
-            | Error::Utf8Expected(_) => FastlyStatus::Error,
+            | Error::Utf8Expected(_)
+            | Error::LookupError => FastlyStatus::Error,
         }
     }
 
@@ -190,6 +194,10 @@ pub enum HandleError {
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
+
+    /// A DNS lookup handle was not valid.
+    #[error("Invalid DNS lookup handle: {0}")]
+    InvalidDnsLookupHandle(crate::wiggle_abi::types::DnsLookupHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.
