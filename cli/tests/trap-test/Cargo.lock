@@ -296,18 +296,18 @@ dependencies = [
 
 [[package]]
 name = "cranelift-entity"
-version = "0.65.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f07eb8aa0a5da94b56339e4e3052c496a3df4354357cd5da8c7b02c6e8f1dc1d"
-
-[[package]]
-name = "cranelift-entity"
 version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3329733e4d4b8e91c809efcaa4faee80bf66f20164e3dd16d707346bd3494799"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "cranelift-entity"
+version = "0.77.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48868faa07cacf948dc4a1773648813c0e453ff9467e800ff10f6a78c021b546"
 
 [[package]]
 name = "cranelift-frontend"
@@ -1863,7 +1863,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "cfg-if",
- "cranelift-entity 0.65.0",
+ "cranelift-entity 0.77.0",
  "fastly-shared",
  "futures",
  "http",
