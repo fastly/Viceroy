@@ -1,10 +1,10 @@
 //! Session type and related facilities.
 
-mod body_variant;
+mod async_item;
 mod downstream;
 
 use {
-    self::{body_variant::BodyVariant, downstream::DownstreamResponse},
+    self::{async_item::AsyncItem, downstream::DownstreamResponse},
     crate::{
         body::Body,
         config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
@@ -17,7 +17,7 @@ use {
             ResponseHandle,
         },
     },
-    cranelift_entity::PrimaryMap,
+    cranelift_entity::{entity_impl, PrimaryMap},
     http::{request, response, HeaderMap, Request, Response},
     std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc},
     tokio::sync::oneshot::Sender,
@@ -44,12 +44,9 @@ pub struct Session {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     downstream_resp: DownstreamResponse,
-    /// A handle map for the session's HTTP request and response bodies. These bodies are
-    /// represented as a [`BodyVariant`][body_variant]s, since the same handle is used for
-    /// both a full body, and the write end of a streaming body.
-    ///
-    /// [body_variant]: struct.BodyVariant.html
-    bodies: PrimaryMap<BodyHandle, Option<BodyVariant>>,
+    /// A handle map for items that provide blocking operations. These items are grouped together
+    /// in order to support generic async operations that work across different object typees.
+    async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
     /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Request`][req]s.
     ///
     /// [parts]: https://docs.rs/http/latest/http/request/struct.Parts.html
@@ -80,8 +77,6 @@ pub struct Session {
     ///
     /// Created prior to guest execution, and never modified.
     pub(crate) config_path: Arc<Option<PathBuf>>,
-    /// A handle map for pending asynchronous requests.
-    pending_reqs: PrimaryMap<PendingRequestHandle, Option<PendingRequest>>,
     /// The ID for the client request being processed.
     req_id: u64,
 }
@@ -100,18 +95,18 @@ impl Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
 
-        let mut bodies = PrimaryMap::new();
+        let mut async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>> = PrimaryMap::new();
         let mut req_parts = PrimaryMap::new();
 
         let downstream_req_handle = req_parts.push(Some(parts));
-        let downstream_req_body_handle = bodies.push(Some(BodyVariant::Body(body)));
+        let downstream_req_body_handle = async_items.push(Some(AsyncItem::Body(body))).into();
 
         Session {
             downstream_client_ip: client_ip,
             downstream_req_handle,
             downstream_req_body_handle,
             downstream_req_original_headers,
-            bodies,
+            async_items,
             req_parts,
             resp_parts: PrimaryMap::new(),
             downstream_resp: DownstreamResponse::new(resp_sender),
@@ -121,7 +116,6 @@ impl Session {
             dictionaries,
             dictionaries_by_name: PrimaryMap::new(),
             config_path,
-            pending_reqs: PrimaryMap::new(),
             req_id,
         }
     }
@@ -204,7 +198,7 @@ impl Session {
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     /// [body]: ../body/struct.Body.html
     pub fn insert_body(&mut self, body: Body) -> BodyHandle {
-        self.bodies.push(Some(BodyVariant::Body(body)))
+        self.async_items.push(Some(AsyncItem::Body(body))).into()
     }
 
     /// Get a reference to a [`Body`][body], given its [`BodyHandle`][handle].
@@ -215,10 +209,10 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn body(&self, handle: BodyHandle) -> Result<&Body, HandleError> {
-        self.bodies
-            .get(handle)
+        self.async_items
+            .get(handle.into())
             .and_then(Option::as_ref)
-            .and_then(BodyVariant::as_body)
+            .and_then(AsyncItem::as_body)
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
@@ -230,10 +224,10 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn body_mut(&mut self, handle: BodyHandle) -> Result<&mut Body, HandleError> {
-        self.bodies
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::as_mut)
-            .and_then(BodyVariant::as_body_mut)
+            .and_then(AsyncItem::as_body_mut)
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
@@ -245,10 +239,10 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn take_body(&mut self, handle: BodyHandle) -> Result<Body, HandleError> {
-        self.bodies
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::take)
-            .and_then(BodyVariant::into_body)
+            .and_then(AsyncItem::into_body)
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
@@ -256,8 +250,8 @@ impl Session {
     ///
     /// Returns a [`HandleError`][crate::error::HandleError] if the handle is not associated with a body in the session.
     pub fn drop_body(&mut self, handle: BodyHandle) -> Result<(), HandleError> {
-        self.bodies
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::take)
             .map(drop)
             .ok_or(HandleError::InvalidBodyHandle(handle))
@@ -271,10 +265,10 @@ impl Session {
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
     pub fn begin_streaming(&mut self, handle: BodyHandle) -> Result<Body, HandleError> {
-        self.bodies
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::as_mut)
-            .and_then(BodyVariant::begin_streaming)
+            .and_then(AsyncItem::begin_streaming)
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
@@ -283,7 +277,7 @@ impl Session {
     /// To get a mutable reference to the streaming body `Sender`, see
     /// [`Session::streaming_body_mut`](struct.Session.html#method.streaming_body_mut).
     pub fn is_streaming_body(&self, handle: BodyHandle) -> bool {
-        if let Some(Some(body)) = self.bodies.get(handle) {
+        if let Some(Some(body)) = self.async_items.get(handle.into()) {
             body.is_streaming()
         } else {
             false
@@ -303,10 +297,10 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<&mut StreamingBody, HandleError> {
-        self.bodies
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::as_mut)
-            .and_then(BodyVariant::as_streaming_mut)
+            .and_then(AsyncItem::as_streaming_mut)
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
@@ -323,10 +317,10 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<StreamingBody, HandleError> {
-        self.bodies
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::take)
-            .and_then(BodyVariant::into_streaming)
+            .and_then(AsyncItem::into_streaming)
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
@@ -541,7 +535,9 @@ impl Session {
     /// This method returns a new [`PendingRequestHandle`], which can then be used to access
     /// and mutate the pending request.
     pub fn insert_pending_request(&mut self, pending: PendingRequest) -> PendingRequestHandle {
-        self.pending_reqs.push(Some(pending))
+        self.async_items
+            .push(Some(AsyncItem::PendingReq(pending)))
+            .into()
     }
 
     /// Get a reference to a [`PendingRequest`], given its [`PendingRequestHandle`].
@@ -552,9 +548,10 @@ impl Session {
         &self,
         handle: PendingRequestHandle,
     ) -> Result<&PendingRequest, HandleError> {
-        self.pending_reqs
-            .get(handle)
+        self.async_items
+            .get(handle.into())
             .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_req)
             .ok_or(HandleError::InvalidPendingRequestHandle(handle))
     }
 
@@ -566,9 +563,10 @@ impl Session {
         &mut self,
         handle: PendingRequestHandle,
     ) -> Result<&mut PendingRequest, HandleError> {
-        self.pending_reqs
-            .get_mut(handle)
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_req_mut)
             .ok_or(HandleError::InvalidPendingRequestHandle(handle))
     }
 
@@ -580,9 +578,13 @@ impl Session {
         &mut self,
         handle: PendingRequestHandle,
     ) -> Result<PendingRequest, HandleError> {
-        self.pending_reqs
-            .get_mut(handle)
+        // check that this is a pending request before removing it
+        let _ = self.pending_request(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
             .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_req)
             .ok_or(HandleError::InvalidPendingRequestHandle(handle))
     }
 
@@ -615,12 +617,48 @@ impl Session {
     /// stored within each [`SelectTarget`].
     pub fn reinsert_select_targets(&mut self, targets: Vec<SelectTarget>) {
         for target in targets {
-            self.pending_reqs[target.handle] = Some(target.pending_req);
+            let async_handle: AsyncItemHandle = target.handle.into();
+            self.async_items[async_handle] = Some(AsyncItem::PendingReq(target.pending_req));
         }
     }
 
     /// Returns the unique identifier for the request this session is processing.
     pub fn req_id(&self) -> u64 {
         self.req_id
+    }
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[repr(transparent)]
+pub struct AsyncItemHandle(u32);
+
+entity_impl!(AsyncItemHandle, "async_item");
+
+// The ABI uses distinct entity types for each kind of async item because most host calls operate on
+// only one type at a type. But the underlying tables for all async items are combined, so the handles
+// are interchangeable. Keeping them as separate types helps ensure intentional view shifts between
+// them, using `.into()`.
+
+impl From<BodyHandle> for AsyncItemHandle {
+    fn from(h: BodyHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for BodyHandle {
+    fn from(h: AsyncItemHandle) -> BodyHandle {
+        BodyHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingRequestHandle> for AsyncItemHandle {
+    fn from(h: PendingRequestHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingRequestHandle {
+    fn from(h: AsyncItemHandle) -> PendingRequestHandle {
+        PendingRequestHandle::from(h.as_u32())
     }
 }
