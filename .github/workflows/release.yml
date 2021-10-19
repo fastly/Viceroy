@@ -39,12 +39,17 @@ jobs:
         uses: olegtarasov/get-tag@v2.1
         id: tagName
 
-      - name: Build and package
+      - name: Build
         run: |
           cargo build --all --release --locked
           cd target/release
-          strip viceroy
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ martrix.arch }}.tar.gz viceroy
+
+      - name: Strip
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: strip viceroy
+
+      - name: Package
+        run: tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ martrix.arch }}.tar.gz viceroy
 
       - name: Release
         uses: softprops/action-gh-release@v1
