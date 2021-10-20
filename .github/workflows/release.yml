@@ -20,6 +20,7 @@ jobs:
             rust-target: x86_64-apple-darwin
           - os: windows-latest
             name: windows
+            extension: .exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -45,10 +46,9 @@ jobs:
           cd target/release
 
       - name: Package
-        if: ${{ matrix.os != 'windows-latest' }}
         run: |
-          strip viceroy
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ martrix.arch }}.tar.gz viceroy
+          strip viceroy${{ matrix.extension }}
+          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ martrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
