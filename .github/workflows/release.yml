@@ -48,12 +48,12 @@ jobs:
       - name: Package
         run: |
           strip viceroy${{ matrix.extension }}
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ martrix.arch }}.tar.gz viceroy${{ matrix.extension }}
+          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ martrix.arch }}.tar.gz
+            target/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
