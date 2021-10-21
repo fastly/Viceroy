@@ -9,13 +9,13 @@ Below are the steps needed to do a Viceroy release:
 1. Update the `Cargo.lock` files by running `cargo update --workspace` in the
    root directory and by going into the `test-fixtures` and
    `cli/tests/trap-test` folders and running the same command there.
-1. Update the Changelog so that it contains all of the updates since the
-   previous version as it's own commit
+1. Update `CHANGELOG.md` so that it contains all of the updates since the
+   previous version as its own commit.
 1. Push a branch in the form `release-x.y.z` where `x`, `y`, and `z` are the
    major, minor, and patch versions of Viceroy and have the tip of the branch
    contain the Changelog commit.
 1. Run `make ci` locally to make sure that everything will pass before pushing
-   the branch and opening up a PR
+   the branch and opening up a PR.
 1. Publish each crate in the workspace. Note that we must do this in order of
    dependencies. So,
   1. `cd lib && cargo publish`
@@ -25,5 +25,5 @@ Below are the steps needed to do a Viceroy release:
    to kick off the build for all of the artifacts.
 1. When that is good and completes, push a commit to the branch that bumps
    Viceroy to the next patch version (so `z + 1`) and updates all the lockfiles
-   again
-1. Get approval again and merge when CI passes
+   again.
+1. Get approval again and merge when CI passes.
