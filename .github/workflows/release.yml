@@ -6,8 +6,22 @@ on:
       - 'v*.*.*'
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        rust-toolchain: [stable]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: amd64
+        include:
+          - os: ubuntu-latest
+            name: linux
+          - os: macos-latest
+            name: darwin
+            rust-target: x86_64-apple-darwin
+          - os: windows-latest
+            name: windows
+            extension: .exe
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -17,7 +31,8 @@ jobs:
       - name: Install latest Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust-toolchain }}
+          target: ${{ matrix.rust-target }}
           default: true
           override: true
 
@@ -25,52 +40,20 @@ jobs:
         uses: olegtarasov/get-tag@v2.1
         id: tagName
 
-      - name: Build and package
+      - name: Build
         run: |
           cargo build --all --release --locked
+
+      - name: Package
+        run: |
           cd target/release
-          strip viceroy
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz viceroy
+          strip viceroy${{ matrix.extension }}
+          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/release/viceroy_${{ steps.tagName.outputs.tag }}_linux-amd64.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          submodules: true
-
-      - name: Install latest Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-apple-darwin
-          default: true
-          override: true
-
-      - name: Extract tag name
-        uses: olegtarasov/get-tag@v2.1
-        id: tagName
-
-      - name: Build and package
-        run: |
-          cargo build --all --release --locked
-          cd target/release
-          strip viceroy
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz viceroy
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            target/release/viceroy_${{ steps.tagName.outputs.tag }}_darwin-amd64.tar.gz
+            target/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
