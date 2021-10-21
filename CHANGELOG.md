@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.2.5 (2021-10-21)
+
+- Replaced `hyper-tls` with `hyper-rustls`. ([#75](https://github.com/fastly/Viceroy/pull/75))
+- Unknown dictionary items are now logged at debug level. ([#80](https://github.com/fastly/Viceroy/pull/80))
+- Windows releases are now built in CI. ([#82](https://github.com/fastly/Viceroy/pull/82))
+
 ## 0.2.4 (2021-09-08)
 
 - Improved error messages when a file could not be read. ([#70](https://github.com/fastly/Viceroy/pull/70))
