@@ -111,11 +111,17 @@ pub async fn main() -> Result<(), Error> {
 
     install_tracing_subscriber(&opts);
 
-    if let Err(e) = serve(opts).await {
-        event!(Level::ERROR, "{}", e);
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            Ok(())
+        }
+        res = serve(opts) => {
+            if let Err(ref e) = res {
+                event!(Level::ERROR, "{}", e);
+            }
+            res
+        }
     }
-
-    Ok(())
 }
 
 fn install_tracing_subscriber(opts: &Opts) {
