@@ -346,7 +346,7 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // synchronously send the request
-        let resp = upstream::send_request(req, backend)?.await?;
+        let resp = upstream::send_request(req, backend).await?;
         Ok(self.insert_response(resp))
     }
 
@@ -368,7 +368,7 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req = PendingRequest::spawn(upstream::send_request(req, backend)?);
+        let pending_req = PendingRequest::spawn(upstream::send_request(req, backend));
 
         // return a handle to the pending request
         Ok(self.insert_pending_request(pending_req))
@@ -392,7 +392,7 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req = PendingRequest::spawn(upstream::send_request(req, backend)?);
+        let pending_req = PendingRequest::spawn(upstream::send_request(req, backend));
 
         // return a handle to the pending request
         Ok(self.insert_pending_request(pending_req))
