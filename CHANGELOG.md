@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.2.6 (2021-11-15)
+
+- Catch interrupt signals ([#85](https://github.com/fastly/Viceroy/pull/85))
+- Include aarch64 tarballs for Linux and macOS ([#88](https://github.com/fastly/Viceroy/pull/88))
+- Align URI and Host header semantics with production C@E ([#90](https://github.com/fastly/Viceroy/pull/90))
+
 ## 0.2.5 (2021-10-21)
 
 - Replaced `hyper-tls` with `hyper-rustls`. ([#75](https://github.com/fastly/Viceroy/pull/75))
