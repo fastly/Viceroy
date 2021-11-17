@@ -167,6 +167,10 @@ impl ExecuteCtx {
     /// instantiated module's WASI entry point, running to completion. If execution
     /// results in an error, a response is still produced, but with a 500 status code.
     ///
+    /// Build time: Before you build or test your code, we recommend to set the release flag
+    /// e.g. `cargo test --release` otherwise the execution will be very slow. This has to do
+    /// with the Cranelift compiler, which is extremely slow when compiled in debug mode.
+    ///
     /// # Example
     ///
     /// ```no_run
