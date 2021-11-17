@@ -30,6 +30,10 @@ To install Viceroy as a standalone tool, you'll need to first
 Then run `cargo install viceroy`, which will download and build the latest
 Viceroy release.
 
+## Usage as a library
+
+Viceroy can be used as a [Rust library](https://docs.rs/viceroy-lib/). This is useful if you want to run integration tests in the same codebase. We provide a helper method [`handle_request`](https://docs.rs/viceroy-lib/0.2.6/viceroy_lib/struct.ExecuteCtx.html#method.handle_request). Before you build or test your code, we recommend to set the release flag e.g. `cargo test --release` otherwise, the execution will be very slow. This has to do with the Cranelift compiler, which is extremely slow when compiled in debug mode. Besides that, if you use Github Actions don't forget to setup a build [cache](https://github.com/actions/cache/blob/main/examples.md#rust---cargo) for Rust. This will speed up your build times a lot.
+
 ## Usage as a standalone tool
 
 **NOTE**: the Viceroy standalone CLI has a somewhat different interface from that
