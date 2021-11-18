@@ -18,7 +18,6 @@ mod opts;
 use {
     crate::opts::Opts,
     hyper::{client::Client, Body, Request},
-    hyper_rustls::HttpsConnector,
     std::{
         env,
         io::{self, Stderr, Stdout},
@@ -28,7 +27,7 @@ use {
     tokio::time::timeout,
     tracing::{event, Level, Metadata},
     tracing_subscriber::{filter::EnvFilter, fmt::writer::MakeWriter, FmtSubscriber},
-    viceroy_lib::{config::FastlyConfig, Error, ExecuteCtx, ViceroyService},
+    viceroy_lib::{config::FastlyConfig, BackendConnector, Error, ExecuteCtx, ViceroyService},
 };
 
 /// Starts up a Viceroy server.
@@ -59,8 +58,8 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
             );
         }
 
-        let client = Client::builder().build(HttpsConnector::with_native_roots());
         for (name, backend) in backends.iter() {
+            let client = Client::builder().build(BackendConnector::new(backend));
             let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
 
             event!(Level::INFO, "checking if backend '{}' is up", name);

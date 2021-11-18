@@ -18,13 +18,13 @@ use tokio::{net::TcpStream, sync::oneshot};
 /// This connector internally wraps Hyper's TLS connector, automatically providing TLS-based
 /// connections when indicated by the backend URI's scheme.
 #[derive(Debug, Clone)]
-struct Connector {
+pub struct BackendConnector {
     backend_uri: Uri,
     https: HttpsConnector<HttpConnector>,
 }
 
-impl Connector {
-    fn new(backend: &Backend) -> Self {
+impl BackendConnector {
+    pub fn new(backend: &Backend) -> Self {
         Self {
             backend_uri: backend.uri.clone(),
             https: HttpsConnector::with_native_roots(),
@@ -34,7 +34,7 @@ impl Connector {
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-impl hyper::service::Service<Uri> for Connector {
+impl hyper::service::Service<Uri> for BackendConnector {
     type Response = MaybeHttpsStream<TcpStream>;
     type Error = BoxError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, BoxError>> + Send>>;
@@ -118,7 +118,7 @@ pub fn send_request(
     mut req: Request<Body>,
     backend: &Backend,
 ) -> impl Future<Output = Result<Response<Body>, Error>> {
-    let connector = Connector::new(backend);
+    let connector = BackendConnector::new(backend);
 
     let host = canonical_host_header(req.headers(), req.uri(), backend);
     let uri = canonical_uri(

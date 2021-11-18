@@ -28,4 +28,4 @@ mod streaming_body;
 mod upstream;
 mod wiggle_abi;
 
-pub use {error::Error, execute::ExecuteCtx, service::ViceroyService};
+pub use {error::Error, execute::ExecuteCtx, service::ViceroyService, upstream::BackendConnector};
