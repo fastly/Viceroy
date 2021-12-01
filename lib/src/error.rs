@@ -94,6 +94,9 @@ pub enum Error {
 
     #[error("{0} is not currently supported for local testing")]
     NotAvailable(&'static str),
+
+    #[error("Could not load native certificates: {0}")]
+    BadCerts(std::io::Error),
 }
 
 impl Error {
@@ -122,6 +125,7 @@ impl Error {
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
+            | Error::BadCerts(_)
             | Error::DownstreamRequestError(_)
             | Error::DownstreamRespSending
             | Error::FastlyConfig(_)

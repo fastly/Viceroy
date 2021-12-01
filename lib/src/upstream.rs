@@ -5,11 +5,20 @@ use crate::{
 use futures::Future;
 use http::{uri, HeaderValue};
 use hyper::{client::HttpConnector, Client, HeaderMap, Request, Response, Uri};
-use hyper_rustls::{HttpsConnector, MaybeHttpsStream};
-use std::pin::Pin;
-use std::str::FromStr;
-use std::task::{self, Poll};
-use tokio::{net::TcpStream, sync::oneshot};
+use std::{
+    io,
+    pin::Pin,
+    str::FromStr,
+    sync::Arc,
+    task::{self, Context, Poll},
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::TcpStream,
+    sync::oneshot,
+};
+use tokio_rustls::{client::TlsStream, TlsConnector};
+use webpki::DNSNameRef;
 
 /// A custom Hyper client connector, which is needed to override Hyper's default behavior of
 /// connecting to host specified by the request's URI; we instead want to connect to the host
@@ -17,36 +26,63 @@ use tokio::{net::TcpStream, sync::oneshot};
 ///
 /// This connector internally wraps Hyper's TLS connector, automatically providing TLS-based
 /// connections when indicated by the backend URI's scheme.
-#[derive(Debug, Clone)]
-struct Connector {
+#[derive(Clone)]
+pub struct BackendConnector {
     backend_uri: Uri,
-    https: HttpsConnector<HttpConnector>,
+    http: HttpConnector,
+    tls_config: Arc<rustls::ClientConfig>,
 }
 
-impl Connector {
-    fn new(backend: &Backend) -> Self {
+impl BackendConnector {
+    pub fn new(backend: &Backend, tls_config: Arc<rustls::ClientConfig>) -> Self {
+        let mut http = HttpConnector::new();
+        http.enforce_http(false);
+
         Self {
             backend_uri: backend.uri.clone(),
-            https: HttpsConnector::with_native_roots(),
+            http,
+            tls_config,
         }
     }
 }
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-impl hyper::service::Service<Uri> for Connector {
-    type Response = MaybeHttpsStream<TcpStream>;
+pub enum Connection {
+    Http(TcpStream),
+    Https(Box<TlsStream<TcpStream>>),
+}
+
+impl hyper::service::Service<Uri> for BackendConnector {
+    type Response = Connection;
     type Error = BoxError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, BoxError>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.https.poll_ready(cx)
+        self.http.poll_ready(cx).map_err(Into::into)
     }
 
+    // We ignore the URI argument and instead provide the backend's URI.
+    // NB this does _not_ affect the URI provided in the request itself.
     fn call(&mut self, _: Uri) -> Self::Future {
-        // here we ignore the URI argument and instead provide the backend's URI.
-        // NB this does _not_ affect the URI provided in the request itself.
-        self.https.call(self.backend_uri.clone())
+        let uri = self.backend_uri.clone();
+        let config = self.tls_config.clone();
+        let hostname = uri.host().unwrap_or_default().to_string();
+        let is_https = uri.scheme_str() == Some("https");
+
+        let connect_fut = self.http.call(uri);
+        Box::pin(async move {
+            let tcp = connect_fut.await.map_err(Box::new)?;
+
+            if is_https {
+                let connector = TlsConnector::from(config);
+                let dnsname = DNSNameRef::try_from_ascii_str(&hostname).map_err(Box::new)?;
+                let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+                Ok(Connection::Https(Box::new(tls)))
+            } else {
+                Ok(Connection::Http(tcp))
+            }
+        })
     }
 }
 
@@ -117,8 +153,9 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
 pub fn send_request(
     mut req: Request<Body>,
     backend: &Backend,
+    tls_config: &Arc<rustls::ClientConfig>,
 ) -> impl Future<Output = Result<Response<Body>, Error>> {
-    let connector = Connector::new(backend);
+    let connector = BackendConnector::new(backend, tls_config.clone());
 
     let host = canonical_host_header(req.headers(), req.uri(), backend);
     let uri = canonical_uri(
@@ -207,5 +244,53 @@ impl Future for SelectTarget {
         std::pin::Pin::new(&mut self.pending_req.receiver)
             .poll(cx)
             .map(|res| res.expect("Pending request receiver was dropped"))
+    }
+}
+
+// Boilerplate forwarding implementations for `Connection`:
+
+impl hyper::client::connect::Connection for Connection {
+    fn connected(&self) -> hyper::client::connect::Connected {
+        hyper::client::connect::Connected::new()
+    }
+}
+
+impl AsyncRead for Connection {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        match Pin::get_mut(self) {
+            Connection::Http(s) => Pin::new(s).poll_read(cx, buf),
+            Connection::Https(s) => Pin::new(s).poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for Connection {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        match Pin::get_mut(self) {
+            Connection::Http(s) => Pin::new(s).poll_write(cx, buf),
+            Connection::Https(s) => Pin::new(s).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        match Pin::get_mut(self) {
+            Connection::Http(s) => Pin::new(s).poll_flush(cx),
+            Connection::Https(s) => Pin::new(s).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        match Pin::get_mut(self) {
+            Connection::Http(s) => Pin::new(s).poll_shutdown(cx),
+            Connection::Https(s) => Pin::new(s).poll_shutdown(cx),
+        }
     }
 }

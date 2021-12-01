@@ -107,9 +107,9 @@ impl UserErrorConversion for Session {
     fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, wiggle::Trap> {
         match e {
             Error::UnknownBackend(ref backend) => {
-                let config_path = &self.config_path;
-                let backends_buffer = itertools::join(self.backends.keys(), ",");
-                let backends_len = self.backends.len();
+                let config_path = &self.config_path();
+                let backends_buffer = itertools::join(self.backends().keys(), ",");
+                let backends_len = self.backends().len();
 
                 match (backends_len, (**config_path).as_ref()) {
                     (_, None) => event!(

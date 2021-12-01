@@ -19,7 +19,6 @@ tracing = "0.1.26"
 tracing-subscriber = "0.2.19"
 tracing-futures = "0.2.5"
 hyper = {version = "0.14.0", features = ["full"]}
-hyper-rustls = "0.22.1"
 wat = "1.0.38"
 serde_json = "1.0.66"
 
