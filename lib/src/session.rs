@@ -64,15 +64,15 @@ pub struct Session {
     /// The backends configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    pub(crate) backends: Arc<Backends>,
+    backends: Arc<Backends>,
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    pub(crate) tls_config: Arc<rustls::ClientConfig>,
+    tls_config: Arc<rustls::ClientConfig>,
     /// The dictionaries configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    pub(crate) dictionaries: Arc<Dictionaries>,
+    dictionaries: Arc<Dictionaries>,
     /// The dictionaries configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -80,7 +80,7 @@ pub struct Session {
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
-    pub(crate) config_path: Arc<Option<PathBuf>>,
+    config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
 }
@@ -520,9 +520,14 @@ impl Session {
         self.backends.get(name).map(std::ops::Deref::deref)
     }
 
+    /// Access the backend map.
+    pub fn backends(&self) -> &Arc<Backends> {
+        &self.backends
+    }
+
     // ----- TLS config -----
 
-    /// Reference the TLS configuration.
+    /// Access the TLS configuration.
     pub fn tls_config(&self) -> &Arc<rustls::ClientConfig> {
         &self.tls_config
     }
@@ -541,6 +546,11 @@ impl Session {
             .get(handle)
             .and_then(|name| self.dictionaries.get(name))
             .ok_or(HandleError::InvalidDictionaryHandle(handle))
+    }
+
+    /// Access the dictionary map.
+    pub fn dictionaries(&self) -> &Arc<Dictionaries> {
+        &self.dictionaries
     }
 
     // ----- Pending Requests API -----
@@ -640,6 +650,11 @@ impl Session {
     /// Returns the unique identifier for the request this session is processing.
     pub fn req_id(&self) -> u64 {
         self.req_id
+    }
+
+    /// Access the path to the configuration file for this invocation.
+    pub fn config_path(&self) -> &Arc<Option<PathBuf>> {
+        &self.config_path
     }
 }
 
