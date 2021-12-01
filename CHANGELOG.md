@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.2.7 (2021-12-01)
+
+- Disable ALPN by using rustls more directly ([#100](https://github.com/fastly/Viceroy/pull/100))
+
 ## 0.2.6 (2021-11-15)
 
 - Catch interrupt signals ([#85](https://github.com/fastly/Viceroy/pull/85))
