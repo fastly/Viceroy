@@ -36,6 +36,8 @@ pub struct ExecuteCtx {
     instance_pre: Arc<InstancePre<WasmCtx>>,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// Preloaded TLS certificates and configuration
+    tls_config: Arc<rustls::ClientConfig>,
     /// The dictionaries for this execution.
     dictionaries: Arc<Dictionaries>,
     /// Path to the config, defaults to None
@@ -51,37 +53,7 @@ pub struct ExecuteCtx {
 impl ExecuteCtx {
     /// Create a new execution context, given the path to a module.
     pub fn new(module_path: impl AsRef<Path>) -> Result<Self, Error> {
-        use wasmtime::{
-            Config, InstanceAllocationStrategy, InstanceLimits, ModuleLimits,
-            PoolingAllocationStrategy, WasmBacktraceDetails,
-        };
-
-        let mut config = Config::new();
-        config.debug_info(false); // Keep this disabled - wasmtime will hang if enabled
-        config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
-        config.async_support(true);
-        config.consume_fuel(true);
-
-        let module_limits = ModuleLimits {
-            // allow for up to 128MiB of linear memory
-            memory_pages: 2048,
-            // Default limit on types is 100, but some js programs have hit this.
-            // We may have to go higher at some point.
-            types: 200,
-            // AssemblyScript applications tend to create a fair number of globals
-            globals: 64,
-            // Some applications create a large number of functions, in particular in debug mode
-            functions: 20000,
-            ..ModuleLimits::default()
-        };
-
-        config.allocation_strategy(InstanceAllocationStrategy::Pooling {
-            strategy: PoolingAllocationStrategy::NextAvailable,
-            module_limits,
-            instance_limits: InstanceLimits::default(),
-        });
-        let engine = Engine::new(&config)?;
-
+        let engine = Engine::new(&configure_wasmtime())?;
         let mut linker = Linker::new(&engine);
         link_host_functions(&mut linker)?;
         let module = Module::from_file(&engine, module_path)?;
@@ -93,6 +65,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
+            tls_config: Arc::new(configure_tls()?),
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
             log_stdout: false,
@@ -158,6 +131,11 @@ impl ExecuteCtx {
     /// Set the stderr logging policy for this execution context.
     pub fn with_log_stderr(self, log_stderr: bool) -> Self {
         Self { log_stderr, ..self }
+    }
+
+    /// Gets the TLS configuration
+    pub fn tls_config(&self) -> &Arc<rustls::ClientConfig> {
+        &self.tls_config
     }
 
     /// Asynchronously handle a request.
@@ -257,6 +235,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),
         );
@@ -304,4 +283,48 @@ impl ExecuteCtx {
 
         outcome
     }
+}
+
+fn configure_wasmtime() -> wasmtime::Config {
+    use wasmtime::{
+        Config, InstanceAllocationStrategy, InstanceLimits, ModuleLimits,
+        PoolingAllocationStrategy, WasmBacktraceDetails,
+    };
+
+    let mut config = Config::new();
+    config.debug_info(false); // Keep this disabled - wasmtime will hang if enabled
+    config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
+    config.async_support(true);
+    config.consume_fuel(true);
+
+    let module_limits = ModuleLimits {
+        // allow for up to 128MiB of linear memory
+        memory_pages: 2048,
+        // Default limit on types is 100, but some js programs have hit this.
+        // We may have to go higher at some point.
+        types: 200,
+        // AssemblyScript applications tend to create a fair number of globals
+        globals: 64,
+        // Some applications create a large number of functions, in particular in debug mode
+        functions: 20000,
+        ..ModuleLimits::default()
+    };
+
+    config.allocation_strategy(InstanceAllocationStrategy::Pooling {
+        strategy: PoolingAllocationStrategy::NextAvailable,
+        module_limits,
+        instance_limits: InstanceLimits::default(),
+    });
+
+    config
+}
+
+fn configure_tls() -> Result<rustls::ClientConfig, Error> {
+    let mut config = rustls::ClientConfig::new();
+    config.root_store = match rustls_native_certs::load_native_certs() {
+        Ok(store) => store,
+        Err((_, err)) => return Err(Error::BadCerts(err)),
+    };
+    config.alpn_protocols.clear();
+    Ok(config)
 }

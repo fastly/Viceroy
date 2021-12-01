@@ -413,15 +413,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ct-logs"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1a816186fa68d9e426e3cb4ae4dff1fcd8e4a2c34b781bf7a822574a0d0aac8"
-dependencies = [
- "sct",
-]
-
-[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -788,23 +779,6 @@ dependencies = [
  "tower-service",
  "tracing",
  "want",
-]
-
-[[package]]
-name = "hyper-rustls"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f9f7a97316d44c0af9b0301e65010573a853a9fc97046d7331d7f6bc0fd5a64"
-dependencies = [
- "ct-logs",
- "futures-util",
- "hyper",
- "log",
- "rustls",
- "rustls-native-certs",
- "tokio",
- "tokio-rustls",
- "webpki",
 ]
 
 [[package]]
@@ -1869,16 +1843,18 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "hyper-rustls",
  "itertools",
  "lazy_static",
  "regex",
+ "rustls",
+ "rustls-native-certs",
  "semver 0.10.0",
  "serde",
  "serde_derive",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "toml",
  "tracing",
  "tracing-futures",
@@ -1886,6 +1862,7 @@ dependencies = [
  "wasi-common",
  "wasmtime",
  "wasmtime-wasi",
+ "webpki",
  "wiggle",
 ]
 

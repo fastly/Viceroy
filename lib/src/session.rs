@@ -65,6 +65,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     pub(crate) backends: Arc<Backends>,
+    /// The TLS configuration for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    pub(crate) tls_config: Arc<rustls::ClientConfig>,
     /// The dictionaries configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -83,12 +87,14 @@ pub struct Session {
 
 impl Session {
     /// Create an empty session.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         req_id: u64,
         req: Request<Body>,
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
+        tls_config: Arc<rustls::ClientConfig>,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
     ) -> Session {
@@ -113,6 +119,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            tls_config,
             dictionaries,
             dictionaries_by_name: PrimaryMap::new(),
             config_path,
@@ -134,6 +141,7 @@ impl Session {
             sender,
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
+            Arc::new(rustls::ClientConfig::new()),
             Arc::new(HashMap::new()),
             Arc::new(None),
         )
@@ -510,6 +518,13 @@ impl Session {
     /// Look up a backend by name.
     pub fn backend(&self, name: &str) -> Option<&Backend> {
         self.backends.get(name).map(std::ops::Deref::deref)
+    }
+
+    // ----- TLS config -----
+
+    /// Reference the TLS configuration.
+    pub fn tls_config(&self) -> &Arc<rustls::ClientConfig> {
+        &self.tls_config
     }
 
     // ----- Dictionaries API -----
