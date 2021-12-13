@@ -19,7 +19,7 @@ use {
         sync::Arc,
     },
     tokio::sync::oneshot::{self, Sender},
-    tracing::{event, info, info_span, Instrument, Level},
+    tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{Engine, InstancePre, Linker, Module},
 };
 
@@ -323,8 +323,15 @@ fn configure_tls() -> Result<rustls::ClientConfig, Error> {
     let mut config = rustls::ClientConfig::new();
     config.root_store = match rustls_native_certs::load_native_certs() {
         Ok(store) => store,
-        Err((_, err)) => return Err(Error::BadCerts(err)),
+        Err((Some(store), err)) => {
+            warn!("some certificates could not be loaded: {}", err);
+            store
+        }
+        Err((None, err)) => return Err(Error::BadCerts(err)),
     };
+    if config.root_store.is_empty() {
+        warn!("no CA certificates available");
+    }
     config.alpn_protocols.clear();
     Ok(config)
 }
