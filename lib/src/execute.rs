@@ -324,7 +324,7 @@ fn configure_tls() -> Result<rustls::ClientConfig, Error> {
     config.root_store = match rustls_native_certs::load_native_certs() {
         Ok(store) => store,
         Err((Some(store), err)) => {
-            warn!("some certificates could not be loaded: {}", err);
+            warn!(%err, "some certificates could not be loaded");
             store
         }
         Err((None, err)) => return Err(Error::BadCerts(err)),
