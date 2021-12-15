@@ -339,6 +339,7 @@ dependencies = [
  "fastly-shared",
  "fastly-sys",
  "http",
+ "serde",
 ]
 
 [[package]]
