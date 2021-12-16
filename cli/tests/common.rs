@@ -5,6 +5,7 @@ use futures::stream::StreamExt;
 use hyper::{service, Body as HyperBody, Request, Response, Server};
 use std::{convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
+use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
     config::{Backend, Backends},
@@ -112,6 +113,17 @@ impl Test {
     /// a fresh execution context is set up each time.
     pub async fn against(&self, req: Request<impl Into<HyperBody>>) -> Response<Body> {
         let _test_lock_guard = TEST_LOCK.lock().await;
+
+        // Install a tracing subscriber. We use a human-readable event formatter in tests, using a
+        // writer that supports input capturing for `cargo test`. This subscribes to all events in
+        // the `viceroy-lib` library.
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                EnvFilter::from_default_env().add_directive("viceroy_lib=trace".parse().unwrap()),
+            )
+            .pretty()
+            .with_test_writer()
+            .init();
 
         let mut module_path = PathBuf::from(FIXTURE_PATH);
         module_path.push(&self.fixture);
