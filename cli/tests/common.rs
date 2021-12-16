@@ -123,7 +123,10 @@ impl Test {
             )
             .pretty()
             .with_test_writer()
-            .init();
+            // `try_init` returns an `Err` if the initialization was unsuccessful, likely because a
+            // global subscriber was already installed. we will ignore this error if it happens.
+            .try_init()
+            .ok();
 
         let mut module_path = PathBuf::from(FIXTURE_PATH);
         module_path.push(&self.fixture);
