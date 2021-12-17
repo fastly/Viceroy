@@ -45,6 +45,13 @@ doc:
 doc-dev:
 	cargo doc --no-deps --document-private-items --workspace --open
 
+# Run `cargo generate-lockfile` for all of the crates in the project.
+.PHONY: generate-lockfile
+generate-lockfile:
+	cargo generate-lockfile
+	cargo generate-lockfile --manifest-path=test-fixtures/Cargo.toml
+	cargo generate-lockfile --manifest-path=cli/tests/trap-test/Cargo.toml
+
 # Check that the crates can be packaged for crates.io.
 #
 # FIXME(katie): Add option flags to `publish.rs` for the vendor directory, remove `.cargo/` after
