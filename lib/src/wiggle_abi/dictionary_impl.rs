@@ -54,7 +54,13 @@ impl FastlyDictionary for Session {
         let file = dict.file.clone();
         let obj = read_json_file(file);
         let item = obj
-            .get(key)
+            .get("item_key")
+            .and_then(|item_key| {
+                if item_key == key {
+                    return obj.get("item_value");
+                }
+                None
+            })
             .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?;
         let item = item.as_str().unwrap();
         let item_bytes = item.as_bytes();
