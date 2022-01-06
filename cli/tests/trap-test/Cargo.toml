@@ -8,12 +8,13 @@ license = "Apache-2.0 WITH LLVM-exception"
 publish = false
 
 [dependencies]
-viceroy-lib = { path = "../../../lib", features = ["test-fatalerror-config"] }
 anyhow = "1.0.31"
+futures = "0.3.0"
 http = "0.2.1"
 hyper = "0.14.0"
 tokio = { version = "1.2", features = ["full"] }
-futures = "0.3.0"
+tracing-subscriber = "0.2.19"
+viceroy-lib = { path = "../../../lib", features = ["test-fatalerror-config"] }
 
 # To indicate to cargo that this trap-test is not a member of the testing workspace specified by
 # ~/cli/tests/fixtures/Cargo.toml, place an empty workspace specification here.
