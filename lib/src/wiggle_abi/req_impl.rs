@@ -9,8 +9,8 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
-                BodyHandle, CacheOverrideTag, HttpVersion, MultiValueCursor,
-                MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,ContentEncodings
+                BodyHandle, CacheOverrideTag, ContentEncodings, HttpVersion, MultiValueCursor,
+                MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,
             },
         },
     },
@@ -468,7 +468,11 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
-    fn auto_decompress_response_set(&mut self, _h: RequestHandle, _encodings: ContentEncodings) -> Result<(),Error> {
-      unimplemented!("auto_decompress_response_set has not yet been implemented in Viceroy");
+    fn auto_decompress_response_set(
+        &mut self,
+        _h: RequestHandle,
+        _encodings: ContentEncodings,
+    ) -> Result<(), Error> {
+        unimplemented!("auto_decompress_response_set has not yet been implemented in Viceroy");
     }
 }
