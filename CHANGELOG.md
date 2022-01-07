@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.2.8 (2022-01-07)
+- Allow partial CA store to be loaded ([#104](https://github.com/fastly/Viceroy/pull/104)
+- Update ABI and stub out new function ([#113](https://github.com/fastly/Viceroy/pull/104)
+
 ## 0.2.7 (2021-12-01)
 
 - Disable ALPN by using rustls more directly ([#100](https://github.com/fastly/Viceroy/pull/100))
