@@ -9,7 +9,7 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
-                BodyHandle, CacheOverrideTag, HttpVersion, MultiValueCursor,
+                BodyHandle, CacheOverrideTag, ContentEncodings, HttpVersion, MultiValueCursor,
                 MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,
             },
         },
@@ -466,5 +466,13 @@ impl FastlyHttpReq for Session {
         // the handle given doesn't exist
         self.take_request_parts(req_handle)?;
         Ok(())
+    }
+
+    fn auto_decompress_response_set(
+        &mut self,
+        _h: RequestHandle,
+        _encodings: ContentEncodings,
+    ) -> Result<(), Error> {
+        unimplemented!("auto_decompress_response_set has not yet been implemented in Viceroy");
     }
 }
