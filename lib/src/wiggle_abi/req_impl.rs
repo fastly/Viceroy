@@ -471,8 +471,12 @@ impl FastlyHttpReq for Session {
     fn auto_decompress_response_set(
         &mut self,
         _h: RequestHandle,
-        _encodings: ContentEncodings,
+        encodings: ContentEncodings,
     ) -> Result<(), Error> {
-        unimplemented!("auto_decompress_response_set has not yet been implemented in Viceroy");
+        if u32::from(encodings) == 1 {
+            unimplemented!("calling auto_decompress_response_set with GZIP has not yet been implemented in Viceroy");
+        } else {
+            Ok(())
+        }
     }
 }
