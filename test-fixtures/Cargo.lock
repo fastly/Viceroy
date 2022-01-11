@@ -61,9 +61,9 @@ dependencies = [
 
 [[package]]
 name = "fastly"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b1d6d1476a85603b9fd5162f747570686f4637383d9f8798d5ef0f2e628193b"
+checksum = "d5bc0bf3b13c32c6f10cc1b199e405939248aa2425d2c85608740a6b25562c83"
 dependencies = [
  "anyhow",
  "bytes 0.5.6",
@@ -95,9 +95,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-shared"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "010266f409d00e3d4cf2e0f3e201265960b96fa342bbddf366a41beea5d10346"
+checksum = "a50fae8c678779e8dcd18e36f9982d09c706764e8976c542fd53193a62d83727"
 dependencies = [
  "bitflags",
  "http",
@@ -106,10 +106,11 @@ dependencies = [
 
 [[package]]
 name = "fastly-sys"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd84c88b732ac6d5711363856a3d4b686fd2691ba753d565879779c6ba8d84b"
+checksum = "afcf0f870a0c9ac8166b0797a9391e5df81b7b5cc13b53b4d305e0b1368801d4"
 dependencies = [
+ "bitflags",
  "fastly-shared",
 ]
 

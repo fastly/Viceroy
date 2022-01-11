@@ -9,7 +9,7 @@ use {
         header_append, header_insert, header_remove, header_value_get, method_get, method_set, new,
         uri_get, uri_set, version_get, version_set,
     },
-    fastly_sys::RequestHandle,
+    fastly_sys::{ContentEncodings, RequestHandle},
     http::header::{HeaderName, HeaderValue},
     http::{Method, Uri},
 };
@@ -420,11 +420,18 @@ fn test_header_multi_value_set_and_get() {
     assert_eq!(0, no_header_names.len());
 }
 
+fn test_default_decompress_response() {
+    let mut request = FastlyRequestHandle::new();
+
+    request.set_auto_decompress_response(ContentEncodings::default());
+}
+
 fn main() {
     test_version_set_and_get();
     test_uri_set_and_get();
     test_method_set_and_get();
     test_header_value_get_and_insert();
     test_header_append_and_remove();
-    test_header_multi_value_set_and_get()
+    test_header_multi_value_set_and_get();
+    test_default_decompress_response()
 }
