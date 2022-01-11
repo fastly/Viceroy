@@ -420,10 +420,10 @@ fn test_header_multi_value_set_and_get() {
     assert_eq!(0, no_header_names.len());
 }
 
-fn test_decompress_gzip_response() {
+fn test_default_decompress_response() {
     let mut request = FastlyRequestHandle::new();
 
-    request.set_auto_decompress_response(ContentEncodings::GZIP);
+    request.set_auto_decompress_response(ContentEncodings::default());
 }
 
 fn main() {
@@ -433,5 +433,5 @@ fn main() {
     test_header_value_get_and_insert();
     test_header_append_and_remove();
     test_header_multi_value_set_and_get();
-    test_decompress_gzip_response()
+    test_default_decompress_response()
 }
