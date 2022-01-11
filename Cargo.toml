@@ -2,6 +2,7 @@
 members = [
     "cli",
     "lib",
+    "dap_types"
 ]
 
 # Exclude our integration test fixtures, which need to be compiled to wasm

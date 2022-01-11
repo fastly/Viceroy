@@ -42,6 +42,13 @@ pub struct Opts {
     /// to a value before starting Viceroy
     #[structopt(short = "v", parse(from_occurrences))]
     verbosity: usize,
+    /// Whether to enable debugging mode, which will enable Viceroy to
+    /// exchange [DAP] messages with an IDE over stdio.
+    ///
+    /// [DAP]: https://microsoft.github.io/debug-adapter-protocol/overview
+    // NB: struct_opt won't let us use `default_value` here, but the default is `false`
+    #[structopt(long = "debug-adapter")]
+    debug_adapter: bool
 }
 
 impl Opts {
@@ -76,6 +83,11 @@ impl Opts {
     /// to a value before starting Viceroy
     pub fn verbosity(&self) -> usize {
         self.verbosity
+    }
+
+    /// Whether to enable debugging mode.
+    pub fn debug_adapter(&self) -> bool {
+        self.debug_adapter
     }
 }
 

@@ -21,7 +21,10 @@ tracing-subscriber = "0.2.19"
 tracing-futures = "0.2.5"
 hyper = {version = "0.14.0", features = ["full"]}
 wat = "1.0.38"
+serde = "1.0.114"
+serde_derive = "1.0.114"
 serde_json = "1.0.66"
+dap_types = { path = "../dap_types" }
 
 [dev-dependencies]
 anyhow = "1.0.31"
