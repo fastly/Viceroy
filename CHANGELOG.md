@@ -1,8 +1,13 @@
 ## Unreleased
 
+## 0.2.9 (2022-01-11)
+
+- Do not panic when `auto_decompress_response_set` is called ([#116](https://github.com/fastly/Viceroy/pull/116))
+
 ## 0.2.8 (2022-01-07)
-- Allow partial CA store to be loaded ([#104](https://github.com/fastly/Viceroy/pull/104)
-- Update ABI and stub out new function ([#113](https://github.com/fastly/Viceroy/pull/104)
+
+- Allow partial CA store to be loaded ([#104](https://github.com/fastly/Viceroy/pull/104))
+- Update ABI and stub out new function ([#113](https://github.com/fastly/Viceroy/pull/104))
 
 ## 0.2.7 (2021-12-01)
 
