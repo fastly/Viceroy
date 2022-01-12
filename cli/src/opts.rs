@@ -48,7 +48,7 @@ pub struct Opts {
     /// [DAP]: https://microsoft.github.io/debug-adapter-protocol/overview
     // NB: struct_opt won't let us use `default_value` here, but the default is `false`
     #[structopt(long = "debug-adapter")]
-    debug_adapter: bool
+    debug_adapter: bool,
 }
 
 impl Opts {

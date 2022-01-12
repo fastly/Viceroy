@@ -60,16 +60,17 @@ pub struct InitializeRequestPayload {
 
 #[derive(Serialize, Deserialize, Builder, Getters, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase", default)]
+#[builder(default)]
 /// Describes the capabilities of the debug adapter.
 pub struct Capabilities {
-  supports_configuration_done_request: bool,
-  supports_restart_request: bool,
-  #[serde(rename = "support_terminate_buggee")]
-  supports_terminate_debuggee: bool,
-  #[serde(rename = "support_suspend_buggee")]
-  supports_suspend_debuggee: bool,
-  supports_terminate_request: bool,
-  supports_cancel_request: bool,
+    supports_configuration_done_request: bool,
+    supports_restart_request: bool,
+    #[serde(rename = "supportTerminateDebuggee")]
+    supports_terminate_debuggee: bool,
+    #[serde(rename = "supportSuspendDebuggee")]
+    supports_suspend_debuggee: bool,
+    supports_terminate_request: bool,
+    supports_cancel_request: bool,
 }
 
 #[derive(Serialize, Deserialize, Builder, Getters, Debug, Clone, Default)]
@@ -78,5 +79,3 @@ pub struct Capabilities {
 pub struct LaunchRequestPayload {
     no_debug: bool,
 }
-
-
