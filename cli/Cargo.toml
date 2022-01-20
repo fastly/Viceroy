@@ -3,6 +3,7 @@ name = "viceroy"
 description = "Viceroy is a local testing daemon for Compute@Edge."
 version = "0.2.10"
 authors = ["Fastly"]
+readme = "../README.md"
 edition = "2018"
 license = "Apache-2.0 WITH LLVM-exception"
 
