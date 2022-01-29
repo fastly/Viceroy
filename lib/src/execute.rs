@@ -17,6 +17,7 @@ use {
         path::{Path, PathBuf},
         sync::atomic::AtomicU64,
         sync::Arc,
+        time::Instant
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, warn, Instrument, Level},
@@ -228,7 +229,7 @@ impl ExecuteCtx {
         remote: IpAddr,
     ) -> Result<(), ExecutionError> {
         info!("handling request {} {}", req.method(), req.uri());
-
+        let now = Instant::now();
         let session = Session::new(
             req_id,
             req,
@@ -275,11 +276,15 @@ impl ExecuteCtx {
             .get_memory(&mut store, "memory")
             .expect("`memory` is exported")
             .size(&store);
+        
+        let distant = Instant::now().duration_since(now);    
 
         info!(
             "request completed using {} of WebAssembly heap",
             bytesize::ByteSize::kib(heap_pages as u64 * 64)
         );
+
+        info!("request completed in {:?}", distant);
 
         outcome
     }
