@@ -17,7 +17,7 @@ use {
         path::{Path, PathBuf},
         sync::atomic::AtomicU64,
         sync::Arc,
-        time::Instant
+        time::Instant,
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, warn, Instrument, Level},
@@ -276,8 +276,8 @@ impl ExecuteCtx {
             .get_memory(&mut store, "memory")
             .expect("`memory` is exported")
             .size(&store);
-        
-        let distant = Instant::now().duration_since(now);    
+
+        let distant = Instant::now().duration_since(now);
 
         info!(
             "request completed using {} of WebAssembly heap",
