@@ -300,13 +300,15 @@ fn configure_wasmtime() -> wasmtime::Config {
     let module_limits = ModuleLimits {
         // allow for up to 128MiB of linear memory
         memory_pages: 2048,
-        // Default limit on types is 100, but some js programs have hit this.
-        // We may have to go higher at some point.
-        types: 200,
+        // ffmpeg-wasi was the last program to break the types
+        types: 1234,
         // AssemblyScript applications tend to create a fair number of globals
-        globals: 64,
+        globals: 1234,
         // Some applications create a large number of functions, in particular in debug mode
-        functions: 20000,
+        // or applications written in swift.
+        functions: 98765,
+        // And every function can end up in the table
+        table_elements: 98765,
         ..ModuleLimits::default()
     };
 
