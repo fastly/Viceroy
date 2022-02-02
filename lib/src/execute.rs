@@ -229,7 +229,7 @@ impl ExecuteCtx {
         remote: IpAddr,
     ) -> Result<(), ExecutionError> {
         info!("handling request {} {}", req.method(), req.uri());
-        let now = Instant::now();
+        let start_timestamp = Instant::now();
         let session = Session::new(
             req_id,
             req,
@@ -277,14 +277,14 @@ impl ExecuteCtx {
             .expect("`memory` is exported")
             .size(&store);
 
-        let distant = Instant::now().duration_since(now);
+        let request_duration = Instant::now().duration_since(start_timestamp);
 
         info!(
             "request completed using {} of WebAssembly heap",
             bytesize::ByteSize::kib(heap_pages as u64 * 64)
         );
 
-        info!("request completed in {:?}", distant);
+        info!("request completed in {:?}", request_duration);
 
         outcome
     }
