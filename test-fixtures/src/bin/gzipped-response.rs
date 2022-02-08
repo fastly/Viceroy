@@ -1,6 +1,7 @@
 use fastly::http::request::SendError;
 use fastly::http::StatusCode;
 use fastly::{Backend, Request};
+use std::io::Read;
 
 static HELLO_WORLD: &'static str = include_str!("../../data/hello_world");
 static HELLO_WORLD_GZ: &'static [u8] = include_bytes!("../../data/hello_world.gz");
@@ -94,8 +95,10 @@ fn main() -> Result<(), SendError> {
     assert_eq!(HELLO_WORLD, &still_unpacked);
 
     // A slightly odder case: We set everything up for unpacking, but we
-    // don't actually send a gzip'd file.
-    let bad_gzip = Request::put("http://127.0.0.1:9000")
+    // don't actually send a gzip'd file. We should get a response, and
+    // it should technically be OK, but we should get an error when we
+    // try to do anything with the body.
+    let mut bad_gzip = Request::put("http://127.0.0.1:9000")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD.as_bytes())
         .with_auto_decompress_gzip(true)
@@ -104,6 +107,8 @@ fn main() -> Result<(), SendError> {
     assert!(bad_gzip.get_header("Content-Encoding").is_none());
     assert!(bad_gzip.get_content_length().is_none());
     assert_eq!(bad_gzip.get_status(), StatusCode::OK);
+    let mut body = vec![];
+    assert!(bad_gzip.get_body_mut().read_to_end(&mut body).is_err());
 
     Ok(())
 }
