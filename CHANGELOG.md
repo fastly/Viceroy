@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.2.10 (2022-02-08)
+
+- Add telemetry for wall-clock duration ([#121](https://github.com/fastly/Viceroy/pull/121))
+- Bump various runtime limits ([#123](https://github.com/fastly/Viceroy/pull/123))
+
 ## 0.2.9 (2022-01-11)
 
 - Do not panic when `auto_decompress_response_set` is called ([#116](https://github.com/fastly/Viceroy/pull/116))
