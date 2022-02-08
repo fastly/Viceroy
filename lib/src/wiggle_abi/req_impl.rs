@@ -480,9 +480,9 @@ impl FastlyHttpReq for Session {
 
         match extensions.get_mut::<ViceroyRequestMetadata>() {
             None => {
-                let mut def = ViceroyRequestMetadata::default();
-                def.auto_decompress_encodings = encodings;
-                extensions.insert(def);
+                extensions.insert(ViceroyRequestMetadata {
+                    auto_decompress_encodings: encodings,
+                });
             }
             Some(vrm) => {
                 vrm.auto_decompress_encodings = encodings;
