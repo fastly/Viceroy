@@ -163,7 +163,7 @@ impl HttpBody for Body {
         mut self: Pin<&mut Self>,
         cx: &mut Context,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        while let Some(chunk) = self.chunks.pop_front() {
+        while let Some(mut chunk) = self.chunks.pop_front() {
             match chunk {
                 Chunk::HttpBody(mut body) => {
                     let body_mut = &mut body;
@@ -214,37 +214,35 @@ impl HttpBody for Body {
                         }
                     }
                 }
-                Chunk::CompressedHttpBody(mut decoder_state, mut body) => {
-                    let body_mut = &mut body;
-                    pin_mut!(body_mut);
+                Chunk::CompressedHttpBody(ref mut decoder_state, ref mut body) => {
+                    pin_mut!(body);
 
-                    match body_mut.poll_data(cx) {
+                    match body.poll_data(cx) {
                         Poll::Pending => {
                             // put the body back, so we can poll it again next time
-                            self.chunks.push_front(body.into());
+                            self.chunks.push_front(chunk);
                             return Poll::Pending;
                         }
-                        Poll::Ready(None) => match decoder_state.finish() {
+                        Poll::Ready(None) => match decoder_state.try_finish() {
                             Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                            Ok(buffer) => {
-                                return Poll::Ready(Some(Ok(buffer.into_inner().freeze())));
+                            Ok(()) => {
+                                let chunk = decoder_state.get_mut().get_mut().split().freeze();
+                                return Poll::Ready(Some(Ok(chunk)));
                             }
                         },
-                        Poll::Ready(Some(item)) => {
-                            // put the body back, so we can poll it again next time
-                            self.chunks.push_front(body.into());
-
-                            match item {
+                        Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e.into()))),
+                        Poll::Ready(Some(Ok(bytes))) => {
+                            match decoder_state.write_all(&bytes) {
                                 Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                                Ok(bytes) => match decoder_state.write_all(&bytes) {
-                                    Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                                    Ok(()) => {
-                                        decoder_state.flush().unwrap();
-                                        let chunk =
-                                            decoder_state.get_mut().get_mut().split().freeze();
-                                        return Poll::Ready(Some(Ok(chunk)));
-                                    }
-                                },
+                                Ok(()) => {
+                                    decoder_state.flush().unwrap();
+                                    let resulting_bytes =
+                                        decoder_state.get_mut().get_mut().split().freeze();
+                                    // put the body back, so we can poll it again next time
+                                    self.chunks.push_front(chunk);
+
+                                    return Poll::Ready(Some(Ok(resulting_bytes)));
+                                }
                             }
                         }
                     }
