@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::Session,
+        session::{AutoDecompressResponse, Session},
         upstream::{self, PendingRequest},
         wiggle_abi::{
             fastly_http_req::FastlyHttpReq,
@@ -470,13 +470,20 @@ impl FastlyHttpReq for Session {
 
     fn auto_decompress_response_set(
         &mut self,
-        _h: RequestHandle,
+        req_handle: RequestHandle,
         encodings: ContentEncodings,
     ) -> Result<(), Error> {
+        // NOTE: We're going to hide this flag in the headers of the request in order to decrease
+        // the book-keeping burden inside Session; there already existed a cleaning pass in the
+        // output chain, which we extend for this use case.
+        let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
+
         if u32::from(encodings) == 1 {
-            unimplemented!("calling auto_decompress_response_set with GZIP has not yet been implemented in Viceroy");
+            extensions.insert(AutoDecompressResponse {});
         } else {
-            Ok(())
+            extensions.remove::<AutoDecompressResponse>();
         }
+
+        Ok(())
     }
 }

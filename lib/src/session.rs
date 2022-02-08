@@ -659,6 +659,9 @@ impl Session {
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct AutoDecompressResponse {}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct AsyncItemHandle(u32);
 
