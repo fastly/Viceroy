@@ -1,5 +1,6 @@
-use fastly::{Backend, Request};
 use fastly::http::request::SendError;
+use fastly::http::StatusCode;
+use fastly::{Backend, Request};
 
 static HELLO_WORLD: &'static str = include_str!("../../data/hello_world");
 static HELLO_WORLD_GZ: &'static [u8] = include_bytes!("../../data/hello_world.gz");
@@ -14,8 +15,14 @@ fn main() -> Result<(), SendError> {
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .send(echo_server.clone())?;
 
-    assert_eq!(standard_echo.get_header_str("Content-Encoding"), Some("gzip"));
-    assert_eq!(standard_echo.get_content_length(), Some(HELLO_WORLD_GZ.len()));
+    assert_eq!(
+        standard_echo.get_header_str("Content-Encoding"),
+        Some("gzip")
+    );
+    assert_eq!(
+        standard_echo.get_content_length(),
+        Some(HELLO_WORLD_GZ.len())
+    );
 
     // Similarly, if we set the auto_decompress flag to false, it should also
     // bounce back to us unchanged.
@@ -52,17 +59,16 @@ fn main() -> Result<(), SendError> {
     assert_eq!(HELLO_WORLD, &still_unpacked);
 
     // A slightly odder case: We set everything up for unpacking, but we
-    // don't actually send a gzip'd file. In this case, we're going to say
-    // that we should get back exactly the input, even with the bogus
-    // content encoding.
-    let bad_gzip = Request::put("http://127.0.0.1:9000")
+    // don't actually send a gzip'd file.
+    let mut bad_gzip = Request::put("http://127.0.0.1:9000")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD.as_bytes())
         .with_auto_decompress_gzip(true)
         .send(echo_server.clone())?;
 
-    assert_eq!(bad_gzip.get_header_str("Content-Encoding"), Some("gzip"));
-    assert_eq!(bad_gzip.get_content_length(), Some(HELLO_WORLD.len()));
+    assert!(bad_gzip.get_header("Content-Encoding").is_none());
+    assert!(bad_gzip.get_content_length().is_none());
+    assert_eq!(bad_gzip.get_status(), StatusCode::OK);
 
     Ok(())
 }
