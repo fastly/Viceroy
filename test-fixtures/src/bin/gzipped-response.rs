@@ -48,6 +48,41 @@ fn main() -> Result<(), SendError> {
     let hopefully_unpacked = unpacked_echo.take_body_str();
     assert_eq!(HELLO_WORLD, &hopefully_unpacked);
 
+    // The same, but now we're going to use await.
+    let unpacked_echo_pending = Request::put("http://127.0.0.1:9000")
+        .with_header("Content-Encoding", "gzip")
+        .with_body_octet_stream(HELLO_WORLD_GZ)
+        .with_auto_decompress_gzip(true)
+        .send_async(echo_server.clone())?;
+
+    let mut unpacked_echo_async = unpacked_echo_pending.wait()?;
+    assert!(unpacked_echo_async.get_header("Content-Encoding").is_none());
+    assert!(unpacked_echo_async.get_content_length().is_none());
+    let hopefully_unpacked = unpacked_echo_async.take_body_str();
+    assert_eq!(HELLO_WORLD, &hopefully_unpacked);
+
+    // The same, but now we're going to stream the data over.
+    let unpacked_stream_pending = {
+        // braces to force the drop on the body
+        let (mut streaming_body, pending_req) = Request::put("http://127.0.0.1:9000")
+            .with_header("Content-Encoding", "gzip")
+            .with_auto_decompress_gzip(true)
+            .send_async_streaming(echo_server.clone())?;
+
+        for tiny_bit in HELLO_WORLD_GZ.chunks(8) {
+            streaming_body.write_bytes(tiny_bit);
+        }
+
+        pending_req
+    };
+    let mut unpacked_stream_async = unpacked_stream_pending.wait()?;
+    assert!(unpacked_stream_async
+        .get_header("Content-Encoding")
+        .is_none());
+    assert!(unpacked_stream_async.get_content_length().is_none());
+    let hopefully_unpacked = unpacked_stream_async.take_body_str();
+    assert_eq!(HELLO_WORLD, &hopefully_unpacked);
+
     // That being said, if we set the flag to true and send it a text file,
     // we should just get it back unchanged.
     let mut yes_but_uncompressed = Request::put("http://127.0.0.1:9000")
@@ -60,7 +95,7 @@ fn main() -> Result<(), SendError> {
 
     // A slightly odder case: We set everything up for unpacking, but we
     // don't actually send a gzip'd file.
-    let mut bad_gzip = Request::put("http://127.0.0.1:9000")
+    let bad_gzip = Request::put("http://127.0.0.1:9000")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD.as_bytes())
         .with_auto_decompress_gzip(true)
