@@ -175,7 +175,10 @@ async fn transparent_gunzip() -> TestResult {
         .await;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!("hello, world!\n", resp.into_body().read_into_string().await.unwrap());
+    assert_eq!(
+        "hello, world!\n",
+        resp.into_body().read_into_string().await.unwrap()
+    );
 
     Ok(())
 }
