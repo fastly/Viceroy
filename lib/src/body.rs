@@ -2,6 +2,7 @@
 
 use {
     crate::error,
+    bytes::{BufMut, BytesMut},
     flate2::write::GzDecoder,
     futures::pin_mut,
     http::header::HeaderMap,
@@ -15,7 +16,7 @@ use {
     tokio::sync::mpsc,
 };
 
-type DecoderState = Box<GzDecoder<Vec<u8>>>;
+type DecoderState = Box<GzDecoder<bytes::buf::Writer<BytesMut>>>;
 
 /// A chunk of bytes in a [`Body`].
 ///
@@ -38,6 +39,13 @@ pub enum Chunk {
     Channel(mpsc::Receiver<Chunk>),
     /// A version of `HttpBody` that assumes that the interior data is gzip-compressed.
     CompressedHttpBody(DecoderState, hyper::Body),
+}
+
+impl Chunk {
+    pub fn compressed_body(body: hyper::Body) -> Chunk {
+        let initial_state = Box::new(GzDecoder::new(BytesMut::new().writer()));
+        Chunk::CompressedHttpBody(initial_state, body)
+    }
 }
 
 impl From<&[u8]> for Chunk {
@@ -216,24 +224,27 @@ impl HttpBody for Body {
                             self.chunks.push_front(body.into());
                             return Poll::Pending;
                         }
-                        Poll::Ready(None) => {
-                            match decoder_state.finish() {
-                                Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                                Ok(buffer) => return Poll::Ready(Some(Ok(bytes::Bytes::from(buffer)))),
+                        Poll::Ready(None) => match decoder_state.finish() {
+                            Err(e) => return Poll::Ready(Some(Err(e.into()))),
+                            Ok(buffer) => {
+                                return Poll::Ready(Some(Ok(buffer.into_inner().freeze())));
                             }
-                        }
+                        },
                         Poll::Ready(Some(item)) => {
                             // put the body back, so we can poll it again next time
                             self.chunks.push_front(body.into());
 
                             match item {
                                 Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                                Ok(bytes) => {
-                                    match decoder_state.write_all(&bytes) {
-                                        Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                                        Ok(()) => {}
+                                Ok(bytes) => match decoder_state.write_all(&bytes) {
+                                    Err(e) => return Poll::Ready(Some(Err(e.into()))),
+                                    Ok(()) => {
+                                        decoder_state.flush().unwrap();
+                                        let chunk =
+                                            decoder_state.get_mut().get_mut().split().freeze();
+                                        return Poll::Ready(Some(Ok(chunk)));
                                     }
-                                }
+                                },
                             }
                         }
                     }
