@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::{AutoDecompressResponse, Session},
+        session::{Session, ViceroyRequestMetadata},
         upstream::{self, PendingRequest},
         wiggle_abi::{
             fastly_http_req::FastlyHttpReq,
@@ -478,10 +478,15 @@ impl FastlyHttpReq for Session {
         // output chain, which we extend for this use case.
         let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
 
-        if u32::from(encodings) == 1 {
-            extensions.insert(AutoDecompressResponse {});
-        } else {
-            extensions.remove::<AutoDecompressResponse>();
+        match extensions.get_mut::<ViceroyRequestMetadata>() {
+            None => {
+                let mut def = ViceroyRequestMetadata::default();
+                def.auto_decompress_encodings = encodings;
+                extensions.insert(def);
+            }
+            Some(vrm) => {
+                vrm.auto_decompress_encodings = encodings;
+            }
         }
 
         Ok(())

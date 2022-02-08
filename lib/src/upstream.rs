@@ -3,8 +3,8 @@ use crate::{
     config::Backend,
     error::Error,
     headers::filter_outgoing_headers,
-    session::AutoDecompressResponse,
-    wiggle_abi::types::PendingRequestHandle,
+    session::ViceroyRequestMetadata,
+    wiggle_abi::types::{ContentEncodings, PendingRequestHandle},
 };
 use futures::Future;
 use http::{uri, HeaderValue};
@@ -168,7 +168,14 @@ pub fn send_request(
         backend,
     );
 
-    let try_decompression = req.extensions().get::<AutoDecompressResponse>().is_some();
+    let try_decompression = req
+        .extensions()
+        .get::<ViceroyRequestMetadata>()
+        .map(|vrm| {
+            vrm.auto_decompress_encodings
+                .contains(ContentEncodings::GZIP)
+        })
+        .unwrap_or(false);
 
     filter_outgoing_headers(req.headers_mut());
     req.headers_mut().insert(hyper::header::HOST, host);

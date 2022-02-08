@@ -13,8 +13,8 @@ use {
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget},
         wiggle_abi::types::{
-            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle,
-            ResponseHandle,
+            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, PendingRequestHandle,
+            RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -658,8 +658,19 @@ impl Session {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct AutoDecompressResponse {}
+/// Additional Viceroy-specific metadata for requests.
+#[derive(Clone, Debug)]
+pub struct ViceroyRequestMetadata {
+    pub auto_decompress_encodings: ContentEncodings,
+}
+
+impl Default for ViceroyRequestMetadata {
+    fn default() -> Self {
+        ViceroyRequestMetadata {
+            auto_decompress_encodings: ContentEncodings::empty(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 #[repr(transparent)]
