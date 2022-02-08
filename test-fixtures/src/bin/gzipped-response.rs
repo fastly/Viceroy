@@ -110,5 +110,14 @@ fn main() -> Result<(), SendError> {
     let mut body = vec![];
     assert!(bad_gzip.get_body_mut().read_to_end(&mut body).is_err());
 
+    // Just for fun, let's return the response to the caller, and make
+    // sure things come out there, as well.
+    Request::put("http://127.0.0.1:9000")
+        .with_header("Content-Encoding", "gzip")
+        .with_body_octet_stream(HELLO_WORLD_GZ)
+        .with_auto_decompress_gzip(true)
+        .send(echo_server.clone())?
+        .send_to_client();
+
     Ok(())
 }
