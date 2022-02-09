@@ -49,6 +49,19 @@ fn main() -> Result<(), SendError> {
     let hopefully_unpacked = unpacked_echo.take_body_str();
     assert_eq!(HELLO_WORLD, &hopefully_unpacked);
 
+    // This should work when the header is "x-gzip", as well; see
+    // https://httpwg.org/http-core/draft-ietf-httpbis-semantics-latest.html#gzip.coding
+    let mut xunpacked_echo = Request::put("http://127.0.0.1:9000")
+        .with_header("Content-Encoding", "x-gzip")
+        .with_body_octet_stream(HELLO_WORLD_GZ)
+        .with_auto_decompress_gzip(true)
+        .send(echo_server.clone())?;
+
+    assert!(xunpacked_echo.get_header("Content-Encoding").is_none());
+    assert!(xunpacked_echo.get_content_length().is_none());
+    let xhopefully_unpacked = xunpacked_echo.take_body_str();
+    assert_eq!(HELLO_WORLD, &xhopefully_unpacked);
+
     // The same, but now we're going to use await.
     let unpacked_echo_pending = Request::put("http://127.0.0.1:9000")
         .with_header("Content-Encoding", "gzip")

@@ -24,6 +24,11 @@ use tokio::{
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use webpki::DNSNameRef;
 
+static GZIP_VALUES: [HeaderValue; 2] = [
+    HeaderValue::from_static("gzip"),
+    HeaderValue::from_static("x-gzip"),
+];
+
 /// A custom Hyper client connector, which is needed to override Hyper's default behavior of
 /// connecting to host specified by the request's URI; we instead want to connect to the host
 /// specified by our backend configuration, regardless of what the URI says.
@@ -193,8 +198,11 @@ pub fn send_request(
             })?;
 
         if try_decompression
-            && basic_response.headers().get(header::CONTENT_ENCODING)
-                == Some(&HeaderValue::from_static("gzip"))
+            && basic_response
+                .headers()
+                .get(header::CONTENT_ENCODING)
+                .map(|x| GZIP_VALUES.contains(x))
+                .unwrap_or(false)
         {
             let mut decompressing_response =
                 basic_response.map(Chunk::compressed_body).map(Body::from);
