@@ -473,15 +473,19 @@ impl FastlyHttpReq for Session {
         req_handle: RequestHandle,
         encodings: ContentEncodings,
     ) -> Result<(), Error> {
-        // NOTE: We're going to hide this flag in the headers of the request in order to decrease
-        // the book-keeping burden inside Session; there already existed a cleaning pass in the
-        // output chain, which we extend for this use case.
+        // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
+        // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
         let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
 
         match extensions.get_mut::<ViceroyRequestMetadata>() {
             None => {
                 extensions.insert(ViceroyRequestMetadata {
                     auto_decompress_encodings: encodings,
+                    // future note: at time of writing, this is the only field of
+                    // this structure, but there is an intention to add more fields.
+                    // When we do, and if/when an error appears, what you're looking
+                    // for is:
+                    // ..Default::default()
                 });
             }
             Some(vrm) => {
