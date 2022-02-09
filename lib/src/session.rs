@@ -13,8 +13,8 @@ use {
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget},
         wiggle_abi::types::{
-            BodyHandle, DictionaryHandle, EndpointHandle, PendingRequestHandle, RequestHandle,
-            ResponseHandle,
+            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, PendingRequestHandle,
+            RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -655,6 +655,20 @@ impl Session {
     /// Access the path to the configuration file for this invocation.
     pub fn config_path(&self) -> &Arc<Option<PathBuf>> {
         &self.config_path
+    }
+}
+
+/// Additional Viceroy-specific metadata for requests.
+#[derive(Clone, Debug)]
+pub struct ViceroyRequestMetadata {
+    pub auto_decompress_encodings: ContentEncodings,
+}
+
+impl Default for ViceroyRequestMetadata {
+    fn default() -> Self {
+        ViceroyRequestMetadata {
+            auto_decompress_encodings: ContentEncodings::empty(),
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::Session,
+        session::{Session, ViceroyRequestMetadata},
         upstream::{self, PendingRequest},
         wiggle_abi::{
             fastly_http_req::FastlyHttpReq,
@@ -470,13 +470,29 @@ impl FastlyHttpReq for Session {
 
     fn auto_decompress_response_set(
         &mut self,
-        _h: RequestHandle,
+        req_handle: RequestHandle,
         encodings: ContentEncodings,
     ) -> Result<(), Error> {
-        if u32::from(encodings) == 1 {
-            unimplemented!("calling auto_decompress_response_set with GZIP has not yet been implemented in Viceroy");
-        } else {
-            Ok(())
+        // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
+        // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
+        let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
+
+        match extensions.get_mut::<ViceroyRequestMetadata>() {
+            None => {
+                extensions.insert(ViceroyRequestMetadata {
+                    auto_decompress_encodings: encodings,
+                    // future note: at time of writing, this is the only field of
+                    // this structure, but there is an intention to add more fields.
+                    // When we do, and if/when an error appears, what you're looking
+                    // for is:
+                    // ..Default::default()
+                });
+            }
+            Some(vrm) => {
+                vrm.auto_decompress_encodings = encodings;
+            }
         }
+
+        Ok(())
     }
 }

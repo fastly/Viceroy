@@ -1,10 +1,14 @@
 use crate::{
-    body::Body, config::Backend, error::Error, headers::filter_outgoing_headers,
-    wiggle_abi::types::PendingRequestHandle,
+    body::{Body, Chunk},
+    config::Backend,
+    error::Error,
+    headers::filter_outgoing_headers,
+    session::ViceroyRequestMetadata,
+    wiggle_abi::types::{ContentEncodings, PendingRequestHandle},
 };
 use futures::Future;
 use http::{uri, HeaderValue};
-use hyper::{client::HttpConnector, Client, HeaderMap, Request, Response, Uri};
+use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
 use std::{
     io,
     pin::Pin,
@@ -19,6 +23,11 @@ use tokio::{
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use webpki::DNSNameRef;
+
+static GZIP_VALUES: [HeaderValue; 2] = [
+    HeaderValue::from_static("gzip"),
+    HeaderValue::from_static("x-gzip"),
+];
 
 /// A custom Hyper client connector, which is needed to override Hyper's default behavior of
 /// connecting to host specified by the request's URI; we instead want to connect to the host
@@ -164,12 +173,21 @@ pub fn send_request(
         backend,
     );
 
+    let try_decompression = req
+        .extensions()
+        .get::<ViceroyRequestMetadata>()
+        .map(|vrm| {
+            vrm.auto_decompress_encodings
+                .contains(ContentEncodings::GZIP)
+        })
+        .unwrap_or(false);
+
     filter_outgoing_headers(req.headers_mut());
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
     async move {
-        Ok(Client::builder()
+        let basic_response = Client::builder()
             .set_host(false)
             .build(connector)
             .request(req)
@@ -177,8 +195,28 @@ pub fn send_request(
             .map_err(|e| {
                 eprintln!("Error: {:?}", e);
                 e
-            })?
-            .map(Body::from))
+            })?;
+
+        if try_decompression
+            && basic_response
+                .headers()
+                .get(header::CONTENT_ENCODING)
+                .map(|x| GZIP_VALUES.contains(x))
+                .unwrap_or(false)
+        {
+            let mut decompressing_response =
+                basic_response.map(Chunk::compressed_body).map(Body::from);
+
+            decompressing_response
+                .headers_mut()
+                .remove(header::CONTENT_ENCODING);
+            decompressing_response
+                .headers_mut()
+                .remove(header::CONTENT_LENGTH);
+            Ok(decompressing_response)
+        } else {
+            Ok(basic_response.map(Body::from))
+        }
     }
 }
 

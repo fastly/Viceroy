@@ -151,3 +151,34 @@ async fn override_host_works() -> TestResult {
 
     Ok(())
 }
+
+/// Test that we can transparently gunzip responses when required.
+#[tokio::test(flavor = "multi_thread")]
+async fn transparent_gunzip() -> TestResult {
+    let resp = Test::using_fixture("gzipped-response.wasm")
+        .backend("echo", "http://127.0.0.1:9000/", None)
+        .host(9000, |mut req| {
+            let mut response_builder = Response::builder();
+
+            for (key, value) in req.headers_mut().drain() {
+                if let Some(real_key) = key {
+                    response_builder = response_builder.header(real_key, value);
+                }
+            }
+
+            response_builder
+                .status(StatusCode::OK)
+                .body(req.into_body())
+                .unwrap()
+        })
+        .against_empty()
+        .await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        "hello, world!\n",
+        resp.into_body().read_into_string().await.unwrap()
+    );
+
+    Ok(())
+}

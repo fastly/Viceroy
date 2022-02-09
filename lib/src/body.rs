@@ -1,16 +1,22 @@
 //! Body type, for request and response bodies.
 
 use {
+    crate::error,
+    bytes::{BufMut, BytesMut},
+    flate2::write::GzDecoder,
     futures::pin_mut,
     http::header::HeaderMap,
     http_body::{Body as HttpBody, SizeHint},
     std::{
         collections::VecDeque,
+        io::Write,
         pin::Pin,
         task::{Context, Poll},
     },
     tokio::sync::mpsc,
 };
+
+type DecoderState = Box<GzDecoder<bytes::buf::Writer<BytesMut>>>;
 
 /// A chunk of bytes in a [`Body`].
 ///
@@ -31,6 +37,15 @@ pub enum Chunk {
     /// one individual chunk. That stream is effectively "flattened" on-demand, as the `Body`
     /// containing it is read.
     Channel(mpsc::Receiver<Chunk>),
+    /// A version of `HttpBody` that assumes that the interior data is gzip-compressed.
+    CompressedHttpBody(DecoderState, hyper::Body),
+}
+
+impl Chunk {
+    pub fn compressed_body(body: hyper::Body) -> Chunk {
+        let initial_state = Box::new(GzDecoder::new(BytesMut::new().writer()));
+        Chunk::CompressedHttpBody(initial_state, body)
+    }
 }
 
 impl From<&[u8]> for Chunk {
@@ -98,7 +113,7 @@ impl Body {
     }
 
     /// Read the entire body into a byte vector.
-    pub async fn read_into_vec(self) -> Result<Vec<u8>, hyper::Error> {
+    pub async fn read_into_vec(self) -> Result<Vec<u8>, error::Error> {
         let mut body = Box::new(self);
         let mut bytes = Vec::new();
 
@@ -113,7 +128,7 @@ impl Body {
     /// # Panics
     ///
     /// Panics if the body is not valid UTF-8.
-    pub async fn read_into_string(self) -> Result<String, hyper::Error> {
+    pub async fn read_into_string(self) -> Result<String, error::Error> {
         Ok(String::from_utf8(self.read_into_vec().await?).expect("Body was not UTF-8"))
     }
 }
@@ -142,13 +157,13 @@ impl IntoIterator for Body {
 
 impl HttpBody for Body {
     type Data = bytes::Bytes;
-    type Error = hyper::Error;
+    type Error = error::Error;
 
     fn poll_data(
         mut self: Pin<&mut Self>,
         cx: &mut Context,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        while let Some(chunk) = self.chunks.pop_front() {
+        while let Some(mut chunk) = self.chunks.pop_front() {
             match chunk {
                 Chunk::HttpBody(mut body) => {
                     let body_mut = &mut body;
@@ -199,6 +214,39 @@ impl HttpBody for Body {
                         }
                     }
                 }
+                Chunk::CompressedHttpBody(ref mut decoder_state, ref mut body) => {
+                    pin_mut!(body);
+
+                    match body.poll_data(cx) {
+                        Poll::Pending => {
+                            // put the body back, so we can poll it again next time
+                            self.chunks.push_front(chunk);
+                            return Poll::Pending;
+                        }
+                        Poll::Ready(None) => match decoder_state.try_finish() {
+                            Err(e) => return Poll::Ready(Some(Err(e.into()))),
+                            Ok(()) => {
+                                let chunk = decoder_state.get_mut().get_mut().split().freeze();
+                                return Poll::Ready(Some(Ok(chunk)));
+                            }
+                        },
+                        Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e.into()))),
+                        Poll::Ready(Some(Ok(bytes))) => {
+                            match decoder_state.write_all(&bytes) {
+                                Err(e) => return Poll::Ready(Some(Err(e.into()))),
+                                Ok(()) => {
+                                    decoder_state.flush().unwrap();
+                                    let resulting_bytes =
+                                        decoder_state.get_mut().get_mut().split().freeze();
+                                    // put the body back, so we can poll it again next time
+                                    self.chunks.push_front(chunk);
+
+                                    return Poll::Ready(Some(Ok(resulting_bytes)));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -218,8 +266,9 @@ impl HttpBody for Body {
         let mut size = 0;
         for chunk in self.chunks.iter() {
             match chunk {
-                // If this is a streaming body, immediately give up on the hint.
+                // If this is a streaming body or a compressed chunk, immediately give up on the hint.
                 Chunk::Channel(_) => return SizeHint::default(),
+                Chunk::CompressedHttpBody(_, _) => return SizeHint::default(),
                 Chunk::HttpBody(body) => {
                     // An `HttpBody` size hint will either be exact, or wide open. If the latter,
                     // bail out with a wide-open range.
