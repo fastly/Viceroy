@@ -3,7 +3,7 @@ use fastly::http::StatusCode;
 use fastly::{Backend, Request};
 use std::io::Read;
 
-static HELLO_WORLD: &'static str = include_str!("../../data/hello_world");
+static HELLO_WORLD: &'static str = "hello, world!\n";
 static HELLO_WORLD_GZ: &'static [u8] = include_bytes!("../../data/hello_world.gz");
 
 fn main() -> Result<(), SendError> {
