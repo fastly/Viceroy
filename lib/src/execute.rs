@@ -264,7 +264,10 @@ impl ExecuteCtx {
             .await
             .map(|_| ())
             .map_err(|trap| {
-                event!(Level::ERROR, "WebAssembly trapped: {}", trap);
+                // Be sure that we only log non-zero status codes.
+                if trap.i32_exit_status() != Some(0) {
+                    event!(Level::ERROR, "WebAssembly trapped: {}", trap);
+                }
                 ExecutionError::WasmTrap(trap)
             });
 
