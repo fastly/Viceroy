@@ -1,3 +1,0 @@
-[submodule "lib/compute-at-edge-abi"]
-	path = lib/compute-at-edge-abi
-	url = git@github.com:fastly/compute-at-edge-abi.git

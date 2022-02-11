@@ -1,0 +1,115 @@
+;;; Status codes returned from hostcalls.
+(typename $fastly_status
+    (enum (@witx tag u32)
+        ;;; Success value.
+        ;;
+        ;;; This indicates that a hostcall finished successfully.
+        $ok
+        ;;; Generic error value.
+        ;;
+        ;;; This means that some unexpected error occured during a hostcall.
+        $error
+        ;;; Invalid argument.
+        $inval
+        ;;; Invalid handle.
+        ;;
+        ;;; Thrown when a request, response, or body handle is not valid.
+        $badf
+        ;;; Buffer length error.
+        ;;
+        ;;; Thrown when a buffer is too long.
+        $buflen
+        ;;; Unsupported operation error.
+        ;;
+        ;;; This error is thrown when some operation cannot be performed, because it is not supported.
+        $unsupported
+        ;;; Alignment error.
+        ;;
+        ;;; This is thrown when a pointer does not point to a properly aligned slice of memory.
+        $badalign
+        ;;; Invalid HTTP error.
+        ;;
+        ;;; This can be thrown when a method, URI, header, or status is not valid. This can also
+        ;;; be thrown if a message head is too large.
+        $httpinvalid
+        ;;; HTTP user error.
+        ;;
+        ;;; This is thrown in cases where user code caused an HTTP error. For example, attempt to send
+        ;;; a 1xx response code, or a request with a non-absolute URI. This can also be caused by
+        ;;; an unexpected header: both `content-length` and `transfer-encoding`, for example.
+        $httpuser
+        ;;; HTTP incomplete message error.
+        ;;
+        ;;; This can be thrown when a stream ended unexpectedly.
+        $httpincomplete
+        ;;; A `None` error.
+        ;;
+        ;;; This status code is used to indicate when an optional value did not exist, as opposed to
+        ;;; an empty value.
+        $none
+        ;;; Message head too large.
+        $httpheadtoolarge
+        ;;; Invalid HTTP status.
+        $httpinvalidstatus
+    )
+)
+
+;;; A tag indicating HTTP protocol versions.
+(typename $http_version
+    (enum (@witx tag u32)
+        $http_09
+        $http_10
+        $http_11
+        $h2
+        $h3
+    )
+)
+
+;;; HTTP status codes.
+(typename $http_status u16)
+
+(typename $body_write_end
+    (enum (@witx tag u32)
+        $back
+        $front
+    )
+)
+
+;;; A handle to an HTTP request or response body.
+(typename $body_handle (handle))
+;;; A handle to an HTTP request.
+(typename $request_handle (handle))
+;;; A handle to an HTTP response.
+(typename $response_handle (handle))
+;;; A handle to a currently-pending asynchronous HTTP request.
+(typename $pending_request_handle (handle))
+;;; A handle to a logging endpoint.
+(typename $endpoint_handle (handle))
+;;; A handle to an Edge Dictionary.
+(typename $dictionary_handle (handle))
+
+;;; A "multi-value" cursor.
+(typename $multi_value_cursor u32)
+;;; -1 represents "finished", non-negative represents a $multi_value_cursor:
+(typename $multi_value_cursor_result s64)
+
+;;; An override for response caching behavior.
+(typename $cache_override_tag
+    (flags (@witx repr u32)
+        ;;; Do not override the behavior specified in the origin response's cache control headers.
+        $none
+        ;;; Do not cache the response to this request, regardless of the origin response's headers.
+        $pass
+        $ttl
+        $stale_while_revalidate
+        $pci
+    )
+)
+(typename $num_bytes (@witx usize))
+(typename $header_count u32)
+(typename $is_done u32)
+(typename $done_idx u32)
+
+(typename $content_encodings
+    (flags (@witx repr u32)
+        $gzip))
