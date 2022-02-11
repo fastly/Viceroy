@@ -1,6 +1,7 @@
 # 🔗 compute-at-edge-abi
 
-This repository contains `witx` definitions for the Compute@Edge platform ABI.
+This directory contains the canonical `witx` definitions for the Compute@Edge
+platform ABI.
 
 ### About `witx`
 
