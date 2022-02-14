@@ -1,5 +1,7 @@
 //! Guest code execution.
 
+use crate::Event;
+
 use {
     crate::{
         body::Body,
@@ -49,6 +51,8 @@ pub struct ExecuteCtx {
     log_stderr: bool,
     /// The ID to assign the next incoming request
     next_req_id: Arc<AtomicU64>,
+    // A channel that receives `Event`s produced by the guest, e.g. log messages.
+    event_sender: Option<tokio::sync::mpsc::Sender<Event>>,
 }
 
 impl ExecuteCtx {
@@ -72,6 +76,7 @@ impl ExecuteCtx {
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
+            event_sender: None
         })
     }
 
@@ -139,6 +144,14 @@ impl ExecuteCtx {
         &self.tls_config
     }
 
+    /// Creates a channel that will receive messages when events occur during runtime.
+    pub fn setup_event_channel(&mut self) -> tokio::sync::mpsc::Receiver<Event>
+    {
+        let (tx, rx) = tokio::sync::mpsc::channel(256);
+        self.event_sender = Some(tx);
+        rx
+    }
+
     /// Asynchronously handle a request.
     ///
     /// This method fully instantiates the wasm module housed within the `ExecuteCtx`,
@@ -173,6 +186,10 @@ impl ExecuteCtx {
         let req_id = self
             .next_req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // if let Some(tx) = &self.event_sender {
+        //     //tx.send(Event::IncomingRequest(req));
+        // }
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
@@ -239,6 +256,7 @@ impl ExecuteCtx {
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),
+            self.event_sender.clone(),
         );
         // We currently have to postpone linking and instantiation to the guest task
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.

@@ -2,6 +2,7 @@ use std::{
     io::{self, BufRead, Read, StdinLock, StdoutLock, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
+    sync::{Arc, Mutex},
 };
 
 use dap_types::{
@@ -11,41 +12,48 @@ use dap_types::{
     ResponseBuilder,
 };
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinHandle;
+use tokio::{task::JoinHandle, sync::mpsc::Receiver};
 use tracing::{event, Level};
 use viceroy_lib::{Error, ExecuteCtx, ViceroyService};
 
-/// The debug adapter serves a TCP socket on the given address and listens for Debug Adapter Protocol
+/// The debug adapter opens a stream from stdin and listens for Debug Adapter Protocol
 /// messages. These messages control the execution of the wrapped Viceroy Service.
+///
+/// Telemetry such as log output is emitted in the form of DAP messages to stdout.
 ///
 /// Viceroy does not yet support debugging but this functionality is enough to allow it to be run
 /// and inspected from within IDEs.
-pub struct DebugAdapter {
-    configure_ctx: Box<dyn Fn(ExecuteCtx) -> ExecuteCtx>,
-}
+// pub struct DebugAdapter<'a> {
+//     configure_ctx: Box<dyn Fn(ExecuteCtx) -> ExecuteCtx>,
+//     stdin: StdinLock<'a>,
+//     stdout: StdoutLock<'a>,
+//     sequence: u32,
+//     server: Option<JoinHandle<()>>,
+// }
 
-impl DebugAdapter {
+impl <'a> DebugAdapter<'a> {
     pub fn new(configure_ctx: Box<dyn Fn(ExecuteCtx) -> ExecuteCtx>) -> Self {
-        Self { configure_ctx }
-    }
-
-    pub fn serve(self) -> Result<(), Error> {
         let stdin = io::stdin();
         let stdout = io::stdout();
 
-        let mut session = DebugSession {
+        Self {
+            configure_ctx,
             stdin: stdin.lock(),
             stdout: stdout.lock(),
             sequence: 1,
-            server: None,
-        };
+            server: None
+        }
+    }
+
+    pub fn serve<'b>(mut self) -> Result<(), Error> {
+        let mut event_rx: Option<Receiver<viceroy_lib::Event>> = None;
 
         // message parsing loop
         loop {
             let mut content_length: usize = 0;
 
             // header parsing loop
-            while let Some((key, value)) = session.read_header()? {
+            while let Some((key, value)) = self.read_header()? {
                 match key.as_str() {
                     "Content-Length" => {
                         content_length = value
@@ -59,10 +67,10 @@ impl DebugAdapter {
             }
 
             let mut data: Vec<u8> = vec![0; content_length];
-            session.stdin.read_exact(&mut data)?;
+            self.stdin.read_exact(&mut data)?;
 
             // If this is the first message, it should be an initialize request
-            if session.sequence == 1 {
+            if self.sequence == 1 {
                 // parse request
                 let init: ProtocolMessage<Request<InitializeRequestPayload>> =
                     serde_json::from_slice(&data).expect("could not parse initial request");
@@ -72,7 +80,7 @@ impl DebugAdapter {
                 let resp: ProtocolMessage<Response<Capabilities>> =
                     ProtocolMessageBuilder::default()
                         .message_type(MessageType::Response)
-                        .seq(session.sequence)
+                        .seq(self.sequence)
                         .payload(
                             ResponseBuilder::default()
                                 .request_seq(*init.seq())
@@ -95,7 +103,7 @@ impl DebugAdapter {
                 println!("{}", serde_json::to_string_pretty(&resp).unwrap());
 
                 // send capabilities response
-                session.send_message(resp)?;
+                self.send_message(resp)?;
             } else {
                 // extract command from data
                 let request_data: serde_json::Map<String, serde_json::Value> =
@@ -135,7 +143,7 @@ impl DebugAdapter {
                             req.payload().arguments().project
                         );
 
-                        if session.server.is_some() {
+                        if self.server.is_some() {
                             event!(
                                 Level::WARN,
                                 "received launch command but server is already running"
@@ -151,26 +159,25 @@ impl DebugAdapter {
                             req.payload().arguments().port,
                         );
 
-                        session.send_output(
-                            "console",
-                            "Loading Wasm binary...",
-                        )?;
+                        self.send_output("console", "Loading Wasm binary...")?;
 
-                        session.send_output(
+                        self.send_output(
                             "important",
                             "Debugging for Compute@Edge is currently in development. Please file issue reports at https://github.com/fastly/fastly-vscode.",
                         )?;
 
-                        let ctx = (self.configure_ctx)(ExecuteCtx::new(binary_path)?);
+                        let mut ctx = (self.configure_ctx)(ExecuteCtx::new(binary_path)?);
 
-                        session.send_output(
+                        event_rx = Some(ctx.setup_event_channel());
+
+                        self.send_output(
                             "console",
                             &format!("Starting Compute@Edge server at http://{}", address),
                         )?;
 
                         // Start the Viceroy server within a tokio task so we can continue to process DAP messages.
                         // The task's `JoinHandle` is stored to be able to terminate the server later.
-                        session.server = Some(tokio::task::spawn(async move {
+                        self.server = Some(tokio::task::spawn(async move {
                             // TODO: set up event bus so we can register hooks for events within the runtime, e.g. logging.
                             //
                             // This is also a step towards separating fiddle-compute-runtime from Viceroy.
@@ -182,7 +189,7 @@ impl DebugAdapter {
                         let resp: ProtocolMessage<Response<Option<u8>>> =
                             ProtocolMessageBuilder::default()
                                 .message_type(MessageType::Response)
-                                .seq(session.sequence)
+                                .seq(self.sequence)
                                 .payload(
                                     ResponseBuilder::default()
                                         .request_seq(*req.seq())
@@ -195,14 +202,14 @@ impl DebugAdapter {
                                 .build()
                                 .unwrap();
 
-                        session.send_message(resp)?;
+                                self.send_message(resp)?;
                     }
                     "terminate" => {
                         event!(Level::INFO, "received terminate command");
 
-                        if let Some(handle) = session.server {
+                        if let Some(handle) = self.server {
                             handle.abort();
-                            session.server = None;
+                            self.server = None;
                         } else {
                             event!(
                                 Level::WARN,
@@ -215,9 +222,9 @@ impl DebugAdapter {
                     "disconnect" => {
                         event!(Level::INFO, "received disconnect command");
 
-                        if let Some(handle) = session.server {
+                        if let Some(handle) = self.server {
                             handle.abort();
-                            session.server = None;
+                            self.server = None;
                         }
 
                         break;
@@ -225,7 +232,7 @@ impl DebugAdapter {
                     _ => {
                         event!(Level::WARN, "received unsupported command: {}", command);
 
-                        session.send_output(
+                        self.send_output(
                             "console",
                             &format!("Unsupported debugger command: {}", command),
                         )?;
@@ -236,22 +243,7 @@ impl DebugAdapter {
 
         Ok(())
     }
-}
 
-#[derive(Deserialize)]
-struct ViceroyLaunchRequestPayload {
-    port: u16,
-    project: String,
-}
-
-struct DebugSession<'a> {
-    stdin: StdinLock<'a>,
-    stdout: StdoutLock<'a>,
-    sequence: u32,
-    server: Option<JoinHandle<()>>,
-}
-
-impl<'a> DebugSession<'a> {
     fn read_header(&mut self) -> Result<Option<(String, String)>, Error> {
         // Read up to newline
         let mut header_bytes: Vec<u8> = vec![];
@@ -323,4 +315,10 @@ impl<'a> DebugSession<'a> {
 
         self.send_message(event)
     }
+}
+
+#[derive(Deserialize)]
+struct ViceroyLaunchRequestPayload {
+    port: u16,
+    project: String,
 }

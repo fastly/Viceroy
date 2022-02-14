@@ -1,7 +1,10 @@
 //! fastly_log` hostcall implementations.
 
+use crate::Event;
+
 use {
     crate::{
+        event,
         error::Error,
         session::Session,
         wiggle_abi::{fastly_log::FastlyLog, types::EndpointHandle},
@@ -41,6 +44,9 @@ impl FastlyLog for Session {
     ) -> Result<u32, Error> {
         let endpoint = self.log_endpoint(endpoint_handle)?;
         let msg = msg.as_slice()?;
+
+        self.send_event(Event::Log("endpoint".to_string(), String::from_utf8(msg.to_vec()).unwrap_or_else(|_| "invalid utf8".into())));
+
         endpoint
             .write_entry(&msg)
             .map(|_| msg.len() as u32)
