@@ -18,8 +18,8 @@ Below are the steps needed to do a Viceroy release:
    Pushing this tag will kick off a build for all of the release artifacts.
 1. After CI completes, we should publish each crate in the workspace to the
    crates.io registry. Note that we must do this in order of dependencies. So,
-  1. `cd lib && cargo publish`
-  1. `cd cli && cargo publish`
+  1. `(cd lib && cargo publish)`
+  1. `(cd cli && cargo publish)`
 1. Now, we should return to our release PR.
   1. Update the version fields in `lib/Cargo.toml` and `cli/Cargo.toml` to the
      next patch version (so `z + 1`).
