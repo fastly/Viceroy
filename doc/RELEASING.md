@@ -26,4 +26,5 @@ Below are the steps needed to do a Viceroy release:
   1. Update the dependency on `viceroy-lib` in `cli/Cargo.toml` to the next
      patch version.
   1. Update all the lockfiles by running `make generate-lockfile`.
+  1. Restore the `## Unreleased` header at the top of `CHANGELOG.md`.
 1. Get another approval and merge when CI passes.
