@@ -5,7 +5,7 @@ use {
     viceroy_lib::ExecuteCtx,
 };
 
-#[path = "../../common.rs"]
+#[path = "../../integration/common.rs"]
 mod common;
 
 #[tokio::test(flavor = "multi_thread")]

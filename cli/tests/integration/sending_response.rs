@@ -1,9 +1,7 @@
 //! Tests related to sending HTTP responses downstream.
 
-mod common;
-
 use {
-    common::{Test, TestResult},
+    crate::common::{Test, TestResult},
     hyper::{
         body::{to_bytes, HttpBody},
         StatusCode,

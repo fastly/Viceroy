@@ -1,7 +1,5 @@
-mod common;
-
 use {
-    common::{Test, TestResult},
+    crate::common::{Test, TestResult},
     hyper::{Request, StatusCode},
 };
 
