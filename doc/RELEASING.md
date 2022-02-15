@@ -6,9 +6,7 @@ Below are the steps needed to do a Viceroy release:
    version. You might need to bump the minor version (e.g. 0.2.0 to 0.3.0) if
    there are any semver breaking changes. Review the changes since the last
    release just to be sure.
-1. Update the `Cargo.lock` files by running `cargo update --workspace` in the
-   root directory and by going into the `test-fixtures` and
-   `cli/tests/trap-test` folders and running the same command there.
+1. Update the `Cargo.lock` files by running `make generate-lockfile`.
 1. Update `CHANGELOG.md` so that it contains all of the updates since the
    previous version as its own commit.
 1. Push a branch in the form `release-x.y.z` where `x`, `y`, and `z` are the
