@@ -1,4 +1,7 @@
-## Unreleased
+## 0.2.11 (2022-02-15)
+
+- Implement automatic decompression of gzip backend responses ([#125](https://github.com/fastly/Viceroy/pull/125))
+- Remove excess logging for programs that exit with a zero exit code ([#128](https://github.com/fastly/Viceroy/pull/128))
 
 ## 0.2.10 (2022-02-08)
 
