@@ -1,6 +1,5 @@
-# Default to using regular `cargo`. The `ci` target will override this.
+# Default to using regular `cargo`. CI targets may override this.
 VICEROY_CARGO=cargo
-export VICEROY_CARGO
 
 .PHONY: format
 format:
