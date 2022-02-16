@@ -1,5 +1,7 @@
 on: pull_request
 name: Test
+env:
+  CACHE_GENERATION: 2
 jobs:
   test:
     strategy:
@@ -29,7 +31,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-v2-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-build-target-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
     - name: Install rustfmt
       run: rustup component add rustfmt
       shell: bash
