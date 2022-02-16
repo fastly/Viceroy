@@ -12,17 +12,29 @@ use viceroy_lib::{
     ExecuteCtx, ViceroyService,
 };
 
-/// A shorthand for the path to our test fixtures' build artifacts.
+/// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
 ///
 /// This value can be appended with the name of a fixture's `.wasm` in a test program, using the
 /// [`format!`][fmt] macro. For example:
 ///
 /// ```
-/// let module_path = format!("{}/guest.wasm", FIXTURE_PATH);
+/// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
 /// ```
 ///
 /// [format]: https://doc.rust-lang.org/std/fmt/fn.format.html
-pub static FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/";
+pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/";
+
+/// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
+///
+/// This value can be appended with the name of a fixture's `.wat` in a test program, using the
+/// [`format!`][fmt] macro. For example:
+///
+/// ```
+/// let module_path = format!("{}/guest.wat", WAT_FIXTURE_PATH);
+/// ```
+///
+/// [format]: https://doc.rust-lang.org/std/fmt/fn.format.html
+pub static WAT_FIXTURE_PATH: &str = "../test-fixtures/";
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -36,7 +48,7 @@ static TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
 /// A builder for running individual requests through a wasm fixture.
 pub struct Test {
-    fixture: String,
+    module_path: PathBuf,
     backends: Backends,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
@@ -47,8 +59,26 @@ pub struct Test {
 impl Test {
     /// Create a new test given the file name for its wasm fixture.
     pub fn using_fixture(fixture: &str) -> Self {
+        let mut module_path = PathBuf::from(RUST_FIXTURE_PATH);
+        module_path.push(fixture);
+
         Self {
-            fixture: fixture.to_owned(),
+            module_path,
+            backends: Backends::new(),
+            hosts: Vec::new(),
+            log_stdout: false,
+            log_stderr: false,
+            via_hyper: false,
+        }
+    }
+
+    /// Create a new test given the file name for its wasm fixture.
+    pub fn using_wat_fixture(fixture: &str) -> Self {
+        let mut module_path = PathBuf::from(WAT_FIXTURE_PATH);
+        module_path.push(fixture);
+
+        Self {
+            module_path,
             backends: Backends::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -128,10 +158,7 @@ impl Test {
             .try_init()
             .ok();
 
-        let mut module_path = PathBuf::from(FIXTURE_PATH);
-        module_path.push(&self.fixture);
-
-        let ctx = ExecuteCtx::new(module_path)
+        let ctx = ExecuteCtx::new(&self.module_path)
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_log_stderr(self.log_stderr)
