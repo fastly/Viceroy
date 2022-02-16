@@ -1,9 +1,7 @@
 //! Tests related to HTTP request and response bodies.
 
-mod common;
-
 use {
-    common::{Test, TestResult},
+    crate::common::{Test, TestResult},
     hyper::{body, StatusCode},
 };
 

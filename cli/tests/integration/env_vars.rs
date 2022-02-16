@@ -1,6 +1,4 @@
-mod common;
-
-use common::{Test, TestResult};
+use crate::common::{Test, TestResult};
 
 #[tokio::test]
 async fn env_vars_are_set() -> TestResult {

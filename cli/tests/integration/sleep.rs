@@ -1,5 +1,4 @@
-mod common;
-use common::{Test, TestResult};
+use crate::common::{Test, TestResult};
 use hyper::{body::to_bytes, StatusCode};
 /// Run a program that only sleeps. This exercises async functionality in wasi.
 /// Check that an empty response is sent downstream by default.

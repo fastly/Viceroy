@@ -1,9 +1,7 @@
 //! Tests related to HTTP semantics (e.g. framing headers, status codes).
 
-mod common;
-
 use {
-    common::{Test, TestResult},
+    crate::common::{Test, TestResult},
     hyper::{header, Request, Response, StatusCode},
 };
 
