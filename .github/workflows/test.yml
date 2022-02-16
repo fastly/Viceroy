@@ -29,7 +29,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-v1-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-build-target-v2-${{ hashFiles('**/Cargo.lock') }}
     - name: Install rustfmt
       run: rustup component add rustfmt
       shell: bash
