@@ -1,7 +1,7 @@
 on: pull_request
 name: Test
 env:
-  CACHE_GENERATION: 2
+  CACHE_GENERATION: 0
 jobs:
   test:
     strategy:
@@ -17,21 +17,16 @@ jobs:
       uses: actions-rs/toolchain@v1
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - name: Cache cargo
+      uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
     - name: Install rustfmt
       run: rustup component add rustfmt
       shell: bash
@@ -59,21 +54,16 @@ jobs:
       uses: actions-rs/toolchain@v1
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - name: Cache cargo
+      uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
     - name: trap-test
       run: make trap-test-ci
       shell: bash
