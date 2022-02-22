@@ -20,8 +20,6 @@ use viceroy_lib::{
 /// ```
 /// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
 /// ```
-///
-/// [format]: https://doc.rust-lang.org/std/fmt/fn.format.html
 pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/";
 
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
@@ -32,8 +30,6 @@ pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/
 /// ```
 /// let module_path = format!("{}/guest.wat", WAT_FIXTURE_PATH);
 /// ```
-///
-/// [format]: https://doc.rust-lang.org/std/fmt/fn.format.html
 pub static WAT_FIXTURE_PATH: &str = "../test-fixtures/";
 
 /// A catch-all error, so we can easily use `?` in test cases.
