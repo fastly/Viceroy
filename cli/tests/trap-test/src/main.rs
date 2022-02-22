@@ -1,5 +1,5 @@
 use {
-    crate::common::{TestResult, FIXTURE_PATH},
+    crate::common::{TestResult, RUST_FIXTURE_PATH},
     http::header::WARNING,
     hyper::{Body, Request, StatusCode},
     viceroy_lib::ExecuteCtx,
@@ -10,7 +10,7 @@ mod common;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fatal_error_traps() -> TestResult {
-    let module_path = format!("../../{}/response.wasm", FIXTURE_PATH);
+    let module_path = format!("../../{}/response.wasm", RUST_FIXTURE_PATH);
     let ctx = ExecuteCtx::new(module_path)?;
     let req = Request::get("http://127.0.0.1:7878/").body(Body::from(""))?;
     let resp = ctx
