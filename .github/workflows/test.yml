@@ -1,7 +1,7 @@
 on: pull_request
 name: Test
 env:
-  CACHE_GENERATION: 2
+  CACHE_GENERATION: 0
 jobs:
   test:
     strategy:
@@ -14,24 +14,20 @@ jobs:
       with:
         submodules: true
     - name: Install Rust
+      id: toolchain
       uses: actions-rs/toolchain@v1
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - name: Cache cargo
+      uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
     - name: Install rustfmt
       run: rustup component add rustfmt
       shell: bash
@@ -57,23 +53,19 @@ jobs:
         submodules: true
     - name: Install Rust
       uses: actions-rs/toolchain@v1
+      id: toolchain
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - name: Cache cargo
+      uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
     - name: trap-test
       run: make trap-test-ci
       shell: bash
@@ -85,14 +77,12 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: true
-
       - name: Install latest Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           default: true
           override: true
-
       - name: Check crates can be published
         run: make package-check
         shell: bash
