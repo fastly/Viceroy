@@ -9,8 +9,9 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
-                BodyHandle, CacheOverrideTag, ContentEncodings, HttpVersion, MultiValueCursor,
-                MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,
+                BodyHandle, CacheOverrideTag, ContentEncodings, FramingHeadersMode, HttpVersion,
+                MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, RequestHandle,
+                ResponseHandle,
             },
         },
     },
@@ -111,6 +112,19 @@ impl FastlyHttpReq for Session {
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Client TLS data"))
+    }
+
+    fn framing_headers_mode_set(
+        &mut self,
+        _h: RequestHandle,
+        mode: FramingHeadersMode,
+    ) -> Result<(), Error> {
+        match mode {
+            FramingHeadersMode::ManuallyFromHeaders => {
+                Err(Error::NotAvailable("Manual framing headers"))
+            }
+            FramingHeadersMode::Automatic => Ok(()),
+        }
     }
 
     fn new(&mut self) -> Result<RequestHandle, Error> {

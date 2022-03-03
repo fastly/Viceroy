@@ -113,3 +113,8 @@
 (typename $content_encodings
     (flags (@witx repr u32)
         $gzip))
+
+(typename $framing_headers_mode
+    (enum (@witx tag u32)
+        $automatic
+        $manually_from_headers))
