@@ -303,6 +303,13 @@
         (param $encodings $content_encodings)
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Adjust how this requests's framing headers are determined.
+    (@interface func (export "framing_headers_mode_set")
+        (param $h $request_handle)
+        (param $mode $framing_headers_mode)
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_http_resp
@@ -402,6 +409,13 @@
 
     (@interface func(export "close")
         (param $h $response_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Adjust how this response's framing headers are determined.
+    (@interface func (export "framing_headers_mode_set")
+        (param $h $response_handle)
+        (param $mode $framing_headers_mode)
         (result $err (expected (error $fastly_status)))
     )
 )

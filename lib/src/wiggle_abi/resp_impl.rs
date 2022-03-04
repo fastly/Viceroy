@@ -8,8 +8,8 @@ use {
             fastly_http_resp::FastlyHttpResp,
             headers::HttpHeaders,
             types::{
-                BodyHandle, HttpStatus, HttpVersion, MultiValueCursor, MultiValueCursorResult,
-                ResponseHandle,
+                BodyHandle, FramingHeadersMode, HttpStatus, HttpVersion, MultiValueCursor,
+                MultiValueCursorResult, ResponseHandle,
             },
         },
     },
@@ -164,6 +164,19 @@ impl FastlyHttpResp for Session {
         let status = hyper::StatusCode::from_u16(status)?;
         resp.status = status;
         Ok(())
+    }
+
+    fn framing_headers_mode_set(
+        &mut self,
+        _h: ResponseHandle,
+        mode: FramingHeadersMode,
+    ) -> Result<(), Error> {
+        match mode {
+            FramingHeadersMode::ManuallyFromHeaders => {
+                Err(Error::NotAvailable("Manual framing headers"))
+            }
+            FramingHeadersMode::Automatic => Ok(()),
+        }
     }
 
     fn close(&mut self, resp_handle: ResponseHandle) -> Result<(), Error> {
