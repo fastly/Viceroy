@@ -130,10 +130,10 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             .transpose()?
             .unwrap_or_default();
         Ok(FastlyConfig {
-            name: name.unwrap_or_else(String::new),
-            description: description.unwrap_or_else(String::new),
-            authors: authors.unwrap_or_else(Vec::new),
-            language: language.unwrap_or_else(String::new),
+            name: name.unwrap_or_default(),
+            description: description.unwrap_or_default(),
+            authors: authors.unwrap_or_default(),
+            language: language.unwrap_or_default(),
             local_server,
         })
     }
