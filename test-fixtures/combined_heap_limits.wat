@@ -310,7 +310,9 @@
         (i32.const 0) ;; push the pointer for the buffer; the start of memory,
                       ;; because we don't care
         (i32.const 1024) ;; the length of the buffer
-        (i32.const 0) ;; I think this means add it to the end?
+        (i32.const 0) ;; This means add it to the end; it's `body_write_end::back`
+                      ;; from `typenames.witx`. It appears that enumerations are
+                      ;; numbered in order from zero, for reference.
         (global.get $amount_written)
         (call $response_add_to_body)
         (call $maybe_error_die)
@@ -342,7 +344,9 @@
   ;; get the size the user wants from the provided header
   ;; we're going to cheat a bit, here, and assume that the only
   ;; reason we might get an error is because the user didn't pass
-  ;; this header; and if they didn't pass a header, we're going to
+  ;; this header. so if they didn't pass a header, or really if any
+  ;; other error happens looking up the field value, we're going to
+  ;; just return zero.
   (func $get_size (param $string_ptr i32) (result i32)
      (block $test_block
        ;; first, let's get the string for this header
