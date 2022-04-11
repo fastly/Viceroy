@@ -80,7 +80,7 @@ impl FastlyConfig {
     }
 
     /// Parse a string containing TOML data into a `FastlyConfig`.
-    fn from_str(toml: impl AsRef<str>) -> Result<Self, FastlyConfigError> {
+    pub fn from_str(toml: impl AsRef<str>) -> Result<Self, FastlyConfigError> {
         toml::from_str::<'_, TomlFastlyConfig>(toml.as_ref())
             .map_err(Into::into)
             .and_then(TryInto::try_into)
