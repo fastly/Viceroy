@@ -1,11 +1,22 @@
-use crate::config::dictionaries::DictionaryFormat;
-
 use {
     super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
-    crate::{config::DictionaryName, error::FastlyConfigError},
-    std::{fs::File, io::Write},
+    crate::{
+        config::{dictionaries::DictionaryFormat, DictionaryName},
+        error::FastlyConfigError,
+    },
+    std::{convert::TryInto, fs::File, io::Write},
     tempfile::tempdir,
 };
+
+/// A test helper used to read the `local_server` section of a config file.
+///
+/// In the interest of brevity, this section works with TOML data that would be placed beneath the
+/// `local_server` key, rather than an entire package manifest as in the tests above.
+fn read_local_server_config(toml: &str) -> Result<LocalServerConfig, FastlyConfigError> {
+    toml::from_str::<'_, RawLocalServerConfig>(toml)
+        .expect("valid toml data")
+        .try_into()
+}
 
 #[test]
 fn error_when_fastly_toml_files_cannot_be_read() {
@@ -130,59 +141,43 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
     assert_eq!(dictionary.format, DictionaryFormat::Json);
 }
 
-/// Unit tests for the `local_server` section of a `fastly.toml` package manifest.
+/// Check that the `local_server` section can be deserialized.
+// This case is technically redundant, but it is nice to have a unit test that demonstrates the
+// happy path for this group of unit tests.
+#[test]
+fn local_server_configs_can_be_deserialized() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("secrets.json");
+    let mut file = File::create(&file_path).unwrap();
+    writeln!(file, "{{}}").unwrap();
+
+    let local_server = format!(
+        r#"
+        [backends]
+          [backends.dog]
+          url = "http://localhost:7878/dog-mocks"
+        [dicionaries]
+          [dicionaries.secrets]
+          file = '{}'
+          format = "json"
+    "#,
+        file_path.to_str().unwrap()
+    );
+    match read_local_server_config(&local_server) {
+        Ok(_) => {}
+        res => panic!("unexpected result: {:?}", res),
+    }
+}
+
+/// Unit tests for backends in the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// In particular, these tests check that we deserialize and validate the backend configurations
-/// section of the TOML data properly. In the interest of brevity, this section works with TOML data
-/// that would be placed beneath the `local_server` key, rather than an entire package manifest as in
-/// the tests above.
-mod local_server_config_tests {
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
-
+/// section of the TOML data properly.
+mod backend_config_tests {
     use {
-        super::{LocalServerConfig, RawLocalServerConfig},
-        crate::error::{
-            BackendConfigError, DictionaryConfigError,
-            FastlyConfigError::{self, InvalidBackendDefinition, InvalidDictionaryDefinition},
-        },
-        std::convert::TryInto,
+        super::read_local_server_config,
+        crate::error::{BackendConfigError, FastlyConfigError::InvalidBackendDefinition},
     };
-
-    fn read_local_server_config(toml: &str) -> Result<LocalServerConfig, FastlyConfigError> {
-        toml::from_str::<'_, RawLocalServerConfig>(toml)
-            .expect("valid toml data")
-            .try_into()
-    }
-
-    /// Check that the `local_server` section can be deserialized.
-    // This case is technically redundant, but it is nice to have a unit test that demonstrates the
-    // happy path for this group of unit tests.
-    #[test]
-    fn local_server_configs_can_be_deserialized() {
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("secrets.json");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "{{}}").unwrap();
-
-        let local_server = format!(
-            r#"
-            [backends]
-              [backends.dog]
-              url = "http://localhost:7878/dog-mocks"
-            [dicionaries]
-              [dicionaries.secrets]
-              file = '{}'
-              format = "json"
-        "#,
-            file_path.to_str().unwrap()
-        );
-        match read_local_server_config(&local_server) {
-            Ok(_) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
 
     /// Check that backend definitions must be given as TOML tables.
     #[test]
@@ -313,6 +308,19 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+}
+
+/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly for dictionaries using JSON files to store their data.
+mod json_dictionary_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{DictionaryConfigError, FastlyConfigError::InvalidDictionaryDefinition},
+        std::{fs::File, io::Write},
+        tempfile::tempdir,
+    };
 
     /// Check that dictionary definitions must be given as TOML tables.
     #[test]
