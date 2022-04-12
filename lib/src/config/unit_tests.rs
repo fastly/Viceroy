@@ -168,10 +168,10 @@ mod local_server_config_tests {
 
         let local_server = format!(
             r#"
-            [backends]            
+            [backends]
               [backends.dog]
               url = "http://localhost:7878/dog-mocks"
-            [dicionaries]            
+            [dicionaries]
               [dicionaries.secrets]
               file = '{}'
               format = "json"
