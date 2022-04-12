@@ -379,6 +379,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that dictionary definitions *must* include a `format` field.
     #[test]
     fn dictionary_configs_must_provide_a_format() {
@@ -402,6 +403,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that dictionary definitions must include a *valid* `name` field.
     #[test]
     fn dictionary_configs_must_provide_a_valid_name() {
@@ -426,6 +428,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that file field is a string.
     #[test]
     fn dictionary_configs_must_provide_file_as_a_string() {
@@ -442,6 +445,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that file field is non empty.
     #[test]
     fn dictionary_configs_must_provide_a_non_empty_file() {
@@ -458,6 +462,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that format field is a string.
     #[test]
     fn dictionary_configs_must_provide_format_as_a_string() {
@@ -474,6 +479,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that format field is non empty.
     #[test]
     fn dictionary_configs_must_provide_a_non_empty_format() {
@@ -490,6 +496,7 @@ mod json_dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that format field set to json is valid.
     #[test]
     fn valid_dictionary_config_with_format_set_to_json() {
