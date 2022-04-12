@@ -305,6 +305,12 @@ pub enum DictionaryConfigError {
     #[error("error reading `{name}`: {error}")]
     IoError { name: String, error: String },
 
+    #[error("'contents' was not provided as a TOML table")]
+    InvalidContentsType,
+
+    #[error("inline dictionary value was not a string")]
+    InvalidInlineEntryType,
+
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
@@ -328,6 +334,9 @@ pub enum DictionaryConfigError {
 
     #[error("'format' field was not a string")]
     InvalidFormatEntry,
+
+    #[error("missing 'contents' field")]
+    MissingContents,
 
     #[error("no default definition provided")]
     MissingDefault,

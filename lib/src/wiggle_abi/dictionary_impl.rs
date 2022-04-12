@@ -52,28 +52,35 @@ impl FastlyDictionary for Session {
     ) -> Result<u32, Error> {
         let key: &str = &key.as_str()?;
         let dict = self.dictionary(dictionary)?;
-        match dict {
+        let item_bytes = match dict {
+            Dictionary::InlineToml { contents } => contents
+                .get(key)
+                .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
+                .as_bytes()
+                .to_owned(),
             Dictionary::Json { file } => {
                 let obj = read_json_file(file);
-                let item = obj
-                    .get(key)
-                    .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?;
-                let item = item.as_str().unwrap();
-                let item_bytes = item.as_bytes();
-
-                if item_bytes.len() > buf_len as usize {
-                    return Err(Error::BufferLengthError {
-                        buf: "dictionary_item",
-                        len: "dictionary_item_max_len",
-                    });
-                }
-                let item_len = u32::try_from(item_bytes.len())
-                    .expect("smaller than dictionary_item_max_len means it must fit");
-
-                let mut buf_slice = buf.as_array(item_len).as_slice_mut()?;
-                buf_slice.copy_from_slice(item_bytes);
-                Ok(item_len)
+                obj.get(key)
+                    .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
+                    .as_str()
+                    // FIXME KTM: replace this unwrap with an error variant
+                    .unwrap()
+                    .as_bytes()
+                    .to_owned()
             }
+        };
+
+        if item_bytes.len() > buf_len as usize {
+            return Err(Error::BufferLengthError {
+                buf: "dictionary_item",
+                len: "dictionary_item_max_len",
+            });
         }
+        let item_len = u32::try_from(item_bytes.len())
+            .expect("smaller than dictionary_item_max_len means it must fit");
+
+        let mut buf_slice = buf.as_array(item_len).as_slice_mut()?;
+        buf_slice.copy_from_slice(&item_bytes);
+        Ok(item_len)
     }
 }

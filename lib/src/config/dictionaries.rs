@@ -24,6 +24,7 @@ impl DictionaryName {
 /// A Dictionary consists of a file and format, but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub enum Dictionary {
+    InlineToml { contents: HashMap<String, String> },
     Json { file: PathBuf },
 }
 
@@ -36,6 +37,7 @@ impl Dictionary {
     /// Returns the [`Path`] of the backing file storage, if applicable.
     pub fn file_path(&self) -> Option<&Path> {
         match self {
+            Self::InlineToml { .. } => None,
             Self::Json { file } => Some(file.as_path()),
         }
     }
@@ -59,7 +61,7 @@ mod deserialization {
             },
             error::{DictionaryConfigError, FastlyConfigError},
         },
-        std::{convert::TryFrom, convert::TryInto, fs, str::FromStr},
+        std::{collections::HashMap, convert::TryFrom, convert::TryInto, fs, str::FromStr},
         toml::value::{Table, Value},
         tracing::{event, Level},
     };
@@ -108,6 +110,25 @@ mod deserialization {
                     })?;
 
                 let dictionary = match format.as_str() {
+                    "inline-toml" => {
+                        let toml = toml
+                            .remove("contents")
+                            .ok_or(DictionaryConfigError::MissingContents)?;
+                        let toml = toml
+                            .as_table()
+                            .ok_or(DictionaryConfigError::InvalidContentsType)?;
+                        // FIXME KTM: share validation with the json dictionaries.
+                        let mut contents = HashMap::with_capacity(toml.len());
+                        for (key, value) in toml {
+                            let key = key.clone();
+                            let value = value
+                                .as_str()
+                                .ok_or(DictionaryConfigError::InvalidInlineEntryType)?
+                                .to_owned();
+                            contents.insert(key, value);
+                        }
+                        Dictionary::InlineToml { contents }
+                    }
                     "json" => {
                         let file = toml
                             .remove("file")

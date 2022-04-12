@@ -1,9 +1,6 @@
 use {
     super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
-    crate::{
-        config::DictionaryName,
-        error::FastlyConfigError,
-    },
+    crate::{config::DictionaryName, error::FastlyConfigError},
     std::{convert::TryInto, fs::File, io::Write},
     tempfile::tempdir,
 };
