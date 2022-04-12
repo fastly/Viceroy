@@ -517,3 +517,23 @@ mod json_dictionary_config_tests {
         );
     }
 }
+
+/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly for dictionaries using inline TOML to store their data.
+mod inline_toml_dictionary_config_tests {
+    use super::read_local_server_config;
+
+    #[test]
+    fn valid_inline_toml_dictionaries_can_be_parsed() {
+        let dictionary = r#"
+            [dictionaries.inline_toml_example]
+            format = "inline-toml"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        read_local_server_config(&dictionary).expect(
+            "can read toml data containing local dictionary configurations using json format",
+        );
+    }
+}
