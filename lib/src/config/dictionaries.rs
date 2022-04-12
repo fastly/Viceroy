@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DictionaryName(String);
@@ -19,14 +23,22 @@ impl DictionaryName {
 ///
 /// A Dictionary consists of a file and format, but more fields may be added in the future.
 #[derive(Clone, Debug)]
-pub struct Dictionary {
-    pub file: PathBuf,
-    pub format: DictionaryFormat,
+pub enum Dictionary {
+    Json { file: PathBuf },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DictionaryFormat {
-    Json,
+impl Dictionary {
+    /// Returns `true` if this is dictionary uses an external JSON file.
+    pub fn is_json(&self) -> bool {
+        matches!(self, Self::Json { .. })
+    }
+
+    /// Returns the [`Path`] of the backing file storage, if applicable.
+    pub fn file_path(&self) -> Option<&Path> {
+        match self {
+            Self::Json { file } => Some(file.as_path()),
+        }
+    }
 }
 
 /// A map of [`Dictionary`] definitions, keyed by their name.
@@ -39,9 +51,8 @@ pub struct DictionariesConfig(pub HashMap<DictionaryName, Dictionary>);
 /// and help validate that we have been given an appropriate TOML schema. If the configuration is
 /// not valid, a [`FastlyConfigError`] will be returned.
 mod deserialization {
-
     use {
-        super::{DictionariesConfig, Dictionary, DictionaryFormat, DictionaryName},
+        super::{DictionariesConfig, Dictionary, DictionaryName},
         crate::{
             config::limits::{
                 DICTIONARY_ITEM_KEY_MAX_LEN, DICTIONARY_ITEM_VALUE_MAX_LEN, DICTIONARY_MAX_LEN,
@@ -83,18 +94,21 @@ mod deserialization {
         fn try_from(toml: Table) -> Result<Self, Self::Error> {
             /// Process a dictionary's definitions, or return a [`FastlyConfigError`].
             fn process_entry(
-                (name, defs): (String, Value),
-            ) -> Result<(DictionaryName, Dictionary), FastlyConfigError> {
-                into_table(defs)
-                    .and_then(|mut toml| {
-                        let format = toml
-                            .remove("format")
-                            .ok_or(DictionaryConfigError::MissingFormat)
-                            .and_then(|format| match format {
-                                Value::String(format) => Ok(format.parse()?),
-                                _ => Err(DictionaryConfigError::InvalidFormatEntry),
-                            })?;
+                name: &str,
+                defs: Value,
+            ) -> Result<(DictionaryName, Dictionary), DictionaryConfigError> {
+                let mut toml = into_table(defs)?;
 
+                let format = toml
+                    .remove("format")
+                    .ok_or(DictionaryConfigError::MissingFormat)
+                    .and_then(|format| match format {
+                        Value::String(format) => Ok(format),
+                        _ => Err(DictionaryConfigError::InvalidFormatEntry),
+                    })?;
+
+                let dictionary = match format.as_str() {
+                    "json" => {
                         let file = toml
                             .remove("file")
                             .ok_or(DictionaryConfigError::MissingFile)
@@ -120,22 +134,27 @@ mod deserialization {
                                 error: err.to_string(),
                             }
                         })?;
+                        parse_dict_as_json(&name, &data)?;
+                        Dictionary::Json { file }
+                    }
+                    "" => return Err(DictionaryConfigError::EmptyFormatEntry),
+                    _ => {
+                        return Err(DictionaryConfigError::InvalidDictionaryFileFormat(
+                            name.to_owned(),
+                        ))
+                    }
+                };
 
-                        match format {
-                            DictionaryFormat::Json => parse_dict_as_json(&name, &data)?,
-                        }
+                let name = name.parse()?;
 
-                        let name = name.parse()?;
-                        Ok((name, Dictionary { file, format }))
-                    })
-                    .map_err(|err| FastlyConfigError::InvalidDictionaryDefinition {
-                        name: name.clone(),
-                        err,
-                    })
+                Ok((name, dictionary))
             }
 
             toml.into_iter()
-                .map(process_entry)
+                .map(|(name, defs)| {
+                    process_entry(&name, defs)
+                        .map_err(|err| FastlyConfigError::InvalidDictionaryDefinition { name, err })
+                })
                 .collect::<Result<_, _>>()
                 .map(Self)
         }
@@ -201,21 +220,6 @@ mod deserialization {
                 Ok(Self(name.to_owned()))
             } else {
                 Err(DictionaryConfigError::InvalidName(name.to_owned()))
-            }
-        }
-    }
-
-    impl FromStr for DictionaryFormat {
-        type Err = DictionaryConfigError;
-        fn from_str(name: &str) -> Result<Self, Self::Err> {
-            if name.is_empty() {
-                return Err(DictionaryConfigError::EmptyFormatEntry);
-            }
-            match name {
-                "json" => Ok(DictionaryFormat::Json),
-                _ => Err(DictionaryConfigError::InvalidDictionaryFileFormat(
-                    name.to_owned(),
-                )),
             }
         }
     }

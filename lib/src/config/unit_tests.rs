@@ -1,7 +1,7 @@
 use {
     super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
     crate::{
-        config::{dictionaries::DictionaryFormat, DictionaryName},
+        config::DictionaryName,
         error::FastlyConfigError,
     },
     std::{convert::TryInto, fs::File, io::Write},
@@ -137,8 +137,8 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
         .dictionaries()
         .get(&DictionaryName::new("a".to_string()))
         .expect("dictionary configurations can be accessed");
-    assert_eq!(dictionary.file, file_path);
-    assert_eq!(dictionary.format, DictionaryFormat::Json);
+    assert_eq!(dictionary.file_path().unwrap(), file_path);
+    assert!(dictionary.is_json());
 }
 
 /// Check that the `local_server` section can be deserialized.
