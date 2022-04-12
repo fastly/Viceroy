@@ -150,7 +150,7 @@ mod local_server_config_tests {
         std::convert::TryInto,
     };
 
-    fn read_toml_config(toml: &str) -> Result<LocalServerConfig, FastlyConfigError> {
+    fn read_local_server_config(toml: &str) -> Result<LocalServerConfig, FastlyConfigError> {
         toml::from_str::<'_, RawLocalServerConfig>(toml)
             .expect("valid toml data")
             .try_into()
@@ -178,7 +178,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&local_server) {
+        match read_local_server_config(&local_server) {
             Ok(_) => {}
             res => panic!("unexpected result: {:?}", res),
         }
@@ -192,7 +192,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = "https://a.com"
         "#;
-        match read_toml_config(BAD_DEF) {
+        match read_local_server_config(BAD_DEF) {
             Err(InvalidBackendDefinition {
                 err: InvalidEntryType,
                 ..
@@ -209,7 +209,7 @@ mod local_server_config_tests {
             [backends]
             shark = { url = "https://a.com", shrimp = true }
         "#;
-        match read_toml_config(BAD_DEFAULT) {
+        match read_local_server_config(BAD_DEFAULT) {
             Err(InvalidBackendDefinition {
                 err: UnrecognizedKey(key),
                 ..
@@ -226,7 +226,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = {}
         "#;
-        match read_toml_config(NO_URL) {
+        match read_local_server_config(NO_URL) {
             Err(InvalidBackendDefinition {
                 err: MissingUrl, ..
             }) => {}
@@ -242,7 +242,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = 3 }
         "#;
-        match read_toml_config(BAD_URL_FIELD) {
+        match read_local_server_config(BAD_URL_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidUrlEntry,
                 ..
@@ -258,7 +258,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http:://[:::1]" }
         "#;
-        match read_toml_config(BAD_URL_FIELD) {
+        match read_local_server_config(BAD_URL_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidUrl(_), ..
             }) => {}
@@ -273,7 +273,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http://a.com", override_host = 3 }
         "#;
-        match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
+        match read_local_server_config(BAD_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidOverrideHostEntry,
                 ..
@@ -289,7 +289,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http://a.com", override_host = "" }
         "#;
-        match read_toml_config(EMPTY_OVERRIDE_HOST_FIELD) {
+        match read_local_server_config(EMPTY_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: EmptyOverrideHost,
                 ..
@@ -305,7 +305,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http://a.com", override_host = "somehost.com\n" }
         "#;
-        match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
+        match read_local_server_config(BAD_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidOverrideHost(_),
                 ..
@@ -322,7 +322,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = "stuff"
         "#;
-        match read_toml_config(BAD_DEF) {
+        match read_local_server_config(BAD_DEF) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidEntryType,
                 ..
@@ -347,7 +347,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&bad_default) {
+        match read_local_server_config(&bad_default) {
             Err(InvalidDictionaryDefinition {
                 err: UnrecognizedKey(key),
                 ..
@@ -364,7 +364,7 @@ mod local_server_config_tests {
             [dictionaries]
             thing = {format = "json"}
         "#;
-        match read_toml_config(NO_FILE) {
+        match read_local_server_config(NO_FILE) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFile, ..
             }) => {}
@@ -387,7 +387,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&no_format_field) {
+        match read_local_server_config(&no_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFormat, ..
             }) => {}
@@ -410,7 +410,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&bad_name_field) {
+        match read_local_server_config(&bad_name_field) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidName(_),
                 ..
@@ -426,7 +426,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { file = 3, format = "json" }
         "#;
-        match read_toml_config(BAD_FILE_FIELD) {
+        match read_local_server_config(BAD_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidFileEntry,
                 ..
@@ -442,7 +442,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { file = "", format = "json" }
         "#;
-        match read_toml_config(EMPTY_FILE_FIELD) {
+        match read_local_server_config(EMPTY_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: EmptyFileEntry,
                 ..
@@ -458,7 +458,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { format = 3}
         "#;
-        match read_toml_config(BAD_FORMAT_FIELD) {
+        match read_local_server_config(BAD_FORMAT_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidFormatEntry,
                 ..
@@ -474,7 +474,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { format = "" }
         "#;
-        match read_toml_config(EMPTY_FORMAT_FIELD) {
+        match read_local_server_config(EMPTY_FORMAT_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: EmptyFormatEntry,
                 ..
@@ -497,7 +497,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        read_toml_config(&dictionary).expect(
+        read_local_server_config(&dictionary).expect(
             "can read toml data containing local dictionary configurations using json format",
         );
     }
