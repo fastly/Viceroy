@@ -48,8 +48,7 @@ impl FastlyDictionary for Session {
             .contents()
             .get(key)
             .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
-            .as_bytes()
-            .to_owned();
+            .as_bytes();
 
         if item_bytes.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
