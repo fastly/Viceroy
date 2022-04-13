@@ -110,7 +110,7 @@ mod deserialization {
                     })?;
 
                 let dictionary = match format.as_str() {
-                    "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
+                    "inline-toml" => process_inline_toml_dictionary(&mut toml, name)?,
                     "json" => process_json_dictionary(&mut toml, name)?,
                     "" => return Err(DictionaryConfigError::EmptyFormatEntry),
                     _ => {
@@ -138,7 +138,9 @@ mod deserialization {
 
     fn process_inline_toml_dictionary(
         toml: &mut Table,
+        name: &str,
     ) -> Result<Dictionary, DictionaryConfigError> {
+        // Take the `contents` field from the provided TOML table.
         let toml = match toml
             .remove("contents")
             .ok_or(DictionaryConfigError::MissingContents)?
@@ -147,6 +149,7 @@ mod deserialization {
             _ => return Err(DictionaryConfigError::InvalidContentsType),
         };
 
+        // Check that each dictionary entry has a string value.
         let mut contents = HashMap::with_capacity(toml.len());
         for (key, value) in toml {
             let value = value
@@ -156,6 +159,9 @@ mod deserialization {
             contents.insert(key, value);
         }
 
+        // Validate that the dictionary adheres to Fastly's API.
+        validate_dictionary_contents(name, &contents)?;
+
         Ok(Dictionary::InlineToml { contents })
     }
 
@@ -163,43 +169,71 @@ mod deserialization {
         toml: &mut Table,
         name: &str,
     ) -> Result<Dictionary, DictionaryConfigError> {
-        let file = toml
+        // Take the `file` field from the provided TOML table.
+        let file = match toml
             .remove("file")
-            .ok_or(DictionaryConfigError::MissingFile)
-            .and_then(|file| match file {
-                Value::String(file) => {
-                    if file.is_empty() {
-                        Err(DictionaryConfigError::EmptyFileEntry)
-                    } else {
-                        Ok(file.into())
-                    }
+            .ok_or(DictionaryConfigError::MissingFile)?
+        {
+            Value::String(file) => {
+                if file.is_empty() {
+                    return Err(DictionaryConfigError::EmptyFileEntry);
+                } else {
+                    file.into()
                 }
-                _ => Err(DictionaryConfigError::InvalidFileEntry),
-            })?;
+            }
+            _ => return Err(DictionaryConfigError::InvalidFileEntry),
+        };
+
+        // Read the contents of the given file.
+        let data = fs::read_to_string(&file).map_err(|err| DictionaryConfigError::IoError {
+            name: name.to_string(),
+            error: err.to_string(),
+        })?;
+
+        // Deserialize the contents of the given JSON file.
+        let json = match serde_json::from_str(&data).map_err(|_| {
+            DictionaryConfigError::DictionaryFileWrongFormat {
+                name: name.to_string(),
+            }
+        })? {
+            // Check that we were given an object.
+            serde_json::Value::Object(obj) => obj,
+            _ => {
+                return Err(DictionaryConfigError::DictionaryFileWrongFormat {
+                    name: name.to_string(),
+                })
+            }
+        };
+
+        // Check that each dictionary entry has a string value.
+        let mut dict = HashMap::with_capacity(json.len());
+        for (key, value) in json {
+            let value = value
+                .as_str()
+                .ok_or_else(|| DictionaryConfigError::DictionaryItemValueWrongFormat {
+                    name: name.to_string(),
+                    key: key.clone(),
+                })?
+                .to_owned();
+            dict.insert(key, value);
+        }
+
+        // Validate that the dictionary adheres to Fastly's API.
+        validate_dictionary_contents(name, &dict)?;
+
+        Ok(Dictionary::Json { file })
+    }
+
+    fn validate_dictionary_contents(
+        name: &str,
+        dict: &HashMap<String, String>,
+    ) -> Result<(), DictionaryConfigError> {
         event!(
             Level::INFO,
             "checking if the dictionary '{}' adheres to Fastly's API",
             name
         );
-        let data = fs::read_to_string(&file).map_err(|err| DictionaryConfigError::IoError {
-            name: name.to_string(),
-            error: err.to_string(),
-        })?;
-        parse_dict_as_json(name, &data)?;
-        Ok(Dictionary::Json { file })
-    }
 
-    fn parse_dict_as_json(name: &str, data: &str) -> Result<(), DictionaryConfigError> {
-        let json: serde_json::Value = serde_json::from_str(data).map_err(|_| {
-            DictionaryConfigError::DictionaryFileWrongFormat {
-                name: name.to_string(),
-            }
-        })?;
-        let dict =
-            json.as_object()
-                .ok_or_else(|| DictionaryConfigError::DictionaryFileWrongFormat {
-                    name: name.to_string(),
-                })?;
         if dict.len() > DICTIONARY_MAX_LEN {
             return Err(DictionaryConfigError::DictionaryCountTooLong {
                 name: name.to_string(),
@@ -220,12 +254,6 @@ mod deserialization {
                     size: DICTIONARY_ITEM_KEY_MAX_LEN.try_into().unwrap(),
                 });
             }
-            let value = value.as_str().ok_or_else(|| {
-                DictionaryConfigError::DictionaryItemValueWrongFormat {
-                    name: name.to_string(),
-                    key: key.clone(),
-                }
-            })?;
             if value.chars().count() > DICTIONARY_ITEM_VALUE_MAX_LEN {
                 return Err(DictionaryConfigError::DictionaryItemValueTooLong {
                     name: name.to_string(),
