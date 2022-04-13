@@ -520,7 +520,10 @@ mod json_dictionary_config_tests {
 /// These tests check that we deserialize and validate the dictionary configurations section of
 /// the TOML data properly for dictionaries using inline TOML to store their data.
 mod inline_toml_dictionary_config_tests {
-    use super::read_local_server_config;
+    use {
+        super::read_local_server_config,
+        crate::error::{DictionaryConfigError, FastlyConfigError::InvalidDictionaryDefinition},
+    };
 
     #[test]
     fn valid_inline_toml_dictionaries_can_be_parsed() {
@@ -532,5 +535,56 @@ mod inline_toml_dictionary_config_tests {
         read_local_server_config(&dictionary).expect(
             "can read toml data containing local dictionary configurations using json format",
         );
+    }
+
+    /// Check that dictionary definitions *must* include a `format` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_format() {
+        use DictionaryConfigError::MissingFormat;
+        let no_format_field = r#"
+            [dictionaries.missing_format]
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&no_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFormat, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions *must* include a `contents` field.
+    #[test]
+    fn dictionary_configs_must_provide_contents() {
+        use DictionaryConfigError::MissingContents;
+        let missing_contents = r#"
+            [dictionaries.missing_contents]
+            format = "inline-toml"
+        "#;
+        match read_local_server_config(&missing_contents) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingContents,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions must include a *valid* `name` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_valid_name() {
+        use DictionaryConfigError::InvalidName;
+        let bad_name_field = r#"
+            [dictionaries."1"]
+            format = "inline-toml"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&bad_name_field) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidName(_),
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
     }
 }
