@@ -110,54 +110,8 @@ mod deserialization {
                     })?;
 
                 let dictionary = match format.as_str() {
-                    "inline-toml" => {
-                        let toml = toml
-                            .remove("contents")
-                            .ok_or(DictionaryConfigError::MissingContents)?;
-                        let toml = toml
-                            .as_table()
-                            .ok_or(DictionaryConfigError::InvalidContentsType)?;
-                        // FIXME KTM: share validation with the json dictionaries.
-                        let mut contents = HashMap::with_capacity(toml.len());
-                        for (key, value) in toml {
-                            let key = key.clone();
-                            let value = value
-                                .as_str()
-                                .ok_or(DictionaryConfigError::InvalidInlineEntryType)?
-                                .to_owned();
-                            contents.insert(key, value);
-                        }
-                        Dictionary::InlineToml { contents }
-                    }
-                    "json" => {
-                        let file = toml
-                            .remove("file")
-                            .ok_or(DictionaryConfigError::MissingFile)
-                            .and_then(|file| match file {
-                                Value::String(file) => {
-                                    if file.is_empty() {
-                                        Err(DictionaryConfigError::EmptyFileEntry)
-                                    } else {
-                                        Ok(file.into())
-                                    }
-                                }
-                                _ => Err(DictionaryConfigError::InvalidFileEntry),
-                            })?;
-                        check_for_unrecognized_keys(&toml)?;
-                        event!(
-                            Level::INFO,
-                            "checking if the dictionary '{}' adheres to Fastly's API",
-                            name
-                        );
-                        let data = fs::read_to_string(&file).map_err(|err| {
-                            DictionaryConfigError::IoError {
-                                name: name.to_string(),
-                                error: err.to_string(),
-                            }
-                        })?;
-                        parse_dict_as_json(&name, &data)?;
-                        Dictionary::Json { file }
-                    }
+                    "inline-toml" => process_inline_toml_dictionary(toml)?,
+                    "json" => process_json_dictionary(toml, name)?,
                     "" => return Err(DictionaryConfigError::EmptyFormatEntry),
                     _ => {
                         return Err(DictionaryConfigError::InvalidDictionaryFileFormat(
@@ -179,6 +133,60 @@ mod deserialization {
                 .collect::<Result<_, _>>()
                 .map(Self)
         }
+    }
+
+    fn process_inline_toml_dictionary(
+        mut toml: Table,
+    ) -> Result<Dictionary, DictionaryConfigError> {
+        let toml = match toml
+            .remove("contents")
+            .ok_or(DictionaryConfigError::MissingContents)?
+        {
+            Value::Table(table) => table,
+            _ => return Err(DictionaryConfigError::InvalidContentsType),
+        };
+
+        let mut contents = HashMap::with_capacity(toml.len());
+        for (key, value) in toml {
+            let value = value
+                .as_str()
+                .ok_or(DictionaryConfigError::InvalidInlineEntryType)?
+                .to_owned();
+            contents.insert(key, value);
+        }
+
+        Ok(Dictionary::InlineToml { contents })
+    }
+
+    fn process_json_dictionary(
+        mut toml: Table,
+        name: &str,
+    ) -> Result<Dictionary, DictionaryConfigError> {
+        let file = toml
+            .remove("file")
+            .ok_or(DictionaryConfigError::MissingFile)
+            .and_then(|file| match file {
+                Value::String(file) => {
+                    if file.is_empty() {
+                        Err(DictionaryConfigError::EmptyFileEntry)
+                    } else {
+                        Ok(file.into())
+                    }
+                }
+                _ => Err(DictionaryConfigError::InvalidFileEntry),
+            })?;
+        check_for_unrecognized_keys(&toml)?;
+        event!(
+            Level::INFO,
+            "checking if the dictionary '{}' adheres to Fastly's API",
+            name
+        );
+        let data = fs::read_to_string(&file).map_err(|err| DictionaryConfigError::IoError {
+            name: name.to_string(),
+            error: err.to_string(),
+        })?;
+        parse_dict_as_json(name, &data)?;
+        Ok(Dictionary::Json { file })
     }
 
     fn parse_dict_as_json(name: &str, data: &str) -> Result<(), DictionaryConfigError> {
