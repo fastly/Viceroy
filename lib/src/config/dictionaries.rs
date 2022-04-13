@@ -66,18 +66,6 @@ mod deserialization {
         tracing::info,
     };
 
-    /// Helper function for converting a TOML [`Value`] into a [`Table`].
-    ///
-    /// This function checks that a value is a [`Value::Table`] variant and returns the underlying
-    /// [`Table`], or returns an error if the given value was not of the right type — e.g., a
-    /// [`Boolean`][Value::Boolean] or a [`String`][Value::String]).
-    fn into_table(value: Value) -> Result<Table, DictionaryConfigError> {
-        match value {
-            Value::Table(table) => Ok(table),
-            _ => Err(DictionaryConfigError::InvalidEntryType),
-        }
-    }
-
     /// Return an [`DictionaryConfigError::UnrecognizedKey`] error if any unrecognized keys are found.
     ///
     /// This should be called after we have removed and validated the keys we expect in a [`Table`].
@@ -97,9 +85,12 @@ mod deserialization {
             /// Process a dictionary's definitions, or return a [`FastlyConfigError`].
             fn process_entry(
                 name: &str,
-                defs: Value,
+                entry: Value,
             ) -> Result<(DictionaryName, Dictionary), DictionaryConfigError> {
-                let mut toml = into_table(defs)?;
+                let mut toml = match entry {
+                    Value::Table(table) => table,
+                    _ => return Err(DictionaryConfigError::InvalidEntryType),
+                };
 
                 let format = toml
                     .remove("format")
