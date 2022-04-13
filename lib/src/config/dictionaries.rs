@@ -63,7 +63,7 @@ mod deserialization {
         },
         std::{collections::HashMap, convert::TryFrom, convert::TryInto, fs, str::FromStr},
         toml::value::{Table, Value},
-        tracing::{event, Level},
+        tracing::info,
     };
 
     /// Helper function for converting a TOML [`Value`] into a [`Table`].
@@ -228,12 +228,10 @@ mod deserialization {
         name: &str,
         dict: &HashMap<String, String>,
     ) -> Result<(), DictionaryConfigError> {
-        event!(
-            Level::INFO,
+        info!(
             "checking if the dictionary '{}' adheres to Fastly's API",
             name
         );
-
         if dict.len() > DICTIONARY_MAX_LEN {
             return Err(DictionaryConfigError::DictionaryCountTooLong {
                 name: name.to_string(),
@@ -241,8 +239,7 @@ mod deserialization {
             });
         }
 
-        event!(
-            Level::INFO,
+        info!(
             "checking if the items in dictionary '{}' adhere to Fastly's API",
             name
         );
@@ -262,6 +259,7 @@ mod deserialization {
                 });
             }
         }
+
         Ok(())
     }
 
