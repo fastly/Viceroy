@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends},
+    config::{Backend, Backends, Dictionaries, FastlyConfig},
     ExecuteCtx, ViceroyService,
 };
 
@@ -46,6 +46,7 @@ static TEST_LOCK: Mutex<()> = Mutex::const_new(());
 pub struct Test {
     module_path: PathBuf,
     backends: Backends,
+    dictionaries: Dictionaries,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
     log_stderr: bool,
@@ -61,6 +62,7 @@ impl Test {
         Self {
             module_path,
             backends: Backends::new(),
+            dictionaries: Dictionaries::new(),
             hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
@@ -76,11 +78,22 @@ impl Test {
         Self {
             module_path,
             backends: Backends::new(),
+            dictionaries: Dictionaries::new(),
             hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
         }
+    }
+
+    /// Use backend and dictionary settings provided in a `fastly.toml` file.
+    pub fn using_fastly_toml(self, fastly_toml: &str) -> Result<Self, Error> {
+        let config = fastly_toml.parse::<FastlyConfig>()?;
+        Ok(Self {
+            backends: config.backends().to_owned(),
+            dictionaries: config.dictionaries().to_owned(),
+            ..self
+        })
     }
 
     /// Add a backend definition to this test.
@@ -157,6 +170,7 @@ impl Test {
         let ctx = ExecuteCtx::new(&self.module_path)
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
+            .with_dictionaries(self.dictionaries.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);
         let addr: SocketAddr = "127.0.0.1:7878".parse().unwrap();
