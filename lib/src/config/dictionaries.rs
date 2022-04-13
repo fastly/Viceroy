@@ -110,8 +110,8 @@ mod deserialization {
                     })?;
 
                 let dictionary = match format.as_str() {
-                    "inline-toml" => process_inline_toml_dictionary(toml)?,
-                    "json" => process_json_dictionary(toml, name)?,
+                    "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
+                    "json" => process_json_dictionary(&mut toml, name)?,
                     "" => return Err(DictionaryConfigError::EmptyFormatEntry),
                     _ => {
                         return Err(DictionaryConfigError::InvalidDictionaryFileFormat(
@@ -121,6 +121,7 @@ mod deserialization {
                 };
 
                 let name = name.parse()?;
+                check_for_unrecognized_keys(&toml)?;
 
                 Ok((name, dictionary))
             }
@@ -136,7 +137,7 @@ mod deserialization {
     }
 
     fn process_inline_toml_dictionary(
-        mut toml: Table,
+        toml: &mut Table,
     ) -> Result<Dictionary, DictionaryConfigError> {
         let toml = match toml
             .remove("contents")
@@ -159,7 +160,7 @@ mod deserialization {
     }
 
     fn process_json_dictionary(
-        mut toml: Table,
+        toml: &mut Table,
         name: &str,
     ) -> Result<Dictionary, DictionaryConfigError> {
         let file = toml
@@ -175,7 +176,6 @@ mod deserialization {
                 }
                 _ => Err(DictionaryConfigError::InvalidFileEntry),
             })?;
-        check_for_unrecognized_keys(&toml)?;
         event!(
             Level::INFO,
             "checking if the dictionary '{}' adheres to Fastly's API",
