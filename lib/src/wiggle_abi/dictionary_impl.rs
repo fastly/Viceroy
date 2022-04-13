@@ -2,7 +2,6 @@
 
 use {
     crate::{
-        config::Dictionary,
         error::Error,
         session::Session,
         wiggle_abi::{
@@ -10,7 +9,7 @@ use {
             types::{DictionaryHandle, FastlyStatus},
         },
     },
-    std::{convert::TryFrom, fs, path::Path},
+    std::convert::TryFrom,
     wiggle::GuestPtr,
 };
 
@@ -31,13 +30,6 @@ impl DictionaryError {
     }
 }
 
-fn read_json_file<P: AsRef<Path>>(file: P) -> serde_json::Map<String, serde_json::Value> {
-    let data = fs::read_to_string(file).expect("Unable to read file");
-    let json: serde_json::Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
-    let obj = json.as_object().expect("Expected the JSON to be an Object");
-    obj.clone()
-}
-
 impl FastlyDictionary for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
         self.dictionary_handle(&name.as_str()?)
@@ -52,23 +44,12 @@ impl FastlyDictionary for Session {
     ) -> Result<u32, Error> {
         let key: &str = &key.as_str()?;
         let dict = self.dictionary(dictionary)?;
-        let item_bytes = match dict {
-            Dictionary::InlineToml { contents } => contents
-                .get(key)
-                .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
-                .as_bytes()
-                .to_owned(),
-            Dictionary::Json { file } => {
-                let obj = read_json_file(file);
-                obj.get(key)
-                    .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
-                    .as_str()
-                    // FIXME KTM: replace this unwrap with an error variant
-                    .unwrap()
-                    .as_bytes()
-                    .to_owned()
-            }
-        };
+        let item_bytes = dict
+            .contents()
+            .get(key)
+            .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
+            .as_bytes()
+            .to_owned();
 
         if item_bytes.len() > buf_len as usize {
             return Err(Error::BufferLengthError {

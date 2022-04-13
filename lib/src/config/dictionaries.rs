@@ -24,11 +24,24 @@ impl DictionaryName {
 /// A Dictionary consists of a file and format, but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub enum Dictionary {
-    InlineToml { contents: HashMap<String, String> },
-    Json { file: PathBuf },
+    InlineToml {
+        contents: HashMap<String, String>,
+    },
+    Json {
+        contents: HashMap<String, String>,
+        file: PathBuf,
+    },
 }
 
 impl Dictionary {
+    /// Returns a reference to the dictionary's contents.
+    pub fn contents(&self) -> &HashMap<String, String> {
+        match self {
+            Self::InlineToml { contents } => contents,
+            Self::Json { contents, .. } => contents,
+        }
+    }
+
     /// Returns `true` if this is dictionary uses an external JSON file.
     pub fn is_json(&self) -> bool {
         matches!(self, Self::Json { .. })
@@ -38,7 +51,7 @@ impl Dictionary {
     pub fn file_path(&self) -> Option<&Path> {
         match self {
             Self::InlineToml { .. } => None,
-            Self::Json { file } => Some(file.as_path()),
+            Self::Json { file, .. } => Some(file.as_path()),
         }
     }
 }
@@ -197,7 +210,7 @@ mod deserialization {
         };
 
         // Check that each dictionary entry has a string value.
-        let mut dict = HashMap::with_capacity(json.len());
+        let mut contents = HashMap::with_capacity(json.len());
         for (key, value) in json {
             let value = value
                 .as_str()
@@ -206,13 +219,13 @@ mod deserialization {
                     key: key.clone(),
                 })?
                 .to_owned();
-            dict.insert(key, value);
+            contents.insert(key, value);
         }
 
         // Validate that the dictionary adheres to Fastly's API.
-        validate_dictionary_contents(name, &dict)?;
+        validate_dictionary_contents(name, &contents)?;
 
-        Ok(Dictionary::Json { file })
+        Ok(Dictionary::Json { file, contents })
     }
 
     fn validate_dictionary_contents(
