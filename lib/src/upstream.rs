@@ -128,7 +128,7 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
         backend
             .uri
             .scheme_str()
-            .expect("Backend URL included a scheme"),
+            .expect("Backend URL is missing a scheme"),
     );
     canonical_uri.push_str("://");
 

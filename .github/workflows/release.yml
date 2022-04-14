@@ -49,6 +49,7 @@ jobs:
       - name: Install C cross-compilation toolchain
         if: ${{ matrix.name == 'linux' && matrix.arch != 'amd64' }}
         run: |
+          sudo apt-get update
           sudo apt install -f -y gcc-${{ matrix.rust_arch }}-linux-gnu
           echo CC=${{ matrix.rust_arch }}-linux-gnu-gcc >> $GITHUB_ENV
           echo RUSTFLAGS='-C linker=${{ matrix.rust_arch }}-linux-gnu-gcc' >> $GITHUB_ENV

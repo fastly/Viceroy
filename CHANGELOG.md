@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.2.12 (2022-03-08)
+
+- Add stubs for framing header controls, now available on C@E ([#139](https://github.com/fastly/Viceroy/pull/139))
+
 ## 0.2.11 (2022-02-15)
 
 - Implement automatic decompression of gzip backend responses ([#125](https://github.com/fastly/Viceroy/pull/125))
