@@ -94,6 +94,11 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Client TLS data"))
     }
 
+    #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
+    fn upgrade_websocket(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("WebSocket upgrade"))
+    }
+
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_protocol<'a>(
         &mut self,
@@ -112,6 +117,11 @@ impl FastlyHttpReq for Session {
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Client TLS data"))
+    }
+
+    #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
+    fn downstream_tls_ja3_md5(&mut self, ja3_md5_out: &GuestPtr<u8>) -> Result<u32, Error> {
+        Err(Error::NotAvailable("Client TLS JA3 hash"))
     }
 
     fn framing_headers_mode_set(
