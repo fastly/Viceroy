@@ -1,0 +1,17 @@
+[package]
+name = "dap_types"
+version = "0.1.0"
+description = "Types for the Debug Adapter Protocol."
+authors = ["Fastly"]
+edition = "2018"
+license = "Apache-2.0 WITH LLVM-exception"
+include = [
+    "LICENSE",
+    "src/**/*"
+]
+
+[dependencies]
+serde = "1.0.114"
+serde_derive = "1.0.114"
+derive-getters = "0.2.0"
+derive_builder = "0.10.2"

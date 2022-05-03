@@ -13,6 +13,9 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+use crate::debugger::DebugAdapter;
+
+mod debugger;
 mod opts;
 
 use {
@@ -36,9 +39,24 @@ use {
 pub async fn serve(opts: Opts) -> Result<(), Error> {
     // Load the wasm module into an execution context
     let mut ctx = ExecuteCtx::new(opts.input())?
-        .with_log_stderr(opts.log_stderr())
-        .with_log_stdout(opts.log_stdout());
+        // Treat guest stdio as logging endpoints if configured or in debug mode
+        .with_log_stderr(opts.log_stderr() || opts.debug_adapter())
+        .with_log_stdout(opts.log_stdout() || opts.debug_adapter());
 
+    // Configure the execution context
+    ctx = configure_ctx(ctx, &opts).await?;
+
+    let service = ViceroyService::new(ctx);
+    let addr = opts.addr();
+
+    event!(Level::INFO, "Listening on http://{}", addr);
+    service.serve(addr).await?;
+
+    unreachable!()
+}
+
+// Configures the given `ExecuteCtx` using parameters from the given `Opts`.
+pub async fn configure_ctx(mut ctx: ExecuteCtx, opts: &Opts) -> Result<ExecuteCtx, Error> {
     if let Some(config_path) = opts.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
@@ -97,11 +115,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         );
     }
 
-    let addr = opts.addr();
-    event!(Level::INFO, "Listening on http://{}", addr);
-    ViceroyService::new(ctx).serve(addr).await?;
-
-    unreachable!()
+    Ok(ctx)
 }
 
 #[tokio::main]
@@ -109,18 +123,28 @@ pub async fn main() -> Result<(), Error> {
     // Parse the command-line options, exiting if there are any errors
     let opts = Opts::from_args();
 
-    install_tracing_subscriber(&opts);
+    if !opts.debug_adapter() {
+        install_tracing_subscriber(&opts);
 
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            Ok(())
-        }
-        res = serve(opts) => {
-            if let Err(ref e) = res {
-                event!(Level::ERROR, "{}", e);
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                Ok(())
             }
-            res
+            res = serve(opts) => {
+                if let Err(ref e) = res {
+                    event!(Level::ERROR, "{}", e);
+                }
+                res
+            }
         }
+    } else {
+        event!(Level::INFO, "Starting debug server");
+
+        // Create debug adapter with the configured guest address
+        let debugger = DebugAdapter::new(Box::new(|ctx| ctx));
+
+        // Start the debugger
+        debugger.serve()
     }
 }
 

@@ -1,5 +1,7 @@
 //! Session type and related facilities.
 
+use crate::Event;
+
 mod async_item;
 mod downstream;
 
@@ -83,6 +85,8 @@ pub struct Session {
     config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
+    // A channel that receives `Event`s produced by the guest, e.g. log messages.
+    event_sender: Option<tokio::sync::mpsc::Sender<Event>>,
 }
 
 impl Session {
@@ -97,6 +101,7 @@ impl Session {
         tls_config: Arc<rustls::ClientConfig>,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
+        event_sender: Option<tokio::sync::mpsc::Sender<Event>>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -124,6 +129,7 @@ impl Session {
             dictionaries_by_name: PrimaryMap::new(),
             config_path,
             req_id,
+            event_sender,
         }
     }
 
@@ -144,6 +150,7 @@ impl Session {
             Arc::new(rustls::ClientConfig::new()),
             Arc::new(HashMap::new()),
             Arc::new(None),
+            None,
         )
     }
 
@@ -167,6 +174,18 @@ impl Session {
     /// Access the header map that was copied from the original downstream request.
     pub fn downstream_original_headers(&self) -> &HeaderMap {
         &self.downstream_req_original_headers
+    }
+
+    /// Sends an event to the subscribed event listener.
+    pub fn send_event(&self, event: Event) {
+        if let Some(tx) = &self.event_sender {
+            match tx.blocking_send(event) {
+                Ok(_) => (),
+                Err(e) => {
+                    panic!("Failed to pass event to execution context: {}", e);
+                }
+            }
+        }
     }
 
     // ----- Downstream Response API -----
