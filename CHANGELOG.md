@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.2.13 (2022-05-03)
 
 - Add stubs for JA3 hashes and WebSocket upgrades ([#153](https://github.com/fastly/Viceroy/pull/153))
