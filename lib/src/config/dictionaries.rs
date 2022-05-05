@@ -189,23 +189,16 @@ mod deserialization {
         };
 
         // Read the contents of the given file.
-        let data = fs::read_to_string(&file).map_err(|err| DictionaryConfigError::IoError {
-            name: name.to_string(),
-            error: err.to_string(),
-        })?;
+        let data = fs::read_to_string(&file).map_err(DictionaryConfigError::IoError)?;
 
         // Deserialize the contents of the given JSON file.
-        let json = match serde_json::from_str(&data).map_err(|_| {
-            DictionaryConfigError::DictionaryFileWrongFormat {
-                name: name.to_string(),
-            }
-        })? {
+        let json = match serde_json::from_str(&data)
+            .map_err(|_| DictionaryConfigError::DictionaryFileWrongFormat)?
+        {
             // Check that we were given an object.
             serde_json::Value::Object(obj) => obj,
             _ => {
-                return Err(DictionaryConfigError::DictionaryFileWrongFormat {
-                    name: name.to_string(),
-                })
+                return Err(DictionaryConfigError::DictionaryFileWrongFormat);
             }
         };
 
@@ -215,7 +208,6 @@ mod deserialization {
             let value = value
                 .as_str()
                 .ok_or_else(|| DictionaryConfigError::DictionaryItemValueWrongFormat {
-                    name: name.to_string(),
                     key: key.clone(),
                 })?
                 .to_owned();
@@ -238,7 +230,6 @@ mod deserialization {
         );
         if dict.len() > DICTIONARY_MAX_LEN {
             return Err(DictionaryConfigError::DictionaryCountTooLong {
-                name: name.to_string(),
                 size: DICTIONARY_MAX_LEN.try_into().unwrap(),
             });
         }
@@ -250,14 +241,12 @@ mod deserialization {
         for (key, value) in dict.iter() {
             if key.chars().count() > DICTIONARY_ITEM_KEY_MAX_LEN {
                 return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
-                    name: name.to_string(),
                     key: key.clone(),
                     size: DICTIONARY_ITEM_KEY_MAX_LEN.try_into().unwrap(),
                 });
             }
             if value.chars().count() > DICTIONARY_ITEM_VALUE_MAX_LEN {
                 return Err(DictionaryConfigError::DictionaryItemValueTooLong {
-                    name: name.to_string(),
                     key: key.clone(),
                     size: DICTIONARY_ITEM_VALUE_MAX_LEN.try_into().unwrap(),
                 });
