@@ -42,10 +42,13 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let key: &str = &key.as_str()?;
-        let dict = self.dictionary(dictionary)?;
-        let item_bytes = dict
+        let dict = self
+            .dictionary(dictionary)?
             .contents()
+            .map_err(|err| Error::Other(err.into()))?;
+
+        let key: &str = &key.as_str()?;
+        let item_bytes = dict
             .get(key)
             .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
             .as_bytes();

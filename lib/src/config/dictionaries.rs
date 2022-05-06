@@ -1,7 +1,10 @@
-use std::{
-    collections::HashMap,
-    fmt,
-    path::{Path, PathBuf},
+use {
+    crate::error::DictionaryConfigError,
+    std::{
+        collections::HashMap,
+        fmt, fs,
+        path::{Path, PathBuf},
+    },
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -24,21 +27,16 @@ impl DictionaryName {
 /// A Dictionary consists of a file and format, but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub enum Dictionary {
-    InlineToml {
-        contents: HashMap<String, String>,
-    },
-    Json {
-        contents: HashMap<String, String>,
-        file: PathBuf,
-    },
+    InlineToml { contents: HashMap<String, String> },
+    Json { file: PathBuf },
 }
 
 impl Dictionary {
     /// Returns a reference to the dictionary's contents.
-    pub fn contents(&self) -> &HashMap<String, String> {
+    pub fn contents(&self) -> Result<HashMap<String, String>, DictionaryConfigError> {
         match self {
-            Self::InlineToml { contents } => contents,
-            Self::Json { contents, .. } => contents,
+            Self::InlineToml { contents } => Ok(contents.clone()),
+            Self::Json { file } => Self::read_json_contents(file),
         }
     }
 
@@ -53,6 +51,40 @@ impl Dictionary {
             Self::InlineToml { .. } => None,
             Self::Json { file, .. } => Some(file.as_path()),
         }
+    }
+
+    /// Reads the contents of a JSON dictionary file.
+    fn read_json_contents(file: &Path) -> Result<HashMap<String, String>, DictionaryConfigError> {
+        // Read the contents of the given file.
+        let data = fs::read_to_string(&file).map_err(DictionaryConfigError::IoError)?;
+
+        // Deserialize the contents of the given JSON file.
+        let json = match serde_json::from_str(&data)
+            .map_err(|_| DictionaryConfigError::DictionaryFileWrongFormat)?
+        {
+            // Check that we were given an object.
+            serde_json::Value::Object(obj) => obj,
+            _ => {
+                return Err(DictionaryConfigError::DictionaryFileWrongFormat);
+            }
+        };
+
+        // Check that each dictionary entry has a string value.
+        let mut contents = HashMap::with_capacity(json.len());
+        for (key, value) in json {
+            let value = value
+                .as_str()
+                .ok_or_else(|| DictionaryConfigError::DictionaryItemValueWrongFormat {
+                    key: key.clone(),
+                })?
+                .to_owned();
+            contents.insert(key, value);
+        }
+
+        // Validate that the dictionary adheres to Fastly's API.
+        deserialization::validate_dictionary_contents(&contents)?;
+
+        Ok(contents)
     }
 }
 
@@ -74,7 +106,9 @@ mod deserialization {
             },
             error::{DictionaryConfigError, FastlyConfigError},
         },
-        std::{collections::HashMap, convert::TryFrom, convert::TryInto, fs, str::FromStr},
+        std::{
+            collections::HashMap, convert::TryFrom, convert::TryInto, path::PathBuf, str::FromStr,
+        },
         toml::value::{Table, Value},
         tracing::info,
     };
@@ -114,8 +148,8 @@ mod deserialization {
                     })?;
 
                 let dictionary = match format.as_str() {
-                    "inline-toml" => process_inline_toml_dictionary(&mut toml, name)?,
-                    "json" => process_json_dictionary(&mut toml, name)?,
+                    "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
+                    "json" => process_json_dictionary(&mut toml)?,
                     "" => return Err(DictionaryConfigError::EmptyFormatEntry),
                     _ => {
                         return Err(DictionaryConfigError::InvalidDictionaryFileFormat(
@@ -142,7 +176,6 @@ mod deserialization {
 
     fn process_inline_toml_dictionary(
         toml: &mut Table,
-        name: &str,
     ) -> Result<Dictionary, DictionaryConfigError> {
         // Take the `contents` field from the provided TOML table.
         let toml = match toml
@@ -164,17 +197,14 @@ mod deserialization {
         }
 
         // Validate that the dictionary adheres to Fastly's API.
-        validate_dictionary_contents(name, &contents)?;
+        validate_dictionary_contents(&contents)?;
 
         Ok(Dictionary::InlineToml { contents })
     }
 
-    fn process_json_dictionary(
-        toml: &mut Table,
-        name: &str,
-    ) -> Result<Dictionary, DictionaryConfigError> {
+    fn process_json_dictionary(toml: &mut Table) -> Result<Dictionary, DictionaryConfigError> {
         // Take the `file` field from the provided TOML table.
-        let file = match toml
+        let file: PathBuf = match toml
             .remove("file")
             .ok_or(DictionaryConfigError::MissingFile)?
         {
@@ -188,56 +218,21 @@ mod deserialization {
             _ => return Err(DictionaryConfigError::InvalidFileEntry),
         };
 
-        // Read the contents of the given file.
-        let data = fs::read_to_string(&file).map_err(DictionaryConfigError::IoError)?;
+        Dictionary::read_json_contents(&file)?;
 
-        // Deserialize the contents of the given JSON file.
-        let json = match serde_json::from_str(&data)
-            .map_err(|_| DictionaryConfigError::DictionaryFileWrongFormat)?
-        {
-            // Check that we were given an object.
-            serde_json::Value::Object(obj) => obj,
-            _ => {
-                return Err(DictionaryConfigError::DictionaryFileWrongFormat);
-            }
-        };
-
-        // Check that each dictionary entry has a string value.
-        let mut contents = HashMap::with_capacity(json.len());
-        for (key, value) in json {
-            let value = value
-                .as_str()
-                .ok_or_else(|| DictionaryConfigError::DictionaryItemValueWrongFormat {
-                    key: key.clone(),
-                })?
-                .to_owned();
-            contents.insert(key, value);
-        }
-
-        // Validate that the dictionary adheres to Fastly's API.
-        validate_dictionary_contents(name, &contents)?;
-
-        Ok(Dictionary::Json { file, contents })
+        Ok(Dictionary::Json { file })
     }
 
-    fn validate_dictionary_contents(
-        name: &str,
+    pub(super) fn validate_dictionary_contents(
         dict: &HashMap<String, String>,
     ) -> Result<(), DictionaryConfigError> {
-        info!(
-            "checking if the dictionary '{}' adheres to Fastly's API",
-            name
-        );
+        info!("checking if dictionary adheres to Fastly's API",);
         if dict.len() > DICTIONARY_MAX_LEN {
             return Err(DictionaryConfigError::DictionaryCountTooLong {
                 size: DICTIONARY_MAX_LEN.try_into().unwrap(),
             });
         }
 
-        info!(
-            "checking if the items in dictionary '{}' adhere to Fastly's API",
-            name
-        );
         for (key, value) in dict.iter() {
             if key.chars().count() > DICTIONARY_ITEM_KEY_MAX_LEN {
                 return Err(DictionaryConfigError::DictionaryItemKeyTooLong {
