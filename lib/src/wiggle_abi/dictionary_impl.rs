@@ -63,7 +63,7 @@ impl FastlyDictionary for Session {
             .expect("smaller than dictionary_item_max_len means it must fit");
 
         let mut buf_slice = buf.as_array(item_len).as_slice_mut()?;
-        buf_slice.copy_from_slice(&item_bytes);
+        buf_slice.copy_from_slice(item_bytes);
         Ok(item_len)
     }
 }
