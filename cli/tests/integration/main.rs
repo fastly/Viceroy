@@ -1,5 +1,6 @@
 mod body;
 mod common;
+mod dictionary_lookup;
 mod downstream_req;
 mod env_vars;
 mod http_semantics;

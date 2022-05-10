@@ -1,11 +1,19 @@
-use crate::config::dictionaries::DictionaryFormat;
-
 use {
     super::{FastlyConfig, LocalServerConfig, RawLocalServerConfig},
     crate::{config::DictionaryName, error::FastlyConfigError},
-    std::{fs::File, io::Write},
+    std::{convert::TryInto, fs::File, io::Write},
     tempfile::tempdir,
 };
+
+/// A test helper used to read the `local_server` section of a config file.
+///
+/// In the interest of brevity, this section works with TOML data that would be placed beneath the
+/// `local_server` key, rather than an entire package manifest as in the tests above.
+fn read_local_server_config(toml: &str) -> Result<LocalServerConfig, FastlyConfigError> {
+    toml::from_str::<'_, RawLocalServerConfig>(toml)
+        .expect("valid toml data")
+        .try_into()
+}
 
 #[test]
 fn error_when_fastly_toml_files_cannot_be_read() {
@@ -126,63 +134,47 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
         .dictionaries()
         .get(&DictionaryName::new("a".to_string()))
         .expect("dictionary configurations can be accessed");
-    assert_eq!(dictionary.file, file_path);
-    assert_eq!(dictionary.format, DictionaryFormat::Json);
+    assert_eq!(dictionary.file_path().unwrap(), file_path);
+    assert!(dictionary.is_json());
 }
 
-/// Unit tests for the `local_server` section of a `fastly.toml` package manifest.
+/// Check that the `local_server` section can be deserialized.
+// This case is technically redundant, but it is nice to have a unit test that demonstrates the
+// happy path for this group of unit tests.
+#[test]
+fn local_server_configs_can_be_deserialized() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("secrets.json");
+    let mut file = File::create(&file_path).unwrap();
+    writeln!(file, "{{}}").unwrap();
+
+    let local_server = format!(
+        r#"
+        [backends]
+          [backends.dog]
+          url = "http://localhost:7878/dog-mocks"
+        [dicionaries]
+          [dicionaries.secrets]
+          file = '{}'
+          format = "json"
+    "#,
+        file_path.to_str().unwrap()
+    );
+    match read_local_server_config(&local_server) {
+        Ok(_) => {}
+        res => panic!("unexpected result: {:?}", res),
+    }
+}
+
+/// Unit tests for backends in the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// In particular, these tests check that we deserialize and validate the backend configurations
-/// section of the TOML data properly. In the interest of brevity, this section works with TOML data
-/// that would be placed beneath the `local_server` key, rather than an entire package manifest as in
-/// the tests above.
-mod local_server_config_tests {
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
-
+/// section of the TOML data properly.
+mod backend_config_tests {
     use {
-        super::{LocalServerConfig, RawLocalServerConfig},
-        crate::error::{
-            BackendConfigError, DictionaryConfigError,
-            FastlyConfigError::{self, InvalidBackendDefinition, InvalidDictionaryDefinition},
-        },
-        std::convert::TryInto,
+        super::read_local_server_config,
+        crate::error::{BackendConfigError, FastlyConfigError::InvalidBackendDefinition},
     };
-
-    fn read_toml_config(toml: &str) -> Result<LocalServerConfig, FastlyConfigError> {
-        toml::from_str::<'_, RawLocalServerConfig>(toml)
-            .expect("valid toml data")
-            .try_into()
-    }
-
-    /// Check that the `local_server` section can be deserialized.
-    // This case is technically redundant, but it is nice to have a unit test that demonstrates the
-    // happy path for this group of unit tests.
-    #[test]
-    fn local_server_configs_can_be_deserialized() {
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("secrets.json");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "{{}}").unwrap();
-
-        let local_server = format!(
-            r#"
-            [backends]            
-              [backends.dog]
-              url = "http://localhost:7878/dog-mocks"
-            [dicionaries]            
-              [dicionaries.secrets]
-              file = '{}'
-              format = "json"
-        "#,
-            file_path.to_str().unwrap()
-        );
-        match read_toml_config(&local_server) {
-            Ok(_) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
 
     /// Check that backend definitions must be given as TOML tables.
     #[test]
@@ -192,7 +184,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = "https://a.com"
         "#;
-        match read_toml_config(BAD_DEF) {
+        match read_local_server_config(BAD_DEF) {
             Err(InvalidBackendDefinition {
                 err: InvalidEntryType,
                 ..
@@ -209,7 +201,7 @@ mod local_server_config_tests {
             [backends]
             shark = { url = "https://a.com", shrimp = true }
         "#;
-        match read_toml_config(BAD_DEFAULT) {
+        match read_local_server_config(BAD_DEFAULT) {
             Err(InvalidBackendDefinition {
                 err: UnrecognizedKey(key),
                 ..
@@ -226,7 +218,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = {}
         "#;
-        match read_toml_config(NO_URL) {
+        match read_local_server_config(NO_URL) {
             Err(InvalidBackendDefinition {
                 err: MissingUrl, ..
             }) => {}
@@ -242,7 +234,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = 3 }
         "#;
-        match read_toml_config(BAD_URL_FIELD) {
+        match read_local_server_config(BAD_URL_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidUrlEntry,
                 ..
@@ -258,7 +250,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http:://[:::1]" }
         "#;
-        match read_toml_config(BAD_URL_FIELD) {
+        match read_local_server_config(BAD_URL_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidUrl(_), ..
             }) => {}
@@ -273,7 +265,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http://a.com", override_host = 3 }
         "#;
-        match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
+        match read_local_server_config(BAD_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidOverrideHostEntry,
                 ..
@@ -289,7 +281,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http://a.com", override_host = "" }
         "#;
-        match read_toml_config(EMPTY_OVERRIDE_HOST_FIELD) {
+        match read_local_server_config(EMPTY_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: EmptyOverrideHost,
                 ..
@@ -305,7 +297,7 @@ mod local_server_config_tests {
             [backends]
             "shark" = { url = "http://a.com", override_host = "somehost.com\n" }
         "#;
-        match read_toml_config(BAD_OVERRIDE_HOST_FIELD) {
+        match read_local_server_config(BAD_OVERRIDE_HOST_FIELD) {
             Err(InvalidBackendDefinition {
                 err: InvalidOverrideHost(_),
                 ..
@@ -313,6 +305,19 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+}
+
+/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly for dictionaries using JSON files to store their data.
+mod json_dictionary_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{DictionaryConfigError, FastlyConfigError::InvalidDictionaryDefinition},
+        std::{fs::File, io::Write},
+        tempfile::tempdir,
+    };
 
     /// Check that dictionary definitions must be given as TOML tables.
     #[test]
@@ -322,7 +327,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = "stuff"
         "#;
-        match read_toml_config(BAD_DEF) {
+        match read_local_server_config(BAD_DEF) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidEntryType,
                 ..
@@ -347,7 +352,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&bad_default) {
+        match read_local_server_config(&bad_default) {
             Err(InvalidDictionaryDefinition {
                 err: UnrecognizedKey(key),
                 ..
@@ -364,13 +369,14 @@ mod local_server_config_tests {
             [dictionaries]
             thing = {format = "json"}
         "#;
-        match read_toml_config(NO_FILE) {
+        match read_local_server_config(NO_FILE) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFile, ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that dictionary definitions *must* include a `format` field.
     #[test]
     fn dictionary_configs_must_provide_a_format() {
@@ -387,13 +393,14 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&no_format_field) {
+        match read_local_server_config(&no_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFormat, ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that dictionary definitions must include a *valid* `name` field.
     #[test]
     fn dictionary_configs_must_provide_a_valid_name() {
@@ -410,7 +417,7 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        match read_toml_config(&bad_name_field) {
+        match read_local_server_config(&bad_name_field) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidName(_),
                 ..
@@ -418,6 +425,7 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that file field is a string.
     #[test]
     fn dictionary_configs_must_provide_file_as_a_string() {
@@ -426,7 +434,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { file = 3, format = "json" }
         "#;
-        match read_toml_config(BAD_FILE_FIELD) {
+        match read_local_server_config(BAD_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidFileEntry,
                 ..
@@ -434,6 +442,7 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that file field is non empty.
     #[test]
     fn dictionary_configs_must_provide_a_non_empty_file() {
@@ -442,7 +451,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { file = "", format = "json" }
         "#;
-        match read_toml_config(EMPTY_FILE_FIELD) {
+        match read_local_server_config(EMPTY_FILE_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: EmptyFileEntry,
                 ..
@@ -450,6 +459,7 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that format field is a string.
     #[test]
     fn dictionary_configs_must_provide_format_as_a_string() {
@@ -458,7 +468,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { format = 3}
         "#;
-        match read_toml_config(BAD_FORMAT_FIELD) {
+        match read_local_server_config(BAD_FORMAT_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidFormatEntry,
                 ..
@@ -466,6 +476,7 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that format field is non empty.
     #[test]
     fn dictionary_configs_must_provide_a_non_empty_format() {
@@ -474,7 +485,7 @@ mod local_server_config_tests {
             [dictionaries]
             "thing" = { format = "" }
         "#;
-        match read_toml_config(EMPTY_FORMAT_FIELD) {
+        match read_local_server_config(EMPTY_FORMAT_FIELD) {
             Err(InvalidDictionaryDefinition {
                 err: EmptyFormatEntry,
                 ..
@@ -482,6 +493,7 @@ mod local_server_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
     /// Check that format field set to json is valid.
     #[test]
     fn valid_dictionary_config_with_format_set_to_json() {
@@ -497,8 +509,82 @@ mod local_server_config_tests {
         "#,
             file_path.to_str().unwrap()
         );
-        read_toml_config(&dictionary).expect(
+        read_local_server_config(&dictionary).expect(
             "can read toml data containing local dictionary configurations using json format",
         );
+    }
+}
+
+/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly for dictionaries using inline TOML to store their data.
+mod inline_toml_dictionary_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{DictionaryConfigError, FastlyConfigError::InvalidDictionaryDefinition},
+    };
+
+    #[test]
+    fn valid_inline_toml_dictionaries_can_be_parsed() {
+        let dictionary = r#"
+            [dictionaries.inline_toml_example]
+            format = "inline-toml"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        read_local_server_config(&dictionary).expect(
+            "can read toml data containing local dictionary configurations using json format",
+        );
+    }
+
+    /// Check that dictionary definitions *must* include a `format` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_format() {
+        use DictionaryConfigError::MissingFormat;
+        let no_format_field = r#"
+            [dictionaries.missing_format]
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&no_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFormat, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions *must* include a `contents` field.
+    #[test]
+    fn dictionary_configs_must_provide_contents() {
+        use DictionaryConfigError::MissingContents;
+        let missing_contents = r#"
+            [dictionaries.missing_contents]
+            format = "inline-toml"
+        "#;
+        match read_local_server_config(&missing_contents) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingContents,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that dictionary definitions must include a *valid* `name` field.
+    #[test]
+    fn dictionary_configs_must_provide_a_valid_name() {
+        use DictionaryConfigError::InvalidName;
+        let bad_name_field = r#"
+            [dictionaries."1"]
+            format = "inline-toml"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&bad_name_field) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidName(_),
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
     }
 }

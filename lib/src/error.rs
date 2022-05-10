@@ -302,8 +302,14 @@ pub enum BackendConfigError {
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryConfigError {
     /// An I/O error that occured while reading the file.
-    #[error("error reading `{name}`: {error}")]
-    IoError { name: String, error: String },
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("'contents' was not provided as a TOML table")]
+    InvalidContentsType,
+
+    #[error("inline dictionary value was not a string")]
+    InvalidInlineEntryType,
 
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
@@ -329,6 +335,9 @@ pub enum DictionaryConfigError {
     #[error("'format' field was not a string")]
     InvalidFormatEntry,
 
+    #[error("missing 'contents' field")]
+    MissingContents,
+
     #[error("no default definition provided")]
     MissingDefault,
 
@@ -344,30 +353,22 @@ pub enum DictionaryConfigError {
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
 
-    #[error("Item key named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
-    DictionaryItemKeyTooLong {
-        key: String,
-        name: String,
-        size: i32,
-    },
+    #[error("Item key named '{key}' is too long, max size is {size}")]
+    DictionaryItemKeyTooLong { key: String, size: i32 },
 
-    #[error("The dictionary named '{name}' has too many items, max amount is {size}")]
-    DictionaryCountTooLong { name: String, size: i32 },
+    #[error("too many items, max amount is {size}")]
+    DictionaryCountTooLong { size: i32 },
 
-    #[error("Item value under key named '{key}' in dictionary named '{name}' is of the wrong format. The value is expected to be a JSON String")]
-    DictionaryItemValueWrongFormat { key: String, name: String },
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    DictionaryItemValueWrongFormat { key: String },
+
+    #[error("Item value named '{key}' is too long, max size is {size}")]
+    DictionaryItemValueTooLong { key: String, size: i32 },
 
     #[error(
-        "Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}"
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
-    DictionaryItemValueTooLong {
-        key: String,
-        name: String,
-        size: i32,
-    },
-
-    #[error("The file for the dictionary named '{name}' is of the wrong format. The file is expected to contain a single JSON Object")]
-    DictionaryFileWrongFormat { name: String },
+    DictionaryFileWrongFormat,
 }
 
 /// Errors related to the downstream request.
