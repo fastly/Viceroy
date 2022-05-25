@@ -153,7 +153,7 @@ mod deserialization {
                     "" => return Err(DictionaryConfigError::EmptyFormatEntry),
                     _ => {
                         return Err(DictionaryConfigError::InvalidDictionaryFileFormat(
-                            name.to_owned(),
+                            format.to_owned(),
                         ))
                     }
                 };
