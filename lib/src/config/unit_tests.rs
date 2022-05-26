@@ -320,7 +320,7 @@ mod dictionary_config_tests {
     /// Check that dictionary definitions have a valid `format`.
     #[test]
     fn dictionary_configs_have_a_valid_format() {
-        use DictionaryConfigError::InvalidDictionaryFileFormat;
+        use DictionaryConfigError::InvalidDictionaryFormat;
         let invalid_format_field = r#"
             [dictionaries.a]
             format = "foo"
@@ -328,7 +328,7 @@ mod dictionary_config_tests {
         "#;
         match read_local_server_config(&invalid_format_field) {
             Err(InvalidDictionaryDefinition {
-                err: InvalidDictionaryFileFormat(format),
+                err: InvalidDictionaryFormat(format),
                 ..
             }) if format == "foo" => {}
             res => panic!("unexpected result: {:?}", res),

@@ -152,7 +152,7 @@ mod deserialization {
                     "json" => process_json_dictionary(&mut toml)?,
                     "" => return Err(DictionaryConfigError::EmptyFormatEntry),
                     _ => {
-                        return Err(DictionaryConfigError::InvalidDictionaryFileFormat(
+                        return Err(DictionaryConfigError::InvalidDictionaryFormat(
                             format.to_owned(),
                         ))
                     }
