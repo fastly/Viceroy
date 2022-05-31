@@ -310,6 +310,35 @@ mod backend_config_tests {
 /// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly regardless of the format.
+mod dictionary_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{DictionaryConfigError, FastlyConfigError::InvalidDictionaryDefinition},
+    };
+
+    /// Check that dictionary definitions have a valid `format`.
+    #[test]
+    fn dictionary_configs_have_a_valid_format() {
+        use DictionaryConfigError::InvalidDictionaryFormat;
+        let invalid_format_field = r#"
+            [dictionaries.a]
+            format = "foo"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&invalid_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidDictionaryFormat(format),
+                ..
+            }) if format == "foo" => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+}
+
+/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
 /// the TOML data properly for dictionaries using JSON files to store their data.
 mod json_dictionary_config_tests {
     use {

@@ -320,8 +320,8 @@ pub enum DictionaryConfigError {
     #[error("'name' field was not a string")]
     InvalidNameEntry,
 
-    #[error("'{0}' is not a valid format for the dictionary file. Supported format(s) are: JSON.")]
-    InvalidDictionaryFileFormat(String),
+    #[error("'{0}' is not a valid format for the dictionary. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidDictionaryFormat(String),
 
     #[error("'file' field is empty")]
     EmptyFileEntry,
