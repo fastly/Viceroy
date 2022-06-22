@@ -83,6 +83,9 @@ pub enum Error {
     #[error(transparent)]
     DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
+    #[error(transparent)]
+    ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
+
     #[error{"Expected UTF-8"}]
     Utf8Expected(#[from] std::str::Utf8Error),
 
@@ -103,6 +106,9 @@ pub enum Error {
 
     #[error(transparent)]
     HttpError(#[from] http::Error),
+
+    #[error("Object Store '{0}' does not exist")]
+    UnknownObjectStore(String),
 }
 
 impl Error {
@@ -128,6 +134,7 @@ impl Error {
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
+            Error::ObjectStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -149,7 +156,8 @@ impl Error {
             | Error::UnknownBackend(_)
             | Error::Utf8Expected(_)
             | Error::BackendNameRegistryError(_)
-            | Error::HttpError(_) => FastlyStatus::Error,
+            | Error::HttpError(_)
+            | Error::UnknownObjectStore(_) => FastlyStatus::Error,
         }
     }
 
@@ -257,6 +265,13 @@ pub enum FastlyConfigError {
         name: String,
         #[source]
         err: DictionaryConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidObjectStoreDefinition {
+        name: String,
+        #[source]
+        err: ObjectStoreConfigError,
     },
 
     /// An error that occurred while deserializing the file.
@@ -377,6 +392,30 @@ pub enum DictionaryConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
     DictionaryFileWrongFormat,
+}
+
+/// Errors that may occur while validating object store configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum ObjectStoreConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+    #[error("The `path` and `data` keys for the object {0} are set. Only one can be used.")]
+    PathAndData(String),
+    #[error("The `path` or `data` key for the object {0} is not set. One must be used.")]
+    NoPathOrData(String),
+    #[error("The `data` value for the object {0} is not a string.")]
+    DataNotAString(String),
+    #[error("The `path` value for the object {0} is not a string.")]
+    PathNotAString(String),
+    #[error("The `key` key for an object is not set. One must be used.")]
+    NoKey,
+    #[error("The `key` value for an object is not a string.")]
+    KeyNotAString,
+    #[error("There is no array of objects for the given store.")]
+    NotAnArray,
+    #[error("There is an object in the given store that is not a table of keys.")]
+    NotATable,
 }
 
 /// Errors related to the downstream request.

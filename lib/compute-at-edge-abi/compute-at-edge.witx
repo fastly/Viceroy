@@ -465,3 +465,24 @@
         (result $err (expected (error $fastly_status)))
     )
 )
+
+(module $fastly_object_store
+    (@interface func (export "open")
+        (param $name string)
+        (result $err (expected $object_store_handle (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $body_handle_out (@witx pointer $body_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "insert")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $body_handle $body_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+)
