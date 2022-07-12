@@ -98,7 +98,6 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
     }
 
     let addr = opts.addr();
-    event!(Level::INFO, "Listening on http://{}", addr);
     ViceroyService::new(ctx).serve(addr).await?;
 
     unreachable!()
