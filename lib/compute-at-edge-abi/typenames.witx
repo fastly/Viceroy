@@ -118,3 +118,44 @@
     (enum (@witx tag u32)
         $automatic
         $manually_from_headers))
+
+(typename $tls_version
+    (flags (@witx repr u32)
+       $tls_1
+       $tls_1_1
+       $tls_1_2
+       $tls_1_3))
+
+(typename $backend_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $host_override
+       $connect_timeout
+       $first_byte_timeout
+       $between_bytes_timeout
+       $use_ssl
+       $ssl_min_version
+       $ssl_max_version
+       $cert_hostname
+       $ca_cert
+       $ciphers
+       $sni_hostname))
+
+(typename $dynamic_backend_config
+  (record
+    (field $host_override (@witx pointer (@witx char8)))
+    (field $host_override_len u32)
+    (field $connect_timeout_ms u32)
+    (field $first_byte_timeout_ms u32)
+    (field $between_bytes_timeout_ms u32)
+    (field $ssl_min_version $tls_version)
+    (field $ssl_max_version $tls_version)
+    (field $cert_hostname (@witx pointer (@witx char8)))
+    (field $cert_hostname_len u32)
+    (field $ca_cert (@witx pointer (@witx char8)))
+    (field $ca_cert_len u32)
+    (field $ciphers (@witx pointer (@witx char8)))
+    (field $ciphers_len u32)
+    (field $sni_hostname (@witx pointer (@witx char8)))
+    (field $sni_hostname_len u32)
+    ))

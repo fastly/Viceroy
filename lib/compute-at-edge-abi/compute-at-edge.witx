@@ -321,6 +321,15 @@
         (param $mode $framing_headers_mode)
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Create a backend for later use
+    (@interface func (export "register_dynamic_backend")
+        (param $name_prefix string)
+        (param $target string)
+        (param $backend_config_mask $backend_config_options)
+        (param $backend_configuration (@witx pointer $dynamic_backend_config))
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_http_resp

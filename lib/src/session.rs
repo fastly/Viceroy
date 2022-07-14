@@ -65,6 +65,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     backends: Arc<Backends>,
+    /// The backends dynamically added by the program. This is separated from
+    /// `backends` because we do not want one session to effect the backends
+    /// available to any other session.
+    dynamic_backends: Backends,
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -119,6 +123,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
             dictionaries_by_name: PrimaryMap::new(),
@@ -517,12 +522,32 @@ impl Session {
 
     /// Look up a backend by name.
     pub fn backend(&self, name: &str) -> Option<&Backend> {
-        self.backends.get(name).map(std::ops::Deref::deref)
+        // it doesn't actually matter what order we do this search, because
+        // the namespaces should be unique.
+        self.backends
+            .get(name)
+            .or_else(|| self.dynamic_backends.get(name))
+            .map(std::ops::Deref::deref)
     }
 
-    /// Access the backend map.
-    pub fn backends(&self) -> &Arc<Backends> {
-        &self.backends
+    /// Return the full list of static and dynamic backend names as an iterator.
+    pub fn backend_names(&self) -> impl Iterator<Item = &String> {
+        self.backends.keys().chain(self.dynamic_backends.keys())
+    }
+
+    /// Try to add a backend with the given name prefix to our set of current backends.
+    /// Upon success, return true. If the name already exists somewhere, return false;
+    /// the caller should signal and appropriate error.
+    pub fn add_backend(&mut self, name: &str, info: Backend) -> bool {
+        // if this name already exists, either as a built in or dynamic backend, say no
+        if self.backends.contains_key(name) || self.dynamic_backends.contains_key(name) {
+            return false;
+        }
+
+        self.dynamic_backends
+            .insert(name.to_string(), Arc::new(info));
+
+        true
     }
 
     // ----- TLS config -----

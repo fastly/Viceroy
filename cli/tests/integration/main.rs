@@ -12,4 +12,5 @@ mod sending_response;
 mod sleep;
 mod upstream;
 mod upstream_async;
+mod upstream_dynamic;
 mod upstream_streaming;
