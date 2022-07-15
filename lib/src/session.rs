@@ -530,14 +530,14 @@ impl Session {
             .map(std::ops::Deref::deref)
     }
 
-    /// Return the full list of static and dynamic backend names as an iterator.
+    /// Return the full list of static and dynamic backend names as an [`Iterator`].
     pub fn backend_names(&self) -> impl Iterator<Item = &String> {
         self.backends.keys().chain(self.dynamic_backends.keys())
     }
 
     /// Try to add a backend with the given name prefix to our set of current backends.
     /// Upon success, return true. If the name already exists somewhere, return false;
-    /// the caller should signal and appropriate error.
+    /// the caller should signal an appropriate error.
     pub fn add_backend(&mut self, name: &str, info: Backend) -> bool {
         // if this name already exists, either as a built in or dynamic backend, say no
         if self.backends.contains_key(name) || self.dynamic_backends.contains_key(name) {
