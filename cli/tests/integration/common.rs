@@ -146,12 +146,22 @@ impl Test {
         }
     }
 
-    /// Pass the given request through this test.
+    /// Pass the given requests through this test, returning the associated responses.
     ///
-    /// A `Test` can be used repeatedly against different requests. Note, however, that
-    /// a fresh execution context is set up each time.
-    pub async fn against(&self, req: Request<impl Into<HyperBody>>) -> Response<Body> {
+    /// A `Test` can be used repeatedly against different requests, either individually
+    /// (as with `against()`) or in batches (as with `against_many()`). The difference
+    /// between calling this function with many requests, rather than calling `against()`
+    /// multiple times, is that the requests shared in an `against_many()` call will share
+    /// the same execution context. This can be useful when validating interactions across
+    /// shared state in the context.
+    ///
+    /// Subsequent calls to `against_many()` (or `against()`) will use a fresh context.
+    pub async fn against_many(
+        &self,
+        mut reqs: Vec<Request<impl Into<HyperBody>>>,
+    ) -> Vec<Response<Body>> {
         let _test_lock_guard = TEST_LOCK.lock().await;
+        let mut responses = Vec::with_capacity(reqs.len());
 
         // Install a tracing subscriber. We use a human-readable event formatter in tests, using a
         // writer that supports input capturing for `cargo test`. This subscribes to all events in
@@ -178,7 +188,7 @@ impl Test {
         // spawn any mock hosts, keeping a handle on each host task for clean termination.
         let host_handles: Vec<_> = self.hosts.iter().map(HostSpec::spawn).collect();
 
-        let resp = if self.via_hyper {
+        if self.via_hyper {
             let svc = ViceroyService::new(ctx);
             // We are going to host the service at port 7878, and so it's vital to make sure
             // that we shut down the service after our test request, so that if there are
@@ -197,28 +207,48 @@ impl Test {
                             .expect("receiver error while shutting down hyper server")
                     }),
             );
-            // Pass the request to the server via a Hyper client on the _current_ task:
-            let resp = hyper::Client::new()
-                .request(req.map(Into::into))
-                .await
-                .expect("hyper client error making test request");
-            // We're done with this test request, so shut down the server.
+
+            for req in reqs.drain(..) {
+                // Pass the request to the server via a Hyper client on the _current_ task:
+                let resp = hyper::Client::new()
+                    .request(req.map(Into::into))
+                    .await
+                    .expect("hyper client error making test request");
+                responses.push(resp.map(Into::into));
+            }
+
+            // We're done with these test requests, so shut down the server.
             tx.send(())
                 .expect("sender error while shutting down hyper server");
             // Reap the task handle to ensure that the server did indeed shut down.
             let _ = server_handle.await.expect("hyper server yielded an error");
-            resp.map(Into::into)
         } else {
-            ctx.handle_request(req.map(Into::into), addr.ip())
-                .await
-                .expect("failed to handle the request")
-        };
+            for req in reqs.drain(..) {
+                let resp = ctx
+                    .clone()
+                    .handle_request(req.map(Into::into), addr.ip())
+                    .await
+                    .expect("failed to handle the request");
+                responses.push(resp);
+            }
+        }
 
         for host in host_handles {
             host.shutdown().await;
         }
 
-        resp
+        responses
+    }
+
+    /// Pass the given request through this test.
+    ///
+    /// A `Test` can be used repeatedly against different requests. Note, however, that
+    /// a fresh execution context is set up each time.
+    pub async fn against(&self, req: Request<impl Into<HyperBody>>) -> Response<Body> {
+        self.against_many(vec![req])
+            .await
+            .pop()
+            .expect("singleton back from against_many")
     }
 
     /// Pass an empty `GET 127.0.0.1:7878` request through this test.

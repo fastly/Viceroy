@@ -147,7 +147,11 @@ mod opts_tests {
                 kind: ErrorKind::ValueValidation,
                 message,
                 ..
-            }) if message.contains("invalid socket address syntax") => Ok(()),
+            }) if message.contains("invalid socket address syntax")
+                | message.contains("invalid IP address syntax") =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }

@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        config::Backend,
         error::Error,
         session::{Session, ViceroyRequestMetadata},
         upstream::{self, PendingRequest},
@@ -9,14 +10,14 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
-                BodyHandle, CacheOverrideTag, ContentEncodings, FramingHeadersMode, HttpVersion,
-                MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, RequestHandle,
-                ResponseHandle,
+                BackendConfigOptions, BodyHandle, CacheOverrideTag, ContentEncodings,
+                DynamicBackendConfig, FramingHeadersMode, HttpVersion, MultiValueCursor,
+                MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,
             },
         },
     },
     fastly_shared::{INVALID_BODY_HANDLE, INVALID_REQUEST_HANDLE, INVALID_RESPONSE_HANDLE},
-    http::{Method, Uri},
+    http::{HeaderValue, Method, Uri},
     hyper::http::request::Request,
     std::{
         convert::{TryFrom, TryInto},
@@ -135,6 +136,72 @@ impl FastlyHttpReq for Session {
             }
             FramingHeadersMode::Automatic => Ok(()),
         }
+    }
+
+    fn register_dynamic_backend<'a>(
+        &mut self,
+        name: &GuestPtr<str>,
+        upstream_dynamic: &GuestPtr<str>,
+        backend_info_mask: BackendConfigOptions,
+        backend_info: &GuestPtr<'a, DynamicBackendConfig<'a>>,
+    ) -> Result<(), Error> {
+        let name_slice = name.as_byte_ptr().as_slice()?;
+        let name = std::str::from_utf8(&name_slice)?;
+        let origin_name_slice = upstream_dynamic.as_byte_ptr().as_slice()?;
+        let origin_name = std::str::from_utf8(&origin_name_slice)?;
+        let config = backend_info.read()?;
+
+        // If someone set our reserved bit, error. We might need it, and we don't
+        // want anyone it early.
+        if backend_info_mask.contains(BackendConfigOptions::RESERVED) {
+            return Err(Error::InvalidArgument);
+        }
+
+        // If someone has set any bits we don't know about, let's also return false,
+        // as there's either bad data or an API compatibility problem.
+        if backend_info_mask != BackendConfigOptions::from_bits_truncate(backend_info_mask.bits()) {
+            return Err(Error::InvalidArgument);
+        }
+
+        let override_host = if backend_info_mask.contains(BackendConfigOptions::HOST_OVERRIDE) {
+            if config.host_override_len == 0 {
+                return Err(Error::InvalidArgument);
+            }
+
+            if config.host_override_len > 1024 {
+                return Err(Error::InvalidArgument);
+            }
+
+            let byte_slice = config
+                .host_override
+                .as_array(config.host_override_len)
+                .as_slice()?;
+
+            Some(HeaderValue::from_bytes(&*byte_slice)?)
+        } else {
+            None
+        };
+
+        let scheme = if backend_info_mask.contains(BackendConfigOptions::USE_SSL) {
+            "https"
+        } else {
+            "http"
+        };
+
+        let new_backend = Backend {
+            uri: Uri::builder()
+                .scheme(scheme)
+                .authority(origin_name)
+                .path_and_query("/")
+                .build()?,
+            override_host,
+        };
+
+        if !self.add_backend(name, new_backend) {
+            return Err(Error::BackendNameRegistryError(name.to_string()));
+        }
+
+        Ok(())
     }
 
     fn new(&mut self) -> Result<RequestHandle, Error> {

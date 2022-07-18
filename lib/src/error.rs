@@ -97,6 +97,12 @@ pub enum Error {
 
     #[error("Could not load native certificates: {0}")]
     BadCerts(std::io::Error),
+
+    #[error("Could not generate new backend name from '{0}'")]
+    BackendNameRegistryError(String),
+
+    #[error(transparent)]
+    HttpError(#[from] http::Error),
 }
 
 impl Error {
@@ -141,7 +147,9 @@ impl Error {
             | Error::Other(_)
             | Error::StreamingChunkSend
             | Error::UnknownBackend(_)
-            | Error::Utf8Expected(_) => FastlyStatus::Error,
+            | Error::Utf8Expected(_)
+            | Error::BackendNameRegistryError(_)
+            | Error::HttpError(_) => FastlyStatus::Error,
         }
     }
 

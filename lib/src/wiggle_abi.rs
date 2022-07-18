@@ -108,8 +108,8 @@ impl UserErrorConversion for Session {
         match e {
             Error::UnknownBackend(ref backend) => {
                 let config_path = &self.config_path();
-                let backends_buffer = itertools::join(self.backends().keys(), ",");
-                let backends_len = self.backends().len();
+                let backends_buffer = itertools::join(self.backend_names(), ",");
+                let backends_len = self.backend_names().count();
 
                 match (backends_len, (**config_path).as_ref()) {
                     (_, None) => event!(
