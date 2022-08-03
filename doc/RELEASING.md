@@ -9,9 +9,9 @@ Below are the steps needed to do a Viceroy release:
 1. Update the `Cargo.lock` files by running `make generate-lockfile`.
 1. Update `CHANGELOG.md` so that it contains all of the updates since the
    previous version as its own commit.
-1. Push a branch in the form `release-x.y.z` where `x`, `y`, and `z` are the
-   major, minor, and patch versions of Viceroy and have the tip of the branch
-   contain the Changelog commit.
+1. Create a local branch in the form `release-x.y.z` where `x`, `y`, and `z` are
+   the major, minor, and patch versions of Viceroy and have the tip of the
+   branch contain the Changelog commit.
 1. Run `make ci` locally to make sure that everything will pass before pushing
    the branch and opening up a PR.
 1. After you get approval, run `git tag vx.y.z HEAD && git push origin --tags`.

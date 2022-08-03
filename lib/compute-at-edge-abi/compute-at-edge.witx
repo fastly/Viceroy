@@ -127,6 +127,12 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "downstream_tls_ja3_md5")
+        ;; must be a 16-byte array
+        (param $cja3_md5_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
     (@interface func (export "new")
         (result $err (expected $request_handle (error $fastly_status)))
     )
@@ -301,6 +307,11 @@
     (@interface func (export "auto_decompress_response_set")
         (param $h $request_handle)
         (param $encodings $content_encodings)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "upgrade_websocket")
+        (param $backend_name string)
         (result $err (expected (error $fastly_status)))
     )
 
