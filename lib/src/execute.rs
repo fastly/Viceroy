@@ -287,7 +287,7 @@ impl ExecuteCtx {
             bytesize::ByteSize::kib(heap_pages as u64 * 64)
         );
 
-        info!("request completed in {:?}", request_duration);
+        info!("request completed in {:.0?}", request_duration);
 
         outcome
     }
