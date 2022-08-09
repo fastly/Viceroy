@@ -7,7 +7,10 @@ use {
     self::{async_item::AsyncItem, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
+        config::{
+            Backend, Backends, ConnSpeed, ConnType, Continent, Dictionaries, Dictionary,
+            DictionaryName, GeoIP, GeoIPs, ProxyDescription, ProxyType,
+        },
         error::{Error, HandleError},
         logging::LogEndpoint,
         streaming_body::StreamingBody,
@@ -65,6 +68,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     backends: Arc<Backends>,
+    /// The GeoIPs configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    geoips: Arc<GeoIPs>,
     /// The backends dynamically added by the program. This is separated from
     /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
@@ -98,6 +105,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
+        geoips: Arc<GeoIPs>,
         tls_config: Arc<rustls::ClientConfig>,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
@@ -123,6 +131,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            geoips,
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
@@ -145,6 +154,7 @@ impl Session {
             Request::new(Body::empty()),
             sender,
             "0.0.0.0".parse().unwrap(),
+            Arc::new(HashMap::new()),
             Arc::new(HashMap::new()),
             Arc::new(rustls::ClientConfig::new()),
             Arc::new(HashMap::new()),
@@ -576,6 +586,34 @@ impl Session {
     /// Access the dictionary map.
     pub fn dictionaries(&self) -> &Arc<Dictionaries> {
         &self.dictionaries
+    }
+
+    // ----- GeoIP API -----
+
+    pub fn geoip_lookup(&self, addr: &IpAddr) -> GeoIP {
+        match self.geoips.get(addr.to_string().as_str()) {
+            Some(geoip) => std::ops::Deref::deref(geoip).to_owned(),
+            None => GeoIP {
+                as_name: String::from("Fastly, Inc."),
+                as_number: 54113,
+                area_code: 415,
+                city: String::from("San Francisco"),
+                conn_speed: ConnSpeed::Broadband,
+                conn_type: ConnType::Wired,
+                continent: Continent::NorthAmerica,
+                country_code: String::from("US"),
+                country_code3: String::from("USA"),
+                country_name: String::from("United States of America"),
+                latitude: 37.77869,
+                longitude: -122.39557,
+                metro_code: 0,
+                postal_code: String::from("94107"),
+                proxy_description: ProxyDescription::Unknown,
+                proxy_type: ProxyType::Unknown,
+                region: String::from("US-CA"),
+                utc_offset: -700,
+            },
+        }
     }
 
     // ----- Pending Requests API -----

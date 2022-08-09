@@ -26,6 +26,12 @@ mod backends;
 pub use self::backends::Backend;
 pub type Backends = HashMap<String, Arc<Backend>>;
 
+/// Types and deserializers for GeoIP configuration settings.
+mod geoips;
+use self::geoips::GeoIPsConfig;
+pub use self::geoips::{ConnSpeed, ConnType, Continent, GeoIP, ProxyDescription, ProxyType};
+pub type GeoIPs = HashMap<String, Arc<GeoIP>>;
+
 /// Fastly-specific configuration information.
 ///
 /// This `struct` represents the fields and values in a Compute@Edge package's `fastly.toml`.
@@ -62,6 +68,10 @@ impl FastlyConfig {
     /// Get the backend configuration.
     pub fn backends(&self) -> &Backends {
         &self.local_server.backends.0
+    }
+
+    pub fn geoips(&self) -> &GeoIPs {
+        &self.local_server.geoips.0
     }
 
     /// Get the dictionaries configuration.
@@ -147,6 +157,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
     backends: BackendsConfig,
+    geoips: GeoIPsConfig,
     dictionaries: DictionariesConfig,
 }
 
@@ -157,6 +168,7 @@ pub struct LocalServerConfig {
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
     backends: Option<Table>,
+    geoips: Option<Table>,
     dictionaries: Option<Table>,
 }
 
@@ -165,12 +177,18 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
             backends,
+            geoips,
             dictionaries,
         } = self;
         let backends = if let Some(backends) = backends {
             backends.try_into()?
         } else {
             BackendsConfig::default()
+        };
+        let geoips = if let Some(geoips) = geoips {
+            geoips.try_into()?
+        } else {
+            GeoIPsConfig::default()
         };
         let dictionaries = if let Some(dictionaries) = dictionaries {
             dictionaries.try_into()?
@@ -180,6 +198,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
 
         Ok(LocalServerConfig {
             backends,
+            geoips,
             dictionaries,
         })
     }

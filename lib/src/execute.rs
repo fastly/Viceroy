@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries},
+        config::{Backends, Dictionaries, GeoIPs},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -37,6 +37,8 @@ pub struct ExecuteCtx {
     instance_pre: Arc<InstancePre<WasmCtx>>,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// The geoip mappings for this execution.
+    geoips: Arc<GeoIPs>,
     /// Preloaded TLS certificates and configuration
     tls_config: Arc<rustls::ClientConfig>,
     /// The dictionaries for this execution.
@@ -66,6 +68,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
+            geoips: Arc::new(GeoIPs::default()),
             tls_config: Arc::new(configure_tls()?),
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
@@ -89,6 +92,19 @@ impl ExecuteCtx {
     pub fn with_backends(self, backends: Backends) -> Self {
         Self {
             backends: Arc::new(backends),
+            ..self
+        }
+    }
+
+    /// Get the geoip mappings for this execution context.
+    pub fn geoips(&self) -> &GeoIPs {
+        &self.geoips
+    }
+
+    /// Set the geoip mappings for this execution context.
+    pub fn with_geoips(self, geoips: GeoIPs) -> Self {
+        Self {
+            geoips: Arc::new(geoips),
             ..self
         }
     }
@@ -236,6 +252,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.geoips.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),

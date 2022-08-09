@@ -246,6 +246,13 @@ pub enum FastlyConfigError {
     },
 
     #[error("invalid configuration for '{name}': {err}")]
+    InvalidGeoIPDefinition {
+        name: String,
+        #[source]
+        err: GeoIPConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
     InvalidBackendDefinition {
         name: String,
         #[source]
@@ -377,6 +384,25 @@ pub enum DictionaryConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
     DictionaryFileWrongFormat,
+}
+
+/// Errors that may occur while validating geoip configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum GeoIPConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("definition was not provided as a TOML table")]
+    InvalidEntryType,
+
+    #[error("unrecognized key '{0}'")]
+    UnrecognizedKey(String),
+
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
+    )]
+    GeoIpFileWrongFormat,
 }
 
 /// Errors related to the downstream request.
