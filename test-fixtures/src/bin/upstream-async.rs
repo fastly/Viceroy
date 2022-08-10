@@ -2,7 +2,7 @@
 //! on `PendingRequest`s.
 //!
 //! The test makes async requests to two different backends, each of which returns an identifying header,
-//! and then checks that both response are eventually returned and processed.
+//! and then checks that both responses are eventually returned and processed.
 
 use fastly::{
     http::request::{select, PendingRequest, PollResult},
