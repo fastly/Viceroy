@@ -2,7 +2,7 @@
 //! on `PendingRequest`s.
 //!
 //! The test makes async requests to two different backends, each of which returns an identifying header,
-//! and then checks that both respones are eventually returned and processed.
+//! and then checks that both response are eventually returned and processed.
 
 use fastly::{
     http::request::{select, PendingRequest, PollResult},
@@ -22,9 +22,9 @@ fn send_async_reqs() -> (PendingRequest, PendingRequest) {
 
 /// A structure to process responses as they come in, and ensure that they are as expected.
 struct ResponseTracker {
-    /// Have we processed the response fropm `backend1` yet?
+    /// Have we processed the response from `backend1` yet?
     response1: bool,
-    /// Have we processed the response fropm `backend2` yet?
+    /// Have we processed the response from `backend2` yet?
     response2: bool,
 }
 
@@ -52,7 +52,7 @@ impl ResponseTracker {
         }
     }
 
-    /// After both responses have been processed, assert that they have udpated the tracker state as expected.
+    /// After both responses have been processed, assert that they have updated the tracker state as expected.
     fn assert_complete(self) {
         assert!(self.response1);
         assert!(self.response2);

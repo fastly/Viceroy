@@ -53,7 +53,7 @@ mod req_impl;
 mod resp_impl;
 mod uap_impl;
 
-// Expand the `.witx` interface defintion into a collection of modules. The `types` module will
+// Expand the `.witx` interface definition into a collection of modules. The `types` module will
 // contain all of the `typename`'s defined in the `witx` file, and other modules will export traits
 // that *must* be implemented by our `ctx` type. See the `from_witx` documentation for more.
 wiggle::from_witx!({
