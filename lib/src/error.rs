@@ -400,15 +400,15 @@ pub enum ObjectStoreConfigError {
     /// An I/O error that occured while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
-    #[error("The `path` and `data` keys for the object {0} are set. Only one can be used.")]
+    #[error("The `path` and `data` keys for the object `{0}` are set. Only one can be used.")]
     PathAndData(String),
-    #[error("The `path` or `data` key for the object {0} is not set. One must be used.")]
+    #[error("The `path` or `data` key for the object `{0}` is not set. One must be used.")]
     NoPathOrData(String),
-    #[error("The `data` value for the object {0} is not a string.")]
+    #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
-    #[error("The `path` value for the object {0} is not a string.")]
+    #[error("The `path` value for the object `{0}` is not a string.")]
     PathNotAString(String),
-    #[error("The `key` key for an object is not set. One must be used.")]
+    #[error("The `key` key for an object is not set. It must be used.")]
     NoKey,
     #[error("The `key` value for an object is not a string.")]
     KeyNotAString,
