@@ -1,4 +1,6 @@
-#![allow(clippy::too_many_arguments)] // macro-generated functions in `from_witx!`
+// a few things to ignore from the `from_witx!` macro-generated code:
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::derive_partial_eq_without_eq)]
 
 //! Wiggle implementations for the Compute@Edge ABI.
 //
