@@ -21,9 +21,9 @@ impl FastlyObjectStore for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<ObjectStoreHandle, Error> {
         let name = name.as_str()?;
         if self.object_store.store_exists(&name)? {
-          self.obj_store_handle(&name)
+            self.obj_store_handle(&name)
         } else {
-          Ok(ObjectStoreHandle::from(INVALID_OBJECT_STORE_HANDLE))
+            Ok(ObjectStoreHandle::from(INVALID_OBJECT_STORE_HANDLE))
         }
     }
 

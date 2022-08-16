@@ -39,8 +39,11 @@ async fn object_store_bad_configs() -> TestResult {
         object_store.store_one = [{key = 3, data = "This is some data"}]
     "#;
     match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_1_FASTLY_TOML) {
-      Err(e) => assert_eq!("invalid configuration for 'store_one': The `key` value for an object is not a string.", &e.to_string()),
-      _ => panic!(),
+        Err(e) => assert_eq!(
+            "invalid configuration for 'store_one': The `key` value for an object is not a string.",
+            &e.to_string()
+        ),
+        _ => panic!(),
     }
 
     const BAD_2_FASTLY_TOML: &str = r#"
@@ -91,8 +94,11 @@ async fn object_store_bad_configs() -> TestResult {
         object_store.store_one = [{key = "first", path = "../path/does/not/exist"}]
     "#;
     match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_5_FASTLY_TOML) {
-      Err(e) => assert_eq!("invalid configuration for 'store_one': No such file or directory (os error 2)", &e.to_string()),
-      _ => panic!(),
+        Err(e) => assert_eq!(
+            "invalid configuration for 'store_one': No such file or directory (os error 2)",
+            &e.to_string()
+        ),
+        _ => panic!(),
     }
 
     const BAD_6_FASTLY_TOML: &str = r#"

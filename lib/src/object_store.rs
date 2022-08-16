@@ -97,7 +97,7 @@ impl ObjectKey {
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, thiserror::Error)]
 pub enum ObjectStoreError {
-    #[error("lol it's missing ya dingus")]
+    #[error("The object was not in the store")]
     MissingObject,
     #[error("Viceroy's ObjectStore lock was poisoned")]
     PoisonedLock,
