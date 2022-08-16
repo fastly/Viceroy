@@ -3,6 +3,12 @@
 use fastly::ObjectStore;
 
 fn main() {
+    // Check we can't get a store that does not exist
+    match ObjectStore::open("non_existant") {
+        Ok(None) => {}
+        _ => panic!(),
+    }
+
     let store_one = ObjectStore::open("store_one").unwrap().unwrap();
     // Test that we can get data using the `data` config key
     assert_eq!(
@@ -14,6 +20,7 @@ fn main() {
         store_one.lookup_str("second").unwrap().unwrap(),
         "More data"
     );
+
     let mut empty_store = ObjectStore::open("empty_store").unwrap().unwrap();
     // Check that the value "bar" is not in the store
     assert_eq!(empty_store.lookup_str("bar"), Ok(None));

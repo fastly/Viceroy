@@ -17,6 +17,16 @@ impl ObjectStore {
             stores: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
+
+    pub(crate) fn store_exists(&self, obj_store_key: &str) -> Result<bool, ObjectStoreError> {
+        Ok(self
+            .stores
+            .read()
+            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .get(&ObjectStoreKey::new(obj_store_key))
+            .is_some())
+    }
+
     pub fn lookup(
         &self,
         obj_store_key: &ObjectStoreKey,
@@ -28,6 +38,20 @@ impl ObjectStore {
             .get(obj_store_key)
             .and_then(|map| map.get(obj_key).map(|obj| obj.clone()))
             .ok_or_else(|| ObjectStoreError::MissingObject)
+    }
+
+    pub(crate) fn insert_empty_store(
+        &self,
+        obj_store_key: ObjectStoreKey,
+    ) -> Result<(), ObjectStoreError> {
+        self.stores
+            .write()
+            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .entry(obj_store_key)
+            .and_modify(|_| {})
+            .or_insert_with(|| BTreeMap::new());
+
+        Ok(())
     }
 
     pub fn insert(

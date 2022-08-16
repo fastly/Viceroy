@@ -416,6 +416,8 @@ pub enum ObjectStoreConfigError {
     NotAnArray,
     #[error("There is an object in the given store that is not a table of keys.")]
     NotATable,
+    #[error("There was an error when manipulating the ObjectStore: {0}.")]
+    ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 }
 
 /// Errors related to the downstream request.

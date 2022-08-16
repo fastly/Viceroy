@@ -14,10 +14,17 @@ use {
     wiggle::GuestPtr,
 };
 
+const INVALID_OBJECT_STORE_HANDLE: u32 = std::u32::MAX - 1;
+
 #[wiggle::async_trait]
 impl FastlyObjectStore for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<ObjectStoreHandle, Error> {
-        self.obj_store_handle(&name.as_str()?)
+        let name = name.as_str()?;
+        if self.object_store.store_exists(&name)? {
+          self.obj_store_handle(&name)
+        } else {
+          Ok(ObjectStoreHandle::from(INVALID_OBJECT_STORE_HANDLE))
+        }
     }
 
     fn lookup(

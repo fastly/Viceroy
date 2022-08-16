@@ -15,14 +15,24 @@ impl TryFrom<Table> for ObjectStoreConfig {
     fn try_from(toml: Table) -> Result<Self, Self::Error> {
         let obj_store = ObjectStore::new();
         for (store, items) in toml.iter() {
-            for item in items
-                .as_array()
-                .ok_or_else(|| FastlyConfigError::InvalidObjectStoreDefinition {
+            let items = items.as_array().ok_or_else(|| {
+                FastlyConfigError::InvalidObjectStoreDefinition {
                     name: store.to_string(),
                     err: ObjectStoreConfigError::NotAnArray,
-                })?
-                .iter()
-            {
+                }
+            })?;
+            // Handle the case where there are no items to insert, but the store
+            // exists and needs to be in the ObjectStore
+            if items.len() == 0 {
+                obj_store
+                    .insert_empty_store(ObjectStoreKey::new(store))
+                    .map_err(|err| FastlyConfigError::InvalidObjectStoreDefinition {
+                        name: store.to_string(),
+                        err: err.into(),
+                    })?;
+                continue;
+            }
+            for item in items.iter() {
                 let item = item.as_table().ok_or_else(|| {
                     FastlyConfigError::InvalidObjectStoreDefinition {
                         name: store.to_string(),

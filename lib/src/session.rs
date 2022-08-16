@@ -85,7 +85,7 @@ pub struct Session {
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    object_store: Arc<ObjectStore>,
+    pub(crate) object_store: Arc<ObjectStore>,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
