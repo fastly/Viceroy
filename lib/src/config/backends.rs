@@ -10,6 +10,8 @@ use {
 pub struct Backend {
     pub uri: Uri,
     pub override_host: Option<HeaderValue>,
+    pub cert_host: Option<String>,
+    pub use_sni: bool,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -88,21 +90,47 @@ mod deserialization {
                     Value::String(url) => url.parse::<Uri>().map_err(BackendConfigError::from),
                     _ => Err(BackendConfigError::InvalidUrlEntry),
                 })?;
-            let override_host = if let Some(override_host) = toml.remove("override_host") {
-                Some(match override_host {
+
+            let override_host = toml
+                .remove("override_host")
+                .map(|override_host| match override_host {
                     Value::String(override_host) if !override_host.trim().is_empty() => {
                         HeaderValue::from_str(&override_host).map_err(BackendConfigError::from)
                     }
                     Value::String(_) => Err(BackendConfigError::EmptyOverrideHost),
                     _ => Err(BackendConfigError::InvalidOverrideHostEntry),
-                }?)
-            } else {
-                None
-            };
+                })
+                .transpose()?;
+
+            let cert_host = toml
+                .remove("cert_host")
+                .map(|cert_host| match cert_host {
+                    Value::String(cert_host) if !cert_host.trim().is_empty() => Ok(cert_host),
+                    Value::String(_) => Err(BackendConfigError::EmptyCertHost),
+                    _ => Err(BackendConfigError::InvalidCertHostEntry),
+                })
+                .transpose()?;
+
+            let use_sni = toml
+                .remove("use_sni")
+                .map(|use_sni| {
+                    if let Value::Boolean(use_sni) = use_sni {
+                        Ok(use_sni)
+                    } else {
+                        Err(BackendConfigError::InvalidUseSniEntry)
+                    }
+                })
+                .transpose()?
+                .unwrap_or(true);
 
             check_for_unrecognized_keys(&toml)?;
 
-            Ok(Self { uri, override_host })
+            Ok(Self {
+                uri,
+                override_host,
+                cert_host,
+                use_sni,
+            })
         }
     }
 }

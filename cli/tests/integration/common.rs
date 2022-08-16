@@ -101,6 +101,8 @@ impl Test {
         let backend = Backend {
             uri: url.parse().expect("invalid backend URL"),
             override_host: override_host.map(|s| s.parse().expect("can parse override_host")),
+            cert_host: None,
+            use_sni: true,
         };
         self.backends.insert(name.to_owned(), Arc::new(backend));
         self

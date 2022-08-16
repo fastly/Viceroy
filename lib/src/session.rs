@@ -11,7 +11,7 @@ use {
         error::{Error, HandleError},
         logging::LogEndpoint,
         streaming_body::StreamingBody,
-        upstream::{PendingRequest, SelectTarget},
+        upstream::{PendingRequest, SelectTarget, TlsConfig},
         wiggle_abi::types::{
             BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, PendingRequestHandle,
             RequestHandle, ResponseHandle,
@@ -72,7 +72,7 @@ pub struct Session {
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    tls_config: Arc<rustls::ClientConfig>,
+    tls_config: TlsConfig,
     /// The dictionaries configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -98,7 +98,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
-        tls_config: Arc<rustls::ClientConfig>,
+        tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
     ) -> Session {
@@ -146,7 +146,7 @@ impl Session {
             sender,
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
-            Arc::new(rustls::ClientConfig::new()),
+            TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
         )
@@ -521,13 +521,12 @@ impl Session {
     // ----- Backends API -----
 
     /// Look up a backend by name.
-    pub fn backend(&self, name: &str) -> Option<&Backend> {
+    pub fn backend(&self, name: &str) -> Option<&Arc<Backend>> {
         // it doesn't actually matter what order we do this search, because
         // the namespaces should be unique.
         self.backends
             .get(name)
             .or_else(|| self.dynamic_backends.get(name))
-            .map(std::ops::Deref::deref)
     }
 
     /// Return the full list of static and dynamic backend names as an [`Iterator`].
@@ -553,7 +552,7 @@ impl Session {
     // ----- TLS config -----
 
     /// Access the TLS configuration.
-    pub fn tls_config(&self) -> &Arc<rustls::ClientConfig> {
+    pub fn tls_config(&self) -> &TlsConfig {
         &self.tls_config
     }
 
