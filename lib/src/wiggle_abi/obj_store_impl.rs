@@ -34,7 +34,7 @@ impl FastlyObjectStore for Session {
         opt_body_handle_out: &GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap();
-        let key = ObjectKey::new(&*key.as_str()?);
+        let key = ObjectKey::new(&*key.as_str()?)?;
         match self.obj_lookup(store, &key) {
             Ok(obj) => {
                 let new_handle = self.insert_body(Body::from(obj));
@@ -55,7 +55,7 @@ impl FastlyObjectStore for Session {
         body_handle: BodyHandle,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap().clone();
-        let key = ObjectKey::new(&*key.as_str()?);
+        let key = ObjectKey::new(&*key.as_str()?)?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
         self.obj_insert(store, key, bytes)?;
 

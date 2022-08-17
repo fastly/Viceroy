@@ -109,6 +109,9 @@ pub enum Error {
 
     #[error("Object Store '{0}' does not exist")]
     UnknownObjectStore(String),
+
+    #[error("Invalid Object Store `key` value used: {0}.")]
+    ObjectStoreKeyValidationError(#[from] crate::object_store::KeyValidationError),
 }
 
 impl Error {
@@ -157,7 +160,8 @@ impl Error {
             | Error::Utf8Expected(_)
             | Error::BackendNameRegistryError(_)
             | Error::HttpError(_)
-            | Error::UnknownObjectStore(_) => FastlyStatus::Error,
+            | Error::UnknownObjectStore(_)
+            | Error::ObjectStoreKeyValidationError(_) => FastlyStatus::Error,
         }
     }
 
@@ -418,6 +422,8 @@ pub enum ObjectStoreConfigError {
     NotATable,
     #[error("There was an error when manipulating the ObjectStore: {0}.")]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
+    #[error("Invalid `key` value used: {0}.")]
+    KeyValidationError(#[from] crate::object_store::KeyValidationError),
 }
 
 /// Errors related to the downstream request.

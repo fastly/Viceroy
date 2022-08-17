@@ -90,8 +90,10 @@ impl ObjectStoreKey {
 pub struct ObjectKey(String);
 
 impl ObjectKey {
-    pub fn new(key: impl ToString) -> Self {
-        Self(key.to_string())
+    pub fn new(key: impl ToString) -> Result<Self, KeyValidationError> {
+        let key = key.to_string();
+        is_valid_key(&key)?;
+        Ok(Self(key))
     }
 }
 
@@ -111,4 +113,54 @@ impl From<&ObjectStoreError> for FastlyStatus {
             PoisonedLock => panic!("{}", e),
         }
     }
+}
+
+/// Keys in the Object Store must follow the following rules:
+///
+///   * Keys can contain any sequence of valid Unicode characters, of length 1-1024 bytes when
+///     UTF-8 encoded.
+///   * Keys cannot contain Carriage Return or Line Feed characters.
+///   * Keys cannot start with `.well-known/acme-challenge/`.
+///   * Keys cannot be named `.` or `..`.
+fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
+    let len = key.as_bytes().len();
+    if len < 1 {
+        return Err(KeyValidationError::EmptyKey);
+    } else if len > 1024 {
+        return Err(KeyValidationError::Over1024Bytes);
+    }
+
+    if key.starts_with(".well-known/acme-challenge") {
+        return Err(KeyValidationError::StartsWithWellKnown);
+    }
+
+    if key.contains("..") {
+        return Err(KeyValidationError::ContainsDotDot);
+    } else if key.contains(".") {
+        return Err(KeyValidationError::ContainsDot);
+    } else if key.contains("\r") {
+        return Err(KeyValidationError::ContainsCarriageReturn);
+    } else if key.contains("\n") {
+        return Err(KeyValidationError::ContainsLineFeed);
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeyValidationError {
+    #[error("Keys for objects cannot be empty")]
+    EmptyKey,
+    #[error("Keys for objects cannot be over 1024 bytes in size")]
+    Over1024Bytes,
+    #[error("Keys for objects cannot start with `.well-known/acme-challenge`")]
+    StartsWithWellKnown,
+    #[error("Keys for objects cannot contain a `.`")]
+    ContainsDot,
+    #[error("Keys for objects cannot contain a `..`")]
+    ContainsDotDot,
+    #[error("Keys for objects cannot contain a `\r`")]
+    ContainsCarriageReturn,
+    #[error("Keys for objects cannot contain a `\n`")]
+    ContainsLineFeed,
 }

@@ -87,7 +87,16 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         .to_vec(),
                 };
                 obj_store
-                    .insert(ObjectStoreKey::new(store), ObjectKey::new(key), bytes)
+                    .insert(
+                        ObjectStoreKey::new(store),
+                        ObjectKey::new(key).map_err(|err| {
+                            FastlyConfigError::InvalidObjectStoreDefinition {
+                                name: store.to_string(),
+                                err: err.into(),
+                            }
+                        })?,
+                        bytes,
+                    )
                     .expect("Lock was not poisoned");
             }
         }
