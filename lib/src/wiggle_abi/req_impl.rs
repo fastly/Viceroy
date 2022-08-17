@@ -188,6 +188,51 @@ impl FastlyHttpReq for Session {
             "http"
         };
 
+        let mut cert_host = if backend_info_mask.contains(BackendConfigOptions::CERT_HOSTNAME) {
+            if config.cert_hostname_len == 0 {
+                return Err(Error::InvalidArgument);
+            }
+
+            if config.cert_hostname_len > 1024 {
+                return Err(Error::InvalidArgument);
+            }
+
+            let byte_slice = config
+                .cert_hostname
+                .as_array(config.cert_hostname_len)
+                .as_slice()?;
+
+            Some(std::str::from_utf8(&byte_slice)?.to_owned())
+        } else {
+            None
+        };
+
+        let use_sni = if backend_info_mask.contains(BackendConfigOptions::SNI_HOSTNAME) {
+            if config.sni_hostname_len == 0 {
+                false
+            } else if config.sni_hostname_len > 1024 {
+                return Err(Error::InvalidArgument);
+            } else {
+                let byte_slice = config
+                    .sni_hostname
+                    .as_array(config.sni_hostname_len)
+                    .as_slice()?;
+                let sni_hostname = std::str::from_utf8(&byte_slice)?;
+                if let Some(cert_host) = &cert_host {
+                    if cert_host != sni_hostname {
+                        // because we're using rustls, we cannot support distinct SNI and cert hostnames
+                        return Err(Error::InvalidArgument);
+                    }
+                } else {
+                    cert_host = Some(sni_hostname.to_owned())
+                }
+
+                true
+            }
+        } else {
+            true
+        };
+
         let new_backend = Backend {
             uri: Uri::builder()
                 .scheme(scheme)
@@ -195,6 +240,8 @@ impl FastlyHttpReq for Session {
                 .path_and_query("/")
                 .build()?,
             override_host,
+            cert_host,
+            use_sni,
         };
 
         if !self.add_backend(name, new_backend) {

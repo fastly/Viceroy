@@ -22,12 +22,51 @@ use tokio::{
     sync::oneshot,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
+use tracing::warn;
 use webpki::DNSNameRef;
 
 static GZIP_VALUES: [HeaderValue; 2] = [
     HeaderValue::from_static("gzip"),
     HeaderValue::from_static("x-gzip"),
 ];
+
+/// Viceroy's preloaded TLS configuration.
+///
+/// Setting up client configuration is meant to be done once per process. However, we need
+/// two distinct configurations, because backends may choose whether to employ SNI, and that
+/// setting is baked into the configuration data.
+#[derive(Clone)]
+pub struct TlsConfig {
+    with_sni: Arc<rustls::ClientConfig>,
+    without_sni: Arc<rustls::ClientConfig>,
+}
+
+fn setup_rustls(with_sni: bool) -> Result<rustls::ClientConfig, Error> {
+    let mut config = rustls::ClientConfig::new();
+    config.root_store = match rustls_native_certs::load_native_certs() {
+        Ok(store) => store,
+        Err((Some(store), err)) => {
+            warn!(%err, "some certificates could not be loaded");
+            store
+        }
+        Err((None, err)) => return Err(Error::BadCerts(err)),
+    };
+    if config.root_store.is_empty() {
+        warn!("no CA certificates available");
+    }
+    config.alpn_protocols.clear();
+    config.enable_sni = with_sni;
+    Ok(config)
+}
+
+impl TlsConfig {
+    pub fn new() -> Result<TlsConfig, Error> {
+        Ok(TlsConfig {
+            with_sni: Arc::new(setup_rustls(true)?),
+            without_sni: Arc::new(setup_rustls(false)?),
+        })
+    }
+}
 
 /// A custom Hyper client connector, which is needed to override Hyper's default behavior of
 /// connecting to host specified by the request's URI; we instead want to connect to the host
@@ -37,19 +76,19 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// connections when indicated by the backend URI's scheme.
 #[derive(Clone)]
 pub struct BackendConnector {
-    backend_uri: Uri,
+    backend: Arc<Backend>,
     http: HttpConnector,
-    tls_config: Arc<rustls::ClientConfig>,
+    tls_config: TlsConfig,
 }
 
 impl BackendConnector {
-    pub fn new(backend: &Backend, tls_config: Arc<rustls::ClientConfig>) -> Self {
+    pub fn new(backend: Arc<Backend>, tls_config: TlsConfig) -> Self {
         let mut http = HttpConnector::new();
         http.enforce_http(false);
 
         Self {
-            backend_uri: backend.uri.clone(),
             http,
+            backend,
             tls_config,
         }
     }
@@ -74,18 +113,30 @@ impl hyper::service::Service<Uri> for BackendConnector {
     // We ignore the URI argument and instead provide the backend's URI.
     // NB this does _not_ affect the URI provided in the request itself.
     fn call(&mut self, _: Uri) -> Self::Future {
-        let uri = self.backend_uri.clone();
+        let backend = self.backend.clone();
         let config = self.tls_config.clone();
-        let hostname = uri.host().unwrap_or_default().to_string();
-        let is_https = uri.scheme_str() == Some("https");
 
-        let connect_fut = self.http.call(uri);
+        // the future for establishing the TCP connection. we create this outside of the `async`
+        // block to avoid capturing `http`
+        let connect_fut = self.http.call(backend.uri.clone());
+
         Box::pin(async move {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
-            if is_https {
-                let connector = TlsConnector::from(config);
-                let dnsname = DNSNameRef::try_from_ascii_str(&hostname).map_err(Box::new)?;
+            if backend.uri.scheme_str() == Some("https") {
+                let connector = if backend.use_sni {
+                    TlsConnector::from(config.with_sni.clone())
+                } else {
+                    TlsConnector::from(config.without_sni.clone())
+                };
+
+                let cert_host = backend
+                    .cert_host
+                    .as_deref()
+                    .or_else(|| backend.uri.host())
+                    .unwrap_or_default();
+                let dnsname = DNSNameRef::try_from_ascii_str(cert_host).map_err(Box::new)?;
+
                 let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
                 Ok(Connection::Https(Box::new(tls)))
             } else {
@@ -161,10 +212,10 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
 /// header, one will be added, using the authority from the request's URI.
 pub fn send_request(
     mut req: Request<Body>,
-    backend: &Backend,
-    tls_config: &Arc<rustls::ClientConfig>,
+    backend: &Arc<Backend>,
+    tls_config: &TlsConfig,
 ) -> impl Future<Output = Result<Response<Body>, Error>> {
-    let connector = BackendConnector::new(backend, tls_config.clone());
+    let connector = BackendConnector::new(backend.clone(), tls_config.clone());
 
     let host = canonical_host_header(req.headers(), req.uri(), backend);
     let uri = canonical_uri(

@@ -59,8 +59,10 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         }
 
         for (name, backend) in backends.iter() {
-            let client =
-                Client::builder().build(BackendConnector::new(backend, ctx.tls_config().clone()));
+            let client = Client::builder().build(BackendConnector::new(
+                backend.clone(),
+                ctx.tls_config().clone(),
+            ));
             let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
 
             event!(Level::INFO, "checking if backend '{}' is up", name);

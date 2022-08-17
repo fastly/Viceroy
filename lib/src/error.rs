@@ -290,6 +290,15 @@ pub enum BackendConfigError {
     #[error("'override_host' field was not a string")]
     InvalidOverrideHostEntry,
 
+    #[error("'cert_host' field is empty")]
+    EmptyCertHost,
+
+    #[error("'cert_host' field was not a string")]
+    InvalidCertHostEntry,
+
+    #[error("'use_sni' field was not a boolean")]
+    InvalidUseSniEntry,
+
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
 
