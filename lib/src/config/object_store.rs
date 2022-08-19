@@ -23,7 +23,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
             })?;
             // Handle the case where there are no items to insert, but the store
             // exists and needs to be in the ObjectStore
-            if items.len() == 0 {
+            if items.is_empty() {
                 obj_store
                     .insert_empty_store(ObjectStoreKey::new(store))
                     .map_err(|err| FastlyConfigError::InvalidObjectStoreDefinition {

@@ -8,6 +8,7 @@ use {
 
 #[derive(Clone, Debug, Default)]
 pub struct ObjectStore {
+    #[allow(clippy::type_complexity)]
     stores: Arc<RwLock<BTreeMap<ObjectStoreKey, BTreeMap<ObjectKey, Vec<u8>>>>>,
 }
 
@@ -36,8 +37,8 @@ impl ObjectStore {
             .read()
             .map_err(|_| ObjectStoreError::PoisonedLock)?
             .get(obj_store_key)
-            .and_then(|map| map.get(obj_key).map(|obj| obj.clone()))
-            .ok_or_else(|| ObjectStoreError::MissingObject)
+            .and_then(|map| map.get(obj_key).cloned())
+            .ok_or(ObjectStoreError::MissingObject)
     }
 
     pub(crate) fn insert_empty_store(
@@ -49,7 +50,7 @@ impl ObjectStore {
             .map_err(|_| ObjectStoreError::PoisonedLock)?
             .entry(obj_store_key)
             .and_modify(|_| {})
-            .or_insert_with(|| BTreeMap::new());
+            .or_insert_with(BTreeMap::new);
 
         Ok(())
     }
@@ -136,11 +137,11 @@ fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
 
     if key.contains("..") {
         return Err(KeyValidationError::ContainsDotDot);
-    } else if key.contains(".") {
+    } else if key.contains('.') {
         return Err(KeyValidationError::ContainsDot);
-    } else if key.contains("\r") {
+    } else if key.contains('\r') {
         return Err(KeyValidationError::ContainsCarriageReturn);
-    } else if key.contains("\n") {
+    } else if key.contains('\n') {
         return Err(KeyValidationError::ContainsLineFeed);
     }
 
