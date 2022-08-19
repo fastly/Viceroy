@@ -93,11 +93,20 @@ async fn object_store_bad_configs() -> TestResult {
         [local_server]
         object_store.store_one = [{key = "first", path = "../path/does/not/exist"}]
     "#;
+
+    // For CI to pass we need to include the specific message for each platform
+    // we test against
+    #[cfg(target_os = "macos")]
+    let invalid_path_message =
+        "invalid configuration for 'store_one': No such file or directory (os error 2)";
+    #[cfg(target_os = "linux")]
+    let invalid_path_message =
+        "invalid configuration for 'store_one': No such file or directory (os error 2)";
+    #[cfg(target_os = "windows")]
+    let invalid_path_message = "invalid configuration for 'store_one': The system cannot find the path specified. (os error 3)";
+
     match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_5_FASTLY_TOML) {
-        Err(e) => assert_eq!(
-            "invalid configuration for 'store_one': No such file or directory (os error 2)",
-            &e.to_string()
-        ),
+        Err(e) => assert_eq!(invalid_path_message, &e.to_string()),
         _ => panic!(),
     }
 
