@@ -1,5 +1,14 @@
 ## Unreleased
 
+## 0.2.15 (2022-08-19)
+
+- Add support for `ObjectStore`
+  ([#167](https://github.com/fastly/Viceroy/pull/167))
+- Add support for dynamic backends
+  ([#163](https://github.com/fastly/Viceroy/pull/163))
+- Extend backend TLS configuration with cert host and SNI
+  ([#168](https://github.com/fastly/Viceroy/pull/168))
+
 ## 0.2.14 (2022-05-23)
 
 - Add support for inline TOML dictionaries ([#150](https://github.com/fastly/Viceroy/pull/150))
