@@ -6,6 +6,7 @@ mod env_vars;
 mod http_semantics;
 mod logging;
 mod memory;
+mod object_store;
 mod request;
 mod response;
 mod sending_response;

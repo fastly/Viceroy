@@ -1,5 +1,5 @@
-use fastly::{Backend, Error, Request, Response};
 use fastly::experimental::{BackendCreationError, BackendExt};
+use fastly::{Backend, Error, Request, Response};
 
 /// Pass everything from the downstream request through to the backend, then pass everything back
 /// from the upstream request to the downstream response.

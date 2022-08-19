@@ -10,11 +10,12 @@ use {
         config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
         error::{Error, HandleError},
         logging::LogEndpoint,
+        object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, PendingRequestHandle,
-            RequestHandle, ResponseHandle,
+            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, ObjectStoreHandle,
+            PendingRequestHandle, RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -81,6 +82,14 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName>,
+    /// The ObjectStore configured for this execution.
+    ///
+    /// Populated prior to guest execution and can be modified during requests.
+    pub(crate) object_store: Arc<ObjectStore>,
+    /// The object stores configured for this execution.
+    ///
+    /// Populated prior to guest execution.
+    object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -101,6 +110,7 @@ impl Session {
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
+        object_store: Arc<ObjectStore>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -127,6 +137,8 @@ impl Session {
             tls_config,
             dictionaries,
             dictionaries_by_name: PrimaryMap::new(),
+            object_store,
+            object_store_by_name: PrimaryMap::new(),
             config_path,
             req_id,
         }
@@ -149,6 +161,7 @@ impl Session {
             TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
+            Arc::new(ObjectStore::new()),
         )
     }
 
@@ -575,6 +588,32 @@ impl Session {
     /// Access the dictionary map.
     pub fn dictionaries(&self) -> &Arc<Dictionaries> {
         &self.dictionaries
+    }
+
+    // ----- Object Store API -----
+    pub fn obj_store_handle(&mut self, key: &str) -> Result<ObjectStoreHandle, Error> {
+        let obj_key = ObjectStoreKey::new(key);
+        Ok(self.object_store_by_name.push(obj_key))
+    }
+
+    pub fn get_obj_store_key(&self, handle: ObjectStoreHandle) -> Option<&ObjectStoreKey> {
+        self.object_store_by_name.get(handle)
+    }
+
+    pub fn obj_insert(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+        obj: Vec<u8>,
+    ) -> Result<(), ObjectStoreError> {
+        self.object_store.insert(obj_store_key, obj_key, obj)
+    }
+    pub fn obj_lookup(
+        &self,
+        obj_store_key: &ObjectStoreKey,
+        obj_key: &ObjectKey,
+    ) -> Result<Vec<u8>, ObjectStoreError> {
+        self.object_store.lookup(obj_store_key, obj_key)
     }
 
     // ----- Pending Requests API -----
