@@ -46,7 +46,7 @@ pub struct Session {
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     downstream_resp: DownstreamResponse,
     /// A handle map for items that provide blocking operations. These items are grouped together
-    /// in order to support generic async operations that work across different object typees.
+    /// in order to support generic async operations that work across different object types.
     async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
     /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Request`][req]s.
     ///

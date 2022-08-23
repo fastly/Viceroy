@@ -7,7 +7,7 @@
         $ok
         ;;; Generic error value.
         ;;
-        ;;; This means that some unexpected error occured during a hostcall.
+        ;;; This means that some unexpected error occurred during a hostcall.
         $error
         ;;; Invalid argument.
         $inval

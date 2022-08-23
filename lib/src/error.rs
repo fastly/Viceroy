@@ -249,7 +249,7 @@ pub(crate) enum ExecutionError {
 /// Errors that can occur while parsing a `fastly.toml` file.
 #[derive(Debug, thiserror::Error)]
 pub enum FastlyConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error("error reading '{path}': {err}")]
     IoError {
         path: String,
@@ -337,7 +337,7 @@ pub enum BackendConfigError {
 /// Errors that may occur while validating dictionary configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
 

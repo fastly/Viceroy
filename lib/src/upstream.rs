@@ -308,7 +308,7 @@ impl PendingRequest {
 
     /// Block until the response is ready, and then return it.
     pub async fn wait(self) -> ResponseResult {
-        self.receiver.await.expect("Pending request reciever error")
+        self.receiver.await.expect("Pending request receiver error")
     }
 }
 
