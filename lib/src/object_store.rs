@@ -135,9 +135,9 @@ fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
         return Err(KeyValidationError::StartsWithWellKnown);
     }
 
-    if key.contains("..") {
+    if key.eq("..") {
         return Err(KeyValidationError::ContainsDotDot);
-    } else if key.contains('.') {
+    } else if key.eq(".") {
         return Err(KeyValidationError::ContainsDot);
     } else if key.contains('\r') {
         return Err(KeyValidationError::ContainsCarriageReturn);
@@ -156,9 +156,9 @@ pub enum KeyValidationError {
     Over1024Bytes,
     #[error("Keys for objects cannot start with `.well-known/acme-challenge`")]
     StartsWithWellKnown,
-    #[error("Keys for objects cannot contain a `.`")]
+    #[error("Keys for objects cannot be named `.`")]
     ContainsDot,
-    #[error("Keys for objects cannot contain a `..`")]
+    #[error("Keys for objects cannot be named `..`")]
     ContainsDotDot,
     #[error("Keys for objects cannot contain a `\r`")]
     ContainsCarriageReturn,
