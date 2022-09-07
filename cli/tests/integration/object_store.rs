@@ -264,5 +264,70 @@ async fn object_store_bad_key_values() -> TestResult {
         _ => panic!(),
     }
 
+    const BAD_8_FASTLY_TOML: &str = r#"
+        name = "object-store-test"
+        description = "object store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        object_store.store_one = [{key = "howdy[", data = "This is some data"}]
+    "#;
+    match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_8_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `[`.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_9_FASTLY_TOML: &str = r#"
+        name = "object-store-test"
+        description = "object store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        object_store.store_one = [{key = "hello]", data = "This is some data"}]
+    "#;
+    match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_9_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `]`.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_10_FASTLY_TOML: &str = r#"
+        name = "object-store-test"
+        description = "object store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        object_store.store_one = [{key = "yoohoo*", data = "This is some data"}]
+    "#;
+    match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_10_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `*`.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_11_FASTLY_TOML: &str = r#"
+        name = "object-store-test"
+        description = "object store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        object_store.store_one = [{key = "hey?", data = "This is some data"}]
+    "#;
+    match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_11_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `?`.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_12_FASTLY_TOML: &str = r#"
+        name = "object-store-test"
+        description = "object store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        object_store.store_one = [{key = "ello ello#", data = "This is some data"}]
+    "#;
+    match Test::using_fixture("object_store.wasm").using_fastly_toml(BAD_12_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `#`.", &e.to_string()),
+        _ => panic!(),
+    }
+
     Ok(())
 }
