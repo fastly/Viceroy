@@ -140,9 +140,19 @@ fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
     } else if key.eq(".") {
         return Err(KeyValidationError::ContainsDot);
     } else if key.contains('\r') {
-        return Err(KeyValidationError::ContainsCarriageReturn);
+        return Err(KeyValidationError::Contains("\r".to_owned()));
     } else if key.contains('\n') {
-        return Err(KeyValidationError::ContainsLineFeed);
+        return Err(KeyValidationError::Contains("\n".to_owned()));
+    } else if key.contains('[') {
+        return Err(KeyValidationError::Contains("[".to_owned()));
+    } else if key.contains(']') {
+        return Err(KeyValidationError::Contains("]".to_owned()));
+    } else if key.contains('*') {
+        return Err(KeyValidationError::Contains("*".to_owned()));
+    } else if key.contains('?') {
+        return Err(KeyValidationError::Contains("?".to_owned()));
+    } else if key.contains('#') {
+        return Err(KeyValidationError::Contains("#".to_owned()));
     }
 
     Ok(())
@@ -160,8 +170,6 @@ pub enum KeyValidationError {
     ContainsDot,
     #[error("Keys for objects cannot be named `..`")]
     ContainsDotDot,
-    #[error("Keys for objects cannot contain a `\r`")]
-    ContainsCarriageReturn,
-    #[error("Keys for objects cannot contain a `\n`")]
-    ContainsLineFeed,
+    #[error("Keys for objects cannot contain a `{0}`")]
+    Contains(String),
 }
