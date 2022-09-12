@@ -624,7 +624,7 @@ impl Session {
                 "proxy_description": "?",
                 "proxy_type": "?",
                 "region": "US-CA",
-                "utc_offset": -700,
+                "utc_offset": -700
             }
             "#)
         }
