@@ -98,8 +98,8 @@ mod deserialization {
         fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
             match value {
                 Value::String(value) => Some(SerdeValue::String(value)),
-                Value::Integer(value) => Number::try_from(value).ok().map(|v| SerdeValue::Number(v)),
-                Value::Float(value) => Number::from_f64(value).map(|v| SerdeValue::Number(v)),
+                Value::Integer(value) => Number::try_from(value).ok().map(SerdeValue::Number),
+                Value::Float(value) => Number::from_f64(value).map(SerdeValue::Number),
                 Value::Boolean(value) => Some(SerdeValue::Bool(value)),
                 _ => None,
             }
