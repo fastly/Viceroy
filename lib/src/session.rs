@@ -13,11 +13,12 @@ use {
         },
         error::{Error, HandleError},
         logging::LogEndpoint,
+        object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
         streaming_body::StreamingBody,
-        upstream::{PendingRequest, SelectTarget},
+        upstream::{PendingRequest, SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, PendingRequestHandle,
-            RequestHandle, ResponseHandle,
+            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, ObjectStoreHandle,
+            PendingRequestHandle, RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -48,7 +49,7 @@ pub struct Session {
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     downstream_resp: DownstreamResponse,
     /// A handle map for items that provide blocking operations. These items are grouped together
-    /// in order to support generic async operations that work across different object typees.
+    /// in order to support generic async operations that work across different object types.
     async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
     /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Request`][req]s.
     ///
@@ -79,7 +80,7 @@ pub struct Session {
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    tls_config: Arc<rustls::ClientConfig>,
+    tls_config: TlsConfig,
     /// The dictionaries configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -88,6 +89,14 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName>,
+    /// The ObjectStore configured for this execution.
+    ///
+    /// Populated prior to guest execution and can be modified during requests.
+    pub(crate) object_store: Arc<ObjectStore>,
+    /// The object stores configured for this execution.
+    ///
+    /// Populated prior to guest execution.
+    object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -106,9 +115,10 @@ impl Session {
         client_ip: IpAddr,
         backends: Arc<Backends>,
         geoips: Arc<GeoIPs>,
-        tls_config: Arc<rustls::ClientConfig>,
+        tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
+        object_store: Arc<ObjectStore>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -136,6 +146,8 @@ impl Session {
             tls_config,
             dictionaries,
             dictionaries_by_name: PrimaryMap::new(),
+            object_store,
+            object_store_by_name: PrimaryMap::new(),
             config_path,
             req_id,
         }
@@ -156,9 +168,10 @@ impl Session {
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(HashMap::new()),
-            Arc::new(rustls::ClientConfig::new()),
+            TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
+            Arc::new(ObjectStore::new()),
         )
     }
 
@@ -531,13 +544,12 @@ impl Session {
     // ----- Backends API -----
 
     /// Look up a backend by name.
-    pub fn backend(&self, name: &str) -> Option<&Backend> {
+    pub fn backend(&self, name: &str) -> Option<&Arc<Backend>> {
         // it doesn't actually matter what order we do this search, because
         // the namespaces should be unique.
         self.backends
             .get(name)
             .or_else(|| self.dynamic_backends.get(name))
-            .map(std::ops::Deref::deref)
     }
 
     /// Return the full list of static and dynamic backend names as an [`Iterator`].
@@ -563,7 +575,7 @@ impl Session {
     // ----- TLS config -----
 
     /// Access the TLS configuration.
-    pub fn tls_config(&self) -> &Arc<rustls::ClientConfig> {
+    pub fn tls_config(&self) -> &TlsConfig {
         &self.tls_config
     }
 
@@ -614,6 +626,32 @@ impl Session {
                 utc_offset: -700,
             },
         }
+    }
+
+    // ----- Object Store API -----
+    pub fn obj_store_handle(&mut self, key: &str) -> Result<ObjectStoreHandle, Error> {
+        let obj_key = ObjectStoreKey::new(key);
+        Ok(self.object_store_by_name.push(obj_key))
+    }
+
+    pub fn get_obj_store_key(&self, handle: ObjectStoreHandle) -> Option<&ObjectStoreKey> {
+        self.object_store_by_name.get(handle)
+    }
+
+    pub fn obj_insert(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+        obj: Vec<u8>,
+    ) -> Result<(), ObjectStoreError> {
+        self.object_store.insert(obj_store_key, obj_key, obj)
+    }
+    pub fn obj_lookup(
+        &self,
+        obj_store_key: &ObjectStoreKey,
+        obj_key: &ObjectKey,
+    ) -> Result<Vec<u8>, ObjectStoreError> {
+        self.object_store.lookup(obj_store_key, obj_key)
     }
 
     // ----- Pending Requests API -----

@@ -1,4 +1,6 @@
-#![allow(clippy::too_many_arguments)] // macro-generated functions in `from_witx!`
+// a few things to ignore from the `from_witx!` macro-generated code:
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::derive_partial_eq_without_eq)]
 
 //! Wiggle implementations for the Compute@Edge ABI.
 //
@@ -49,17 +51,19 @@ mod entity;
 mod geo_impl;
 mod headers;
 mod log_impl;
+mod obj_store_impl;
 mod req_impl;
 mod resp_impl;
 mod uap_impl;
 
-// Expand the `.witx` interface defintion into a collection of modules. The `types` module will
+// Expand the `.witx` interface definition into a collection of modules. The `types` module will
 // contain all of the `typename`'s defined in the `witx` file, and other modules will export traits
 // that *must* be implemented by our `ctx` type. See the `from_witx` documentation for more.
 wiggle::from_witx!({
     witx: ["$CARGO_MANIFEST_DIR/compute-at-edge-abi/compute-at-edge.witx"],
     errors: { fastly_status => Error },
     async: {
+        fastly_object_store::{insert},
         fastly_http_body::{append, read, write},
         fastly_http_req::{pending_req_select, pending_req_wait, send},
     }

@@ -44,12 +44,14 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         let backends = config.backends();
         let geoips = config.geoips();
         let dictionaries = config.dictionaries();
+        let object_store = config.object_store();
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
             .with_backends(backends.clone())
             .with_geoips(geoips.clone())
             .with_dictionaries(dictionaries.clone())
+            .with_object_store(object_store.clone())
             .with_config_path(config_path.into());
 
         if backend_names.is_empty() {
@@ -61,8 +63,10 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         }
 
         for (name, backend) in backends.iter() {
-            let client =
-                Client::builder().build(BackendConnector::new(backend, ctx.tls_config().clone()));
+            let client = Client::builder().build(BackendConnector::new(
+                backend.clone(),
+                ctx.tls_config().clone(),
+            ));
             let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
 
             event!(Level::INFO, "checking if backend '{}' is up", name);

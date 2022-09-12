@@ -153,8 +153,8 @@ fn local_server_configs_can_be_deserialized() {
         [backends]
           [backends.dog]
           url = "http://localhost:7878/dog-mocks"
-        [dicionaries]
-          [dicionaries.secrets]
+        [dictionaries]
+          [dictionaries.secrets]
           file = '{}'
           format = "json"
     "#,
