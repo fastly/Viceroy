@@ -1,10 +1,12 @@
-use std::{
-    collections::{HashMap, BTreeMap},
-    path::PathBuf,
-    fs,
+use {
+    std::{
+        collections::HashMap,
+        path::PathBuf,
+        fs,
+    },
+    serde_json::{Map, Value as SerdeValue},
+    crate::error::GeoIPConfigError,
 };
-
-use crate::error::GeoIPConfigError;
 
 #[derive(Clone, Debug)]
 pub enum GeoIPMapping {
@@ -15,17 +17,23 @@ pub enum GeoIPMapping {
 
 #[derive(Clone, Debug, Default)]
 pub struct GeoIPData {
-    data: BTreeMap<String, String>,
+    data: Map<String, SerdeValue>,
 }
 
 impl GeoIPData {
     pub fn new() -> Self {
         Self {
-            data: BTreeMap::new()
+            data: Map::new(),
         }
     }
 
-    pub fn insert(&mut self, field: String, value: String) {
+    pub fn from(data: &Map<String, SerdeValue>) -> Self {
+        Self {
+            data: data.to_owned()
+        }
+    }
+
+    pub fn insert(&mut self, field: String, value: SerdeValue) {
         self.data.insert(field, value);
     }
 }
@@ -37,6 +45,8 @@ impl ToString for GeoIPData {
 }
 
 mod deserialization {
+    use serde_json::Number;
+
     use {
         crate::error::{FastlyConfigError, GeoIPConfigError},
         super::{GeoIPMapping, GeoIPData},
@@ -45,6 +55,7 @@ mod deserialization {
         },
         std::path::PathBuf,
         toml::value::{Table, Value},
+        serde_json::Value as SerdeValue,
     };
 
     impl TryFrom<Table> for GeoIPMapping {
@@ -59,16 +70,16 @@ mod deserialization {
                         _ => Err(GeoIPConfigError::InvalidFormatEntry),
                     })?;
 
-                    let mapping = match format.as_str() {
-                        "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
-                        "json" => process_json_entries(&mut toml)?,
-                        "" => return Err(GeoIPConfigError::EmptyFormatEntry),
-                        _ => {
-                            return Err(GeoIPConfigError::InvalidDictionaryFormat(
-                                format.to_owned(),
-                            ))
-                        }
-                    };
+                let mapping = match format.as_str() {
+                    "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
+                    "json" => process_json_entries(&mut toml)?,
+                    "" => return Err(GeoIPConfigError::EmptyFormatEntry),
+                    _ => {
+                        return Err(GeoIPConfigError::InvalidDictionaryFormat(
+                            format.to_owned(),
+                        ))
+                    }
+                };
 
                 Ok(mapping)
             }
@@ -84,6 +95,16 @@ mod deserialization {
     fn process_inline_toml_dictionary(
         toml: &mut Table,
     ) -> Result<GeoIPMapping, GeoIPConfigError> {
+        fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
+            match value {
+                Value::String(value) => Some(SerdeValue::String(value)),
+                Value::Integer(value) => Number::try_from(value).ok().map(|v| SerdeValue::Number(v)),
+                Value::Float(value) => Number::from_f64(value).map(|v| SerdeValue::Number(v)),
+                Value::Boolean(value) => Some(SerdeValue::Bool(value)),
+                _ => None,
+            }
+        }
+
         // Take the `contents` field from the provided TOML table.
         let toml = match toml
             .remove("contents")
@@ -103,10 +124,8 @@ mod deserialization {
             let mut geoip_data = GeoIPData::new();
 
             for (field, value) in table {
-                let value = value
-                    .as_str()
-                    .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
-                    .to_owned();
+                let value = convert_value_to_json(value)
+                    .ok_or(GeoIPConfigError::InvalidInlineEntryType)?;
                 geoip_data.insert(field, value);
             }
 
@@ -150,7 +169,7 @@ impl GeoIPMapping {
 
     pub fn get(&self, address: String) -> Option<GeoIPData> {
         match self {
-            Self::Empty => Some(GeoIPData::default()),
+            Self::Empty => None,
             Self::InlineToml { addresses } => addresses.get(&address).map(|a| a.to_owned()),
             Self::Json { file } => {
                 Self::read_json_contents(file)
@@ -185,15 +204,7 @@ impl GeoIPMapping {
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
                 .to_owned();
 
-            let mut geoip_data = GeoIPData::new();
-
-            for (field, value) in table {
-                let value = value
-                    .as_str()
-                    .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
-                    .to_owned();
-                geoip_data.insert(field, value);
-            }
+            let geoip_data = GeoIPData::from(&table);
 
             addresses.insert(address, geoip_data);
         }

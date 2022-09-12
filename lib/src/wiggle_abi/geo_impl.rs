@@ -24,9 +24,8 @@ impl FastlyGeo for Session {
         };
 
         let result = self.geoip_lookup(&ip_addr);
-        let result_json = serde_json::to_string(&result).unwrap();
 
-        if result_json.len() > buf_len as usize {
+        if result.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
                 buf: "geoip_lookup",
                 len: "geoip_lookup_max_len"
@@ -34,11 +33,11 @@ impl FastlyGeo for Session {
         }
 
         let result_len =
-            u32::try_from(result_json.len()).expect("smaller than value_max_len means it must fit");
+            u32::try_from(result.len()).expect("smaller than value_max_len means it must fit");
 
 
         let mut buf_ptr = buf.as_array(result_len).as_slice_mut()?;
-        buf_ptr.copy_from_slice(result_json.as_bytes());
+        buf_ptr.copy_from_slice(result.as_bytes());
         nwritten_out.write(result_len)?;
         Ok(())
     }
