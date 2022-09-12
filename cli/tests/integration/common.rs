@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends, Dictionaries, FastlyConfig, ObjectStore},
+    config::{Backend, Backends, Dictionaries, FastlyConfig, ObjectStore, GeoIPMapping},
     ExecuteCtx, ViceroyService,
 };
 
@@ -47,6 +47,7 @@ pub struct Test {
     module_path: PathBuf,
     backends: Backends,
     dictionaries: Dictionaries,
+    geoip_mapping: GeoIPMapping,
     object_store: ObjectStore,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
@@ -64,6 +65,7 @@ impl Test {
             module_path,
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
+            geoip_mapping: GeoIPMapping::new(),
             object_store: ObjectStore::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -81,6 +83,7 @@ impl Test {
             module_path,
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
+            geoip_mapping: GeoIPMapping::new(),
             object_store: ObjectStore::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -95,6 +98,7 @@ impl Test {
         Ok(Self {
             backends: config.backends().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
+            geoip_mapping: config.geoip_mapping().to_owned(),
             object_store: config.object_store().to_owned(),
             ..self
         })
@@ -187,6 +191,7 @@ impl Test {
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_dictionaries(self.dictionaries.clone())
+            .with_geoip_mapping(self.geoip_mapping.clone())
             .with_object_store(self.object_store.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);
