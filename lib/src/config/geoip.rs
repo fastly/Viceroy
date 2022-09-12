@@ -75,7 +75,7 @@ mod deserialization {
                     "json" => process_json_entries(&mut toml)?,
                     "" => return Err(GeoIPConfigError::EmptyFormatEntry),
                     _ => {
-                        return Err(GeoIPConfigError::InvalidDictionaryFormat(
+                        return Err(GeoIPConfigError::InvalidGeoIPMappingFormat(
                             format.to_owned(),
                         ))
                     }
