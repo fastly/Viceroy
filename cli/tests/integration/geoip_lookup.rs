@@ -59,6 +59,25 @@ async fn inline_toml_geoip_lookup_works() -> TestResult {
         proxy_type = "?"
         region = "CA-BC"
         utc_offset = -700
+        [local_server.geoip_mapping.contents."0000:0000:0000:0000:0000:0000:0000:0001"]
+        as_name = "Fastly Test IPv6"
+        as_number = 12345
+        area_code = 123
+        city = "Test City IPv6"
+        conn_speed = "broadband"
+        conn_type = "wired"
+        continent = "NA"
+        country_code = "CA"
+        country_code3 = "CAN"
+        country_name = "Canada"
+        latitude = 12.345
+        longitude = 54.321
+        metro_code = 0
+        postal_code = "12345"
+        proxy_description = "?"
+        proxy_type = "?"
+        region = "CA-BC"
+        utc_offset = -700
     "#;
 
     let resp = Test::using_fixture("geoip-lookup.wasm")

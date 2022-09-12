@@ -1,6 +1,9 @@
 //! fastly_geo` hostcall implementations.
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    convert::TryInto
+};
 
 use {
     crate::{error::Error, session::Session, wiggle_abi::fastly_geo::FastlyGeo},
@@ -17,10 +20,16 @@ impl FastlyGeo for Session {
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let addr = addr_octets.as_array(addr_len).as_slice()?;
+        let octets = addr_octets
+            .as_array(addr_len)
+            .iter()
+            .map(|v| v.unwrap().read().unwrap())
+            .collect::<Vec<u8>>();
+
         let ip_addr: IpAddr = match addr_len {
-            4 => std::net::IpAddr::V4(Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3])),
-            _ => unimplemented!(),
+            4 => IpAddr::V4(Ipv4Addr::from(TryInto::<[u8; 4]>::try_into(octets).unwrap())),
+            16 => IpAddr::V6(Ipv6Addr::from(TryInto::<[u8; 16]>::try_into(octets).unwrap())),
+            _ => return Err(Error::InvalidArgument),
         };
 
         let result = self.geoip_lookup(&ip_addr);
