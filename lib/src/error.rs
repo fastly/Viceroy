@@ -424,11 +424,20 @@ pub enum GeoIPConfigError {
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
+    #[error("missing 'file' field")]
+    MissingFile,
+
+    #[error("'file' field is empty")]
+    EmptyFileEntry,
+
     #[error("missing 'contents' field")]
     MissingContents,
 
     #[error("inline dictionary value was not a string")]
     InvalidInlineEntryType,
+
+    #[error("'file' field was not a string")]
+    InvalidFileEntry,
 
     #[error("'contents' was not provided as a TOML table")]
     InvalidContentsType,

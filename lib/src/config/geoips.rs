@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    path::{PathBuf},
+    path::PathBuf,
     fs,
 };
 
@@ -14,6 +14,8 @@ pub enum GeoIPMapping {
 }
 
 mod deserialization {
+    use std::path::PathBuf;
+
     use {
         crate::error::{FastlyConfigError, GeoIPConfigError},
         super::{GeoIPMapping},
@@ -37,7 +39,7 @@ mod deserialization {
 
                     let mapping = match format.as_str() {
                         "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
-                        "json" => process_json_dictionary(&mut toml)?,
+                        "json" => process_json_entries(&mut toml)?,
                         "" => return Err(GeoIPConfigError::EmptyFormatEntry),
                         _ => {
                             return Err(GeoIPConfigError::InvalidDictionaryFormat(
@@ -51,7 +53,7 @@ mod deserialization {
 
             process_config(toml)
                 .map_err(|err| FastlyConfigError::InvalidGeoIPDefinition {
-                    name: "test".to_string(),
+                    name: "geoip_mapping".to_string(),
                     err
                 })
         }
@@ -92,14 +94,30 @@ mod deserialization {
         Ok(GeoIPMapping::InlineToml { addresses })
     }
 
-    fn process_json_dictionary(toml: &mut Table) -> Result<GeoIPMapping, GeoIPConfigError> {
-        todo!()
+    fn process_json_entries(toml: &mut Table) -> Result<GeoIPMapping, GeoIPConfigError> {
+        let file: PathBuf = match toml
+            .remove("file")
+            .ok_or(GeoIPConfigError::MissingFile)?
+        {
+            Value::String(file) => {
+                if file.is_empty() {
+                    return Err(GeoIPConfigError::EmptyFileEntry);
+                } else {
+                    file.into()
+                }
+            }
+            _ => return Err(GeoIPConfigError::InvalidFileEntry),
+        };
+
+        GeoIPMapping::read_json_contents(&file)?;
+
+        Ok(GeoIPMapping::Json { file })
     }
 }
 
 impl Default for GeoIPMapping {
     fn default() -> Self {
-        todo!()
+        GeoIPMapping::new()
     }
 }
 
@@ -110,7 +128,7 @@ impl GeoIPMapping {
 
     pub fn get(&self, address: String) -> Option<HashMap<String, String>> {
         match self {
-            Self::Empty => None,
+            Self::Empty => Some(HashMap::<String, String>::default()),
             Self::InlineToml { addresses } => addresses.get(&address).map(|a| a.to_owned()),
             Self::Json { file } => {
                 Self::read_json_contents(file)
