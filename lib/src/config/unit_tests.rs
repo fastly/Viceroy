@@ -70,7 +70,7 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
               [local_server.backends]
                 [local_server.backends.dog]
                 url = "http://localhost:7878/dog-mocks"
-  
+
                 [local_server.backends."shark.server"]
                 url = "http://localhost:7878/shark-mocks"
                 override_host = "somehost.com"
@@ -617,3 +617,238 @@ mod inline_toml_dictionary_config_tests {
         }
     }
 }
+
+/// Unit tests for GeoIP mapping in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the GeoIP mappings section of
+/// the TOML data properly regardless of the format.
+mod geoip_mapping_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{GeoIPConfigError, FastlyConfigError::InvalidGeoIPDefinition},
+    };
+
+    /// Check that dictionary definitions have a valid `format`.
+    #[test]
+    fn geoip_mappings_have_a_valid_format() {
+        use GeoIPConfigError::InvalidGeoIPMappingFormat;
+        let invalid_format_field = r#"
+            [geoip_mapping]
+            format = "foo"
+            [geoip_mapping.contents."123.45.67.89"]
+            as_name = "Test, Inc."
+        "#;
+        match read_local_server_config(&invalid_format_field) {
+            Err(InvalidGeoIPDefinition {
+                err: InvalidGeoIPMappingFormat(format),
+                ..
+            }) if format == "foo" => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+}
+
+/// Unit tests for GeoIP mapping in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly for GeoIP mapping using JSON files to store their data.
+mod json_geoip_mapping_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{GeoIPConfigError, FastlyConfigError::InvalidGeoIPDefinition},
+        std::{fs::File, io::Write},
+        tempfile::tempdir,
+    };
+
+    /// Check that GeoIP mapping *must* include a `file` field.
+    #[test]
+    fn geoip_mapping_must_provide_a_file() {
+        use GeoIPConfigError::MissingFile;
+        static NO_FILE: &str = r#"
+            [geoip_mapping]
+            format = "json"
+        "#;
+        match read_local_server_config(NO_FILE) {
+            Err(InvalidGeoIPDefinition {
+                err: MissingFile, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that GeoIP mapping *must* include a `format` field.
+    #[test]
+    fn geoip_mapping_must_provide_a_format() {
+        use GeoIPConfigError::MissingFormat;
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("mapping.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let no_format_field = format!(
+            r#"
+            [geoip_mapping]
+            file = '{}'
+        "#,
+            file_path.to_str().unwrap()
+        );
+        match read_local_server_config(&no_format_field) {
+            Err(InvalidGeoIPDefinition {
+                err: MissingFormat, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that file field is a string.
+    #[test]
+    fn geoip_mapping_must_provide_file_as_a_string() {
+        use GeoIPConfigError::InvalidFileEntry;
+        static BAD_FILE_FIELD: &str = r#"
+            [geoip_mapping]
+            file = 3
+            format = "json"
+        "#;
+        match read_local_server_config(BAD_FILE_FIELD) {
+            Err(InvalidGeoIPDefinition {
+                err: InvalidFileEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that file field is non empty.
+    #[test]
+    fn geoip_mapping_must_provide_a_non_empty_file() {
+        use GeoIPConfigError::EmptyFileEntry;
+        static EMPTY_FILE_FIELD: &str = r#"
+            [geoip_mapping]
+            file = ""
+            format = "json"
+        "#;
+        match read_local_server_config(EMPTY_FILE_FIELD) {
+            Err(InvalidGeoIPDefinition {
+                err: EmptyFileEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that format field is a string.
+    #[test]
+    fn geoip_mapping_must_provide_format_as_a_string() {
+        use GeoIPConfigError::InvalidFormatEntry;
+        static BAD_FORMAT_FIELD: &str = r#"
+            [geoip_mapping]
+            format = 3
+        "#;
+        match read_local_server_config(BAD_FORMAT_FIELD) {
+            Err(InvalidGeoIPDefinition {
+                err: InvalidFormatEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that format field is non empty.
+    #[test]
+    fn geoip_mapping_must_provide_a_non_empty_format() {
+        use GeoIPConfigError::EmptyFormatEntry;
+        static EMPTY_FORMAT_FIELD: &str = r#"
+            [geoip_mapping]
+            format = ""
+        "#;
+        match read_local_server_config(EMPTY_FORMAT_FIELD) {
+            Err(InvalidGeoIPDefinition {
+                err: EmptyFormatEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that format field set to json is valid.
+    #[test]
+    fn valid_geoip_mapping_with_format_set_to_json() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("mapping.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let dictionary = format!(
+            r#"
+            [geoip_mapping]
+            file = '{}'
+            format = "json"
+        "#,
+            file_path.to_str().unwrap()
+        );
+        read_local_server_config(&dictionary).expect(
+            "can read toml data containing local dictionary configurations using json format",
+        );
+    }
+}
+
+/// Unit tests for GeoIP mapping in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the dictionary configurations section of
+/// the TOML data properly for GeoIP mapping using inline TOML to store their data.
+mod inline_toml_geoip_mapping_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{GeoIPConfigError, FastlyConfigError::InvalidGeoIPDefinition},
+    };
+
+    #[test]
+    fn valid_inline_toml_geoip_mapping_can_be_parsed() {
+        let geoip_mapping = r#"
+            [geoip_mapping]
+            format = "inline-toml"
+            [geoip_mapping.contents]
+            [geoip_mapping.contents."127.0.0.1"]
+            as_name = "Test, Inc."
+        "#;
+        read_local_server_config(&geoip_mapping).expect(
+            "can read toml data containing local GeoIP mappings using toml format",
+        );
+    }
+
+    /// Check that GeoIP definitions *must* include a `format` field.
+    #[test]
+    fn geoip_mapping_must_provide_a_format() {
+        use GeoIPConfigError::MissingFormat;
+        let no_format_field = r#"
+            [geoip_mapping]
+            [geoip_mapping.contents]
+            [geoip_mapping.contents."127.0.0.1"]
+            as_name = "Test, Inc."
+        "#;
+        match read_local_server_config(&no_format_field) {
+            Err(InvalidGeoIPDefinition {
+                err: MissingFormat, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that GeoIP mapping *must* include a `contents` field.
+    #[test]
+    fn geoip_mapping_must_provide_contents() {
+        use GeoIPConfigError::MissingContents;
+        let missing_contents = r#"
+            [geoip_mapping]
+            format = "inline-toml"
+        "#;
+        match read_local_server_config(&missing_contents) {
+            Err(InvalidGeoIPDefinition {
+                err: MissingContents,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+}
+
