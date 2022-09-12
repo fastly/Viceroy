@@ -2,6 +2,8 @@ use {
     std::{
         collections::HashMap,
         path::PathBuf,
+        net::IpAddr,
+        str::FromStr,
         fs,
     },
     serde_json::{Map, Value as SerdeValue},
@@ -11,7 +13,7 @@ use {
 #[derive(Clone, Debug)]
 pub enum GeoIPMapping {
     Empty,
-    InlineToml { addresses: HashMap<String, GeoIPData> },
+    InlineToml { addresses: HashMap<IpAddr, GeoIPData> },
     Json { file: PathBuf },
 }
 
@@ -45,6 +47,8 @@ impl ToString for GeoIPData {
 }
 
 mod deserialization {
+    use std::{net::IpAddr, str::FromStr};
+
     use serde_json::Number;
 
     use {
@@ -114,8 +118,10 @@ mod deserialization {
             _ => return Err(GeoIPConfigError::InvalidContentsType),
         };
 
-        let mut addresses = HashMap::<String, GeoIPData>::with_capacity(toml.len());
+        let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(toml.len());
         for (address, value) in toml {
+            // TODO
+            let address = IpAddr::from_str(address.as_str()).unwrap();
             let table = value
                 .as_table()
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
@@ -167,7 +173,7 @@ impl GeoIPMapping {
         GeoIPMapping::Empty
     }
 
-    pub fn get(&self, address: String) -> Option<GeoIPData> {
+    pub fn get(&self, address: &IpAddr) -> Option<GeoIPData> {
         match self {
             Self::Empty => None,
             Self::InlineToml { addresses } => addresses.get(&address).map(|a| a.to_owned()),
@@ -183,7 +189,7 @@ impl GeoIPMapping {
         }
     }
 
-    pub fn read_json_contents(file: &PathBuf) -> Result<HashMap<String, GeoIPData>, GeoIPConfigError> {
+    pub fn read_json_contents(file: &PathBuf) -> Result<HashMap<IpAddr, GeoIPData>, GeoIPConfigError> {
         let data = fs::read_to_string(&file).map_err(GeoIPConfigError::IoError)?;
 
         // Deserialize the contents of the given JSON file.
@@ -197,8 +203,9 @@ impl GeoIPMapping {
             }
         };
 
-        let mut addresses = HashMap::<String, GeoIPData>::with_capacity(json.len());
+        let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(json.len());
         for (address, value) in json {
+            let address = IpAddr::from_str(address.as_str()).unwrap();
             let table = value
                 .as_object()
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?

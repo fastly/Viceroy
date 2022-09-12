@@ -603,7 +603,7 @@ impl Session {
     // ----- GeoIP API -----
 
     pub fn geoip_lookup(&self, addr: &IpAddr) -> String {
-        match self.geoip_mapping.get(addr.to_string()) {
+        match self.geoip_mapping.get(&addr) {
             Some(geoip) => geoip.to_string(),
             None => String::from(r#"
             {
