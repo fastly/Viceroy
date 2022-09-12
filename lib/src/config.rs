@@ -178,7 +178,7 @@ pub struct LocalServerConfig {
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
     backends: Option<Table>,
-    geoips: Option<Table>,
+    geoip_mapping: Option<Table>,
     dictionaries: Option<Table>,
     object_store: Option<Table>,
 }
@@ -188,7 +188,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
             backends,
-            geoips,
+            geoip_mapping,
             dictionaries,
             object_store,
         } = self;
@@ -197,8 +197,8 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             BackendsConfig::default()
         };
-        let geoip_mapping = if let Some(geoips) = geoips {
-            geoips.try_into()?
+        let geoip_mapping = if let Some(geoip_mapping) = geoip_mapping {
+            geoip_mapping.try_into()?
         } else {
             GeoIPMapping::default()
         };
