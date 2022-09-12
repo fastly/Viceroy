@@ -424,8 +424,37 @@ pub enum GeoIPConfigError {
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
+    #[error("missing 'contents' field")]
+    MissingContents,
+
+    #[error("inline dictionary value was not a string")]
+    InvalidInlineEntryType,
+
+    #[error("'contents' was not provided as a TOML table")]
+    InvalidContentsType,
+
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
+
+    #[error("missing 'format' field")]
+    MissingFormat,
+
+    #[error("'format' field was not a string")]
+    InvalidFormatEntry,
+
+    #[error("'{0}' is not a valid format for the dictionary. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidDictionaryFormat(String),
+
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
+    )]
+    GeoIPFileWrongFormat,
+
+    #[error("'format' field is empty")]
+    EmptyFormatEntry,
+
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    GeoIPItemValueWrongFormat { key: String },
 
     #[error(
         "The file is of the wrong format. The file is expected to contain a single JSON Object"

@@ -30,9 +30,8 @@ pub type Backends = HashMap<String, Arc<Backend>>;
 
 /// Types and deserializers for GeoIP configuration settings.
 mod geoips;
-use self::geoips::GeoIPsConfig;
-pub use self::geoips::{ConnSpeed, ConnType, Continent, GeoIP, ProxyDescription, ProxyType};
-pub type GeoIPs = HashMap<String, Arc<GeoIP>>;
+pub use self::geoips::GeoIPMapping;
+
 /// Types and deserializers for object store configuration settings.
 mod object_store;
 pub use crate::object_store::ObjectStore;
@@ -75,8 +74,8 @@ impl FastlyConfig {
         &self.local_server.backends.0
     }
 
-    pub fn geoips(&self) -> &GeoIPs {
-        &self.local_server.geoips.0
+    pub fn geoip_mapping(&self) -> &GeoIPMapping {
+        &self.local_server.geoip_mapping
     }
 
     /// Get the dictionaries configuration.
@@ -167,7 +166,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
     backends: BackendsConfig,
-    geoips: GeoIPsConfig,
+    geoip_mapping: GeoIPMapping,
     dictionaries: DictionariesConfig,
     object_store: ObjectStoreConfig,
 }
@@ -198,10 +197,10 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             BackendsConfig::default()
         };
-        let geoips = if let Some(geoips) = geoips {
+        let geoip_mapping = if let Some(geoips) = geoips {
             geoips.try_into()?
         } else {
-            GeoIPsConfig::default()
+            GeoIPMapping::default()
         };
         let dictionaries = if let Some(dictionaries) = dictionaries {
             dictionaries.try_into()?
@@ -216,7 +215,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
 
         Ok(LocalServerConfig {
             backends,
-            geoips,
+            geoip_mapping,
             dictionaries,
             object_store,
         })

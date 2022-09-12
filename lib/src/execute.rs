@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, GeoIPs},
+        config::{Backends, Dictionaries, GeoIPMapping},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -40,7 +40,7 @@ pub struct ExecuteCtx {
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// The geoip mappings for this execution.
-    geoips: Arc<GeoIPs>,
+    geoip_mapping: Arc<GeoIPMapping>,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
@@ -72,7 +72,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
-            geoips: Arc::new(GeoIPs::default()),
+            geoip_mapping: Arc::new(GeoIPMapping::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
@@ -102,14 +102,14 @@ impl ExecuteCtx {
     }
 
     /// Get the geoip mappings for this execution context.
-    pub fn geoips(&self) -> &GeoIPs {
-        &self.geoips
+    pub fn geoip_mapping(&self) -> &GeoIPMapping {
+        &self.geoip_mapping
     }
 
     /// Set the geoip mappings for this execution context.
-    pub fn with_geoips(self, geoips: GeoIPs) -> Self {
+    pub fn with_geoip_mapping(self, geoip_mapping: GeoIPMapping) -> Self {
         Self {
-            geoips: Arc::new(geoips),
+            geoip_mapping: Arc::new(geoip_mapping),
             ..self
         }
     }
@@ -265,7 +265,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
-            self.geoips.clone(),
+            self.geoip_mapping.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),

@@ -8,8 +8,8 @@ use {
     crate::{
         body::Body,
         config::{
-            Backend, Backends, ConnSpeed, ConnType, Continent, Dictionaries, Dictionary,
-            DictionaryName, GeoIP, GeoIPs, ProxyDescription, ProxyType,
+            Backend, Backends, Dictionaries, Dictionary,
+            DictionaryName, GeoIPMapping,
         },
         error::{Error, HandleError},
         logging::LogEndpoint,
@@ -72,7 +72,7 @@ pub struct Session {
     /// The GeoIPs configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    geoips: Arc<GeoIPs>,
+    geoip_mapping: Arc<GeoIPMapping>,
     /// The backends dynamically added by the program. This is separated from
     /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
@@ -114,7 +114,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
-        geoips: Arc<GeoIPs>,
+        geoip_mapping: Arc<GeoIPMapping>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
@@ -141,7 +141,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
-            geoips,
+            geoip_mapping,
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
@@ -167,7 +167,7 @@ impl Session {
             sender,
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
-            Arc::new(HashMap::new()),
+            Arc::new(GeoIPMapping::new()),
             TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
@@ -602,29 +602,31 @@ impl Session {
 
     // ----- GeoIP API -----
 
-    pub fn geoip_lookup(&self, addr: &IpAddr) -> GeoIP {
-        match self.geoips.get(addr.to_string().as_str()) {
-            Some(geoip) => std::ops::Deref::deref(geoip).to_owned(),
-            None => GeoIP {
-                as_name: String::from("Fastly, Inc."),
-                as_number: 54113,
-                area_code: 415,
-                city: String::from("San Francisco"),
-                conn_speed: ConnSpeed::Broadband,
-                conn_type: ConnType::Wired,
-                continent: Continent::NorthAmerica,
-                country_code: String::from("US"),
-                country_code3: String::from("USA"),
-                country_name: String::from("United States of America"),
-                latitude: 37.77869,
-                longitude: -122.39557,
-                metro_code: 0,
-                postal_code: String::from("94107"),
-                proxy_description: ProxyDescription::Unknown,
-                proxy_type: ProxyType::Unknown,
-                region: String::from("US-CA"),
-                utc_offset: -700,
-            },
+    pub fn geoip_lookup(&self, addr: &IpAddr) -> String {
+        match self.geoip_mapping.get(addr.to_string()) {
+            Some(geoip) => "TODO".to_string(),
+            None => String::from(r#"
+            {
+                "as_name": "Fastly, Inc.",
+                "as_number": 54113,
+                "area_code": 415,
+                "city": "San Francisco",
+                "conn_speed": "broadband",
+                "conn_type": "wired",
+                "continent": "NA",
+                "country_code": "US",
+                "country_code3": "USA",
+                "country_name": "United States of America",
+                "latitude": 37.77869,
+                "longitude": -122.39557,
+                "metro_code": 0,
+                "postal_code": "94107",
+                "proxy_description": "?",
+                "proxy_type": "?",
+                "region": "US-CA",
+                "utc_offset": -700,
+            }
+            "#)
         }
     }
 
