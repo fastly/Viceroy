@@ -29,8 +29,8 @@ pub use self::backends::Backend;
 pub type Backends = HashMap<String, Arc<Backend>>;
 
 /// Types and deserializers for GeoIP configuration settings.
-mod geoips;
-pub use self::geoips::GeoIPMapping;
+mod geoip;
+pub use self::geoip::GeoIPMapping;
 
 /// Types and deserializers for object store configuration settings.
 mod object_store;
