@@ -604,8 +604,7 @@ impl Session {
 
     pub fn geoip_lookup(&self, addr: &IpAddr) -> String {
         match self.geoip_mapping.get(addr.to_string()) {
-            Some(geoip) => serde_json::to_string(&geoip)
-                .unwrap_or_else(|_| String::from("")),
+            Some(geoip) => geoip.to_string(),
             None => String::from(r#"
             {
                 "as_name": "Fastly, Inc.",

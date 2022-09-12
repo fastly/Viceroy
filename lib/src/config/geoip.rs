@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, BTreeMap},
     path::PathBuf,
     fs,
 };
@@ -9,19 +9,41 @@ use crate::error::GeoIPConfigError;
 #[derive(Clone, Debug)]
 pub enum GeoIPMapping {
     Empty,
-    InlineToml { addresses: HashMap<String, HashMap<String, String>> },
+    InlineToml { addresses: HashMap<String, GeoIPData> },
     Json { file: PathBuf },
 }
 
-mod deserialization {
-    use std::path::PathBuf;
+#[derive(Clone, Debug, Default)]
+pub struct GeoIPData {
+    data: BTreeMap<String, String>,
+}
 
+impl GeoIPData {
+    pub fn new() -> Self {
+        Self {
+            data: BTreeMap::new()
+        }
+    }
+
+    pub fn insert(&mut self, field: String, value: String) {
+        self.data.insert(field, value);
+    }
+}
+
+impl ToString for GeoIPData {
+    fn to_string(&self) -> String {
+        serde_json::to_string(&self.data).unwrap_or_else(|_| "".to_string())
+    }
+}
+
+mod deserialization {
     use {
         crate::error::{FastlyConfigError, GeoIPConfigError},
-        super::{GeoIPMapping},
+        super::{GeoIPMapping, GeoIPData},
         std::{
             collections::HashMap, convert::TryFrom,
         },
+        std::path::PathBuf,
         toml::value::{Table, Value},
     };
 
@@ -71,14 +93,14 @@ mod deserialization {
             _ => return Err(GeoIPConfigError::InvalidContentsType),
         };
 
-        let mut addresses = HashMap::<String, HashMap<String, String>>::with_capacity(toml.len());
+        let mut addresses = HashMap::<String, GeoIPData>::with_capacity(toml.len());
         for (address, value) in toml {
             let table = value
                 .as_table()
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
                 .to_owned();
 
-            let mut geoip_data = HashMap::<String, String>::with_capacity(table.len());
+            let mut geoip_data = GeoIPData::new();
 
             for (field, value) in table {
                 let value = value
@@ -126,9 +148,9 @@ impl GeoIPMapping {
         GeoIPMapping::Empty
     }
 
-    pub fn get(&self, address: String) -> Option<HashMap<String, String>> {
+    pub fn get(&self, address: String) -> Option<GeoIPData> {
         match self {
-            Self::Empty => Some(HashMap::<String, String>::default()),
+            Self::Empty => Some(GeoIPData::default()),
             Self::InlineToml { addresses } => addresses.get(&address).map(|a| a.to_owned()),
             Self::Json { file } => {
                 Self::read_json_contents(file)
@@ -142,7 +164,7 @@ impl GeoIPMapping {
         }
     }
 
-    pub fn read_json_contents(file: &PathBuf) -> Result<HashMap<String, HashMap<String, String>>, GeoIPConfigError> {
+    pub fn read_json_contents(file: &PathBuf) -> Result<HashMap<String, GeoIPData>, GeoIPConfigError> {
         let data = fs::read_to_string(&file).map_err(GeoIPConfigError::IoError)?;
 
         // Deserialize the contents of the given JSON file.
@@ -156,14 +178,14 @@ impl GeoIPMapping {
             }
         };
 
-        let mut addresses = HashMap::<String, HashMap<String, String>>::with_capacity(json.len());
+        let mut addresses = HashMap::<String, GeoIPData>::with_capacity(json.len());
         for (address, value) in json {
             let table = value
                 .as_object()
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
                 .to_owned();
 
-            let mut geoip_data = HashMap::<String, String>::with_capacity(table.len());
+            let mut geoip_data = GeoIPData::new();
 
             for (field, value) in table {
                 let value = value
@@ -176,8 +198,6 @@ impl GeoIPMapping {
             addresses.insert(address, geoip_data);
         }
 
-
         Ok(addresses)
-
     }
 }
