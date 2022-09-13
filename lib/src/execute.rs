@@ -15,15 +15,18 @@ use {
     cfg_if::cfg_if,
     hyper::{Request, Response},
     std::{
+        future::Future,
         net::IpAddr,
         path::{Path, PathBuf},
+        pin::Pin,
         sync::atomic::AtomicU64,
         sync::Arc,
-        time::Instant,
+        task::{Context, Poll},
+        time::{Duration, Instant},
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
-    wasmtime::{Engine, InstancePre, Linker, Module},
+    wasmtime::{Engine, InstancePre, Linker, Module, Trap},
 };
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
@@ -273,17 +276,15 @@ impl ExecuteCtx {
             .map_err(ExecutionError::Typechecking)?;
 
         // Invoke the entrypoint function, which may or may not send a downstream response.
-        let outcome = main_func
-            .call_async(&mut store, ())
-            .await
-            .map(|_| ())
-            .map_err(|trap| {
-                // Be sure that we only log non-zero status codes.
-                if trap.i32_exit_status() != Some(0) {
-                    event!(Level::ERROR, "WebAssembly trapped: {}", trap);
-                }
-                ExecutionError::WasmTrap(trap)
-            });
+        let (outcome, cpu_time) =
+            CpuTimer::new(Box::pin(main_func.call_async(&mut store, ()))).await;
+        let outcome = outcome.map(|_| ()).map_err(|trap| {
+            // Be sure that we only log non-zero status codes.
+            if trap.i32_exit_status() != Some(0) {
+                event!(Level::ERROR, "WebAssembly trapped: {}", trap);
+            }
+            ExecutionError::WasmTrap(trap)
+        });
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
@@ -302,6 +303,7 @@ impl ExecuteCtx {
         );
 
         info!("request completed in {:.0?}", request_duration);
+        info!("CPU Time {:.0?}", cpu_time);
 
         outcome
     }
@@ -341,4 +343,41 @@ fn configure_wasmtime() -> wasmtime::Config {
     });
 
     config
+}
+
+struct CpuTimer<F>
+where
+    F: Future<Output = Result<(), Trap>>,
+{
+    future: Pin<Box<F>>,
+    duration: Duration,
+}
+
+impl<F> CpuTimer<F>
+where
+    F: Future<Output = Result<(), Trap>>,
+{
+    pub fn new(future: Pin<Box<F>>) -> Self {
+        Self {
+            future,
+            duration: Duration::default(),
+        }
+    }
+}
+
+impl<F> Future for CpuTimer<F>
+where
+    F: Future<Output = Result<(), Trap>>,
+{
+    type Output = (Result<(), Trap>, Duration);
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+        let now = Instant::now();
+        let output = self.future.as_mut().poll(ctx);
+        let poll_time = Instant::now().duration_since(now);
+        self.duration += poll_time;
+        match output {
+            Poll::Ready(out) => Poll::Ready((out, self.duration)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
