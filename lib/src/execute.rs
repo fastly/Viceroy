@@ -309,8 +309,8 @@ impl ExecuteCtx {
 
 fn configure_wasmtime() -> wasmtime::Config {
     use wasmtime::{
-        Config, InstanceAllocationStrategy, InstanceLimits, ModuleLimits,
-        PoolingAllocationStrategy, WasmBacktraceDetails,
+        Config, InstanceAllocationStrategy, InstanceLimits, PoolingAllocationStrategy,
+        WasmBacktraceDetails,
     };
 
     let mut config = Config::new();
@@ -319,25 +319,17 @@ fn configure_wasmtime() -> wasmtime::Config {
     config.async_support(true);
     config.consume_fuel(true);
 
-    let module_limits = ModuleLimits {
+    let instance_limits = InstanceLimits {
         // allow for up to 128MiB of linear memory
         memory_pages: 2048,
-        // ffmpeg-wasi was the last program to break the types
-        types: 1234,
-        // AssemblyScript applications tend to create a fair number of globals
-        globals: 1234,
-        // Some applications create a large number of functions, in particular in debug mode
-        // or applications written in swift.
-        functions: 98765,
         // And every function can end up in the table
         table_elements: 98765,
-        ..ModuleLimits::default()
+        ..InstanceLimits::default()
     };
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling {
         strategy: PoolingAllocationStrategy::NextAvailable,
-        module_limits,
-        instance_limits: InstanceLimits::default(),
+        instance_limits,
     });
 
     config
