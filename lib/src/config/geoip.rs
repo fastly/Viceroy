@@ -1,7 +1,7 @@
 use {
     crate::error::GeoIPConfigError,
     serde_json::{Map, Value as SerdeValue},
-    std::{collections::HashMap, fs, net::IpAddr, path::PathBuf, str::FromStr},
+    std::{collections::HashMap, fs, net::IpAddr, path::PathBuf},
 };
 
 #[derive(Clone, Debug)]
@@ -90,6 +90,11 @@ mod deserialization {
         }
     }
 
+    pub fn parse_ip_address(address: &str) -> Result<IpAddr, GeoIPConfigError> {
+        IpAddr::from_str(address)
+            .map_err(|err| GeoIPConfigError::InvalidAddressEntry(err.to_string()))
+    }
+
     fn process_inline_toml_dictionary(toml: &mut Table) -> Result<GeoIPMapping, GeoIPConfigError> {
         fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
             match value {
@@ -112,8 +117,7 @@ mod deserialization {
 
         let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(toml.len());
         for (address, value) in toml {
-            // TODO
-            let address = IpAddr::from_str(address.as_str()).unwrap();
+            let address = parse_ip_address(address.as_str())?;
             let table = value
                 .as_table()
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
@@ -165,10 +169,10 @@ impl GeoIPMapping {
     pub fn get(&self, address: &IpAddr) -> Option<GeoIPData> {
         match self {
             Self::Empty => None,
-            Self::InlineToml { addresses } => addresses.get(&address).map(|a| a.to_owned()),
+            Self::InlineToml { addresses } => addresses.get(address).map(|a| a.to_owned()),
             Self::Json { file } => Self::read_json_contents(file)
                 .ok()
-                .map(|addresses| addresses.get(&address).map(|a| a.to_owned()))
+                .map(|addresses| addresses.get(address).map(|a| a.to_owned()))
                 .unwrap(),
         }
     }
@@ -191,7 +195,7 @@ impl GeoIPMapping {
 
         let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(json.len());
         for (address, value) in json {
-            let address = IpAddr::from_str(address.as_str()).unwrap();
+            let address = deserialization::parse_ip_address(address.as_str())?;
             let table = value
                 .as_object()
                 .ok_or(GeoIPConfigError::InvalidInlineEntryType)?

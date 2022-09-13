@@ -628,7 +628,7 @@ mod geoip_mapping_config_tests {
         crate::error::{FastlyConfigError::InvalidGeoIPDefinition, GeoIPConfigError},
     };
 
-    /// Check that dictionary definitions have a valid `format`.
+    /// Check that GeoIP definitions have a valid `format`.
     #[test]
     fn geoip_mappings_have_a_valid_format() {
         use GeoIPConfigError::InvalidGeoIPMappingFormat;

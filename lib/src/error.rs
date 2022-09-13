@@ -451,6 +451,9 @@ pub enum GeoIPConfigError {
     #[error("'format' field was not a string")]
     InvalidFormatEntry,
 
+    #[error("IP address not valid: '{0}'")]
+    InvalidAddressEntry(String),
+
     #[error("'{0}' is not a valid format for the GeoIP mapping. Supported format(s) are: 'inline-toml', 'json'.")]
     InvalidGeoIPMappingFormat(String),
 
