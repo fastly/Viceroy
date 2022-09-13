@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends, Dictionaries, FastlyConfig, ObjectStore, GeoIPMapping},
+    config::{Backend, Backends, Dictionaries, FastlyConfig, GeoIPMapping, ObjectStore},
     ExecuteCtx, ViceroyService,
 };
 

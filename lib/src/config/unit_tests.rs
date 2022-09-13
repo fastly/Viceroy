@@ -625,7 +625,7 @@ mod inline_toml_dictionary_config_tests {
 mod geoip_mapping_config_tests {
     use {
         super::read_local_server_config,
-        crate::error::{GeoIPConfigError, FastlyConfigError::InvalidGeoIPDefinition},
+        crate::error::{FastlyConfigError::InvalidGeoIPDefinition, GeoIPConfigError},
     };
 
     /// Check that dictionary definitions have a valid `format`.
@@ -655,7 +655,7 @@ mod geoip_mapping_config_tests {
 mod json_geoip_mapping_config_tests {
     use {
         super::read_local_server_config,
-        crate::error::{GeoIPConfigError, FastlyConfigError::InvalidGeoIPDefinition},
+        crate::error::{FastlyConfigError::InvalidGeoIPDefinition, GeoIPConfigError},
         std::{fs::File, io::Write},
         tempfile::tempdir,
     };
@@ -799,7 +799,7 @@ mod json_geoip_mapping_config_tests {
 mod inline_toml_geoip_mapping_config_tests {
     use {
         super::read_local_server_config,
-        crate::error::{GeoIPConfigError, FastlyConfigError::InvalidGeoIPDefinition},
+        crate::error::{FastlyConfigError::InvalidGeoIPDefinition, GeoIPConfigError},
     };
 
     #[test]
@@ -811,9 +811,8 @@ mod inline_toml_geoip_mapping_config_tests {
             [geoip_mapping.contents."127.0.0.1"]
             as_name = "Test, Inc."
         "#;
-        read_local_server_config(&geoip_mapping).expect(
-            "can read toml data containing local GeoIP mappings using toml format",
-        );
+        read_local_server_config(&geoip_mapping)
+            .expect("can read toml data containing local GeoIP mappings using toml format");
     }
 
     /// Check that GeoIP definitions *must* include a `format` field.
@@ -851,4 +850,3 @@ mod inline_toml_geoip_mapping_config_tests {
         }
     }
 }
-

@@ -1,9 +1,9 @@
 mod body;
 mod common;
 mod dictionary_lookup;
-mod geoip_lookup;
 mod downstream_req;
 mod env_vars;
+mod geoip_lookup;
 mod http_semantics;
 mod logging;
 mod memory;

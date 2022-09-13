@@ -1,8 +1,8 @@
 //! fastly_geo` hostcall implementations.
 
 use std::{
+    convert::TryInto,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    convert::TryInto
 };
 
 use {
@@ -27,8 +27,12 @@ impl FastlyGeo for Session {
             .collect::<Vec<u8>>();
 
         let ip_addr: IpAddr = match addr_len {
-            4 => IpAddr::V4(Ipv4Addr::from(TryInto::<[u8; 4]>::try_into(octets).unwrap())),
-            16 => IpAddr::V6(Ipv6Addr::from(TryInto::<[u8; 16]>::try_into(octets).unwrap())),
+            4 => IpAddr::V4(Ipv4Addr::from(
+                TryInto::<[u8; 4]>::try_into(octets).unwrap(),
+            )),
+            16 => IpAddr::V6(Ipv6Addr::from(
+                TryInto::<[u8; 16]>::try_into(octets).unwrap(),
+            )),
             _ => return Err(Error::InvalidArgument),
         };
 
@@ -37,13 +41,12 @@ impl FastlyGeo for Session {
         if result.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
                 buf: "geoip_lookup",
-                len: "geoip_lookup_max_len"
+                len: "geoip_lookup_max_len",
             });
         }
 
         let result_len =
             u32::try_from(result.len()).expect("smaller than value_max_len means it must fit");
-
 
         let mut buf_ptr = buf.as_array(result_len).as_slice_mut()?;
         buf_ptr.copy_from_slice(result.as_bytes());

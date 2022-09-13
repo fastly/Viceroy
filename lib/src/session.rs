@@ -7,10 +7,7 @@ use {
     self::{async_item::AsyncItem, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{
-            Backend, Backends, Dictionaries, Dictionary,
-            DictionaryName, GeoIPMapping,
-        },
+        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, GeoIPMapping},
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
@@ -605,7 +602,8 @@ impl Session {
     pub fn geoip_lookup(&self, addr: &IpAddr) -> String {
         match self.geoip_mapping.get(&addr) {
             Some(geoip) => geoip.to_string(),
-            None => String::from(r#"
+            None => String::from(
+                r#"
             {
                 "as_name": "Fastly, Inc.",
                 "as_number": 54113,
@@ -626,7 +624,8 @@ impl Session {
                 "region": "US-CA",
                 "utc_offset": -700
             }
-            "#)
+            "#,
+            ),
         }
     }
 
