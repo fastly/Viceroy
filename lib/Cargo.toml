@@ -5,6 +5,16 @@ description = "Viceroy implementation details."
 authors = ["Fastly"]
 edition = "2018"
 license = "Apache-2.0 WITH LLVM-exception"
+documentation = "https://docs.rs/viceroy-lib"
+homepage = "https://github.com/fastly/Viceroy"
+repository = "https://github.com/fastly/Viceroy"
+keywords = ["wasm", "fastly", "compute@edge"]
+categories = [
+  "development-tools",
+  "network-programming",
+  "simulation",
+  "wasm"
+]
 include = [
     "README.md",
     "LICENSE",
