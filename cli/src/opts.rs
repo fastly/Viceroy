@@ -7,7 +7,7 @@ use {
         path::{Path, PathBuf},
     },
     structopt::StructOpt,
-    viceroy_lib::Error,
+    viceroy_lib::{Error, ProfilingStrategy},
 };
 
 // Command-line arguments for the Viceroy CLI.
@@ -42,6 +42,9 @@ pub struct Opts {
     /// to a value before starting Viceroy
     #[structopt(short = "v", parse(from_occurrences))]
     verbosity: usize,
+    // Whether to enable wasmtime's builtin profiler.
+    #[structopt(long = "profiler", parse(try_from_str = check_wasmtime_profiler_mode))]
+    profiler: Option<ProfilingStrategy>,
 }
 
 impl Opts {
@@ -77,6 +80,11 @@ impl Opts {
     pub fn verbosity(&self) -> usize {
         self.verbosity
     }
+
+    // Whether to enable wasmtime's builtin profiler.
+    pub fn profiling_strategy(&self) -> ProfilingStrategy {
+        self.profiler.unwrap_or(ProfilingStrategy::None)
+    }
 }
 
 /// A parsing function used by [`Opts`][opts] to check that the input is a valid Wasm module in
@@ -89,6 +97,17 @@ fn check_module(s: &str) -> Result<PathBuf, Error> {
     match wat::parse_bytes(&contents) {
         Ok(_) => Ok(path),
         _ => Err(Error::FileFormat),
+    }
+}
+
+/// A parsing function used by [`Opts`][opts] to check that the input is valid wasmtime's profiling strategy.
+///
+/// [opts]: struct.Opts.html
+fn check_wasmtime_profiler_mode(s: &str) -> Result<ProfilingStrategy, Error> {
+    match s {
+        "jitdump" => Ok(ProfilingStrategy::JitDump),
+        "vtune" => Ok(ProfilingStrategy::VTune),
+        _ => Err(Error::ProfilingStrategy),
     }
 }
 
@@ -222,6 +241,51 @@ mod opts_tests {
         match Opts::from_iter_safe(args) {
             Ok(_) => Ok(()),
             res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's jitdump profiling strategy is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_jitdump_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profiler",
+            "jitdump",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::from_iter_safe(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's VTune profiling strategy is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_vtune_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profiler",
+            "vtune",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::from_iter_safe(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that an invalid wasmtime's profiling strategy rejected.
+    #[test]
+    fn invalid_wasmtime_profiling_strategy_is_rejected() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profiler",
+            "invalid_profiling_strategy",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::from_iter_safe(args) {
+            Ok(_) => panic!("unexpected result"),
+            Err(_) => Ok(()),
         }
     }
 }

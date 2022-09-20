@@ -20,6 +20,9 @@ pub enum Error {
     #[error("Expected a valid Wasm file")]
     FileFormat,
 
+    #[error("Expected a valid wastime's profiling strategy")]
+    ProfilingStrategy,
+
     #[error(transparent)]
     FastlyConfig(#[from] FastlyConfigError),
 
@@ -155,6 +158,7 @@ impl Error {
             | Error::IoError(_)
             | Error::NotAvailable(_)
             | Error::Other(_)
+            | Error::ProfilingStrategy
             | Error::StreamingChunkSend
             | Error::UnknownBackend(_)
             | Error::Utf8Expected(_)

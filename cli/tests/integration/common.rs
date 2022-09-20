@@ -9,7 +9,7 @@ use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
     config::{Backend, Backends, Dictionaries, FastlyConfig, ObjectStore},
-    ExecuteCtx, ViceroyService,
+    ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
@@ -183,7 +183,7 @@ impl Test {
             .try_init()
             .ok();
 
-        let ctx = ExecuteCtx::new(&self.module_path)
+        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None)
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_dictionaries(self.dictionaries.clone())
