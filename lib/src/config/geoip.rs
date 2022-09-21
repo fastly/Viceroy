@@ -1,7 +1,7 @@
 use {
     crate::error::GeoIPConfigError,
     serde_json::{Map, Value as SerdeValue},
-    std::{collections::HashMap, fs, net::IpAddr, path::PathBuf},
+    std::{collections::HashMap, fs, net::IpAddr, path::PathBuf, path::Path},
 };
 
 #[derive(Clone, Debug)]
@@ -178,7 +178,7 @@ impl GeoIPMapping {
     }
 
     pub fn read_json_contents(
-        file: &PathBuf,
+        file: &Path,
     ) -> Result<HashMap<IpAddr, GeoIPData>, GeoIPConfigError> {
         let data = fs::read_to_string(&file).map_err(GeoIPConfigError::IoError)?;
 
