@@ -1,4 +1,4 @@
-//! A guest program to test that GeoIP lookups work properly.
+//! A guest program to test that Geolocation lookups work properly.
 
 use fastly::geo::{
     geo_lookup,

@@ -7,7 +7,7 @@ use {
     self::{async_item::AsyncItem, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, GeoIPMapping},
+        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, GeolocationMapping},
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
@@ -66,10 +66,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     backends: Arc<Backends>,
-    /// The GeoIPs configured for this execution.
+    /// The Geolocations configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    geoip_mapping: Arc<GeoIPMapping>,
+    geolocation_mapping: Arc<GeolocationMapping>,
     /// The backends dynamically added by the program. This is separated from
     /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
@@ -111,7 +111,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
-        geoip_mapping: Arc<GeoIPMapping>,
+        geolocation_mapping: Arc<GeolocationMapping>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
@@ -138,7 +138,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
-            geoip_mapping,
+            geolocation_mapping,
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
@@ -164,7 +164,7 @@ impl Session {
             sender,
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
-            Arc::new(GeoIPMapping::new()),
+            Arc::new(GeolocationMapping::new()),
             TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
@@ -597,11 +597,11 @@ impl Session {
         &self.dictionaries
     }
 
-    // ----- GeoIP API -----
+    // ----- Geolocation API -----
 
-    pub fn geoip_lookup(&self, addr: &IpAddr) -> String {
-        match self.geoip_mapping.get(addr) {
-            Some(geoip) => geoip.to_string(),
+    pub fn geolocation_lookup(&self, addr: &IpAddr) -> String {
+        match self.geolocation_mapping.get(addr) {
+            Some(geolocation) => geolocation.to_string(),
             None => String::from(
                 r#"
             {

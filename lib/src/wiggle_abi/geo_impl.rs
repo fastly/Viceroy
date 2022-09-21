@@ -36,12 +36,12 @@ impl FastlyGeo for Session {
             _ => return Err(Error::InvalidArgument),
         };
 
-        let result = self.geoip_lookup(&ip_addr);
+        let result = self.geolocation_lookup(&ip_addr);
 
         if result.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
-                buf: "geoip_lookup",
-                len: "geoip_lookup_max_len",
+                buf: "geolocation_lookup",
+                len: "geolocation_lookup_max_len",
             });
         }
 

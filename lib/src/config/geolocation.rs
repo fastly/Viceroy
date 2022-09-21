@@ -1,14 +1,14 @@
 use {
-    crate::error::GeoIPConfigError,
+    crate::error::GeolocationConfigError,
     serde_json::{Map, Value as SerdeValue},
     std::{collections::HashMap, fs, net::IpAddr, path::PathBuf, path::Path},
 };
 
 #[derive(Clone, Debug)]
-pub enum GeoIPMapping {
+pub enum GeolocationMapping {
     Empty,
     InlineToml {
-        addresses: HashMap<IpAddr, GeoIPData>,
+        addresses: HashMap<IpAddr, GeolocationData>,
     },
     Json {
         file: PathBuf,
@@ -16,11 +16,11 @@ pub enum GeoIPMapping {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct GeoIPData {
+pub struct GeolocationData {
     data: Map<String, SerdeValue>,
 }
 
-impl GeoIPData {
+impl GeolocationData {
     pub fn new() -> Self {
         Self { data: Map::new() }
     }
@@ -36,7 +36,7 @@ impl GeoIPData {
     }
 }
 
-impl ToString for GeoIPData {
+impl ToString for GeolocationData {
     fn to_string(&self) -> String {
         serde_json::to_string(&self.data).unwrap_or_else(|_| "".to_string())
     }
@@ -48,33 +48,33 @@ mod deserialization {
     use serde_json::Number;
 
     use {
-        super::{GeoIPData, GeoIPMapping},
-        crate::error::{FastlyConfigError, GeoIPConfigError},
+        super::{GeolocationData, GeolocationMapping},
+        crate::error::{FastlyConfigError, GeolocationConfigError},
         serde_json::Value as SerdeValue,
         std::path::PathBuf,
         std::{collections::HashMap, convert::TryFrom},
         toml::value::{Table, Value},
     };
 
-    impl TryFrom<Table> for GeoIPMapping {
+    impl TryFrom<Table> for GeolocationMapping {
         type Error = FastlyConfigError;
 
         fn try_from(toml: Table) -> Result<Self, Self::Error> {
-            fn process_config(mut toml: Table) -> Result<GeoIPMapping, GeoIPConfigError> {
+            fn process_config(mut toml: Table) -> Result<GeolocationMapping, GeolocationConfigError> {
                 let format = toml
                     .remove("format")
-                    .ok_or(GeoIPConfigError::MissingFormat)
+                    .ok_or(GeolocationConfigError::MissingFormat)
                     .and_then(|format| match format {
                         Value::String(format) => Ok(format),
-                        _ => Err(GeoIPConfigError::InvalidFormatEntry),
+                        _ => Err(GeolocationConfigError::InvalidFormatEntry),
                     })?;
 
                 let mapping = match format.as_str() {
                     "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
                     "json" => process_json_entries(&mut toml)?,
-                    "" => return Err(GeoIPConfigError::EmptyFormatEntry),
+                    "" => return Err(GeolocationConfigError::EmptyFormatEntry),
                     _ => {
-                        return Err(GeoIPConfigError::InvalidGeoIPMappingFormat(
+                        return Err(GeolocationConfigError::InvalidGeolocationMappingFormat(
                             format.to_owned(),
                         ))
                     }
@@ -83,19 +83,19 @@ mod deserialization {
                 Ok(mapping)
             }
 
-            process_config(toml).map_err(|err| FastlyConfigError::InvalidGeoIPDefinition {
-                name: "geoip_mapping".to_string(),
+            process_config(toml).map_err(|err| FastlyConfigError::InvalidGeolocationDefinition {
+                name: "geolocation_mapping".to_string(),
                 err,
             })
         }
     }
 
-    pub fn parse_ip_address(address: &str) -> Result<IpAddr, GeoIPConfigError> {
+    pub fn parse_ip_address(address: &str) -> Result<IpAddr, GeolocationConfigError> {
         IpAddr::from_str(address)
-            .map_err(|err| GeoIPConfigError::InvalidAddressEntry(err.to_string()))
+            .map_err(|err| GeolocationConfigError::InvalidAddressEntry(err.to_string()))
     }
 
-    fn process_inline_toml_dictionary(toml: &mut Table) -> Result<GeoIPMapping, GeoIPConfigError> {
+    fn process_inline_toml_dictionary(toml: &mut Table) -> Result<GeolocationMapping, GeolocationConfigError> {
         fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
             match value {
                 Value::String(value) => Some(SerdeValue::String(value)),
@@ -109,64 +109,64 @@ mod deserialization {
         // Take the `addresses` field from the provided TOML table.
         let toml = match toml
             .remove("addresses")
-            .ok_or(GeoIPConfigError::MissingAddresses)?
+            .ok_or(GeolocationConfigError::MissingAddresses)?
         {
             Value::Table(table) => table,
-            _ => return Err(GeoIPConfigError::InvalidAddressesType),
+            _ => return Err(GeolocationConfigError::InvalidAddressesType),
         };
 
-        let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(toml.len());
+        let mut addresses = HashMap::<IpAddr, GeolocationData>::with_capacity(toml.len());
         for (address, value) in toml {
             let address = parse_ip_address(address.as_str())?;
             let table = value
                 .as_table()
-                .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
+                .ok_or(GeolocationConfigError::InvalidInlineEntryType)?
                 .to_owned();
 
-            let mut geoip_data = GeoIPData::new();
+            let mut geolocation_data = GeolocationData::new();
 
             for (field, value) in table {
                 let value =
-                    convert_value_to_json(value).ok_or(GeoIPConfigError::InvalidInlineEntryType)?;
-                geoip_data.insert(field, value);
+                    convert_value_to_json(value).ok_or(GeolocationConfigError::InvalidInlineEntryType)?;
+                geolocation_data.insert(field, value);
             }
 
-            addresses.insert(address, geoip_data);
+            addresses.insert(address, geolocation_data);
         }
 
-        Ok(GeoIPMapping::InlineToml { addresses })
+        Ok(GeolocationMapping::InlineToml { addresses })
     }
 
-    fn process_json_entries(toml: &mut Table) -> Result<GeoIPMapping, GeoIPConfigError> {
-        let file: PathBuf = match toml.remove("file").ok_or(GeoIPConfigError::MissingFile)? {
+    fn process_json_entries(toml: &mut Table) -> Result<GeolocationMapping, GeolocationConfigError> {
+        let file: PathBuf = match toml.remove("file").ok_or(GeolocationConfigError::MissingFile)? {
             Value::String(file) => {
                 if file.is_empty() {
-                    return Err(GeoIPConfigError::EmptyFileEntry);
+                    return Err(GeolocationConfigError::EmptyFileEntry);
                 } else {
                     file.into()
                 }
             }
-            _ => return Err(GeoIPConfigError::InvalidFileEntry),
+            _ => return Err(GeolocationConfigError::InvalidFileEntry),
         };
 
-        GeoIPMapping::read_json_contents(&file)?;
+        GeolocationMapping::read_json_contents(&file)?;
 
-        Ok(GeoIPMapping::Json { file })
+        Ok(GeolocationMapping::Json { file })
     }
 }
 
-impl Default for GeoIPMapping {
+impl Default for GeolocationMapping {
     fn default() -> Self {
-        GeoIPMapping::new()
+        GeolocationMapping::new()
     }
 }
 
-impl GeoIPMapping {
+impl GeolocationMapping {
     pub fn new() -> Self {
-        GeoIPMapping::Empty
+        GeolocationMapping::Empty
     }
 
-    pub fn get(&self, address: &IpAddr) -> Option<GeoIPData> {
+    pub fn get(&self, address: &IpAddr) -> Option<GeolocationData> {
         match self {
             Self::Empty => None,
             Self::InlineToml { addresses } => addresses.get(address).map(|a| a.to_owned()),
@@ -179,31 +179,31 @@ impl GeoIPMapping {
 
     pub fn read_json_contents(
         file: &Path,
-    ) -> Result<HashMap<IpAddr, GeoIPData>, GeoIPConfigError> {
-        let data = fs::read_to_string(&file).map_err(GeoIPConfigError::IoError)?;
+    ) -> Result<HashMap<IpAddr, GeolocationData>, GeolocationConfigError> {
+        let data = fs::read_to_string(&file).map_err(GeolocationConfigError::IoError)?;
 
         // Deserialize the contents of the given JSON file.
         let json = match serde_json::from_str(&data)
-            .map_err(|_| GeoIPConfigError::GeoIPFileWrongFormat)?
+            .map_err(|_| GeolocationConfigError::GeolocationFileWrongFormat)?
         {
             // Check that we were given an object.
             serde_json::Value::Object(obj) => obj,
             _ => {
-                return Err(GeoIPConfigError::GeoIPFileWrongFormat);
+                return Err(GeolocationConfigError::GeolocationFileWrongFormat);
             }
         };
 
-        let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(json.len());
+        let mut addresses = HashMap::<IpAddr, GeolocationData>::with_capacity(json.len());
         for (address, value) in json {
             let address = deserialization::parse_ip_address(address.as_str())?;
             let table = value
                 .as_object()
-                .ok_or(GeoIPConfigError::InvalidInlineEntryType)?
+                .ok_or(GeolocationConfigError::InvalidInlineEntryType)?
                 .to_owned();
 
-            let geoip_data = GeoIPData::from(&table);
+            let geolocation_data = GeolocationData::from(&table);
 
-            addresses.insert(address, geoip_data);
+            addresses.insert(address, geolocation_data);
         }
 
         Ok(addresses)

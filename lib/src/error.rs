@@ -258,10 +258,10 @@ pub enum FastlyConfigError {
     },
 
     #[error("invalid configuration for '{name}': {err}")]
-    InvalidGeoIPDefinition {
+    InvalidGeolocationDefinition {
         name: String,
         #[source]
-        err: GeoIPConfigError,
+        err: GeolocationConfigError,
     },
 
     #[error("invalid configuration for '{name}': {err}")]
@@ -414,9 +414,9 @@ pub enum DictionaryConfigError {
     DictionaryFileWrongFormat,
 }
 
-/// Errors that may occur while validating geoip configurations.
+/// Errors that may occur while validating geolocation configurations.
 #[derive(Debug, thiserror::Error)]
-pub enum GeoIPConfigError {
+pub enum GeolocationConfigError {
     /// An I/O error that occured while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
@@ -433,7 +433,7 @@ pub enum GeoIPConfigError {
     #[error("missing 'addresses' field")]
     MissingAddresses,
 
-    #[error("inline GeoIP value was not a string")]
+    #[error("inline geolocation value was not a string")]
     InvalidInlineEntryType,
 
     #[error("'file' field was not a string")]
@@ -454,24 +454,19 @@ pub enum GeoIPConfigError {
     #[error("IP address not valid: '{0}'")]
     InvalidAddressEntry(String),
 
-    #[error("'{0}' is not a valid format for the GeoIP mapping. Supported format(s) are: 'inline-toml', 'json'.")]
-    InvalidGeoIPMappingFormat(String),
+    #[error("'{0}' is not a valid format for the geolocation mapping. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidGeolocationMappingFormat(String),
 
     #[error(
         "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
-    GeoIPFileWrongFormat,
+    GeolocationFileWrongFormat,
 
     #[error("'format' field is empty")]
     EmptyFormatEntry,
 
     #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
-    GeoIPItemValueWrongFormat { key: String },
-
-    #[error(
-        "The file is of the wrong format. The file is expected to contain a single JSON Object"
-    )]
-    GeoIpFileWrongFormat,
+    GeolocationItemValueWrongFormat { key: String },
 }
 
 /// Errors that may occur while validating object store configurations.

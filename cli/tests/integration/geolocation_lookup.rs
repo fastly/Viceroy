@@ -2,19 +2,19 @@ use crate::common::{Test, TestResult};
 use hyper::{body::to_bytes, StatusCode};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn json_geoip_lookup_works() -> TestResult {
+async fn json_geolocation_lookup_works() -> TestResult {
     const FASTLY_TOML: &str = r#"
-        name = "json-geoip-lookup"
-        description = "json geoip lookup test"
+        name = "json-geolocation-lookup"
+        description = "json geolocation lookup test"
         authors = ["Test User <test_user@fastly.com>"]
         language = "rust"
         [local_server]
-        [local_server.geoip_mapping]
-        file = "../test-fixtures/data/geoip-mapping.json"
+        [local_server.geolocation_mapping]
+        file = "../test-fixtures/data/geolocation-mapping.json"
         format = "json"
     "#;
 
-    let resp = Test::using_fixture("geoip-lookup.wasm")
+    let resp = Test::using_fixture("geolocation-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await;
@@ -30,17 +30,17 @@ async fn json_geoip_lookup_works() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn inline_toml_geoip_lookup_works() -> TestResult {
+async fn inline_toml_geolocation_lookup_works() -> TestResult {
     const FASTLY_TOML: &str = r#"
-        name = "inline-toml-geoip-lookup"
-        description = "inline toml geoip lookup test"
+        name = "inline-toml-geolocation-lookup"
+        description = "inline toml geolocation lookup test"
         authors = ["Test User <test_user@fastly.com>"]
         language = "rust"
         [local_server]
-        [local_server.geoip_mapping]
+        [local_server.geolocation_mapping]
         format = "inline-toml"
-        [local_server.geoip_mapping.addresses]
-        [local_server.geoip_mapping.addresses."127.0.0.1"]
+        [local_server.geolocation_mapping.addresses]
+        [local_server.geolocation_mapping.addresses."127.0.0.1"]
         as_name = "Fastly Test"
         as_number = 12345
         area_code = 123
@@ -59,7 +59,7 @@ async fn inline_toml_geoip_lookup_works() -> TestResult {
         proxy_type = "?"
         region = "CA-BC"
         utc_offset = -700
-        [local_server.geoip_mapping.addresses."0000:0000:0000:0000:0000:0000:0000:0001"]
+        [local_server.geolocation_mapping.addresses."0000:0000:0000:0000:0000:0000:0000:0001"]
         as_name = "Fastly Test IPv6"
         as_number = 12345
         area_code = 123
@@ -80,7 +80,7 @@ async fn inline_toml_geoip_lookup_works() -> TestResult {
         utc_offset = -700
     "#;
 
-    let resp = Test::using_fixture("geoip-lookup.wasm")
+    let resp = Test::using_fixture("geolocation-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await;

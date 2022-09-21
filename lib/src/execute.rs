@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, GeoIPMapping},
+        config::{Backends, Dictionaries, GeolocationMapping},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -39,8 +39,8 @@ pub struct ExecuteCtx {
     instance_pre: Arc<InstancePre<WasmCtx>>,
     /// The backends for this execution.
     backends: Arc<Backends>,
-    /// The geoip mappings for this execution.
-    geoip_mapping: Arc<GeoIPMapping>,
+    /// The geolocation mappings for this execution.
+    geolocation_mapping: Arc<GeolocationMapping>,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
@@ -72,7 +72,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
-            geoip_mapping: Arc::new(GeoIPMapping::default()),
+            geolocation_mapping: Arc::new(GeolocationMapping::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
@@ -101,15 +101,15 @@ impl ExecuteCtx {
         }
     }
 
-    /// Get the geoip mappings for this execution context.
-    pub fn geoip_mapping(&self) -> &GeoIPMapping {
-        &self.geoip_mapping
+    /// Get the geolocation mappings for this execution context.
+    pub fn geolocation_mapping(&self) -> &GeolocationMapping {
+        &self.geolocation_mapping
     }
 
-    /// Set the geoip mappings for this execution context.
-    pub fn with_geoip_mapping(self, geoip_mapping: GeoIPMapping) -> Self {
+    /// Set the geolocation mappings for this execution context.
+    pub fn with_geolocation_mapping(self, geolocation_mapping: GeolocationMapping) -> Self {
         Self {
-            geoip_mapping: Arc::new(geoip_mapping),
+            geolocation_mapping: Arc::new(geolocation_mapping),
             ..self
         }
     }
@@ -265,7 +265,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
-            self.geoip_mapping.clone(),
+            self.geolocation_mapping.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),
