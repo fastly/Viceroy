@@ -106,13 +106,13 @@ mod deserialization {
             }
         }
 
-        // Take the `contents` field from the provided TOML table.
+        // Take the `addresses` field from the provided TOML table.
         let toml = match toml
-            .remove("contents")
-            .ok_or(GeoIPConfigError::MissingContents)?
+            .remove("addresses")
+            .ok_or(GeoIPConfigError::MissingAddresses)?
         {
             Value::Table(table) => table,
-            _ => return Err(GeoIPConfigError::InvalidContentsType),
+            _ => return Err(GeoIPConfigError::InvalidAddressesType),
         };
 
         let mut addresses = HashMap::<IpAddr, GeoIPData>::with_capacity(toml.len());

@@ -635,7 +635,7 @@ mod geoip_mapping_config_tests {
         let invalid_format_field = r#"
             [geoip_mapping]
             format = "foo"
-            [geoip_mapping.contents."123.45.67.89"]
+            [geoip_mapping.addresses."123.45.67.89"]
             as_name = "Test, Inc."
         "#;
         match read_local_server_config(&invalid_format_field) {
@@ -807,8 +807,8 @@ mod inline_toml_geoip_mapping_config_tests {
         let geoip_mapping = r#"
             [geoip_mapping]
             format = "inline-toml"
-            [geoip_mapping.contents]
-            [geoip_mapping.contents."127.0.0.1"]
+            [geoip_mapping.addresses]
+            [geoip_mapping.addresses."127.0.0.1"]
             as_name = "Test, Inc."
         "#;
         read_local_server_config(&geoip_mapping)
@@ -821,8 +821,8 @@ mod inline_toml_geoip_mapping_config_tests {
         use GeoIPConfigError::MissingFormat;
         let no_format_field = r#"
             [geoip_mapping]
-            [geoip_mapping.contents]
-            [geoip_mapping.contents."127.0.0.1"]
+            [geoip_mapping.addresses]
+            [geoip_mapping.addresses."127.0.0.1"]
             as_name = "Test, Inc."
         "#;
         match read_local_server_config(&no_format_field) {
@@ -836,14 +836,14 @@ mod inline_toml_geoip_mapping_config_tests {
     /// Check that GeoIP mapping *must* include a `contents` field.
     #[test]
     fn geoip_mapping_must_provide_contents() {
-        use GeoIPConfigError::MissingContents;
+        use GeoIPConfigError::MissingAddresses;
         let missing_contents = r#"
             [geoip_mapping]
             format = "inline-toml"
         "#;
         match read_local_server_config(&missing_contents) {
             Err(InvalidGeoIPDefinition {
-                err: MissingContents,
+                err: MissingAddresses,
                 ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),

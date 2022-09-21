@@ -430,8 +430,8 @@ pub enum GeoIPConfigError {
     #[error("'file' field is empty")]
     EmptyFileEntry,
 
-    #[error("missing 'contents' field")]
-    MissingContents,
+    #[error("missing 'addresses' field")]
+    MissingAddresses,
 
     #[error("inline GeoIP value was not a string")]
     InvalidInlineEntryType,
@@ -439,8 +439,8 @@ pub enum GeoIPConfigError {
     #[error("'file' field was not a string")]
     InvalidFileEntry,
 
-    #[error("'contents' was not provided as a TOML table")]
-    InvalidContentsType,
+    #[error("'addresses' was not provided as a TOML table")]
+    InvalidAddressesType,
 
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
