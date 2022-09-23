@@ -573,8 +573,14 @@ impl Session {
 
     /// Look up a dictionary-handle by name.
     pub fn dictionary_handle(&mut self, name: &str) -> Result<DictionaryHandle, Error> {
-        let name = DictionaryName::new(name.to_string());
-        Ok(self.dictionaries_by_name.push(name))
+        let dict = DictionaryName::new(name.to_string());
+        if self.dictionaries.contains_key(&dict) {
+            Ok(self.dictionaries_by_name.push(dict))
+        } else {
+            Err(Error::DictionaryError(
+                crate::wiggle_abi::DictionaryError::UnknownDictionary(name.to_owned()),
+            ))
+        }
     }
 
     /// Look up a dictionary by dictionary-handle.

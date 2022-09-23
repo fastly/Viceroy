@@ -142,6 +142,9 @@ impl UserErrorConversion for Session {
                 DictionaryError::UnknownDictionaryItem(_) => {
                     event!(Level::DEBUG, "Hostcall yielded an error: {}", err);
                 }
+                DictionaryError::UnknownDictionary(_) => {
+                    event!(Level::DEBUG, "Hostcall yielded an error: {}", err);
+                }
             },
             _ => event!(Level::ERROR, "Hostcall yielded an error: {}", e),
         }
