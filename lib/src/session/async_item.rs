@@ -85,4 +85,12 @@ impl AsyncItem {
             _ => None,
         }
     }
+
+    pub async fn await_ready(&mut self) {
+        match self {
+            Self::StreamingBody(body) => body.await_ready().await,
+            Self::Body(body) => body.await_ready().await,
+            Self::PendingReq(req) => req.await_ready().await,
+        }
+    }
 }
