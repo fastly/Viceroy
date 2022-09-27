@@ -54,16 +54,6 @@ be used to make requests to your Compute@Edge service locally. You can make requ
 by using [curl](https://curl.se/), or you can send a simple GET request by visiting
 the URL in your web browser.
 
-## Working with Viceroy's source
-
-Note that this repository uses Git submodules, so you will need to run
-
-```
-git submodule update --recursive --init
-```
-
-to pull down or update submodules.
-
 ## Documentation
 
 Since the Fastly CLI uses Viceroy under the hood, the two share documentation for

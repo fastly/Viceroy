@@ -7,7 +7,9 @@ use {
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
+        object_store::ObjectStore,
         session::Session,
+        upstream::TlsConfig,
         Error,
     },
     cfg_if::cfg_if,
@@ -20,7 +22,7 @@ use {
         time::Instant,
     },
     tokio::sync::oneshot::{self, Sender},
-    tracing::{event, info, info_span, warn, Instrument, Level},
+    tracing::{event, info, info_span, Instrument, Level},
     wasmtime::{Engine, InstancePre, Linker, Module},
 };
 
@@ -38,7 +40,7 @@ pub struct ExecuteCtx {
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// Preloaded TLS certificates and configuration
-    tls_config: Arc<rustls::ClientConfig>,
+    tls_config: TlsConfig,
     /// The dictionaries for this execution.
     dictionaries: Arc<Dictionaries>,
     /// Path to the config, defaults to None
@@ -49,6 +51,8 @@ pub struct ExecuteCtx {
     log_stderr: bool,
     /// The ID to assign the next incoming request
     next_req_id: Arc<AtomicU64>,
+    /// The ObjectStore associated with this instance of Viceroy
+    object_store: Arc<ObjectStore>,
 }
 
 impl ExecuteCtx {
@@ -66,12 +70,13 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
-            tls_config: Arc::new(configure_tls()?),
+            tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
+            object_store: Arc::new(ObjectStore::new()),
         })
     }
 
@@ -106,6 +111,14 @@ impl ExecuteCtx {
         }
     }
 
+    /// Set the object store for this execution context.
+    pub fn with_object_store(self, object_store: ObjectStore) -> Self {
+        Self {
+            object_store: Arc::new(object_store),
+            ..self
+        }
+    }
+
     /// Set the path to the config for this execution context.
     pub fn with_config_path(self, config_path: PathBuf) -> Self {
         Self {
@@ -135,7 +148,7 @@ impl ExecuteCtx {
     }
 
     /// Gets the TLS configuration
-    pub fn tls_config(&self) -> &Arc<rustls::ClientConfig> {
+    pub fn tls_config(&self) -> &TlsConfig {
         &self.tls_config
     }
 
@@ -239,6 +252,7 @@ impl ExecuteCtx {
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),
+            self.object_store.clone(),
         );
         // We currently have to postpone linking and instantiation to the guest task
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
@@ -287,7 +301,7 @@ impl ExecuteCtx {
             bytesize::ByteSize::kib(heap_pages as u64 * 64)
         );
 
-        info!("request completed in {:?}", request_duration);
+        info!("request completed in {:.0?}", request_duration);
 
         outcome
     }
@@ -327,21 +341,4 @@ fn configure_wasmtime() -> wasmtime::Config {
     });
 
     config
-}
-
-fn configure_tls() -> Result<rustls::ClientConfig, Error> {
-    let mut config = rustls::ClientConfig::new();
-    config.root_store = match rustls_native_certs::load_native_certs() {
-        Ok(store) => store,
-        Err((Some(store), err)) => {
-            warn!(%err, "some certificates could not be loaded");
-            store
-        }
-        Err((None, err)) => return Err(Error::BadCerts(err)),
-    };
-    if config.root_store.is_empty() {
-        warn!("no CA certificates available");
-    }
-    config.alpn_protocols.clear();
-    Ok(config)
 }
