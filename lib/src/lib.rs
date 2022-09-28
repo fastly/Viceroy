@@ -23,6 +23,7 @@ mod downstream;
 mod execute;
 mod headers;
 mod linking;
+mod object_store;
 mod service;
 mod streaming_body;
 mod upstream;

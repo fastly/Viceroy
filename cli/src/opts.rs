@@ -61,12 +61,12 @@ impl Opts {
         self.config_path.as_deref()
     }
 
-    /// Whether to treat stdout as a logging entpoint
+    /// Whether to treat stdout as a logging endpoint
     pub fn log_stdout(&self) -> bool {
         self.log_stdout
     }
 
-    /// Whether to treat stderr as a logging entpoint
+    /// Whether to treat stderr as a logging endpoint
     pub fn log_stderr(&self) -> bool {
         self.log_stderr
     }
@@ -147,7 +147,11 @@ mod opts_tests {
                 kind: ErrorKind::ValueValidation,
                 message,
                 ..
-            }) if message.contains("invalid IP address syntax") => Ok(()),
+            }) if message.contains("invalid socket address syntax")
+                | message.contains("invalid IP address syntax") =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }

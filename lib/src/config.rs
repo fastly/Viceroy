@@ -1,7 +1,9 @@
 //! Fastly-specific configuration utilities.
 
 use {
-    self::{backends::BackendsConfig, dictionaries::DictionariesConfig},
+    self::{
+        backends::BackendsConfig, dictionaries::DictionariesConfig, object_store::ObjectStoreConfig,
+    },
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,
     std::{collections::HashMap, convert::TryInto, fs, path::Path, str::FromStr, sync::Arc},
@@ -25,6 +27,10 @@ pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
 mod backends;
 pub use self::backends::Backend;
 pub type Backends = HashMap<String, Arc<Backend>>;
+
+/// Types and deserializers for object store configuration settings.
+mod object_store;
+pub use crate::object_store::ObjectStore;
 
 /// Fastly-specific configuration information.
 ///
@@ -67,6 +73,11 @@ impl FastlyConfig {
     /// Get the dictionaries configuration.
     pub fn dictionaries(&self) -> &Dictionaries {
         &self.local_server.dictionaries.0
+    }
+
+    /// Get the object store configuration.
+    pub fn object_store(&self) -> &ObjectStore {
+        &self.local_server.object_store.0
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -148,6 +159,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 pub struct LocalServerConfig {
     backends: BackendsConfig,
     dictionaries: DictionariesConfig,
+    object_store: ObjectStoreConfig,
 }
 
 /// Internal deserializer used to read the `[testing]` section of a `fastly.toml` file.
@@ -158,6 +170,7 @@ pub struct LocalServerConfig {
 struct RawLocalServerConfig {
     backends: Option<Table>,
     dictionaries: Option<Table>,
+    object_store: Option<Table>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
@@ -166,6 +179,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         let Self {
             backends,
             dictionaries,
+            object_store,
         } = self;
         let backends = if let Some(backends) = backends {
             backends.try_into()?
@@ -177,10 +191,16 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             DictionariesConfig::default()
         };
+        let object_store = if let Some(object_store) = object_store {
+            object_store.try_into()?
+        } else {
+            ObjectStoreConfig::default()
+        };
 
         Ok(LocalServerConfig {
             backends,
             dictionaries,
+            object_store,
         })
     }
 }

@@ -83,6 +83,9 @@ pub enum Error {
     #[error(transparent)]
     DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
+    #[error(transparent)]
+    ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
+
     #[error{"Expected UTF-8"}]
     Utf8Expected(#[from] std::str::Utf8Error),
 
@@ -97,6 +100,18 @@ pub enum Error {
 
     #[error("Could not load native certificates: {0}")]
     BadCerts(std::io::Error),
+
+    #[error("Could not generate new backend name from '{0}'")]
+    BackendNameRegistryError(String),
+
+    #[error(transparent)]
+    HttpError(#[from] http::Error),
+
+    #[error("Object Store '{0}' does not exist")]
+    UnknownObjectStore(String),
+
+    #[error("Invalid Object Store `key` value used: {0}.")]
+    ObjectStoreKeyValidationError(#[from] crate::object_store::KeyValidationError),
 }
 
 impl Error {
@@ -122,6 +137,7 @@ impl Error {
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
+            Error::ObjectStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -141,7 +157,11 @@ impl Error {
             | Error::Other(_)
             | Error::StreamingChunkSend
             | Error::UnknownBackend(_)
-            | Error::Utf8Expected(_) => FastlyStatus::Error,
+            | Error::Utf8Expected(_)
+            | Error::BackendNameRegistryError(_)
+            | Error::HttpError(_)
+            | Error::UnknownObjectStore(_)
+            | Error::ObjectStoreKeyValidationError(_) => FastlyStatus::Error,
         }
     }
 
@@ -229,7 +249,7 @@ pub(crate) enum ExecutionError {
 /// Errors that can occur while parsing a `fastly.toml` file.
 #[derive(Debug, thiserror::Error)]
 pub enum FastlyConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error("error reading '{path}': {err}")]
     IoError {
         path: String,
@@ -249,6 +269,13 @@ pub enum FastlyConfigError {
         name: String,
         #[source]
         err: DictionaryConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidObjectStoreDefinition {
+        name: String,
+        #[source]
+        err: ObjectStoreConfigError,
     },
 
     /// An error that occurred while deserializing the file.
@@ -282,6 +309,15 @@ pub enum BackendConfigError {
     #[error("'override_host' field was not a string")]
     InvalidOverrideHostEntry,
 
+    #[error("'cert_host' field is empty")]
+    EmptyCertHost,
+
+    #[error("'cert_host' field was not a string")]
+    InvalidCertHostEntry,
+
+    #[error("'use_sni' field was not a boolean")]
+    InvalidUseSniEntry,
+
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
 
@@ -301,9 +337,15 @@ pub enum BackendConfigError {
 /// Errors that may occur while validating dictionary configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum DictionaryConfigError {
-    /// An I/O error that occured while reading the file.
-    #[error("error reading `{name}`: {error}")]
-    IoError { name: String, error: String },
+    /// An I/O error that occurred while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("'contents' was not provided as a TOML table")]
+    InvalidContentsType,
+
+    #[error("inline dictionary value was not a string")]
+    InvalidInlineEntryType,
 
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
@@ -314,8 +356,8 @@ pub enum DictionaryConfigError {
     #[error("'name' field was not a string")]
     InvalidNameEntry,
 
-    #[error("'{0}' is not a valid format for the dictionary file. Supported format(s) are: JSON.")]
-    InvalidDictionaryFileFormat(String),
+    #[error("'{0}' is not a valid format for the dictionary. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidDictionaryFormat(String),
 
     #[error("'file' field is empty")]
     EmptyFileEntry,
@@ -328,6 +370,9 @@ pub enum DictionaryConfigError {
 
     #[error("'format' field was not a string")]
     InvalidFormatEntry,
+
+    #[error("missing 'contents' field")]
+    MissingContents,
 
     #[error("no default definition provided")]
     MissingDefault,
@@ -344,30 +389,50 @@ pub enum DictionaryConfigError {
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
 
-    #[error("Item key named '{key}' in dictionary named '{name}' is too long, max size is {size}")]
-    DictionaryItemKeyTooLong {
-        key: String,
-        name: String,
-        size: i32,
-    },
+    #[error("Item key named '{key}' is too long, max size is {size}")]
+    DictionaryItemKeyTooLong { key: String, size: i32 },
 
-    #[error("The dictionary named '{name}' has too many items, max amount is {size}")]
-    DictionaryCountTooLong { name: String, size: i32 },
+    #[error("too many items, max amount is {size}")]
+    DictionaryCountTooLong { size: i32 },
 
-    #[error("Item value under key named '{key}' in dictionary named '{name}' is of the wrong format. The value is expected to be a JSON String")]
-    DictionaryItemValueWrongFormat { key: String, name: String },
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    DictionaryItemValueWrongFormat { key: String },
+
+    #[error("Item value named '{key}' is too long, max size is {size}")]
+    DictionaryItemValueTooLong { key: String, size: i32 },
 
     #[error(
-        "Item value named '{key}' in dictionary named '{name}' is too long, max size is {size}"
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
-    DictionaryItemValueTooLong {
-        key: String,
-        name: String,
-        size: i32,
-    },
+    DictionaryFileWrongFormat,
+}
 
-    #[error("The file for the dictionary named '{name}' is of the wrong format. The file is expected to contain a single JSON Object")]
-    DictionaryFileWrongFormat { name: String },
+/// Errors that may occur while validating object store configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum ObjectStoreConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+    #[error("The `path` and `data` keys for the object `{0}` are set. Only one can be used.")]
+    PathAndData(String),
+    #[error("The `path` or `data` key for the object `{0}` is not set. One must be used.")]
+    NoPathOrData(String),
+    #[error("The `data` value for the object `{0}` is not a string.")]
+    DataNotAString(String),
+    #[error("The `path` value for the object `{0}` is not a string.")]
+    PathNotAString(String),
+    #[error("The `key` key for an object is not set. It must be used.")]
+    NoKey,
+    #[error("The `key` value for an object is not a string.")]
+    KeyNotAString,
+    #[error("There is no array of objects for the given store.")]
+    NotAnArray,
+    #[error("There is an object in the given store that is not a table of keys.")]
+    NotATable,
+    #[error("There was an error when manipulating the ObjectStore: {0}.")]
+    ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
+    #[error("Invalid `key` value used: {0}.")]
+    KeyValidationError(#[from] crate::object_store::KeyValidationError),
 }
 
 /// Errors related to the downstream request.

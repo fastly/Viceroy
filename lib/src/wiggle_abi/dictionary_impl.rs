@@ -9,7 +9,7 @@ use {
             types::{DictionaryHandle, FastlyStatus},
         },
     },
-    std::{convert::TryFrom, fs, path::Path},
+    std::convert::TryFrom,
     wiggle::GuestPtr,
 };
 
@@ -18,6 +18,9 @@ pub enum DictionaryError {
     /// A dictionary item with the given key was not found.
     #[error("Unknown dictionary item: {0}")]
     UnknownDictionaryItem(String),
+    /// A dictionary with the given name was not found.
+    #[error("Unknown dictionary: {0}")]
+    UnknownDictionary(String),
 }
 
 impl DictionaryError {
@@ -26,15 +29,9 @@ impl DictionaryError {
         use DictionaryError::*;
         match self {
             UnknownDictionaryItem(_) => FastlyStatus::None,
+            UnknownDictionary(_) => FastlyStatus::Badf,
         }
     }
-}
-
-fn read_json_file<P: AsRef<Path>>(file: P) -> serde_json::Map<String, serde_json::Value> {
-    let data = fs::read_to_string(file).expect("Unable to read file");
-    let json: serde_json::Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
-    let obj = json.as_object().expect("Expected the JSON to be an Object");
-    obj.clone()
 }
 
 impl FastlyDictionary for Session {
@@ -49,15 +46,16 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
+        let dict = self
+            .dictionary(dictionary)?
+            .contents()
+            .map_err(|err| Error::Other(err.into()))?;
+
         let key: &str = &key.as_str()?;
-        let dict = self.dictionary(dictionary)?;
-        let file = dict.file.clone();
-        let obj = read_json_file(file);
-        let item = obj
+        let item_bytes = dict
             .get(key)
-            .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?;
-        let item = item.as_str().unwrap();
-        let item_bytes = item.as_bytes();
+            .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
+            .as_bytes();
 
         if item_bytes.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
