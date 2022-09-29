@@ -11,6 +11,7 @@ mod memory;
 mod object_store;
 mod request;
 mod response;
+mod secret_store;
 mod sending_response;
 mod sleep;
 mod upstream;

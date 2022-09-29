@@ -8,6 +8,7 @@ use {
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
         object_store::ObjectStore,
+        secret_store::SecretStores,
         session::Session,
         upstream::TlsConfig,
         Error,
@@ -56,6 +57,8 @@ pub struct ExecuteCtx {
     next_req_id: Arc<AtomicU64>,
     /// The ObjectStore associated with this instance of Viceroy
     object_store: Arc<ObjectStore>,
+    /// The secret stores for this execution.
+    secret_stores: Arc<SecretStores>,
 }
 
 impl ExecuteCtx {
@@ -86,6 +89,7 @@ impl ExecuteCtx {
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: Arc::new(ObjectStore::new()),
+            secret_stores: Arc::new(SecretStores::new()),
         })
     }
 
@@ -137,6 +141,14 @@ impl ExecuteCtx {
     pub fn with_object_store(self, object_store: ObjectStore) -> Self {
         Self {
             object_store: Arc::new(object_store),
+            ..self
+        }
+    }
+
+    /// Set the secret stores for this execution context.
+    pub fn with_secret_stores(self, secret_stores: SecretStores) -> Self {
+        Self {
+            secret_stores: Arc::new(secret_stores),
             ..self
         }
     }
@@ -284,6 +296,7 @@ impl ExecuteCtx {
             self.dictionaries.clone(),
             self.config_path.clone(),
             self.object_store.clone(),
+            self.secret_stores.clone(),
         );
         // We currently have to postpone linking and instantiation to the guest task
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.

@@ -45,6 +45,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
         let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
         let object_store = config.object_store();
+        let secret_stores = config.secret_stores();
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
@@ -52,6 +53,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
             .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
             .with_object_store(object_store.clone())
+            .with_secret_stores(secret_stores.clone())
             .with_config_path(config_path.into());
 
         if backend_names.is_empty() {

@@ -11,7 +11,9 @@ use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStore},
+    config::{
+        Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStore, SecretStores,
+    },
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
@@ -52,6 +54,7 @@ pub struct Test {
     dictionaries: Dictionaries,
     geolocation: Geolocation,
     object_store: ObjectStore,
+    secret_stores: SecretStores,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
     log_stderr: bool,
@@ -70,6 +73,7 @@ impl Test {
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_store: ObjectStore::new(),
+            secret_stores: SecretStores::new(),
             hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
@@ -88,6 +92,7 @@ impl Test {
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_store: ObjectStore::new(),
+            secret_stores: SecretStores::new(),
             hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
@@ -103,6 +108,7 @@ impl Test {
             dictionaries: config.dictionaries().to_owned(),
             geolocation: config.geolocation().to_owned(),
             object_store: config.object_store().to_owned(),
+            secret_stores: config.secret_stores().to_owned(),
             ..self
         })
     }
@@ -206,6 +212,7 @@ impl Test {
             .with_dictionaries(self.dictionaries.clone())
             .with_geolocation(self.geolocation.clone())
             .with_object_store(self.object_store.clone())
+            .with_secret_stores(self.secret_stores.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);
         let addr: SocketAddr = "127.0.0.1:17878".parse().unwrap();
