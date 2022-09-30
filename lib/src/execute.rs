@@ -338,7 +338,7 @@ fn configure_wasmtime() -> wasmtime::Config {
         // Number of instances: the pool will allocate virtual memory for this
         // many instances, which limits the number of requests which can be
         // handled concurrently.
-        count: InstanceLimits::default().count
+        count: InstanceLimits::default().count,
     };
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling {
