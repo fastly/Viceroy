@@ -320,11 +320,23 @@ fn configure_wasmtime() -> wasmtime::Config {
     config.consume_fuel(true);
 
     let instance_limits = InstanceLimits {
-        // allow for up to 128MiB of linear memory
-        memory_pages: 2048,
-        // And every function can end up in the table
+        // This number matches C@E production
+        size: 1 * MB,
+
+        // Core wasm programs have 1 memory
+        memories: 1,
+        // allow for up to 128MiB of linear memory. Wasm pages are 64k
+        memory_pages: 128 * (MB as u64) / (64 * 1024),
+        // Core wasm programs have 1 table
+        tables: 1,
+        // Some applications create a large number of functions, in particular
+        // when compiled in debug mode or applications written in swift. Every
+        // function can end up in the table
         table_elements: 98765,
-        ..InstanceLimits::default()
+        // Number of instances: the pool will allocate virtual memory for this
+        // many instances, which limits the number of requests which can be
+        // handled concurrently.
+        count: InstanceLimits::default().count
     };
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling {
