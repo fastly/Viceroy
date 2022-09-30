@@ -323,7 +323,7 @@ fn configure_wasmtime() -> wasmtime::Config {
 
     let instance_limits = InstanceLimits {
         // This number matches C@E production
-        size: 1 * MB,
+        size: MB,
 
         // Core wasm programs have 1 memory
         memories: 1,
