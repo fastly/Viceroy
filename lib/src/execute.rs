@@ -319,6 +319,8 @@ fn configure_wasmtime() -> wasmtime::Config {
     config.async_support(true);
     config.consume_fuel(true);
 
+    const MB: usize = 1 << 20;
+
     let instance_limits = InstanceLimits {
         // This number matches C@E production
         size: 1 * MB,
