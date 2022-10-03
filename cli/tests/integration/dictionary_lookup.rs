@@ -60,3 +60,21 @@ async fn inline_toml_dictionary_lookup_works() -> TestResult {
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn missing_dictionary_works() -> TestResult {
+    const FASTLY_TOML: &str = r#"
+        name = "missing-dictionary-config"
+        description = "missing dictionary test"
+        language = "rust"
+    "#;
+
+    let resp = Test::using_fixture("dictionary-lookup.wasm")
+        .using_fastly_toml(FASTLY_TOML)?
+        .against_empty()
+        .await;
+
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    Ok(())
+}

@@ -309,8 +309,8 @@ impl ExecuteCtx {
 
 fn configure_wasmtime() -> wasmtime::Config {
     use wasmtime::{
-        Config, InstanceAllocationStrategy, InstanceLimits, ModuleLimits,
-        PoolingAllocationStrategy, WasmBacktraceDetails,
+        Config, InstanceAllocationStrategy, InstanceLimits, PoolingAllocationStrategy,
+        WasmBacktraceDetails,
     };
 
     let mut config = Config::new();
@@ -319,25 +319,31 @@ fn configure_wasmtime() -> wasmtime::Config {
     config.async_support(true);
     config.consume_fuel(true);
 
-    let module_limits = ModuleLimits {
-        // allow for up to 128MiB of linear memory
-        memory_pages: 2048,
-        // ffmpeg-wasi was the last program to break the types
-        types: 1234,
-        // AssemblyScript applications tend to create a fair number of globals
-        globals: 1234,
-        // Some applications create a large number of functions, in particular in debug mode
-        // or applications written in swift.
-        functions: 98765,
-        // And every function can end up in the table
+    const MB: usize = 1 << 20;
+
+    let instance_limits = InstanceLimits {
+        // This number matches C@E production
+        size: MB,
+
+        // Core wasm programs have 1 memory
+        memories: 1,
+        // allow for up to 128MiB of linear memory. Wasm pages are 64k
+        memory_pages: 128 * (MB as u64) / (64 * 1024),
+        // Core wasm programs have 1 table
+        tables: 1,
+        // Some applications create a large number of functions, in particular
+        // when compiled in debug mode or applications written in swift. Every
+        // function can end up in the table
         table_elements: 98765,
-        ..ModuleLimits::default()
+        // Number of instances: the pool will allocate virtual memory for this
+        // many instances, which limits the number of requests which can be
+        // handled concurrently.
+        count: InstanceLimits::default().count,
     };
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling {
         strategy: PoolingAllocationStrategy::NextAvailable,
-        module_limits,
-        instance_limits: InstanceLimits::default(),
+        instance_limits,
     });
 
     config

@@ -497,3 +497,12 @@
         (result $err (expected (error $fastly_status)))
     )
 )
+
+(module $fastly_purge
+    (@interface func (export "purge_surrogate_key")
+        (param $surrogate_key string)
+        (param $options_mask $purge_options_mask)
+        (param $options (@witx pointer $purge_options))
+        (result $err (expected (error $fastly_status)))
+    )
+)

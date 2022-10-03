@@ -199,3 +199,19 @@
         ;;; This error means the client certificate was received, but some other (unspecified)
         ;;; issue arose in processing the certificate, rendering it unacceptable.
         $certificate_unknown))
+
+(typename $purge_options_mask
+    (flags (@witx repr u32)
+        $soft_purge
+        $ret_buf ;; all ret_buf fields must be populated
+    )
+)
+
+(typename $purge_options
+    (record
+        ;; JSON purge response as in https://developer.fastly.com/reference/api/purging/#purge-tag
+        (field $ret_buf_ptr (@witx pointer u8))
+        (field $ret_buf_len (@witx usize))
+        (field $ret_buf_nwritten_out (@witx pointer (@witx usize)))
+    )
+)
