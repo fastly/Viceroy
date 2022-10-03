@@ -48,6 +48,7 @@ macro_rules! multi_value_result {
 mod body_impl;
 mod dictionary_impl;
 mod entity;
+mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
 mod log_impl;
