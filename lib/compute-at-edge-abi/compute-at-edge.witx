@@ -326,6 +326,16 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "redirect_to_websocket_proxy")
+        (param $backend_name string)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "redirect_to_grip_proxy")
+        (param $backend_name string)
+        (result $err (expected (error $fastly_status)))
+    )
+
     ;;; Adjust how this requests's framing headers are determined.
     (@interface func (export "framing_headers_mode_set")
         (param $h $request_handle)
