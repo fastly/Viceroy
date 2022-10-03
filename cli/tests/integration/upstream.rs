@@ -138,7 +138,7 @@ async fn override_host_works() -> TestResult {
     let resp = test
         .via_hyper()
         .against(
-            Request::get("http://localhost:7878/override")
+            Request::get("http://localhost:17878/override")
                 .header("Viceroy-Backend", "override-host")
                 .body("")
                 .unwrap(),

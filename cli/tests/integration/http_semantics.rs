@@ -23,7 +23,7 @@ async fn framing_headers_are_overridden() -> TestResult {
     let resp = test
         .via_hyper()
         .against(
-            Request::post("http://127.0.0.1:7878")
+            Request::post("http://127.0.0.1:17878")
                 .body("greetings")
                 .unwrap(),
         )
@@ -52,7 +52,7 @@ async fn content_length_is_computed_correctly() -> TestResult {
 
     let resp = test
         .via_hyper()
-        .against(Request::get("http://127.0.0.1:7878").body("").unwrap())
+        .against(Request::get("http://127.0.0.1:17878").body("").unwrap())
         .await;
 
     assert_eq!(resp.status(), StatusCode::OK);
