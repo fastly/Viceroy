@@ -101,6 +101,16 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("WebSocket upgrade"))
     }
 
+    #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
+    fn redirect_to_websocket_proxy(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
+    }
+
+    #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
+    fn redirect_to_grip_proxy(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
+    }
+
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_protocol<'a>(
         &mut self,
