@@ -23,7 +23,7 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
-    wasmtime::{Engine, InstancePre, Linker, Module},
+    wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
 };
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
@@ -57,8 +57,12 @@ pub struct ExecuteCtx {
 
 impl ExecuteCtx {
     /// Create a new execution context, given the path to a module.
-    pub fn new(module_path: impl AsRef<Path>) -> Result<Self, Error> {
-        let engine = Engine::new(&configure_wasmtime())?;
+    pub fn new(
+        module_path: impl AsRef<Path>,
+        profiling_strategy: ProfilingStrategy,
+    ) -> Result<Self, Error> {
+        let config = &configure_wasmtime(profiling_strategy);
+        let engine = Engine::new(config)?;
         let mut linker = Linker::new(&engine);
         link_host_functions(&mut linker)?;
         let module = Module::from_file(&engine, module_path)?;
@@ -167,10 +171,10 @@ impl ExecuteCtx {
     ///
     /// ```no_run
     /// # use hyper::{Body, http::Request};
-    /// # use viceroy_lib::{Error, ExecuteCtx, ViceroyService};
+    /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm")?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None)?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }
@@ -307,7 +311,7 @@ impl ExecuteCtx {
     }
 }
 
-fn configure_wasmtime() -> wasmtime::Config {
+fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {
     use wasmtime::{
         Config, InstanceAllocationStrategy, InstanceLimits, PoolingAllocationStrategy,
         WasmBacktraceDetails,
@@ -318,6 +322,7 @@ fn configure_wasmtime() -> wasmtime::Config {
     config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
     config.async_support(true);
     config.consume_fuel(true);
+    config.profiler(profiling_strategy);
 
     const MB: usize = 1 << 20;
 
