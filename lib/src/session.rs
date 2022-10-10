@@ -599,34 +599,9 @@ impl Session {
 
     // ----- Geolocation API -----
 
-    pub fn geolocation_lookup(&self, addr: &IpAddr) -> String {
-        match self.geolocation_mapping.get(addr) {
-            Some(geolocation) => geolocation.to_string(),
-            None => String::from(
-                r#"
-            {
-                "as_name": "Fastly, Inc.",
-                "as_number": 54113,
-                "area_code": 415,
-                "city": "San Francisco",
-                "conn_speed": "broadband",
-                "conn_type": "wired",
-                "continent": "NA",
-                "country_code": "US",
-                "country_code3": "USA",
-                "country_name": "United States of America",
-                "latitude": 37.77869,
-                "longitude": -122.39557,
-                "metro_code": 0,
-                "postal_code": "94107",
-                "proxy_description": "?",
-                "proxy_type": "?",
-                "region": "US-CA",
-                "utc_offset": -700
-            }
-            "#,
-            ),
-        }
+    pub fn geolocation_lookup(&self, addr: &IpAddr) -> Option<String> {
+        self.geolocation_mapping.get(addr)
+            .map(|data| data.to_string())
     }
 
     // ----- Object Store API -----

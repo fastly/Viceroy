@@ -11,6 +11,8 @@
 
 pub use self::dictionary_impl::DictionaryError;
 
+pub use self::geo_impl::GeolocationError;
+
 use {
     self::{
         fastly_abi::FastlyAbi,

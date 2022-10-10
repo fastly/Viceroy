@@ -84,6 +84,9 @@ pub enum Error {
     DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
     #[error(transparent)]
+    GeolocationError(#[from] crate::wiggle_abi::GeolocationError),
+
+    #[error(transparent)]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 
     #[error{"Expected UTF-8"}]
@@ -137,6 +140,7 @@ impl Error {
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
+            Error::GeolocationError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch

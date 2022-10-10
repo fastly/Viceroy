@@ -10,6 +10,7 @@ async fn json_geolocation_lookup_works() -> TestResult {
         language = "rust"
         [local_server]
         [local_server.geolocation_mapping]
+        use_default_loopback = false
         file = "../test-fixtures/data/geolocation-mapping.json"
         format = "json"
     "#;
@@ -38,6 +39,7 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
         language = "rust"
         [local_server]
         [local_server.geolocation_mapping]
+        use_default_loopback = false
         format = "inline-toml"
         [local_server.geolocation_mapping.addresses]
         [local_server.geolocation_mapping.addresses."127.0.0.1"]
