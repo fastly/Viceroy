@@ -18,6 +18,9 @@ pub enum DictionaryError {
     /// A dictionary item with the given key was not found.
     #[error("Unknown dictionary item: {0}")]
     UnknownDictionaryItem(String),
+    /// A dictionary with the given name was not found.
+    #[error("Unknown dictionary: {0}")]
+    UnknownDictionary(String),
 }
 
 impl DictionaryError {
@@ -26,6 +29,7 @@ impl DictionaryError {
         use DictionaryError::*;
         match self {
             UnknownDictionaryItem(_) => FastlyStatus::None,
+            UnknownDictionary(_) => FastlyStatus::Badf,
         }
     }
 }

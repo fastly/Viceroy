@@ -127,6 +127,17 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "downstream_tls_raw_client_certificate")
+        (param $raw_client_cert_out (@witx pointer (@witx char8)))
+        (param $raw_client_cert_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_client_cert_verify_result")
+        (result $err (expected $client_cert_verify_result (error $fastly_status)))
+    )
+
     (@interface func (export "downstream_tls_ja3_md5")
         ;; must be a 16-byte array
         (param $cja3_md5_out (@witx pointer (@witx char8)))
@@ -315,6 +326,16 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "redirect_to_websocket_proxy")
+        (param $backend_name string)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "redirect_to_grip_proxy")
+        (param $backend_name string)
+        (result $err (expected (error $fastly_status)))
+    )
+
     ;;; Adjust how this requests's framing headers are determined.
     (@interface func (export "framing_headers_mode_set")
         (param $h $request_handle)
@@ -483,6 +504,15 @@
         (param $store $object_store_handle)
         (param $key string)
         (param $body_handle $body_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_purge
+    (@interface func (export "purge_surrogate_key")
+        (param $surrogate_key string)
+        (param $options_mask $purge_options_mask)
+        (param $options (@witx pointer $purge_options))
         (result $err (expected (error $fastly_status)))
     )
 )

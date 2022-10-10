@@ -10,9 +10,10 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
-                BackendConfigOptions, BodyHandle, CacheOverrideTag, ContentEncodings,
-                DynamicBackendConfig, FramingHeadersMode, HttpVersion, MultiValueCursor,
-                MultiValueCursorResult, PendingRequestHandle, RequestHandle, ResponseHandle,
+                BackendConfigOptions, BodyHandle, CacheOverrideTag, ClientCertVerifyResult,
+                ContentEncodings, DynamicBackendConfig, FramingHeadersMode, HttpVersion,
+                MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, RequestHandle,
+                ResponseHandle,
             },
         },
     },
@@ -100,6 +101,16 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("WebSocket upgrade"))
     }
 
+    #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
+    fn redirect_to_websocket_proxy(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
+    }
+
+    #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
+    fn redirect_to_grip_proxy(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
+    }
+
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_protocol<'a>(
         &mut self,
@@ -117,6 +128,23 @@ impl FastlyHttpReq for Session {
         chello_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client TLS data"))
+    }
+
+    #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
+    fn downstream_tls_raw_client_certificate<'a>(
+        &mut self,
+        _raw_client_cert_out: &GuestPtr<'a, u8>,
+        _raw_client_cert_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client TLS data"))
+    }
+
+    #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
+    fn downstream_tls_client_cert_verify_result(
+        &mut self,
+    ) -> Result<ClientCertVerifyResult, Error> {
         Err(Error::NotAvailable("Client TLS data"))
     }
 

@@ -5,6 +5,16 @@ description = "Viceroy implementation details."
 authors = ["Fastly"]
 edition = "2018"
 license = "Apache-2.0 WITH LLVM-exception"
+documentation = "https://docs.rs/viceroy-lib"
+homepage = "https://github.com/fastly/Viceroy"
+repository = "https://github.com/fastly/Viceroy"
+keywords = ["wasm", "fastly", "compute@edge"]
+categories = [
+  "development-tools",
+  "network-programming",
+  "simulation",
+  "wasm"
+]
 include = [
     "README.md",
     "LICENSE",
@@ -17,7 +27,7 @@ anyhow = "1.0.31"
 bytes = "1.0.0"
 bytesize = "1.0.0"
 cfg-if = "1.0"
-cranelift-entity = "0.77.0"
+cranelift-entity = "0.88.0"
 fastly-shared = "0.3.2"
 flate2 = "1.0.22"
 futures = "0.3.5"
@@ -40,11 +50,11 @@ toml = "0.5.6"
 tracing = "0.1.26"
 tracing-futures = "0.2.5"
 url = "2.2.0"
-wasi-common = "0.34.0"
-wasmtime = "0.34.0"
-wasmtime-wasi = {version = "0.34.0", features = ["tokio"]}
+wasi-common = "1.0.0"
+wasmtime = "1.0.0"
+wasmtime-wasi = {version = "1.0.0", features = ["tokio"]}
 webpki = "0.21.0"
-wiggle = {version = "0.34.0", features = ["wasmtime_async"]}
+wiggle = {version = "1.0.0", features = ["wasmtime_async"]}
 
 [dev-dependencies]
 tempfile = "3.2.0"

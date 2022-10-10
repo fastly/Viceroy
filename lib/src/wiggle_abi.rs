@@ -50,6 +50,7 @@ macro_rules! multi_value_result {
 mod body_impl;
 mod dictionary_impl;
 mod entity;
+mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
 mod log_impl;
@@ -142,6 +143,9 @@ impl UserErrorConversion for Session {
             }
             Error::DictionaryError(ref err) => match err {
                 DictionaryError::UnknownDictionaryItem(_) => {
+                    event!(Level::DEBUG, "Hostcall yielded an error: {}", err);
+                }
+                DictionaryError::UnknownDictionary(_) => {
                     event!(Level::DEBUG, "Hostcall yielded an error: {}", err);
                 }
             },

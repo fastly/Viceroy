@@ -123,7 +123,7 @@
         $manually_from_headers))
 
 (typename $tls_version
-    (flags (@witx repr u32)
+    (enum (@witx tag u32)
        $tls_1
        $tls_1_1
        $tls_1_2
@@ -162,3 +162,56 @@
     (field $sni_hostname (@witx pointer (@witx char8)))
     (field $sni_hostname_len u32)
     ))
+
+;;; TLS client certificate verified result from downstream.
+(typename $client_cert_verify_result
+    (enum (@witx tag u32)
+        ;;; Success value.
+        ;;;
+        ;;; This indicates that client certificate verified successfully.
+        $ok
+        ;;; bad certificate error.
+        ;;;
+        ;;; This error means the certificate is corrupt
+        ;;; (e.g., the certificate signatures do not verify correctly).
+        $bad_certificate
+        ;;; certificate revoked error.
+        ;;;
+        ;;; This error means the client certificate is revoked by its signer.
+        $certificate_revoked
+        ;;; certificate expired error.
+        ;;;
+        ;;; This error means the client certificate has expired or is not currently valid.
+        $certificate_expired
+        ;;; unknown CA error.
+        ;;;
+        ;;; This error means the valid certificate chain or partial chain was received,
+        ;;; but the certificate was not accepted because the CA certificate could not be
+        ;;; located or could not be matched with a known trust anchor.
+        $unknown_ca
+        ;;; certificate missing error.
+        ;;;
+        ;;; This error means the client does not provide a certificate
+        ;;; during the handshake..
+        $certificate_missing
+        ;;; certificate unknown error.
+        ;;;
+        ;;; This error means the client certificate was received, but some other (unspecified)
+        ;;; issue arose in processing the certificate, rendering it unacceptable.
+        $certificate_unknown))
+
+(typename $purge_options_mask
+    (flags (@witx repr u32)
+        $soft_purge
+        $ret_buf ;; all ret_buf fields must be populated
+    )
+)
+
+(typename $purge_options
+    (record
+        ;; JSON purge response as in https://developer.fastly.com/reference/api/purging/#purge-tag
+        (field $ret_buf_ptr (@witx pointer u8))
+        (field $ret_buf_len (@witx usize))
+        (field $ret_buf_nwritten_out (@witx pointer (@witx usize)))
+    )
+)
