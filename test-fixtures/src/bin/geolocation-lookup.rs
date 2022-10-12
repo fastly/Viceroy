@@ -7,7 +7,7 @@ use fastly::geo::{
     Continent,
     ProxyDescription,
     ProxyType,
-    UtcOffset,
+    // UtcOffset,
 };
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -31,6 +31,7 @@ fn main() {
     assert_eq!(geo_v4.proxy_description(), ProxyDescription::Unknown);
     assert_eq!(geo_v4.proxy_type(), ProxyType::Unknown);
     assert_eq!(geo_v4.region(), Some("CA-BC"));
+    // commented out because the below line fails both in Viceroy and C@E.
     // assert_eq!(geo_v4.utc_offset(), Some(UtcOffset::from_hms(-7, 0, 0).unwrap()));
 
     let client_ip_v6 = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
