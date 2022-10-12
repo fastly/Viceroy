@@ -47,66 +47,21 @@ impl Default for Geolocation {
     }
 }
 
-impl Default for GeolocationData {
-    fn default() -> Self {
-        let default_entries = HashMap::<&str, SerdeValue>::from([
-            ("as_name",           SerdeString(String::from("Fastly, Inc"))),
-            ("as_number",         SerdeNumber(Number::from(54113))),
-            ("area_code",         SerdeNumber(Number::from(415))),
-            ("city",              SerdeString(String::from("San Francisco"))),
-            ("conn_speed",        SerdeString(String::from("broadband"))),
-            ("conn_type",         SerdeString(String::from("wired"))),
-            ("continent",         SerdeString(String::from("NA"))),
-            ("country_code",      SerdeString(String::from("US"))),
-            ("country_code3",     SerdeString(String::from("USA"))),
-            ("country_name",      SerdeString(String::from("United States of America"))),
-            ("latitude",          SerdeNumber(Number::from_f64(37.77869).unwrap())),
-            ("longitude",         SerdeNumber(Number::from_f64(-122.39557).unwrap())),
-            ("metro_code",        SerdeNumber(Number::from(0))),
-            ("postal_code",       SerdeString(String::from("94107"))),
-            ("proxy_description", SerdeString(String::from("?"))),
-            ("proxy_type",        SerdeString(String::from("?"))),
-            ("region",            SerdeString(String::from("US-CA"))),
-            ("utc_offset",        SerdeNumber(Number::from(-700))),
-        ]);
-
-        Self::from(default_entries)
-    }
-}
-
-impl From<HashMap::<&str, SerdeValue>> for GeolocationData {
-    fn from(value: HashMap::<&str, SerdeValue>) -> Self {
-        let entries = value.iter()
-            .map(|(&field, value)| (field.to_string(), value.to_owned()));
-
-        Self { data: Map::from_iter(entries) }
-    }
-}
-
-impl From<&Map<String, SerdeValue>> for GeolocationData {
-    fn from(data: &Map<String, SerdeValue>) -> Self {
-        Self {
-            data: data.to_owned()
-        }
-    }
-}
-
-impl GeolocationData {
+impl Geolocation {
     pub fn new() -> Self {
-        Self { data: Map::new() }
+        Self::default()
     }
 
-    pub fn insert(&mut self, field: String, value: SerdeValue) {
-        self.data.insert(field, value);
+    pub fn lookup(&self, addr: &IpAddr) -> Option<GeolocationData> {
+        self.mapping
+            .get(addr)
+            .or_else(|| if self.use_default_loopback && addr.is_loopback() {
+                Some(GeolocationData::default())
+            } else {
+                None
+            })
     }
 }
-
-impl ToString for GeolocationData {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self.data).unwrap_or_else(|_| "".to_string())
-    }
-}
-
 mod deserialization {
     use std::{net::IpAddr, str::FromStr};
 
@@ -234,22 +189,6 @@ impl Default for GeolocationMapping {
     }
 }
 
-impl Geolocation {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn lookup(&self, addr: &IpAddr) -> Option<GeolocationData> {
-        self.mapping
-            .get(addr)
-            .or_else(|| if self.use_default_loopback && addr.is_loopback() {
-                Some(GeolocationData::default())
-            } else {
-                None
-            })
-    }
-}
-
 impl GeolocationMapping {
     pub fn get(&self, address: &IpAddr) -> Option<GeolocationData> {
         match self {
@@ -296,5 +235,65 @@ impl GeolocationMapping {
         }
 
         Ok(addresses)
+    }
+}
+
+impl Default for GeolocationData {
+    fn default() -> Self {
+        let default_entries = HashMap::<&str, SerdeValue>::from([
+            ("as_name",           SerdeString(String::from("Fastly, Inc"))),
+            ("as_number",         SerdeNumber(Number::from(54113))),
+            ("area_code",         SerdeNumber(Number::from(415))),
+            ("city",              SerdeString(String::from("San Francisco"))),
+            ("conn_speed",        SerdeString(String::from("broadband"))),
+            ("conn_type",         SerdeString(String::from("wired"))),
+            ("continent",         SerdeString(String::from("NA"))),
+            ("country_code",      SerdeString(String::from("US"))),
+            ("country_code3",     SerdeString(String::from("USA"))),
+            ("country_name",      SerdeString(String::from("United States of America"))),
+            ("latitude",          SerdeNumber(Number::from_f64(37.77869).unwrap())),
+            ("longitude",         SerdeNumber(Number::from_f64(-122.39557).unwrap())),
+            ("metro_code",        SerdeNumber(Number::from(0))),
+            ("postal_code",       SerdeString(String::from("94107"))),
+            ("proxy_description", SerdeString(String::from("?"))),
+            ("proxy_type",        SerdeString(String::from("?"))),
+            ("region",            SerdeString(String::from("US-CA"))),
+            ("utc_offset",        SerdeNumber(Number::from(-700))),
+        ]);
+
+        Self::from(default_entries)
+    }
+}
+
+impl From<HashMap::<&str, SerdeValue>> for GeolocationData {
+    fn from(value: HashMap::<&str, SerdeValue>) -> Self {
+        let entries = value.iter()
+            .map(|(&field, value)| (field.to_string(), value.to_owned()));
+
+        Self { data: Map::from_iter(entries) }
+    }
+}
+
+impl From<&Map<String, SerdeValue>> for GeolocationData {
+    fn from(data: &Map<String, SerdeValue>) -> Self {
+        Self {
+            data: data.to_owned()
+        }
+    }
+}
+
+impl GeolocationData {
+    pub fn new() -> Self {
+        Self { data: Map::new() }
+    }
+
+    pub fn insert(&mut self, field: String, value: SerdeValue) {
+        self.data.insert(field, value);
+    }
+}
+
+impl ToString for GeolocationData {
+    fn to_string(&self) -> String {
+        serde_json::to_string(&self.data).unwrap_or_else(|_| "".to_string())
     }
 }
