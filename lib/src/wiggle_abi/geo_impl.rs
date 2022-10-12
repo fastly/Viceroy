@@ -6,10 +6,11 @@ use std::{
 };
 
 use {
-    crate::{error::Error, session::Session, wiggle_abi::{
-        fastly_geo::FastlyGeo,
-        types::FastlyStatus
-    }},
+    crate::{
+        error::Error,
+        session::Session,
+        wiggle_abi::{fastly_geo::FastlyGeo, types::FastlyStatus},
+    },
     std::convert::TryFrom,
     wiggle::GuestPtr,
 };
@@ -56,7 +57,8 @@ impl FastlyGeo for Session {
             _ => return Err(Error::InvalidArgument),
         };
 
-        let result = self.geolocation_lookup(&ip_addr)
+        let result = self
+            .geolocation_lookup(&ip_addr)
             .ok_or_else(|| GeolocationError::NoGeolocationData(ip_addr.to_string()))?;
 
         if result.len() > buf_len as usize {

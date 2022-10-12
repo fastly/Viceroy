@@ -2,7 +2,7 @@
 
 use {
     self::{
-        backends::BackendsConfig, dictionaries::DictionariesConfig, object_store::ObjectStoreConfig
+        backends::BackendsConfig, dictionaries::DictionariesConfig, object_store::ObjectStoreConfig,
     },
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,

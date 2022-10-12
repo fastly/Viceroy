@@ -1,19 +1,10 @@
 use {
     crate::error::GeolocationConfigError,
     serde_json::{
-        Map,
-        Value as SerdeValue,
-        Number,
+        Map, Number, Value as SerdeValue, Value::Number as SerdeNumber,
         Value::String as SerdeString,
-        Value::Number as SerdeNumber
     },
-    std::{
-        collections::HashMap,
-        fs,
-        net::IpAddr,
-        path::PathBuf, path::Path,
-        iter::FromIterator
-    },
+    std::{collections::HashMap, fs, iter::FromIterator, net::IpAddr, path::Path, path::PathBuf},
 };
 
 #[derive(Clone, Debug)]
@@ -42,7 +33,7 @@ impl Default for Geolocation {
     fn default() -> Self {
         Self {
             mapping: GeolocationMapping::default(),
-            use_default_loopback: true
+            use_default_loopback: true,
         }
     }
 }
@@ -53,13 +44,13 @@ impl Geolocation {
     }
 
     pub fn lookup(&self, addr: &IpAddr) -> Option<GeolocationData> {
-        self.mapping
-            .get(addr)
-            .or_else(|| if self.use_default_loopback && addr.is_loopback() {
+        self.mapping.get(addr).or_else(|| {
+            if self.use_default_loopback && addr.is_loopback() {
                 Some(GeolocationData::default())
             } else {
                 None
-            })
+            }
+        })
     }
 }
 mod deserialization {
@@ -68,7 +59,7 @@ mod deserialization {
     use serde_json::Number;
 
     use {
-        super::{GeolocationData, GeolocationMapping, Geolocation},
+        super::{Geolocation, GeolocationData, GeolocationMapping},
         crate::error::{FastlyConfigError, GeolocationConfigError},
         serde_json::Value as SerdeValue,
         std::path::PathBuf,
@@ -81,12 +72,13 @@ mod deserialization {
 
         fn try_from(toml: Table) -> Result<Self, Self::Error> {
             fn process_config(mut toml: Table) -> Result<Geolocation, GeolocationConfigError> {
-                let use_default_loopback = toml
-                    .remove("use_default_loopback")
-                    .map_or_else(|| Ok(true), |use_default_loopback| match use_default_loopback {
+                let use_default_loopback = toml.remove("use_default_loopback").map_or_else(
+                    || Ok(true),
+                    |use_default_loopback| match use_default_loopback {
                         Value::Boolean(use_default_loopback) => Ok(use_default_loopback),
                         _ => Err(GeolocationConfigError::InvalidEntryType),
-                    })?;
+                    },
+                )?;
 
                 let format = toml
                     .remove("format")
@@ -107,7 +99,10 @@ mod deserialization {
                     }
                 };
 
-                Ok(Geolocation { mapping, use_default_loopback })
+                Ok(Geolocation {
+                    mapping,
+                    use_default_loopback,
+                })
             }
 
             process_config(toml).map_err(|err| FastlyConfigError::InvalidGeolocationDefinition {
@@ -122,7 +117,9 @@ mod deserialization {
             .map_err(|err| GeolocationConfigError::InvalidAddressEntry(err.to_string()))
     }
 
-    fn process_inline_toml_dictionary(toml: &mut Table) -> Result<GeolocationMapping, GeolocationConfigError> {
+    fn process_inline_toml_dictionary(
+        toml: &mut Table,
+    ) -> Result<GeolocationMapping, GeolocationConfigError> {
         fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
             match value {
                 Value::String(value) => Some(SerdeValue::String(value)),
@@ -154,8 +151,8 @@ mod deserialization {
             let mut geolocation_data = GeolocationData::new();
 
             for (field, value) in table {
-                let value =
-                    convert_value_to_json(value).ok_or(GeolocationConfigError::InvalidInlineEntryType)?;
+                let value = convert_value_to_json(value)
+                    .ok_or(GeolocationConfigError::InvalidInlineEntryType)?;
                 geolocation_data.insert(field, value);
             }
 
@@ -165,8 +162,13 @@ mod deserialization {
         Ok(GeolocationMapping::InlineToml { addresses })
     }
 
-    fn process_json_entries(toml: &mut Table) -> Result<GeolocationMapping, GeolocationConfigError> {
-        let file: PathBuf = match toml.remove("file").ok_or(GeolocationConfigError::MissingFile)? {
+    fn process_json_entries(
+        toml: &mut Table,
+    ) -> Result<GeolocationMapping, GeolocationConfigError> {
+        let file: PathBuf = match toml
+            .remove("file")
+            .ok_or(GeolocationConfigError::MissingFile)?
+        {
             Value::String(file) => {
                 if file.is_empty() {
                     return Err(GeolocationConfigError::EmptyFileEntry);
@@ -193,19 +195,22 @@ impl GeolocationMapping {
     pub fn get(&self, address: &IpAddr) -> Option<GeolocationData> {
         match self {
             Self::Empty => None,
-            Self::InlineToml { addresses } => addresses.get(address)
+            Self::InlineToml { addresses } => addresses
+                .get(address)
                 .map(|geolocation_data| geolocation_data.to_owned()),
             Self::Json { file } => Self::read_json_contents(file)
                 .ok()
-                .map(|addresses| addresses.get(address)
-                    .map(|geolocation_data| geolocation_data.to_owned())
-                )
+                .map(|addresses| {
+                    addresses
+                        .get(address)
+                        .map(|geolocation_data| geolocation_data.to_owned())
+                })
                 .unwrap(),
         }
     }
 
     pub fn read_json_contents(
-        file: &Path
+        file: &Path,
     ) -> Result<HashMap<IpAddr, GeolocationData>, GeolocationConfigError> {
         let data = fs::read_to_string(&file).map_err(GeolocationConfigError::IoError)?;
 
@@ -241,43 +246,52 @@ impl GeolocationMapping {
 impl Default for GeolocationData {
     fn default() -> Self {
         let default_entries = HashMap::<&str, SerdeValue>::from([
-            ("as_name",           SerdeString(String::from("Fastly, Inc"))),
-            ("as_number",         SerdeNumber(Number::from(54113))),
-            ("area_code",         SerdeNumber(Number::from(415))),
-            ("city",              SerdeString(String::from("San Francisco"))),
-            ("conn_speed",        SerdeString(String::from("broadband"))),
-            ("conn_type",         SerdeString(String::from("wired"))),
-            ("continent",         SerdeString(String::from("NA"))),
-            ("country_code",      SerdeString(String::from("US"))),
-            ("country_code3",     SerdeString(String::from("USA"))),
-            ("country_name",      SerdeString(String::from("United States of America"))),
-            ("latitude",          SerdeNumber(Number::from_f64(37.77869).unwrap())),
-            ("longitude",         SerdeNumber(Number::from_f64(-122.39557).unwrap())),
-            ("metro_code",        SerdeNumber(Number::from(0))),
-            ("postal_code",       SerdeString(String::from("94107"))),
+            ("as_name", SerdeString(String::from("Fastly, Inc"))),
+            ("as_number", SerdeNumber(Number::from(54113))),
+            ("area_code", SerdeNumber(Number::from(415))),
+            ("city", SerdeString(String::from("San Francisco"))),
+            ("conn_speed", SerdeString(String::from("broadband"))),
+            ("conn_type", SerdeString(String::from("wired"))),
+            ("continent", SerdeString(String::from("NA"))),
+            ("country_code", SerdeString(String::from("US"))),
+            ("country_code3", SerdeString(String::from("USA"))),
+            (
+                "country_name",
+                SerdeString(String::from("United States of America")),
+            ),
+            ("latitude", SerdeNumber(Number::from_f64(37.77869).unwrap())),
+            (
+                "longitude",
+                SerdeNumber(Number::from_f64(-122.39557).unwrap()),
+            ),
+            ("metro_code", SerdeNumber(Number::from(0))),
+            ("postal_code", SerdeString(String::from("94107"))),
             ("proxy_description", SerdeString(String::from("?"))),
-            ("proxy_type",        SerdeString(String::from("?"))),
-            ("region",            SerdeString(String::from("US-CA"))),
-            ("utc_offset",        SerdeNumber(Number::from(-700))),
+            ("proxy_type", SerdeString(String::from("?"))),
+            ("region", SerdeString(String::from("US-CA"))),
+            ("utc_offset", SerdeNumber(Number::from(-700))),
         ]);
 
         Self::from(default_entries)
     }
 }
 
-impl From<HashMap::<&str, SerdeValue>> for GeolocationData {
-    fn from(value: HashMap::<&str, SerdeValue>) -> Self {
-        let entries = value.iter()
+impl From<HashMap<&str, SerdeValue>> for GeolocationData {
+    fn from(value: HashMap<&str, SerdeValue>) -> Self {
+        let entries = value
+            .iter()
             .map(|(&field, value)| (field.to_string(), value.to_owned()));
 
-        Self { data: Map::from_iter(entries) }
+        Self {
+            data: Map::from_iter(entries),
+        }
     }
 }
 
 impl From<&Map<String, SerdeValue>> for GeolocationData {
     fn from(data: &Map<String, SerdeValue>) -> Self {
         Self {
-            data: data.to_owned()
+            data: data.to_owned(),
         }
     }
 }
