@@ -7,7 +7,7 @@ use {
     self::{async_item::AsyncItem, downstream::DownstreamResponse},
     crate::{
         body::Body,
-        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, GeolocationMapping},
+        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, Geolocation},
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
@@ -69,7 +69,7 @@ pub struct Session {
     /// The Geolocations configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
-    geolocation_mapping: Arc<GeolocationMapping>,
+    geolocation: Arc<Geolocation>,
     /// The backends dynamically added by the program. This is separated from
     /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
@@ -111,7 +111,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
-        geolocation_mapping: Arc<GeolocationMapping>,
+        geolocation: Arc<Geolocation>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
@@ -138,7 +138,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
-            geolocation_mapping,
+            geolocation,
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
@@ -164,7 +164,7 @@ impl Session {
             sender,
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
-            Arc::new(GeolocationMapping::new()),
+            Arc::new(Geolocation::new()),
             TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
@@ -606,7 +606,7 @@ impl Session {
     // ----- Geolocation API -----
 
     pub fn geolocation_lookup(&self, addr: &IpAddr) -> Option<String> {
-        self.geolocation_mapping.get(addr)
+        self.geolocation.lookup(addr)
             .map(|data| data.to_string())
     }
 

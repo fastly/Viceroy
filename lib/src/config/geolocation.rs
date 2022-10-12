@@ -10,11 +10,17 @@ use {
     std::{
         collections::HashMap,
         fs,
-        net::{IpAddr, Ipv4Addr, Ipv6Addr},
+        net::IpAddr,
         path::PathBuf, path::Path,
         iter::FromIterator
     },
 };
+
+#[derive(Clone, Debug)]
+pub struct Geolocation {
+    mapping: GeolocationMapping,
+    use_default_loopback: bool,
+}
 
 #[derive(Clone, Debug)]
 pub enum GeolocationMapping {
@@ -24,13 +30,21 @@ pub enum GeolocationMapping {
     },
     Json {
         file: PathBuf,
-        use_default_loopback: bool,
     },
 }
 
 #[derive(Clone, Debug)]
 pub struct GeolocationData {
     data: Map<String, SerdeValue>,
+}
+
+impl Default for Geolocation {
+    fn default() -> Self {
+        Self {
+            mapping: GeolocationMapping::default(),
+            use_default_loopback: true
+        }
+    }
 }
 
 impl Default for GeolocationData {
@@ -99,7 +113,7 @@ mod deserialization {
     use serde_json::Number;
 
     use {
-        super::{GeolocationData, GeolocationMapping},
+        super::{GeolocationData, GeolocationMapping, Geolocation},
         crate::error::{FastlyConfigError, GeolocationConfigError},
         serde_json::Value as SerdeValue,
         std::path::PathBuf,
@@ -107,11 +121,11 @@ mod deserialization {
         toml::value::{Table, Value},
     };
 
-    impl TryFrom<Table> for GeolocationMapping {
+    impl TryFrom<Table> for Geolocation {
         type Error = FastlyConfigError;
 
         fn try_from(toml: Table) -> Result<Self, Self::Error> {
-            fn process_config(mut toml: Table) -> Result<GeolocationMapping, GeolocationConfigError> {
+            fn process_config(mut toml: Table) -> Result<Geolocation, GeolocationConfigError> {
                 let use_default_loopback = toml
                     .remove("use_default_loopback")
                     .map_or_else(|| Ok(true), |use_default_loopback| match use_default_loopback {
@@ -128,8 +142,8 @@ mod deserialization {
                     })?;
 
                 let mapping = match format.as_str() {
-                    "inline-toml" => process_inline_toml_dictionary(&mut toml, use_default_loopback)?,
-                    "json" => process_json_entries(&mut toml, use_default_loopback)?,
+                    "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
+                    "json" => process_json_entries(&mut toml)?,
                     "" => return Err(GeolocationConfigError::EmptyFormatEntry),
                     _ => {
                         return Err(GeolocationConfigError::InvalidGeolocationMappingFormat(
@@ -138,7 +152,7 @@ mod deserialization {
                     }
                 };
 
-                Ok(mapping)
+                Ok(Geolocation { mapping, use_default_loopback })
             }
 
             process_config(toml).map_err(|err| FastlyConfigError::InvalidGeolocationDefinition {
@@ -153,7 +167,7 @@ mod deserialization {
             .map_err(|err| GeolocationConfigError::InvalidAddressEntry(err.to_string()))
     }
 
-    fn process_inline_toml_dictionary(toml: &mut Table, use_default_loopback: bool) -> Result<GeolocationMapping, GeolocationConfigError> {
+    fn process_inline_toml_dictionary(toml: &mut Table) -> Result<GeolocationMapping, GeolocationConfigError> {
         fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
             match value {
                 Value::String(value) => Some(SerdeValue::String(value)),
@@ -174,9 +188,6 @@ mod deserialization {
         };
 
         let mut addresses = HashMap::<IpAddr, GeolocationData>::with_capacity(toml.len());
-        if use_default_loopback {
-            GeolocationMapping::append_default_loopback(&mut addresses);
-        }
 
         for (address, value) in toml {
             let address = parse_ip_address(address.as_str())?;
@@ -199,7 +210,7 @@ mod deserialization {
         Ok(GeolocationMapping::InlineToml { addresses })
     }
 
-    fn process_json_entries(toml: &mut Table, use_default_loopback: bool) -> Result<GeolocationMapping, GeolocationConfigError> {
+    fn process_json_entries(toml: &mut Table) -> Result<GeolocationMapping, GeolocationConfigError> {
         let file: PathBuf = match toml.remove("file").ok_or(GeolocationConfigError::MissingFile)? {
             Value::String(file) => {
                 if file.is_empty() {
@@ -211,29 +222,41 @@ mod deserialization {
             _ => return Err(GeolocationConfigError::InvalidFileEntry),
         };
 
-        GeolocationMapping::read_json_contents(&file, false)?;
+        GeolocationMapping::read_json_contents(&file)?;
 
-        Ok(GeolocationMapping::Json { file, use_default_loopback })
+        Ok(GeolocationMapping::Json { file })
     }
 }
 
 impl Default for GeolocationMapping {
     fn default() -> Self {
-        GeolocationMapping::new()
+        Self::Empty
+    }
+}
+
+impl Geolocation {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn lookup(&self, addr: &IpAddr) -> Option<GeolocationData> {
+        self.mapping
+            .get(addr)
+            .or_else(|| if self.use_default_loopback && addr.is_loopback() {
+                Some(GeolocationData::default())
+            } else {
+                None
+            })
     }
 }
 
 impl GeolocationMapping {
-    pub fn new() -> Self {
-        GeolocationMapping::Empty
-    }
-
     pub fn get(&self, address: &IpAddr) -> Option<GeolocationData> {
         match self {
-            Self::Empty => Some(GeolocationData::default()),
+            Self::Empty => None,
             Self::InlineToml { addresses } => addresses.get(address)
                 .map(|geolocation_data| geolocation_data.to_owned()),
-            Self::Json { file, use_default_loopback } => Self::read_json_contents(file, *use_default_loopback)
+            Self::Json { file } => Self::read_json_contents(file)
                 .ok()
                 .map(|addresses| addresses.get(address)
                     .map(|geolocation_data| geolocation_data.to_owned())
@@ -242,14 +265,8 @@ impl GeolocationMapping {
         }
     }
 
-    pub fn append_default_loopback(addresses: &mut HashMap::<IpAddr, GeolocationData>) {
-        addresses.insert(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), GeolocationData::default());
-        addresses.insert(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), GeolocationData::default());
-    }
-
     pub fn read_json_contents(
-        file: &Path,
-        use_default_loopback: bool
+        file: &Path
     ) -> Result<HashMap<IpAddr, GeolocationData>, GeolocationConfigError> {
         let data = fs::read_to_string(&file).map_err(GeolocationConfigError::IoError)?;
 
@@ -265,9 +282,6 @@ impl GeolocationMapping {
         };
 
         let mut addresses = HashMap::<IpAddr, GeolocationData>::with_capacity(json.len());
-        if use_default_loopback {
-            Self::append_default_loopback(&mut addresses);
-        }
 
         for (address, value) in json {
             let address = deserialization::parse_ip_address(address.as_str())?;

@@ -2,7 +2,7 @@
 
 use {
     self::{
-        backends::BackendsConfig, dictionaries::DictionariesConfig, object_store::ObjectStoreConfig,
+        backends::BackendsConfig, dictionaries::DictionariesConfig, object_store::ObjectStoreConfig
     },
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,
@@ -30,7 +30,7 @@ pub type Backends = HashMap<String, Arc<Backend>>;
 
 /// Types and deserializers for geolocation configuration settings.
 mod geolocation;
-pub use self::geolocation::GeolocationMapping;
+pub use self::geolocation::Geolocation;
 
 /// Types and deserializers for object store configuration settings.
 mod object_store;
@@ -74,8 +74,8 @@ impl FastlyConfig {
         &self.local_server.backends.0
     }
 
-    pub fn geolocation_mapping(&self) -> &GeolocationMapping {
-        &self.local_server.geolocation_mapping
+    pub fn geolocation(&self) -> &Geolocation {
+        &self.local_server.geolocation
     }
 
     /// Get the dictionaries configuration.
@@ -166,7 +166,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
     backends: BackendsConfig,
-    geolocation_mapping: GeolocationMapping,
+    geolocation: Geolocation,
     dictionaries: DictionariesConfig,
     object_store: ObjectStoreConfig,
 }
@@ -178,7 +178,7 @@ pub struct LocalServerConfig {
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
     backends: Option<Table>,
-    geolocation_mapping: Option<Table>,
+    geolocation: Option<Table>,
     dictionaries: Option<Table>,
     object_store: Option<Table>,
 }
@@ -188,7 +188,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
             backends,
-            geolocation_mapping,
+            geolocation,
             dictionaries,
             object_store,
         } = self;
@@ -197,10 +197,10 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             BackendsConfig::default()
         };
-        let geolocation_mapping = if let Some(geolocation_mapping) = geolocation_mapping {
-            geolocation_mapping.try_into()?
+        let geolocation = if let Some(geolocation) = geolocation {
+            geolocation.try_into()?
         } else {
-            GeolocationMapping::default()
+            Geolocation::default()
         };
         let dictionaries = if let Some(dictionaries) = dictionaries {
             dictionaries.try_into()?
@@ -215,7 +215,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
 
         Ok(LocalServerConfig {
             backends,
-            geolocation_mapping,
+            geolocation,
             dictionaries,
             object_store,
         })

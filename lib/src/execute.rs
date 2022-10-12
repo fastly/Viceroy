@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, GeolocationMapping},
+        config::{Backends, Dictionaries, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -40,7 +40,7 @@ pub struct ExecuteCtx {
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// The geolocation mappings for this execution.
-    geolocation_mapping: Arc<GeolocationMapping>,
+    geolocation: Arc<Geolocation>,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
@@ -76,7 +76,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
-            geolocation_mapping: Arc::new(GeolocationMapping::default()),
+            geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
@@ -106,14 +106,14 @@ impl ExecuteCtx {
     }
 
     /// Get the geolocation mappings for this execution context.
-    pub fn geolocation_mapping(&self) -> &GeolocationMapping {
-        &self.geolocation_mapping
+    pub fn geolocation(&self) -> &Geolocation {
+        &self.geolocation
     }
 
     /// Set the geolocation mappings for this execution context.
-    pub fn with_geolocation_mapping(self, geolocation_mapping: GeolocationMapping) -> Self {
+    pub fn with_geolocation(self, geolocation: Geolocation) -> Self {
         Self {
-            geolocation_mapping: Arc::new(geolocation_mapping),
+            geolocation: Arc::new(geolocation),
             ..self
         }
     }
@@ -269,7 +269,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
-            self.geolocation_mapping.clone(),
+            self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),
