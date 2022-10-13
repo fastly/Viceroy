@@ -8,7 +8,7 @@ license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://docs.rs/viceroy-lib"
 homepage = "https://github.com/fastly/Viceroy"
 repository = "https://github.com/fastly/Viceroy"
-keywords = ["wasm", "fastly", "compute@edge"]
+keywords = ["wasm", "fastly"]
 categories = [
   "development-tools",
   "network-programming",

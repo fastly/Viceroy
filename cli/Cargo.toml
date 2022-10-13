@@ -9,7 +9,7 @@ license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://developer.fastly.com/learning/compute/testing/#running-a-local-testing-server"
 homepage = "https://developer.fastly.com/learning/compute/"
 repository = "https://github.com/fastly/Viceroy"
-keywords = ["wasm", "fastly", "compute@edge"]
+keywords = ["wasm", "fastly"]
 categories = [
   "command-line-utilities",
   "development-tools",
