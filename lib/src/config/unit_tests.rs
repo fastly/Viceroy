@@ -622,7 +622,7 @@ mod inline_toml_dictionary_config_tests {
 ///
 /// These tests check that we deserialize and validate the Geolocation mappings section of
 /// the TOML data properly regardless of the format.
-mod geolocation_mapping_config_tests {
+mod geolocation_config_tests {
     use {
         super::read_local_server_config,
         crate::error::{FastlyConfigError::InvalidGeolocationDefinition, GeolocationConfigError},
@@ -630,12 +630,12 @@ mod geolocation_mapping_config_tests {
 
     /// Check that Geolocation definitions have a valid `format`.
     #[test]
-    fn geolocation_mappings_have_a_valid_format() {
+    fn geolocation_has_a_valid_format() {
         use GeolocationConfigError::InvalidGeolocationMappingFormat;
         let invalid_format_field = r#"
-            [geolocation_mapping]
+            [geolocation]
             format = "foo"
-            [geolocation_mapping.addresses."123.45.67.89"]
+            [geolocation.addresses."123.45.67.89"]
             as_name = "Test, Inc."
         "#;
         match read_local_server_config(&invalid_format_field) {
@@ -652,7 +652,7 @@ mod geolocation_mapping_config_tests {
 ///
 /// These tests check that we deserialize and validate the dictionary configurations section of
 /// the TOML data properly for Geolocation mapping using JSON files to store their data.
-mod json_geolocation_mapping_config_tests {
+mod json_geolocation_config_tests {
     use {
         super::read_local_server_config,
         crate::error::{FastlyConfigError::InvalidGeolocationDefinition, GeolocationConfigError},
@@ -662,10 +662,10 @@ mod json_geolocation_mapping_config_tests {
 
     /// Check that Geolocation mapping *must* include a `file` field.
     #[test]
-    fn geolocation_mapping_must_provide_a_file() {
+    fn geolocation_must_provide_a_file() {
         use GeolocationConfigError::MissingFile;
         static NO_FILE: &str = r#"
-            [geolocation_mapping]
+            [geolocation]
             format = "json"
         "#;
         match read_local_server_config(NO_FILE) {
@@ -676,36 +676,12 @@ mod json_geolocation_mapping_config_tests {
         }
     }
 
-    /// Check that Geolocation mapping *must* include a `format` field.
-    #[test]
-    fn geolocation_mapping_must_provide_a_format() {
-        use GeolocationConfigError::MissingFormat;
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("mapping.json");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "{{}}").unwrap();
-
-        let no_format_field = format!(
-            r#"
-            [geolocation_mapping]
-            file = '{}'
-        "#,
-            file_path.to_str().unwrap()
-        );
-        match read_local_server_config(&no_format_field) {
-            Err(InvalidGeolocationDefinition {
-                err: MissingFormat, ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
-
     /// Check that file field is a string.
     #[test]
-    fn geolocation_mapping_must_provide_file_as_a_string() {
+    fn geolocation_must_provide_file_as_a_string() {
         use GeolocationConfigError::InvalidFileEntry;
         static BAD_FILE_FIELD: &str = r#"
-            [geolocation_mapping]
+            [geolocation]
             file = 3
             format = "json"
         "#;
@@ -720,10 +696,10 @@ mod json_geolocation_mapping_config_tests {
 
     /// Check that file field is non empty.
     #[test]
-    fn geolocation_mapping_must_provide_a_non_empty_file() {
+    fn geolocation_must_provide_a_non_empty_file() {
         use GeolocationConfigError::EmptyFileEntry;
         static EMPTY_FILE_FIELD: &str = r#"
-            [geolocation_mapping]
+            [geolocation]
             file = ""
             format = "json"
         "#;
@@ -738,10 +714,10 @@ mod json_geolocation_mapping_config_tests {
 
     /// Check that format field is a string.
     #[test]
-    fn geolocation_mapping_must_provide_format_as_a_string() {
+    fn geolocation_must_provide_format_as_a_string() {
         use GeolocationConfigError::InvalidFormatEntry;
         static BAD_FORMAT_FIELD: &str = r#"
-            [geolocation_mapping]
+            [geolocation]
             format = 3
         "#;
         match read_local_server_config(BAD_FORMAT_FIELD) {
@@ -755,10 +731,10 @@ mod json_geolocation_mapping_config_tests {
 
     /// Check that format field is non empty.
     #[test]
-    fn geolocation_mapping_must_provide_a_non_empty_format() {
+    fn geolocation_must_provide_a_non_empty_format() {
         use GeolocationConfigError::EmptyFormatEntry;
         static EMPTY_FORMAT_FIELD: &str = r#"
-            [geolocation_mapping]
+            [geolocation]
             format = ""
         "#;
         match read_local_server_config(EMPTY_FORMAT_FIELD) {
@@ -772,7 +748,7 @@ mod json_geolocation_mapping_config_tests {
 
     /// Check that format field set to json is valid.
     #[test]
-    fn valid_geolocation_mapping_with_format_set_to_json() {
+    fn valid_geolocation_with_format_set_to_json() {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("mapping.json");
         let mut file = File::create(&file_path).unwrap();
@@ -780,7 +756,7 @@ mod json_geolocation_mapping_config_tests {
 
         let dictionary = format!(
             r#"
-            [geolocation_mapping]
+            [geolocation]
             file = '{}'
             format = "json"
         "#,
@@ -796,49 +772,31 @@ mod json_geolocation_mapping_config_tests {
 ///
 /// These tests check that we deserialize and validate the dictionary configurations section of
 /// the TOML data properly for Geolocation mapping using inline TOML to store their data.
-mod inline_toml_geolocation_mapping_config_tests {
+mod inline_toml_geolocation_config_tests {
     use {
         super::read_local_server_config,
         crate::error::{FastlyConfigError::InvalidGeolocationDefinition, GeolocationConfigError},
     };
 
     #[test]
-    fn valid_inline_toml_geolocation_mapping_can_be_parsed() {
-        let geolocation_mapping = r#"
-            [geolocation_mapping]
+    fn valid_inline_toml_geolocation_can_be_parsed() {
+        let geolocation = r#"
+            [geolocation]
             format = "inline-toml"
-            [geolocation_mapping.addresses]
-            [geolocation_mapping.addresses."127.0.0.1"]
+            [geolocation.addresses]
+            [geolocation.addresses."127.0.0.1"]
             as_name = "Test, Inc."
         "#;
-        read_local_server_config(&geolocation_mapping)
+        read_local_server_config(&geolocation)
             .expect("can read toml data containing local Geolocation mappings using toml format");
-    }
-
-    /// Check that Geolocation definitions *must* include a `format` field.
-    #[test]
-    fn geolocation_mapping_must_provide_a_format() {
-        use GeolocationConfigError::MissingFormat;
-        let no_format_field = r#"
-            [geolocation_mapping]
-            [geolocation_mapping.addresses]
-            [geolocation_mapping.addresses."127.0.0.1"]
-            as_name = "Test, Inc."
-        "#;
-        match read_local_server_config(&no_format_field) {
-            Err(InvalidGeolocationDefinition {
-                err: MissingFormat, ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
     }
 
     /// Check that Geolocation mapping *must* include a `contents` field.
     #[test]
-    fn geolocation_mapping_must_provide_contents() {
+    fn geolocation_must_provide_contents() {
         use GeolocationConfigError::MissingAddresses;
         let missing_contents = r#"
-            [geolocation_mapping]
+            [geolocation]
             format = "inline-toml"
         "#;
         match read_local_server_config(&missing_contents) {

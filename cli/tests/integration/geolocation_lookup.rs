@@ -9,7 +9,7 @@ async fn json_geolocation_lookup_works() -> TestResult {
         authors = ["Test User <test_user@fastly.com>"]
         language = "rust"
         [local_server]
-        [local_server.geolocation_mapping]
+        [local_server.geolocation]
         use_default_loopback = false
         file = "../test-fixtures/data/geolocation-mapping.json"
         format = "json"
@@ -38,11 +38,11 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
         authors = ["Test User <test_user@fastly.com>"]
         language = "rust"
         [local_server]
-        [local_server.geolocation_mapping]
+        [local_server.geolocation]
         use_default_loopback = false
         format = "inline-toml"
-        [local_server.geolocation_mapping.addresses]
-        [local_server.geolocation_mapping.addresses."127.0.0.1"]
+        [local_server.geolocation.addresses]
+        [local_server.geolocation.addresses."127.0.0.1"]
         as_name = "Fastly Test"
         as_number = 12345
         area_code = 123
@@ -61,7 +61,7 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
         proxy_type = "?"
         region = "CA-BC"
         utc_offset = -700
-        [local_server.geolocation_mapping.addresses."0000:0000:0000:0000:0000:0000:0000:0001"]
+        [local_server.geolocation.addresses."0000:0000:0000:0000:0000:0000:0000:0001"]
         as_name = "Fastly Test IPv6"
         as_number = 12345
         area_code = 123

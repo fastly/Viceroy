@@ -72,31 +72,27 @@ mod deserialization {
 
         fn try_from(toml: Table) -> Result<Self, Self::Error> {
             fn process_config(mut toml: Table) -> Result<Geolocation, GeolocationConfigError> {
-                let use_default_loopback = toml.remove("use_default_loopback").map_or_else(
-                    || Ok(true),
+                let use_default_loopback = toml.remove("use_default_loopback").map_or(
+                    Ok(true),
                     |use_default_loopback| match use_default_loopback {
                         Value::Boolean(use_default_loopback) => Ok(use_default_loopback),
                         _ => Err(GeolocationConfigError::InvalidEntryType),
                     },
                 )?;
 
-                let format = toml
-                    .remove("format")
-                    .ok_or(GeolocationConfigError::MissingFormat)
-                    .and_then(|format| match format {
-                        Value::String(format) => Ok(format),
-                        _ => Err(GeolocationConfigError::InvalidFormatEntry),
-                    })?;
-
-                let mapping = match format.as_str() {
-                    "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
-                    "json" => process_json_entries(&mut toml)?,
-                    "" => return Err(GeolocationConfigError::EmptyFormatEntry),
-                    _ => {
-                        return Err(GeolocationConfigError::InvalidGeolocationMappingFormat(
-                            format.to_owned(),
-                        ))
-                    }
+                let mapping = match toml.remove("format") {
+                    Some(Value::String(value)) => match value.as_str() {
+                        "inline-toml" => process_inline_toml_dictionary(&mut toml)?,
+                        "json" => process_json_entries(&mut toml)?,
+                        "" => return Err(GeolocationConfigError::EmptyFormatEntry),
+                        format => {
+                            return Err(GeolocationConfigError::InvalidGeolocationMappingFormat(
+                                format.to_string(),
+                            ))
+                        }
+                    },
+                    Some(_) => return Err(GeolocationConfigError::InvalidFormatEntry),
+                    None => GeolocationMapping::Empty,
                 };
 
                 Ok(Geolocation {
