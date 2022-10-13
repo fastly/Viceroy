@@ -201,7 +201,7 @@ impl StdWriter {
     }
 }
 
-impl MakeWriter for StdWriter {
+impl<'a> MakeWriter<'a> for StdWriter {
     type Writer = Stdio;
 
     // We need to implement a default behavior so we'll use stdout
