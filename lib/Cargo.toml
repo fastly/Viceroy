@@ -16,7 +16,6 @@ categories = [
   "wasm"
 ]
 include = [
-    "README.md",
     "LICENSE",
     "src/**/*",
     "compute-at-edge-abi/**/*.witx",
