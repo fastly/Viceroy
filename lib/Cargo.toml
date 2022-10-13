@@ -16,7 +16,8 @@ categories = [
   "wasm"
 ]
 include = [
-    "LICENSE",
+    "../CHANGELOG.md",
+    "../SECURITY.md",
     "src/**/*",
     "compute-at-edge-abi/**/*.witx",
 ]

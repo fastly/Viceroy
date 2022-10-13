@@ -19,6 +19,8 @@ categories = [
 ]
 include = [
     "../README.md",
+    "../CHANGELOG.md",
+    "../SECURITY.md",
     "../doc/logo.png",
     "src/**/*"
 ]
