@@ -20,10 +20,7 @@ use {
     fastly_shared::{INVALID_BODY_HANDLE, INVALID_REQUEST_HANDLE, INVALID_RESPONSE_HANDLE},
     http::{HeaderValue, Method, Uri},
     hyper::http::request::Request,
-    std::{
-        convert::{TryFrom, TryInto},
-        ops::Deref,
-    },
+    std::ops::Deref,
     wiggle::GuestPtr,
 };
 
