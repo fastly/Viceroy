@@ -583,12 +583,13 @@ checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
 name = "fastly-shared"
-version = "0.3.2"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057adc3b19851383cf03ce9020318ee6eabb8f0b187987e916417b444583f8d5"
+checksum = "238fb7af2219391cb024673302861adffd96cb3dbe4b602c2c7abef11ce5a5f9"
 dependencies = [
  "bitflags",
  "http",
+ "thiserror",
 ]
 
 [[package]]
@@ -1990,7 +1991,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "viceroy-lib"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "bytes",
