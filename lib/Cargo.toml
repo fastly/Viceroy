@@ -1,14 +1,14 @@
 [package]
 name = "viceroy-lib"
-version = "0.2.16"
+version = "0.3.2"
 description = "Viceroy implementation details."
 authors = ["Fastly"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://docs.rs/viceroy-lib"
 homepage = "https://github.com/fastly/Viceroy"
 repository = "https://github.com/fastly/Viceroy"
-keywords = ["wasm", "fastly", "compute@edge"]
+keywords = ["wasm", "fastly"]
 categories = [
   "development-tools",
   "network-programming",
@@ -16,48 +16,48 @@ categories = [
   "wasm"
 ]
 include = [
-    "README.md",
-    "LICENSE",
+    "../CHANGELOG.md",
+    "../SECURITY.md",
     "src/**/*",
     "compute-at-edge-abi/**/*.witx",
 ]
 
 [dependencies]
-anyhow = "1.0.31"
-bytes = "1.0.0"
-bytesize = "1.0.0"
-cfg-if = "1.0"
-cranelift-entity = "0.88.0"
-fastly-shared = "0.3.2"
-flate2 = "1.0.22"
-futures = "0.3.5"
-http = "0.2.1"
-http-body = "0.4.0"
-hyper = {version = "0.14.0", features = ["full"]}
-itertools = "0.10.1"
-lazy_static = "1.4.0"
-regex = "1.3.9"
-rustls = "0.19"
-rustls-native-certs = "0.5.0"
-semver = "0.10.0"
-serde = "1.0.114"
-serde_derive = "1.0.114"
-serde_json = "1.0.59"
-thiserror = "1.0.20"
-tokio = {version = "1.2", features = ["full"]}
-tokio-rustls = "0.22"
-toml = "0.5.6"
-tracing = "0.1.26"
-tracing-futures = "0.2.5"
-url = "2.2.0"
-wasi-common = "1.0.0"
-wasmtime = "1.0.0"
-wasmtime-wasi = {version = "1.0.0", features = ["tokio"]}
-webpki = "0.21.0"
-wiggle = {version = "1.0.0", features = ["wasmtime_async"]}
+anyhow = "^1.0.31"
+bytes = "^1.2.1"
+bytesize = "^1.1.0"
+cfg-if = "^1.0"
+cranelift-entity = "^0.88.1"
+fastly-shared = "^0.8.7"
+flate2 = "^1.0.24"
+futures = "^0.3.24"
+http = "^0.2.8"
+http-body = "^0.4.5"
+hyper = { version = "^0.14.20", features = ["full"] }
+itertools = "^0.10.5"
+lazy_static = "^1.4.0"
+regex = "^1.3.9"
+rustls = "^0.19.1"
+rustls-native-certs = "^0.5.0"
+semver = "^0.10.0"
+serde = "^1.0.145"
+serde_derive = "^1.0.114"
+serde_json = "^1.0.59"
+thiserror = "^1.0.37"
+tokio = { version = "^1.21.2", features = ["full"] }
+tokio-rustls = "^0.22.0"
+toml = "^0.5.9"
+tracing = "^0.1.37"
+tracing-futures = "^0.2.5"
+url = "^2.3.1"
+wasi-common = "^1.0.0"
+wasmtime = "^1.0.0"
+wasmtime-wasi = { version = "^1.0.0", features = ["tokio"] }
+webpki = "^0.21.0"
+wiggle = { version = "^1.0.0", features = ["wasmtime_async"] }
 
 [dev-dependencies]
-tempfile = "3.2.0"
+tempfile = "^3.2.0"
 
 [features]
 default = []
