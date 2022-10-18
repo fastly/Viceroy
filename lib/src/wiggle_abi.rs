@@ -19,7 +19,6 @@ use {
         types::{FastlyStatus, UserErrorConversion},
     },
     crate::{error::Error, session::Session},
-    std::convert::{TryFrom, TryInto},
     tracing::{event, Level},
     wiggle::{GuestErrorType, GuestPtr},
 };

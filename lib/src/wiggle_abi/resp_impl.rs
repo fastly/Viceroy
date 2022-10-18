@@ -15,7 +15,6 @@ use {
     },
     cfg_if::cfg_if,
     hyper::http::response::Response,
-    std::convert::TryFrom,
     wiggle::GuestPtr,
 };
 

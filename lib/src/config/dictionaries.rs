@@ -106,9 +106,7 @@ mod deserialization {
             },
             error::{DictionaryConfigError, FastlyConfigError},
         },
-        std::{
-            collections::HashMap, convert::TryFrom, convert::TryInto, path::PathBuf, str::FromStr,
-        },
+        std::{collections::HashMap, path::PathBuf, str::FromStr},
         toml::value::{Table, Value},
         tracing::info,
     };

@@ -3,7 +3,7 @@ name = "trap-test"
 description = "A test to exercise the Viceroy functionality in which a hostcall experiences a FatalError and terminates the instance."
 version = "0.1.0"
 authors = []
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0 WITH LLVM-exception"
 publish = false
 
