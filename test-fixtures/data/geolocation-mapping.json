@@ -16,7 +16,7 @@
         "postal_code": "12345",
         "proxy_description": "?",
         "proxy_type": "?",
-        "region": "CA-BC",
+        "region": "BC",
         "utc_offset": -700
     },
     "0000:0000:0000:0000:0000:0000:0000:0001": {
@@ -36,7 +36,7 @@
         "postal_code": "12345",
         "proxy_description": "?",
         "proxy_type": "?",
-        "region": "CA-BC",
+        "region": "BC",
         "utc_offset": -700
     }
 }

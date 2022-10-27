@@ -264,7 +264,7 @@ impl Default for GeolocationData {
             ("postal_code", SerdeString(String::from("94107"))),
             ("proxy_description", SerdeString(String::from("?"))),
             ("proxy_type", SerdeString(String::from("?"))),
-            ("region", SerdeString(String::from("US-CA"))),
+            ("region", SerdeString(String::from("CA"))),
             ("utc_offset", SerdeNumber(Number::from(-700))),
         ]);
 

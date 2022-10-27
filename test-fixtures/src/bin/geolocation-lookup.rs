@@ -30,7 +30,7 @@ fn main() {
     assert_eq!(geo_v4.postal_code(), "12345");
     assert_eq!(geo_v4.proxy_description(), ProxyDescription::Unknown);
     assert_eq!(geo_v4.proxy_type(), ProxyType::Unknown);
-    assert_eq!(geo_v4.region(), Some("CA-BC"));
+    assert_eq!(geo_v4.region(), Some("BC"));
     // commented out because the below line fails both in Viceroy and C@E.
     // assert_eq!(geo_v4.utc_offset(), Some(UtcOffset::from_hms(-7, 0, 0).unwrap()));
 

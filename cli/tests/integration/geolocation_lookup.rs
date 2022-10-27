@@ -59,7 +59,7 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
         postal_code = "12345"
         proxy_description = "?"
         proxy_type = "?"
-        region = "CA-BC"
+        region = "BC"
         utc_offset = -700
         [local_server.geolocation.addresses."0000:0000:0000:0000:0000:0000:0000:0001"]
         as_name = "Fastly Test IPv6"
@@ -78,7 +78,7 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
         postal_code = "12345"
         proxy_description = "?"
         proxy_type = "?"
-        region = "CA-BC"
+        region = "BC"
         utc_offset = -700
     "#;
 
