@@ -2,48 +2,48 @@
 (typename $fastly_status
     (enum (@witx tag u32)
         ;;; Success value.
-        ;;
+        ;;;
         ;;; This indicates that a hostcall finished successfully.
         $ok
         ;;; Generic error value.
-        ;;
+        ;;;
         ;;; This means that some unexpected error occurred during a hostcall.
         $error
         ;;; Invalid argument.
         $inval
         ;;; Invalid handle.
-        ;;
-        ;;; Thrown when a request, response, or body handle is not valid.
+        ;;;
+        ;;; Returned when a request, response, or body handle is not valid.
         $badf
         ;;; Buffer length error.
-        ;;
-        ;;; Thrown when a buffer is too long.
+        ;;;
+        ;;; Returned when a buffer is too long.
         $buflen
         ;;; Unsupported operation error.
-        ;;
-        ;;; This error is thrown when some operation cannot be performed, because it is not supported.
+        ;;;
+        ;;; This error is returned when some operation cannot be performed, because it is not supported.
         $unsupported
         ;;; Alignment error.
-        ;;
-        ;;; This is thrown when a pointer does not point to a properly aligned slice of memory.
+        ;;;
+        ;;; This is returned when a pointer does not point to a properly aligned slice of memory.
         $badalign
         ;;; Invalid HTTP error.
-        ;;
-        ;;; This can be thrown when a method, URI, header, or status is not valid. This can also
-        ;;; be thrown if a message head is too large.
+        ;;;
+        ;;; This can be returned when a method, URI, header, or status is not valid. This can also
+        ;;; be returned if a message head is too large.
         $httpinvalid
         ;;; HTTP user error.
-        ;;
-        ;;; This is thrown in cases where user code caused an HTTP error. For example, attempt to send
+        ;;;
+        ;;; This is returned in cases where user code caused an HTTP error. For example, attempt to send
         ;;; a 1xx response code, or a request with a non-absolute URI. This can also be caused by
         ;;; an unexpected header: both `content-length` and `transfer-encoding`, for example.
         $httpuser
         ;;; HTTP incomplete message error.
-        ;;
-        ;;; This can be thrown when a stream ended unexpectedly.
+        ;;;
+        ;;; This can be returned when a stream ended unexpectedly.
         $httpincomplete
         ;;; A `None` error.
-        ;;
+        ;;;
         ;;; This status code is used to indicate when an optional value did not exist, as opposed to
         ;;; an empty value.
         $none
@@ -51,6 +51,11 @@
         $httpheadtoolarge
         ;;; Invalid HTTP status.
         $httpinvalidstatus
+        ;;; Limit exceeded
+        ;;;
+        ;;; This is returned when an attempt to allocate a resource has exceeded the maximum number of 
+        ;;; resources permitted. For example, creating too many response handles.
+        $limitexceeded
     )
 )
 
