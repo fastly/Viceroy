@@ -1,49 +1,47 @@
 //! Command line arguments.
 
 use {
+    clap::Parser,
     std::net::{IpAddr, Ipv4Addr},
     std::{
         net::SocketAddr,
         path::{Path, PathBuf},
     },
-    structopt::StructOpt,
     viceroy_lib::{Error, ProfilingStrategy},
 };
 
 // Command-line arguments for the Viceroy CLI.
 //
 // This struct is used to derive a command-line argument parser. See the
-// [structopt](https://docs.rs/structopt/latest/structopt) documentation for more information.
+// [clap](https://docs.rs/clap/latest/clap/) documentation for more information.
 //
 // Note that the doc comment below is used as descriptive text in the `--help` output.
 /// Viceroy is a local testing daemon for Compute@Edge.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "viceroy", author)]
+#[derive(Parser, Debug)]
+#[command(name = "viceroy", author, version, about)]
 pub struct Opts {
     /// The IP address that the service should be bound to.
-    #[structopt(long = "addr")]
+    #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
     /// The path to the service's Wasm module.
-    #[structopt(parse(try_from_str = check_module))]
+    #[arg(value_parser = check_module)]
     input: PathBuf,
     /// The path to a TOML file containing `local_server` configuration.
-    #[structopt(short = "C", long = "config")]
+    #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
     /// Whether to treat stdout as a logging endpoint
-    // NB: struct_opt won't let us use `default_value` here, but the default is `false`
-    #[structopt(long = "log-stdout")]
+    #[arg(long = "log-stdout", default_value = "false")]
     log_stdout: bool,
     /// Whether to treat stderr as a logging endpoint
-    // NB: struct_opt won't let us use `default_value` here, but the default is `false`
-    #[structopt(long = "log-stderr")]
+    #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
     /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
     /// to a value before starting Viceroy
-    #[structopt(short = "v", parse(from_occurrences))]
-    verbosity: usize,
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    verbosity: u8,
     // Whether to enable wasmtime's builtin profiler.
-    #[structopt(long = "profiler", parse(try_from_str = check_wasmtime_profiler_mode))]
+    #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
     profiler: Option<ProfilingStrategy>,
 }
 
@@ -77,7 +75,7 @@ impl Opts {
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
     /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
     /// to a value before starting Viceroy
-    pub fn verbosity(&self) -> usize {
+    pub fn verbosity(&self) -> u8 {
         self.verbosity
     }
 
@@ -113,21 +111,18 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<ProfilingStrategy, Error> {
 
 /// A collection of unit tests for our CLI argument parsing.
 ///
-/// Note: When using [`StructOpt::from_iter_safe`][from] to test how command line arguments are
+/// Note: When using [`Clap::try_parse_from`][from] to test how command line arguments are
 /// parsed, note that the first argument will be parsed as the binary name. `dummy-program-name` is
 /// used to highlight that this argument is ignored.
 ///
-/// [from]: https://docs.rs/structopt/0.3.15/structopt/trait.StructOpt.html#method.from_iter_safe
+/// [from]: https://docs.rs/clap/latest/clap/trait.Parser.html#method.try_parse_from
 #[cfg(test)]
 mod opts_tests {
     use {
         super::Opts,
+        clap::{error::ErrorKind, Parser},
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         std::path::PathBuf,
-        structopt::{
-            clap::{Error, ErrorKind},
-            StructOpt,
-        },
     };
 
     fn test_file(name: &str) -> String {
@@ -146,7 +141,7 @@ mod opts_tests {
     #[test]
     fn default_addr_works() -> TestResult {
         let empty_args = &["dummy-program-name", &test_file("minimal.wat")];
-        let opts = Opts::from_iter_safe(empty_args)?;
+        let opts = Opts::try_parse_from(empty_args)?;
         let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878);
         assert_eq!(opts.addr(), expected);
         Ok(())
@@ -161,13 +156,11 @@ mod opts_tests {
             "999.0.0.1:7878",
             &test_file("minimal.wat"),
         ];
-        match Opts::from_iter_safe(args_with_bad_addr) {
-            Err(Error {
-                kind: ErrorKind::ValueValidation,
-                message,
-                ..
-            }) if message.contains("invalid socket address syntax")
-                | message.contains("invalid IP address syntax") =>
+        match Opts::try_parse_from(args_with_bad_addr) {
+            Err(err)
+                if err.kind() == ErrorKind::ValueValidation
+                    && (err.to_string().contains("invalid socket address syntax")
+                        || err.to_string().contains("invalid IP address syntax")) =>
             {
                 Ok(())
             }
@@ -184,7 +177,7 @@ mod opts_tests {
             "[::1]:7878",
             &test_file("minimal.wat"),
         ];
-        let opts = Opts::from_iter_safe(args_with_ipv6_addr)?;
+        let opts = Opts::try_parse_from(args_with_ipv6_addr)?;
         let addr_v6 = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
         let expected = SocketAddr::new(addr_v6, 7878);
         assert_eq!(opts.addr(), expected);
@@ -195,13 +188,11 @@ mod opts_tests {
     #[test]
     fn nonexistent_file_is_rejected() -> TestResult {
         let args_with_nonexistent_file = &["dummy-program-name", "path/to/a/nonexistent/file"];
-        match Opts::from_iter_safe(args_with_nonexistent_file) {
-            Err(Error {
-                kind: ErrorKind::ValueValidation,
-                message,
-                ..
-            }) if message.contains("No such file or directory")
-                || message.contains("cannot find the path specified") =>
+        match Opts::try_parse_from(args_with_nonexistent_file) {
+            Err(err)
+                if err.kind() == ErrorKind::ValueValidation
+                    && (err.to_string().contains("No such file or directory")
+                        || err.to_string().contains("cannot find the path specified")) =>
             {
                 Ok(())
             }
@@ -214,12 +205,13 @@ mod opts_tests {
     fn invalid_file_is_rejected() -> TestResult {
         let args_with_invalid_file = &["dummy-program-name", &test_file("invalid.wat")];
         let expected_msg = format!("{}", viceroy_lib::Error::FileFormat);
-        match Opts::from_iter_safe(args_with_invalid_file) {
-            Err(Error {
-                kind: ErrorKind::ValueValidation,
-                message,
-                ..
-            }) if message.contains(&expected_msg) => Ok(()),
+        match Opts::try_parse_from(args_with_invalid_file) {
+            Err(err)
+                if err.kind() == ErrorKind::ValueValidation
+                    && err.to_string().contains(&expected_msg) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }
@@ -228,7 +220,7 @@ mod opts_tests {
     #[test]
     fn text_format_is_accepted() -> TestResult {
         let args = &["dummy-program-name", &test_file("minimal.wat")];
-        match Opts::from_iter_safe(args) {
+        match Opts::try_parse_from(args) {
             Ok(_) => Ok(()),
             res => panic!("unexpected result: {:?}", res),
         }
@@ -238,7 +230,7 @@ mod opts_tests {
     #[test]
     fn binary_format_is_accepted() -> TestResult {
         let args = &["dummy-program-name", &test_file("minimal.wasm")];
-        match Opts::from_iter_safe(args) {
+        match Opts::try_parse_from(args) {
             Ok(_) => Ok(()),
             res => panic!("unexpected result: {:?}", res),
         }
@@ -253,7 +245,7 @@ mod opts_tests {
             "jitdump",
             &test_file("minimal.wat"),
         ];
-        match Opts::from_iter_safe(args) {
+        match Opts::try_parse_from(args) {
             Ok(_) => Ok(()),
             res => panic!("unexpected result: {:?}", res),
         }
@@ -268,7 +260,7 @@ mod opts_tests {
             "vtune",
             &test_file("minimal.wat"),
         ];
-        match Opts::from_iter_safe(args) {
+        match Opts::try_parse_from(args) {
             Ok(_) => Ok(()),
             res => panic!("unexpected result: {:?}", res),
         }
@@ -283,7 +275,7 @@ mod opts_tests {
             "invalid_profiling_strategy",
             &test_file("minimal.wat"),
         ];
-        match Opts::from_iter_safe(args) {
+        match Opts::try_parse_from(args) {
             Ok(_) => panic!("unexpected result"),
             Err(_) => Ok(()),
         }

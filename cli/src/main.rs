@@ -17,13 +17,13 @@ mod opts;
 
 use {
     crate::opts::Opts,
+    clap::Parser,
     hyper::{client::Client, Body, Request},
     std::{
         env,
         io::{self, Stderr, Stdout},
         time::Duration,
     },
-    structopt::StructOpt,
     tokio::time::timeout,
     tracing::{event, Level, Metadata},
     tracing_subscriber::{filter::EnvFilter, fmt::writer::MakeWriter, FmtSubscriber},
@@ -110,7 +110,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
 #[tokio::main]
 pub async fn main() -> Result<(), Error> {
     // Parse the command-line options, exiting if there are any errors
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
 
     install_tracing_subscriber(&opts);
 
