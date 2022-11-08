@@ -202,7 +202,7 @@ impl FastlyHttpReq for Session {
                 .as_array(config.host_override_len)
                 .as_slice()?;
 
-            Some(HeaderValue::from_bytes(&*byte_slice)?)
+            Some(HeaderValue::from_bytes(&byte_slice)?)
         } else {
             None
         };
