@@ -36,7 +36,7 @@ trap-test-ci: trap-test
 # The main `ci` target runs everything except `trap-test`.
 .PHONY: ci
 ci: VICEROY_CARGO=cargo --locked
-ci: format-check clippy test-crates
+ci: format-check test-crates
 
 .PHONY: clean
 clean:
