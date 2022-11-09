@@ -222,6 +222,10 @@ pub enum HandleError {
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
+
+    /// An object-store handle was not valid.
+    #[error("Invalid object-store handle: {0}")]
+    InvalidObjectStoreHandle(crate::wiggle_abi::types::ObjectStoreHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.

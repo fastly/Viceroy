@@ -33,7 +33,7 @@ path = "src/main.rs"
 hyper = { version = "^0.14.20", features = ["full"] }
 itertools = "^0.10.5"
 serde_json = "^1.0.59"
-structopt = "^0.3.21"
+clap = { version = "^4.0.18", features = ["derive"] }
 tokio = { version = "^1.21.2", features = ["full"] }
 tracing = "^0.1.37"
 tracing-futures = "^0.2.5"
