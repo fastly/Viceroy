@@ -3,6 +3,7 @@ mod common;
 mod dictionary_lookup;
 mod downstream_req;
 mod env_vars;
+mod geolocation_lookup;
 mod http_semantics;
 mod logging;
 mod memory;

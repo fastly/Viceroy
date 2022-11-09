@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries},
+        config::{Backends, Dictionaries, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -39,6 +39,8 @@ pub struct ExecuteCtx {
     instance_pre: Arc<InstancePre<WasmCtx>>,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// The geolocation mappings for this execution.
+    geolocation: Arc<Geolocation>,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
@@ -74,6 +76,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
+            geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
@@ -98,6 +101,19 @@ impl ExecuteCtx {
     pub fn with_backends(self, backends: Backends) -> Self {
         Self {
             backends: Arc::new(backends),
+            ..self
+        }
+    }
+
+    /// Get the geolocation mappings for this execution context.
+    pub fn geolocation(&self) -> &Geolocation {
+        &self.geolocation
+    }
+
+    /// Set the geolocation mappings for this execution context.
+    pub fn with_geolocation(self, geolocation: Geolocation) -> Self {
+        Self {
+            geolocation: Arc::new(geolocation),
             ..self
         }
     }
@@ -253,6 +269,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),

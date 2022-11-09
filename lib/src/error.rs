@@ -87,6 +87,9 @@ pub enum Error {
     DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
     #[error(transparent)]
+    GeolocationError(#[from] crate::wiggle_abi::GeolocationError),
+
+    #[error(transparent)]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 
     #[error{"Expected UTF-8"}]
@@ -140,6 +143,7 @@ impl Error {
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
+            Error::GeolocationError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
@@ -263,6 +267,13 @@ pub enum FastlyConfigError {
         path: String,
         #[source]
         err: std::io::Error,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidGeolocationDefinition {
+        name: String,
+        #[source]
+        err: GeolocationConfigError,
     },
 
     #[error("invalid configuration for '{name}': {err}")]
@@ -413,6 +424,61 @@ pub enum DictionaryConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
     DictionaryFileWrongFormat,
+}
+
+/// Errors that may occur while validating geolocation configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum GeolocationConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("definition was not provided as a TOML table")]
+    InvalidEntryType,
+
+    #[error("missing 'file' field")]
+    MissingFile,
+
+    #[error("'file' field is empty")]
+    EmptyFileEntry,
+
+    #[error("missing 'addresses' field")]
+    MissingAddresses,
+
+    #[error("inline geolocation value was not a string")]
+    InvalidInlineEntryType,
+
+    #[error("'file' field was not a string")]
+    InvalidFileEntry,
+
+    #[error("'addresses' was not provided as a TOML table")]
+    InvalidAddressesType,
+
+    #[error("unrecognized key '{0}'")]
+    UnrecognizedKey(String),
+
+    #[error("missing 'format' field")]
+    MissingFormat,
+
+    #[error("'format' field was not a string")]
+    InvalidFormatEntry,
+
+    #[error("IP address not valid: '{0}'")]
+    InvalidAddressEntry(String),
+
+    #[error("'{0}' is not a valid format for the geolocation mapping. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidGeolocationMappingFormat(String),
+
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
+    )]
+    GeolocationFileWrongFormat,
+
+    #[error("'format' field is empty")]
+    EmptyFormatEntry,
+
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    GeolocationItemValueWrongFormat { key: String },
 }
 
 /// Errors that may occur while validating object store configurations.

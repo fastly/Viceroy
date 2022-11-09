@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends, Dictionaries, FastlyConfig, ObjectStore},
+    config::{Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStore},
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
@@ -47,6 +47,7 @@ pub struct Test {
     module_path: PathBuf,
     backends: Backends,
     dictionaries: Dictionaries,
+    geolocation: Geolocation,
     object_store: ObjectStore,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
@@ -64,6 +65,7 @@ impl Test {
             module_path,
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
+            geolocation: Geolocation::new(),
             object_store: ObjectStore::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -81,6 +83,7 @@ impl Test {
             module_path,
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
+            geolocation: Geolocation::new(),
             object_store: ObjectStore::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -95,6 +98,7 @@ impl Test {
         Ok(Self {
             backends: config.backends().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
+            geolocation: config.geolocation().to_owned(),
             object_store: config.object_store().to_owned(),
             ..self
         })
@@ -187,6 +191,7 @@ impl Test {
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_dictionaries(self.dictionaries.clone())
+            .with_geolocation(self.geolocation.clone())
             .with_object_store(self.object_store.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);

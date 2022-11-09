@@ -42,12 +42,14 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
     if let Some(config_path) = opts.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
+        let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
         let object_store = config.object_store();
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
             .with_backends(backends.clone())
+            .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
             .with_object_store(object_store.clone())
             .with_config_path(config_path.into());
