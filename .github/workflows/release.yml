@@ -34,17 +34,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: true
 
-      - name: Install latest Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust-toolchain }}
-          target: ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
-          default: true
-          override: true
+      - name: Install Rust
+        run: rustup toolchain install --target ${{ matrix.rust_arch }}-${{ matrix.rust_abi }} ${{ matrix.rust-toolchain }}
+        shell: bash
 
       - name: Install C cross-compilation toolchain
         if: ${{ matrix.name == 'linux' && matrix.arch != 'amd64' }}
@@ -55,14 +51,12 @@ jobs:
           echo RUSTFLAGS='-C linker=${{ matrix.rust_arch }}-linux-gnu-gcc' >> $GITHUB_ENV
 
       - name: Extract tag name
-        uses: olegtarasov/get-tag@v2.1
+        uses: olegtarasov/get-tag@v2.1.2
         id: tagName
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --all --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+        run: |
+          cargo build --release --all --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
       - name: Strip symbols (linux)
         if: ${{ matrix.name == 'linux' }}
@@ -80,7 +74,7 @@ jobs:
           tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v1 # TODO: https://github.com/softprops/action-gh-release/pull/264
         with:
           files: |
             target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz

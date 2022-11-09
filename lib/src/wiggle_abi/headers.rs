@@ -1,7 +1,6 @@
 use {
     crate::{error::Error, wiggle_abi::types, wiggle_abi::MultiValueWriter},
     http::{header::HeaderName, HeaderMap, HeaderValue},
-    std::convert::{TryFrom, TryInto},
     wiggle::GuestPtr,
 };
 

@@ -1,11 +1,12 @@
 //! A guest program to test that object store works properly.
 
 use fastly::ObjectStore;
+use fastly::object_store::ObjectStoreError::ObjectStoreNotFound;
 
 fn main() {
     // Check we can't get a store that does not exist
     match ObjectStore::open("non_existant") {
-        Ok(None) => {}
+        Err(ObjectStoreNotFound(_)) => {},
         _ => panic!(),
     }
 

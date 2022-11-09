@@ -8,8 +8,8 @@ use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends, Dictionaries, FastlyConfig, ObjectStore},
-    ExecuteCtx, ViceroyService,
+    config::{Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStore},
+    ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
@@ -47,6 +47,7 @@ pub struct Test {
     module_path: PathBuf,
     backends: Backends,
     dictionaries: Dictionaries,
+    geolocation: Geolocation,
     object_store: ObjectStore,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
@@ -64,6 +65,7 @@ impl Test {
             module_path,
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
+            geolocation: Geolocation::new(),
             object_store: ObjectStore::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -81,6 +83,7 @@ impl Test {
             module_path,
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
+            geolocation: Geolocation::new(),
             object_store: ObjectStore::new(),
             hosts: Vec::new(),
             log_stdout: false,
@@ -95,6 +98,7 @@ impl Test {
         Ok(Self {
             backends: config.backends().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
+            geolocation: config.geolocation().to_owned(),
             object_store: config.object_store().to_owned(),
             ..self
         })
@@ -183,21 +187,22 @@ impl Test {
             .try_init()
             .ok();
 
-        let ctx = ExecuteCtx::new(&self.module_path)
+        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None)
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_dictionaries(self.dictionaries.clone())
+            .with_geolocation(self.geolocation.clone())
             .with_object_store(self.object_store.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);
-        let addr: SocketAddr = "127.0.0.1:7878".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:17878".parse().unwrap();
 
         // spawn any mock hosts, keeping a handle on each host task for clean termination.
         let host_handles: Vec<_> = self.hosts.iter().map(HostSpec::spawn).collect();
 
         if self.via_hyper {
             let svc = ViceroyService::new(ctx);
-            // We are going to host the service at port 7878, and so it's vital to make sure
+            // We are going to host the service at port 17878, and so it's vital to make sure
             // that we shut down the service after our test request, so that if there are
             // additional tests we can spin up a fresh service at the same port.
             //
@@ -258,9 +263,9 @@ impl Test {
             .expect("singleton back from against_many")
     }
 
-    /// Pass an empty `GET 127.0.0.1:7878` request through this test.
+    /// Pass an empty `GET 127.0.0.1:17878` request through this test.
     pub async fn against_empty(&self) -> Response<Body> {
-        self.against(Request::get("http://127.0.0.1:7878/").body("").unwrap())
+        self.against(Request::get("http://127.0.0.1:17878/").body("").unwrap())
             .await
     }
 }

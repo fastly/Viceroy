@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries},
+        config::{Backends, Dictionaries, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -23,7 +23,7 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
-    wasmtime::{Engine, InstancePre, Linker, Module},
+    wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
 };
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
@@ -39,6 +39,8 @@ pub struct ExecuteCtx {
     instance_pre: Arc<InstancePre<WasmCtx>>,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// The geolocation mappings for this execution.
+    geolocation: Arc<Geolocation>,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
@@ -57,8 +59,12 @@ pub struct ExecuteCtx {
 
 impl ExecuteCtx {
     /// Create a new execution context, given the path to a module.
-    pub fn new(module_path: impl AsRef<Path>) -> Result<Self, Error> {
-        let engine = Engine::new(&configure_wasmtime())?;
+    pub fn new(
+        module_path: impl AsRef<Path>,
+        profiling_strategy: ProfilingStrategy,
+    ) -> Result<Self, Error> {
+        let config = &configure_wasmtime(profiling_strategy);
+        let engine = Engine::new(config)?;
         let mut linker = Linker::new(&engine);
         link_host_functions(&mut linker)?;
         let module = Module::from_file(&engine, module_path)?;
@@ -70,6 +76,7 @@ impl ExecuteCtx {
             engine,
             instance_pre: Arc::new(instance_pre),
             backends: Arc::new(Backends::default()),
+            geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
@@ -94,6 +101,19 @@ impl ExecuteCtx {
     pub fn with_backends(self, backends: Backends) -> Self {
         Self {
             backends: Arc::new(backends),
+            ..self
+        }
+    }
+
+    /// Get the geolocation mappings for this execution context.
+    pub fn geolocation(&self) -> &Geolocation {
+        &self.geolocation
+    }
+
+    /// Set the geolocation mappings for this execution context.
+    pub fn with_geolocation(self, geolocation: Geolocation) -> Self {
+        Self {
+            geolocation: Arc::new(geolocation),
             ..self
         }
     }
@@ -167,10 +187,10 @@ impl ExecuteCtx {
     ///
     /// ```no_run
     /// # use hyper::{Body, http::Request};
-    /// # use viceroy_lib::{Error, ExecuteCtx, ViceroyService};
+    /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm")?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None)?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }
@@ -249,6 +269,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
             self.config_path.clone(),
@@ -307,10 +328,10 @@ impl ExecuteCtx {
     }
 }
 
-fn configure_wasmtime() -> wasmtime::Config {
+fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {
     use wasmtime::{
-        Config, InstanceAllocationStrategy, InstanceLimits, ModuleLimits,
-        PoolingAllocationStrategy, WasmBacktraceDetails,
+        Config, InstanceAllocationStrategy, InstanceLimits, PoolingAllocationStrategy,
+        WasmBacktraceDetails,
     };
 
     let mut config = Config::new();
@@ -318,26 +339,33 @@ fn configure_wasmtime() -> wasmtime::Config {
     config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
     config.async_support(true);
     config.consume_fuel(true);
+    config.profiler(profiling_strategy);
 
-    let module_limits = ModuleLimits {
-        // allow for up to 128MiB of linear memory
-        memory_pages: 2048,
-        // ffmpeg-wasi was the last program to break the types
-        types: 1234,
-        // AssemblyScript applications tend to create a fair number of globals
-        globals: 1234,
-        // Some applications create a large number of functions, in particular in debug mode
-        // or applications written in swift.
-        functions: 98765,
-        // And every function can end up in the table
+    const MB: usize = 1 << 20;
+
+    let instance_limits = InstanceLimits {
+        // This number matches C@E production
+        size: MB,
+
+        // Core wasm programs have 1 memory
+        memories: 1,
+        // allow for up to 128MiB of linear memory. Wasm pages are 64k
+        memory_pages: 128 * (MB as u64) / (64 * 1024),
+        // Core wasm programs have 1 table
+        tables: 1,
+        // Some applications create a large number of functions, in particular
+        // when compiled in debug mode or applications written in swift. Every
+        // function can end up in the table
         table_elements: 98765,
-        ..ModuleLimits::default()
+        // Number of instances: the pool will allocate virtual memory for this
+        // many instances, which limits the number of requests which can be
+        // handled concurrently.
+        count: InstanceLimits::default().count,
     };
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling {
         strategy: PoolingAllocationStrategy::NextAvailable,
-        module_limits,
-        instance_limits: InstanceLimits::default(),
+        instance_limits,
     });
 
     config

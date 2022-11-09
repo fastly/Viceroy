@@ -40,9 +40,9 @@ impl ViceroyService {
     /// # Example
     ///
     /// ```no_run
-    /// # use viceroy_lib::{Error, ExecuteCtx, ViceroyService};
+    /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # fn f() -> Result<(), Error> {
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm")?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None)?;
     /// let svc = ViceroyService::new(ctx);
     /// # Ok(())
     /// # }

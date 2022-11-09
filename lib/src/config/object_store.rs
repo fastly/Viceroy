@@ -3,7 +3,7 @@ use {
         error::{FastlyConfigError, ObjectStoreConfigError},
         object_store::{ObjectKey, ObjectStore, ObjectStoreKey},
     },
-    std::{convert::TryFrom, fs},
+    std::fs,
     toml::value::Table,
 };
 

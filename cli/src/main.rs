@@ -17,13 +17,13 @@ mod opts;
 
 use {
     crate::opts::Opts,
+    clap::Parser,
     hyper::{client::Client, Body, Request},
     std::{
         env,
         io::{self, Stderr, Stdout},
         time::Duration,
     },
-    structopt::StructOpt,
     tokio::time::timeout,
     tracing::{event, Level, Metadata},
     tracing_subscriber::{filter::EnvFilter, fmt::writer::MakeWriter, FmtSubscriber},
@@ -35,19 +35,21 @@ use {
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(opts: Opts) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let mut ctx = ExecuteCtx::new(opts.input())?
+    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy())?
         .with_log_stderr(opts.log_stderr())
         .with_log_stdout(opts.log_stdout());
 
     if let Some(config_path) = opts.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
+        let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
         let object_store = config.object_store();
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
             .with_backends(backends.clone())
+            .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
             .with_object_store(object_store.clone())
             .with_config_path(config_path.into());
@@ -110,7 +112,7 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
 #[tokio::main]
 pub async fn main() -> Result<(), Error> {
     // Parse the command-line options, exiting if there are any errors
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
 
     install_tracing_subscriber(&opts);
 
@@ -201,7 +203,7 @@ impl StdWriter {
     }
 }
 
-impl MakeWriter for StdWriter {
+impl<'a> MakeWriter<'a> for StdWriter {
     type Writer = Stdio;
 
     // We need to implement a default behavior so we'll use stdout

@@ -9,7 +9,6 @@ use {
             types::{DictionaryHandle, FastlyStatus},
         },
     },
-    std::convert::TryFrom,
     wiggle::GuestPtr,
 };
 
