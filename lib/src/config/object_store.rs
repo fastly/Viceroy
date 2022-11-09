@@ -70,7 +70,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                                 err: ObjectStoreConfigError::PathNotAString(key.to_string()),
                             }
                         })?;
-                        fs::read(&path).map_err(|e| {
+                        fs::read(path).map_err(|e| {
                             FastlyConfigError::InvalidObjectStoreDefinition {
                                 name: store.to_string(),
                                 err: ObjectStoreConfigError::IoError(e),
