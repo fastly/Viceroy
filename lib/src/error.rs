@@ -118,6 +118,9 @@ pub enum Error {
 
     #[error("Invalid Object Store `key` value used: {0}.")]
     ObjectStoreKeyValidationError(#[from] crate::object_store::KeyValidationError),
+
+    #[error("Unfinished streaming body")]
+    UnfinishedStreamingBody,
 }
 
 impl Error {
@@ -169,7 +172,8 @@ impl Error {
             | Error::BackendNameRegistryError(_)
             | Error::HttpError(_)
             | Error::UnknownObjectStore(_)
-            | Error::ObjectStoreKeyValidationError(_) => FastlyStatus::Error,
+            | Error::ObjectStoreKeyValidationError(_)
+            | Error::UnfinishedStreamingBody => FastlyStatus::Error,
         }
     }
 

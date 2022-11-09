@@ -10,6 +10,6 @@ fn main() {
         writeln!(stream, "{}", i).unwrap();
     }
 
-    drop(stream);
+    stream.finish().unwrap();
     req.wait().unwrap().send_to_client();
 }

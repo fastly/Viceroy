@@ -1,5 +1,8 @@
 //! Body type, for request and response bodies.
 
+use crate::streaming_body::StreamingBodyItem;
+use crate::Error;
+
 use {
     crate::error,
     bytes::{BufMut, BytesMut},
@@ -36,7 +39,7 @@ pub enum Chunk {
     /// Since the channel yields chunks, this variant represents a *stream* of chunks rather than
     /// one individual chunk. That stream is effectively "flattened" on-demand, as the `Body`
     /// containing it is read.
-    Channel(mpsc::Receiver<Chunk>),
+    Channel(mpsc::Receiver<StreamingBodyItem>),
     /// A version of `HttpBody` that assumes that the interior data is gzip-compressed.
     CompressedHttpBody(DecoderState, hyper::Body),
 }
@@ -72,8 +75,8 @@ impl From<hyper::Body> for Chunk {
     }
 }
 
-impl From<mpsc::Receiver<Chunk>> for Chunk {
-    fn from(chan: mpsc::Receiver<Chunk>) -> Self {
+impl From<mpsc::Receiver<StreamingBodyItem>> for Chunk {
+    fn from(chan: mpsc::Receiver<StreamingBodyItem>) -> Self {
         Chunk::Channel(chan)
     }
 }
@@ -209,17 +212,23 @@ impl HttpBody for Body {
                             return Poll::Pending;
                         }
                         Poll::Ready(None) => {
-                            // no more chunks from this stream, so continue the loop now that it's been
-                            // popped
-                            continue;
+                            // the channel completed without a Finish message, so yield an error
+                            return Poll::Ready(Some(Err(Error::UnfinishedStreamingBody)));
                         }
-                        Poll::Ready(Some(chunk)) => {
+                        Poll::Ready(Some(StreamingBodyItem::Chunk(chunk))) => {
                             // put the channel back first, so we can poll it again after the chunk it
                             // just yielded
                             self.chunks.push_front(receiver.into());
                             // now push the chunk which will be polled appropriately the next time
                             // through the loop
                             self.chunks.push_front(chunk);
+                            continue;
+                        }
+                        Poll::Ready(Some(StreamingBodyItem::Finished)) => {
+                            // it shouldn't be possible for any more chunks to arrive on this
+                            // channel, but just in case we won't try to read them; dropping the
+                            // receiver means we won't hit the `Ready(None)` case above that
+                            // indicates an unfinished streaming body
                             continue;
                         }
                     }
