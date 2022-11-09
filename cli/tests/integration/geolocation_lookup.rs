@@ -96,3 +96,27 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn default_configuration_geolocation_lookup_works() -> TestResult {
+    const FASTLY_TOML: &str = r#"
+        name = "default-config-geolocation-lookup"
+        description = "default config geolocation lookup test"
+        authors = ["Test User <test_user@fastly.com>"]
+        language = "rust"
+    "#;
+
+    let resp = Test::using_fixture("geolocation-lookup-default.wasm")
+        .using_fastly_toml(FASTLY_TOML)?
+        .against_empty()
+        .await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(to_bytes(resp.into_body())
+        .await
+        .expect("can read body")
+        .to_vec()
+        .is_empty());
+
+    Ok(())
+}
