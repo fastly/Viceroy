@@ -13,16 +13,16 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         submodules: true
     - name: Install Rust
-      id: toolchain
-      uses: actions-rs/toolchain@v1
+      run: rustup update stable && rustup default stable
+      shell: bash
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
     - name: Cache cargo
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/bin/
@@ -52,16 +52,16 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         submodules: true
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      id: toolchain
+      run: rustup update stable && rustup default stable
+      shell: bash
     - name: Add wasm32-wasi Rust target
       run: rustup target add wasm32-wasi
     - name: Cache cargo
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/bin/
@@ -79,15 +79,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: true
-      - name: Install latest Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          default: true
-          override: true
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+        shell: bash
       - name: Check crates can be published
         run: make package-check
         shell: bash

@@ -2,7 +2,7 @@ use {
     crate::common::{TestResult, RUST_FIXTURE_PATH},
     http::header::WARNING,
     hyper::{Body, Request, StatusCode},
-    viceroy_lib::ExecuteCtx,
+    viceroy_lib::{ExecuteCtx, ProfilingStrategy},
 };
 
 #[path = "../../integration/common.rs"]
@@ -11,7 +11,7 @@ mod common;
 #[tokio::test(flavor = "multi_thread")]
 async fn fatal_error_traps() -> TestResult {
     let module_path = format!("../../{}/response.wasm", RUST_FIXTURE_PATH);
-    let ctx = ExecuteCtx::new(module_path)?;
+    let ctx = ExecuteCtx::new(module_path, ProfilingStrategy::None)?;
     let req = Request::get("http://127.0.0.1:7878/").body(Body::from(""))?;
     let resp = ctx
         .handle_request(req, "127.0.0.1".parse().unwrap())

@@ -28,7 +28,7 @@ mod deserialization {
         super::{Backend, BackendsConfig},
         crate::error::{BackendConfigError, FastlyConfigError},
         hyper::{header::HeaderValue, Uri},
-        std::{convert::TryFrom, sync::Arc},
+        std::sync::Arc,
         toml::value::{Table, Value},
     };
 

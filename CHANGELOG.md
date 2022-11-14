@@ -1,5 +1,16 @@
 ## Unreleased
 
+## 0.3.0 (2022-10-11)
+
+- Add stubs for fastly purge
+  ([#184](https://github.com/fastly/Viceroy/pull/184))
+- Add stubs for mTLS information
+  ([#186](https://github.com/fastly/Viceroy/pull/186))
+- Allow to enable wasmtime's profiling support
+  ([#181](https://github.com/fastly/Viceroy/pull/181))
+- Add stubs for `redirect_to_`
+  ([#187](https://github.com/fastly/Viceroy/pull/187))
+
 ## 0.2.15 (2022-08-19)
 
 - Add support for `ObjectStore`

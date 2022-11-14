@@ -56,7 +56,7 @@ impl Dictionary {
     /// Reads the contents of a JSON dictionary file.
     fn read_json_contents(file: &Path) -> Result<HashMap<String, String>, DictionaryConfigError> {
         // Read the contents of the given file.
-        let data = fs::read_to_string(&file).map_err(DictionaryConfigError::IoError)?;
+        let data = fs::read_to_string(file).map_err(DictionaryConfigError::IoError)?;
 
         // Deserialize the contents of the given JSON file.
         let json = match serde_json::from_str(&data)
@@ -106,9 +106,7 @@ mod deserialization {
             },
             error::{DictionaryConfigError, FastlyConfigError},
         },
-        std::{
-            collections::HashMap, convert::TryFrom, convert::TryInto, path::PathBuf, str::FromStr,
-        },
+        std::{collections::HashMap, path::PathBuf, str::FromStr},
         toml::value::{Table, Value},
         tracing::info,
     };

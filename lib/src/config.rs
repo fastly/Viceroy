@@ -28,6 +28,10 @@ mod backends;
 pub use self::backends::Backend;
 pub type Backends = HashMap<String, Arc<Backend>>;
 
+/// Types and deserializers for geolocation configuration settings.
+mod geolocation;
+pub use self::geolocation::Geolocation;
+
 /// Types and deserializers for object store configuration settings.
 mod object_store;
 pub use crate::object_store::ObjectStore;
@@ -68,6 +72,10 @@ impl FastlyConfig {
     /// Get the backend configuration.
     pub fn backends(&self) -> &Backends {
         &self.local_server.backends.0
+    }
+
+    pub fn geolocation(&self) -> &Geolocation {
+        &self.local_server.geolocation
     }
 
     /// Get the dictionaries configuration.
@@ -158,6 +166,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
     backends: BackendsConfig,
+    geolocation: Geolocation,
     dictionaries: DictionariesConfig,
     object_store: ObjectStoreConfig,
 }
@@ -169,6 +178,7 @@ pub struct LocalServerConfig {
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
     backends: Option<Table>,
+    geolocation: Option<Table>,
     dictionaries: Option<Table>,
     object_store: Option<Table>,
 }
@@ -178,6 +188,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
             backends,
+            geolocation,
             dictionaries,
             object_store,
         } = self;
@@ -185,6 +196,11 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             backends.try_into()?
         } else {
             BackendsConfig::default()
+        };
+        let geolocation = if let Some(geolocation) = geolocation {
+            geolocation.try_into()?
+        } else {
+            Geolocation::default()
         };
         let dictionaries = if let Some(dictionaries) = dictionaries {
             dictionaries.try_into()?
@@ -199,6 +215,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
 
         Ok(LocalServerConfig {
             backends,
+            geolocation,
             dictionaries,
             object_store,
         })

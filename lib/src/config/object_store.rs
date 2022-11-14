@@ -3,7 +3,7 @@ use {
         error::{FastlyConfigError, ObjectStoreConfigError},
         object_store::{ObjectKey, ObjectStore, ObjectStoreKey},
     },
-    std::{convert::TryFrom, fs},
+    std::fs,
     toml::value::Table,
 };
 
@@ -70,7 +70,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                                 err: ObjectStoreConfigError::PathNotAString(key.to_string()),
                             }
                         })?;
-                        fs::read(&path).map_err(|e| {
+                        fs::read(path).map_err(|e| {
                             FastlyConfigError::InvalidObjectStoreDefinition {
                                 name: store.to_string(),
                                 err: ObjectStoreConfigError::IoError(e),

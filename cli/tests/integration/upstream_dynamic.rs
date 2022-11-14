@@ -80,7 +80,7 @@ async fn override_host_works() -> TestResult {
     let resp = test
         .via_hyper()
         .against(
-            Request::get("http://localhost:7878/override")
+            Request::get("http://localhost:17878/override")
                 .header("Dynamic-Backend", "127.0.0.1:9000")
                 .header("With-Override", "otherhost.com")
                 .body("")
@@ -102,7 +102,7 @@ async fn duplication_errors_right() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost:7878/override")
+            Request::get("http://localhost:17878/override")
                 .header("Dynamic-Backend", "127.0.0.1:9000")
                 .header("Supplementary-Backend", "dynamic-backend")
                 .body("")
@@ -114,7 +114,7 @@ async fn duplication_errors_right() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost:7878/override")
+            Request::get("http://localhost:17878/override")
                 .header("Dynamic-Backend", "127.0.0.1:9000")
                 .header("Supplementary-Backend", "static")
                 .body("")
