@@ -50,24 +50,24 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         name: store.to_string(),
                         err: ObjectStoreConfigError::KeyNotAString,
                     })?;
-                let bytes = match (item.get("path"), item.get("data")) {
+                let bytes = match (item.get("file"), item.get("data")) {
                     (None, None) => {
                         return Err(FastlyConfigError::InvalidObjectStoreDefinition {
                             name: store.to_string(),
-                            err: ObjectStoreConfigError::NoPathOrData(key.to_string()),
+                            err: ObjectStoreConfigError::NoFileOrData(key.to_string()),
                         })
                     }
                     (Some(_), Some(_)) => {
                         return Err(FastlyConfigError::InvalidObjectStoreDefinition {
                             name: store.to_string(),
-                            err: ObjectStoreConfigError::PathAndData(key.to_string()),
+                            err: ObjectStoreConfigError::FileAndData(key.to_string()),
                         })
                     }
                     (Some(path), None) => {
                         let path = path.as_str().ok_or_else(|| {
                             FastlyConfigError::InvalidObjectStoreDefinition {
                                 name: store.to_string(),
-                                err: ObjectStoreConfigError::PathNotAString(key.to_string()),
+                                err: ObjectStoreConfigError::FileNotAString(key.to_string()),
                             }
                         })?;
                         fs::read(path).map_err(|e| {
