@@ -60,15 +60,14 @@ fn test_select() -> Result<(), Error> {
         write_body_req.send_async_streaming(write_body_initial, "WriteBody")?;
     let write_body_handle = unsafe { write_body.as_u32() };
 
-    // Now we attempt to stream 8 chunks of 8KB each, which is the maximum non-Hyper buffering allowed.
-    // That limit is set in xqd itself, via a combination of (1) channel size of 8 and (2) the `write`
-    // implementation for streaming bodies only taking up to an 8KB chunk at a time.
+    // Now we attempt to stream chunks into the body until we encounter backpressure. That backpressure
+    // should result from the fixed channel-size, and the fact that the test server waits to read the
+    // body we are streaming to it.
     let one_chunk = vec![0; 8 * 1024];
-    let mut nwritten = 0;
-    for _ in 0..8 {
-        nwritten += write_body.write_bytes(&one_chunk);
+    while is_ready(write_body_handle) {
+        let nwritten = write_body.write_bytes(&one_chunk);
+        assert!(nwritten > 0);
     }
-    assert_eq!(nwritten, 8 * 1024 * 8);
 
     // Give the servers a chance to do their thing. This is needed to resolve a race between the servers
     // initiating responses / reading buffers and the guest snapshotting readiness or performing `select`
