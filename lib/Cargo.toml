@@ -51,7 +51,7 @@ tracing = "^0.1.37"
 tracing-futures = "^0.2.5"
 url = "^2.3.1"
 wasi-common = "^2.0.0"
-wasmtime = "^2.0.0"
+wasmtime = "^2.0.2"
 wasmtime-wasi = { version = "^2.0.0", features = ["tokio"] }
 webpki = "^0.21.0"
 wiggle = { version = "^2.0.0", features = ["wasmtime_async"] }
