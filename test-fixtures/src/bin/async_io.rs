@@ -101,8 +101,8 @@ fn test_select() -> Result<(), Error> {
         append_header(&mut ds_resp, "Ready-Index", ready_idx);
     }
 
-    let close_status = unsafe { fastly_sys::fastly_http_body::close(write_body_handle) };
-    assert!(close_status.is_ok());
+    // check that handles are still available after the select, by explicitly closing one of them:
+    assert!(read_body.close().is_ok());
 
     ds_resp.send_to_client(BodyHandle::new());
     Ok(())
