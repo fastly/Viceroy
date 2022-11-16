@@ -19,6 +19,7 @@ pub mod error;
 pub mod logging;
 pub mod session;
 
+mod async_io;
 mod downstream;
 mod execute;
 mod headers;

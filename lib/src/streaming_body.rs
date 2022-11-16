@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 //
 // this isn't a tremendously useful size limiter, as it controls the number of chunks that can be in
 // flight before applying backpressure, as opposed to the size of data in those chunks
-const STREAMING_CHANNEL_SIZE: usize = 128;
+const STREAMING_CHANNEL_SIZE: usize = 8;
 
 /// The "write end" of a streaming body, used for writing to the body of a streaming upstream request
 /// or a streaming downstream response.
@@ -32,5 +32,10 @@ impl StreamingBody {
             .send(chunk.into())
             .await
             .map_err(|_| Error::StreamingChunkSend)
+    }
+
+    /// Block until the body has room for writing additional chunks.
+    pub async fn await_ready(&mut self) {
+        let _ = self.sender.reserve().await;
     }
 }

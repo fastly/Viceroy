@@ -3,7 +3,7 @@
 
 use futures::stream::StreamExt;
 use hyper::{service, Body as HyperBody, Request, Response, Server};
-use std::{convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{convert::Infallible, future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
@@ -126,7 +126,17 @@ impl Test {
         HostFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
         HostFn: Send + Sync + 'static,
     {
-        let service = Arc::new(service);
+        let service = Arc::new(TestService::Sync(Arc::new(service)));
+        self.hosts.push(HostSpec { port, service });
+        self
+    }
+
+    pub fn async_host<HostFn>(mut self, port: u16, service: HostFn) -> Self
+    where
+        HostFn: Fn(Request<HyperBody>) -> AsyncResp,
+        HostFn: Send + Sync + 'static,
+    {
+        let service = Arc::new(TestService::Async(Arc::new(service)));
         self.hosts.push(HostSpec { port, service });
         self
     }
@@ -273,7 +283,7 @@ impl Test {
 /// The specification of a mock host, as part of a `Test` builder.
 struct HostSpec {
     port: u16,
-    service: Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>,
+    service: Arc<TestService>,
 }
 
 /// A handle to a running mock host, used to gracefully shut down the host on test completion.
@@ -292,21 +302,26 @@ impl HostSpec {
         // we transform `service` into an async function that consumes Hyper bodies. that requires a bit
         // of `Arc` and `move` operations because each invocation needs to produce a distinct `Future`
         let async_service = Arc::new(move |req: Request<HyperBody>| {
-            let (parts, body) = req.into_parts();
-            let mut body = Box::new(body); // for pinning
             let service = service.clone();
 
             async move {
-                // read out all of the bytes from the body into a vector, then re-assemble the request
-                let mut body_bytes = Vec::new();
-                while let Some(chunk) = body.next().await {
-                    body_bytes.extend_from_slice(&chunk.unwrap());
-                }
-                let req = Request::from_parts(parts, body_bytes);
+                let resp = match &*service {
+                    TestService::Sync(s) => {
+                        let (parts, body) = req.into_parts();
+                        let mut body = Box::new(body); // for pinning
+                                                       // read out all of the bytes from the body into a vector, then re-assemble the request
+                        let mut body_bytes = Vec::new();
+                        while let Some(chunk) = body.next().await {
+                            body_bytes.extend_from_slice(&chunk.unwrap());
+                        }
+                        let req = Request::from_parts(parts, body_bytes);
 
-                // pass the request through the host function, then convert its body into the form
-                // that Hyper wants
-                let resp = service(req).map(HyperBody::from);
+                        // pass the request through the host function, then convert its body into the form
+                        // that Hyper wants
+                        s(req).map(HyperBody::from)
+                    }
+                    TestService::Async(s) => Box::into_pin(s(req)).await.map(HyperBody::from),
+                };
 
                 let res: Result<_, hyper::Error> = Ok(resp);
                 res
@@ -345,8 +360,16 @@ impl HostHandle {
         self.terminate_signal
             .send(())
             .expect("could not send terminate signal to mock host");
-        self.task_handle
-            .await
-            .expect("mock host did not terminate cleanly")
+        if !self.task_handle.is_finished() {
+            self.task_handle.abort();
+        }
     }
 }
+
+#[derive(Clone)]
+pub enum TestService {
+    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
+    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
+}
+
+type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;

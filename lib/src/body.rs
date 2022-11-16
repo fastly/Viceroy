@@ -131,6 +131,16 @@ impl Body {
     pub async fn read_into_string(self) -> Result<String, error::Error> {
         Ok(String::from_utf8(self.read_into_vec().await?).expect("Body was not UTF-8"))
     }
+
+    /// Block until the body has a chunk ready (or is known to be empty).
+    pub async fn await_ready(&mut self) {
+        // Attempt to read a chunk, blocking until one is available (or `None` signals end of stream)
+        if let Some(Ok(chunk)) = self.data().await {
+            // If we did get a chunk, put it back; subsequent read attempts will find this chunk without
+            // additional blocking.
+            self.chunks.push_front(chunk.into())
+        }
+    }
 }
 
 impl<T: Into<Chunk>> From<T> for Body {
