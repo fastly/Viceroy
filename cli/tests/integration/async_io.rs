@@ -9,10 +9,12 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::Barrier;
 
-// For some reason on windows this test fails with the write body portion due to
-// some difference we believe between unix systems and windows when it comes to
-// hyper. We don't believe this means the implementation is wrong. As such we've
-// disabled this test only on windwos.
+// On Windows, streaming body backpressure doesn't seem to work as expected, either
+// due to the Hyper client or server too eagerly clearing the chunk buffer. This issue does
+// not appear related to async I/O hostcalls; the behavior is seen within the streaming body
+// implementation in general. For the time being, this test is unix-only.
+//
+// https://github.com/fastly/Viceroy/issues/207 tracks the broader issue.
 #[cfg(target_family = "unix")]
 #[tokio::test(flavor = "multi_thread")]
 async fn async_io_methods() -> TestResult {
