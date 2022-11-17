@@ -1,6 +1,16 @@
-## Unreleased
+## 0.3.2 (2022-11-17)
+- Add geolocation implementation to Viceroy
+  ([#165](https://github.com/fastly/Viceroy/pull/165))
+- Implement async select hostcalls for Viceroy
+  ([#188](https://github.com/fastly/Viceroy/pull/188))
+- Update wasmtime dependency to 2.0
+  ([#194](https://github.com/fastly/Viceroy/pull/194))
+- Return a FastlyStatus::Inval when opening a non-existant object-store
+  ([#196](https://github.com/fastly/Viceroy/pull/196))
+- Add limit exceeded variant to fastly_status witx definition
+  ([#199](https://github.com/fastly/Viceroy/pull/199))
 
-## 0.3.0 (2022-10-11)
+## 0.3.1 (2022-10-11)
 
 - Add stubs for fastly purge
   ([#184](https://github.com/fastly/Viceroy/pull/184))
@@ -10,6 +20,11 @@
   ([#181](https://github.com/fastly/Viceroy/pull/181))
 - Add stubs for `redirect_to_`
   ([#187](https://github.com/fastly/Viceroy/pull/187))
+
+## 0.3.0 (2022-10-11)
+- Tagged but not released due to invalid metadata added in
+  [#173](https://github.com/fastly/Viceroy/pull/189). See
+  [#189](https://github.com/fastly/Viceroy/pull/189) for more details
 
 ## 0.2.15 (2022-08-19)
 
