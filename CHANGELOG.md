@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.3.2 (2022-11-17)
 - Add geolocation implementation to Viceroy
   ([#165](https://github.com/fastly/Viceroy/pull/165))
