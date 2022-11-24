@@ -280,12 +280,6 @@ impl ExecuteCtx {
         // Invoke the entrypoint function, which may or may not send a downstream response.
         let outcome = match main_func.call_async(&mut store, ()).await {
             Ok(_) => Ok(()),
-            // .map_err(|error : anyhow::Error| {
-            // Be sure that we only log non-zero status codes.
-
-            // if trap.i32_exit_status() != Some(0) {
-            //     event!(Level::ERROR, "WebAssembly trapped: {}", trap);
-            // }
             Err(e) => {
                 if let Some(exit) = e.downcast_ref::<I32Exit>() {
                     if exit.0 == 0 {
