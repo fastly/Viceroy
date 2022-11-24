@@ -5,11 +5,13 @@ use {
     anyhow::Context,
     wasi_common::{pipe::WritePipe, WasiCtx},
     wasmtime::{Engine, Linker, Store},
-    wasmtime_wasi::tokio::WasiCtxBuilder,
+    wasmtime_wasi::WasiCtxBuilder,
+    wasmtime_wasi_nn::WasiNnCtx,
 };
 
 pub struct WasmCtx {
     wasi: WasiCtx,
+    wasi_nn: WasiNnCtx,
     session: Session,
 }
 
@@ -17,6 +19,11 @@ impl WasmCtx {
     fn wasi(&mut self) -> &mut WasiCtx {
         &mut self.wasi
     }
+
+    fn wasi_nn(&mut self) -> &mut WasiNnCtx {
+        &mut self.wasi_nn
+    }
+
     fn session(&mut self) -> &mut Session {
         &mut self.session
     }
@@ -37,7 +44,12 @@ pub(crate) fn create_store(
     session: Session,
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
     let wasi = make_wasi_ctx(ctx, &session).context("creating Wasi context")?;
-    let wasm_ctx = WasmCtx { wasi, session };
+    let wasi_nn = WasiNnCtx::new().unwrap();
+    let wasm_ctx = WasmCtx {
+        wasi,
+        wasi_nn,
+        session,
+    };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.out_of_fuel_async_yield(u64::MAX, 10000);
     Ok(store)
@@ -47,8 +59,16 @@ pub(crate) fn create_store(
 /// possible, and never used to execute code
 pub(crate) fn dummy_store(engine: &Engine) -> Store<WasmCtx> {
     let wasi = WasiCtxBuilder::new().build();
+    let wasi_nn = WasiNnCtx::new().unwrap();
     let session = Session::mock();
-    Store::new(engine, WasmCtx { wasi, session })
+    Store::new(
+        engine,
+        WasmCtx {
+            wasi,
+            wasi_nn,
+            session,
+        },
+    )
 }
 
 /// Constructs a fresh `WasiCtx` for _each_ incoming request.
@@ -79,7 +99,8 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
 }
 
 pub fn link_host_functions(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
-    wasmtime_wasi::tokio::add_to_linker(linker, WasmCtx::wasi)?;
+    wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
+    wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
