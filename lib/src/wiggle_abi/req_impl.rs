@@ -4,7 +4,7 @@ use {
     crate::{
         config::Backend,
         error::Error,
-        session::{Session, ViceroyRequestMetadata},
+        session::{AsyncItem, Session, ViceroyRequestMetadata},
         upstream::{self, PendingRequest},
         wiggle_abi::{
             fastly_http_req::FastlyHttpReq,
@@ -202,7 +202,7 @@ impl FastlyHttpReq for Session {
                 .as_array(config.host_override_len)
                 .as_slice()?;
 
-            Some(HeaderValue::from_bytes(&*byte_slice)?)
+            Some(HeaderValue::from_bytes(&byte_slice)?)
         } else {
             None
         };
@@ -569,17 +569,22 @@ impl FastlyHttpReq for Session {
         &mut self,
         pending_req_handle: PendingRequestHandle,
     ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
-        let pending_req = self.pending_request_mut(pending_req_handle)?;
+        let mut pending_req = self.take_pending_request(pending_req_handle)?;
+        pending_req.poll();
 
-        let outcome = match pending_req.poll() {
-            None => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
-            Some(resp) => {
-                // the request is done; remove it from the map
-                drop(self.take_pending_request(pending_req_handle)?);
+        let outcome = match pending_req {
+            PendingRequest::Waiting(_) => {
+                // Make sure to reinsert if pending
+                self.reinsert_pending_request(pending_req_handle, pending_req)?;
+                (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into())
+            }
+            PendingRequest::Complete(resp) => {
+                // the request is done so we will not reinsert it into the map
                 let (resp_handle, resp_body_handle) = self.insert_response(resp?);
                 (1, resp_handle, resp_body_handle)
             }
         };
+
         Ok(outcome)
     }
 
@@ -599,26 +604,38 @@ impl FastlyHttpReq for Session {
         if pending_req_handles.len() == 0 {
             return Err(Error::InvalidArgument);
         }
-        let targets = self.prepare_select_targets(&pending_req_handles.as_slice()?)?;
 
         // perform the select operation
-        let (fut_result, done_index, rest) = futures::future::select_all(targets).await;
+        let done_index = self
+            .select_impl(
+                pending_req_handles
+                    .as_slice()?
+                    .iter()
+                    .map(|handle| handle.to_owned().into()),
+            )
+            .await? as u32;
 
-        // reinsert the other receivers before doing anything else, so they don't get dropped
-        self.reinsert_select_targets(rest);
+        let item =
+            self.take_async_item(pending_req_handles.get(done_index).unwrap().read()?.into())?;
 
-        let outcome = match fut_result {
-            Ok(resp) => {
-                let (resp_handle, body_handle) = self.insert_response(resp);
-                (done_index as u32, resp_handle, body_handle)
-            }
-            // Unfortunately, the ABI provides no means of returning error information
-            // from completed `select`.
-            Err(_) => (
-                done_index as u32,
-                INVALID_RESPONSE_HANDLE.into(),
-                INVALID_BODY_HANDLE.into(),
-            ),
+        let outcome = match item {
+            AsyncItem::PendingReq(res) => match res {
+                PendingRequest::Complete(resp) => match resp {
+                    Ok(resp) => {
+                        let (resp_handle, body_handle) = self.insert_response(resp);
+                        (done_index, resp_handle, body_handle)
+                    }
+                    // Unfortunately, the ABI provides no means of returning error information
+                    // from completed `select`.
+                    Err(_) => (
+                        done_index,
+                        INVALID_RESPONSE_HANDLE.into(),
+                        INVALID_BODY_HANDLE.into(),
+                    ),
+                },
+                _ => panic!("Pending request was not completed"),
+            },
+            _ => panic!("AsyncItem was not a pending request"),
         };
 
         Ok(outcome)

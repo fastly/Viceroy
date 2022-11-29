@@ -104,6 +104,9 @@ pub enum ObjectStoreError {
     MissingObject,
     #[error("Viceroy's ObjectStore lock was poisoned")]
     PoisonedLock,
+    /// An Object Store with the given name was not found.
+    #[error("Unknown object-store: {0}")]
+    UnknownObjectStore(String),
 }
 
 impl From<&ObjectStoreError> for FastlyStatus {
@@ -112,6 +115,7 @@ impl From<&ObjectStoreError> for FastlyStatus {
         match e {
             MissingObject => FastlyStatus::None,
             PoisonedLock => panic!("{}", e),
+            UnknownObjectStore(_) => FastlyStatus::Inval,
         }
     }
 }

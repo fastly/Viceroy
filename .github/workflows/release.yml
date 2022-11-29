@@ -39,7 +39,7 @@ jobs:
           submodules: true
 
       - name: Install Rust
-        run: rustup toolchain install --target ${{ matrix.rust_arch }}-${{ matrix.rust_abi }} ${{ matrix.rust-toolchain }}
+        run: rustup toolchain install ${{ matrix.rust-toolchain }} --target ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
         shell: bash
 
       - name: Install C cross-compilation toolchain

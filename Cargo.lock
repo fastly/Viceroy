@@ -1047,7 +1047,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 name = "libc"
 version = "0.2.137"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"
+checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"=
 
 [[package]]
 name = "libloading"
@@ -2103,7 +2103,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "viceroy"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2122,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "viceroy-lib"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "bytes",

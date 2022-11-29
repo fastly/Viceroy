@@ -3,24 +3,27 @@
 mod async_item;
 mod downstream;
 
+pub use async_item::AsyncItem;
+
 use {
-    self::{async_item::AsyncItem, downstream::DownstreamResponse},
+    self::downstream::DownstreamResponse,
     crate::{
         body::Body,
-        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName},
+        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, Geolocation},
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, ObjectStoreHandle,
-            PendingRequestHandle, RequestHandle, ResponseHandle,
+            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
+            ObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
+    futures::future::{self, FutureExt},
     http::{request, response, HeaderMap, Request, Response},
-    std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc},
+    std::{collections::HashMap, future::Future, net::IpAddr, path::PathBuf, sync::Arc},
     tokio::sync::oneshot::Sender,
 };
 
@@ -66,6 +69,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     backends: Arc<Backends>,
+    /// The Geolocations configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    geolocation: Arc<Geolocation>,
     /// The backends dynamically added by the program. This is separated from
     /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
@@ -107,6 +114,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
+        geolocation: Arc<Geolocation>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
@@ -133,6 +141,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            geolocation,
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
@@ -158,6 +167,7 @@ impl Session {
             sender,
             "0.0.0.0".parse().unwrap(),
             Arc::new(HashMap::new()),
+            Arc::new(Geolocation::new()),
             TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
@@ -596,6 +606,12 @@ impl Session {
         &self.dictionaries
     }
 
+    // ----- Geolocation API -----
+
+    pub fn geolocation_lookup(&self, addr: &IpAddr) -> Option<String> {
+        self.geolocation.lookup(addr).map(|data| data.to_string())
+    }
+
     // ----- Object Store API -----
     pub fn obj_store_handle(&mut self, key: &str) -> Result<ObjectStoreHandle, Error> {
         let obj_key = ObjectStoreKey::new(key);
@@ -682,26 +698,36 @@ impl Session {
             .ok_or(HandleError::InvalidPendingRequestHandle(handle))
     }
 
+    pub fn reinsert_pending_request(
+        &mut self,
+        handle: PendingRequestHandle,
+        pending_req: PendingRequest,
+    ) -> Result<(), HandleError> {
+        *self
+            .async_items
+            .get_mut(handle.into())
+            .ok_or(HandleError::InvalidPendingRequestHandle(handle))? =
+            Some(AsyncItem::PendingReq(pending_req));
+        Ok(())
+    }
+
     /// Take ownership of multiple [`PendingRequest`]s in preparation for a `select`.
     ///
     /// Returns a [`HandleError`] if any of the handles are not associated with a pending
     /// request in the session.
     pub fn prepare_select_targets(
         &mut self,
-        handles: &[PendingRequestHandle],
+        handles: impl IntoIterator<Item = AsyncItemHandle>,
     ) -> Result<Vec<SelectTarget>, HandleError> {
         // Prepare a vector of targets from the given handles; if any of the handles are invalid,
         // put back all the targets we've extracted so far
         let mut targets = vec![];
-        for handle in handles.iter().copied() {
-            if let Ok(pending_req) = self.take_pending_request(handle) {
-                targets.push(SelectTarget {
-                    handle,
-                    pending_req,
-                });
+        for handle in handles {
+            if let Ok(item) = self.take_async_item(handle) {
+                targets.push(SelectTarget { handle, item });
             } else {
                 self.reinsert_select_targets(targets);
-                return Err(HandleError::InvalidPendingRequestHandle(handle));
+                return Err(HandleError::InvalidPendingRequestHandle(handle.into()));
             }
         }
         Ok(targets)
@@ -711,8 +737,7 @@ impl Session {
     /// stored within each [`SelectTarget`].
     pub fn reinsert_select_targets(&mut self, targets: Vec<SelectTarget>) {
         for target in targets {
-            let async_handle: AsyncItemHandle = target.handle.into();
-            self.async_items[async_handle] = Some(AsyncItem::PendingReq(target.pending_req));
+            self.async_items[target.handle] = Some(target.item);
         }
     }
 
@@ -724,6 +749,73 @@ impl Session {
     /// Access the path to the configuration file for this invocation.
     pub fn config_path(&self) -> &Arc<Option<PathBuf>> {
         &self.config_path
+    }
+
+    pub fn async_item_mut(
+        &mut self,
+        handle: AsyncItemHandle,
+    ) -> Result<Option<&mut AsyncItem>, HandleError> {
+        self.async_items
+            .get_mut(handle)
+            .map(|ai| ai.as_mut())
+            .ok_or_else(|| HandleError::InvalidAsyncItemHandle(handle.into()))
+    }
+
+    pub fn take_async_item(&mut self, handle: AsyncItemHandle) -> Result<AsyncItem, HandleError> {
+        // check that this is an async item before removing it
+        let _ = self.async_item_mut(handle)?;
+
+        self.async_items
+            .get_mut(handle)
+            .and_then(|tracked| tracked.take())
+            .ok_or_else(|| HandleError::InvalidAsyncItemHandle(handle.into()))
+    }
+
+    pub async fn select_impl(
+        &mut self,
+        handles: impl IntoIterator<Item = AsyncItemHandle>,
+    ) -> Result<usize, Error> {
+        // we have to temporarily move the async items out of the session table,
+        // because we need &mut borrows of all of them simultaneously.
+        let targets = self.prepare_select_targets(handles)?;
+        let mut selected = SelectedTargets::new(self, targets);
+        let done_index = selected.future().await;
+
+        Ok(done_index)
+    }
+}
+
+pub struct SelectedTargets<'session> {
+    session: &'session mut Session,
+    targets: Vec<SelectTarget>,
+}
+
+impl<'session> SelectedTargets<'session> {
+    fn new(session: &'session mut Session, targets: Vec<SelectTarget>) -> Self {
+        Self { session, targets }
+    }
+
+    fn future(&mut self) -> Box<dyn Future<Output = usize> + Unpin + Send + Sync + '_> {
+        // for each target, we produce a future for checking on the "readiness"
+        // of the associated primary I/O operation
+        let mut futures = Vec::new();
+        for target in &mut *self.targets {
+            futures.push(Box::pin(target.item.await_ready()))
+        }
+        if futures.is_empty() {
+            // if there are no futures, we wait forever; this waiting will always be bounded by a timeout,
+            // since the `select` hostcall requires a timeout when no handles are given.
+            Box::new(future::pending())
+        } else {
+            Box::new(future::select_all(futures).map(|f| f.1))
+        }
+    }
+}
+
+impl<'session> Drop for SelectedTargets<'session> {
+    fn drop(&mut self) {
+        let targets = std::mem::replace(&mut self.targets, Vec::new());
+        self.session.reinsert_select_targets(targets);
     }
 }
 
@@ -773,5 +865,17 @@ impl From<PendingRequestHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingRequestHandle {
     fn from(h: AsyncItemHandle) -> PendingRequestHandle {
         PendingRequestHandle::from(h.as_u32())
+    }
+}
+
+impl From<types::AsyncItemHandle> for AsyncItemHandle {
+    fn from(h: types::AsyncItemHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for types::AsyncItemHandle {
+    fn from(h: AsyncItemHandle) -> types::AsyncItemHandle {
+        types::AsyncItemHandle::from(h.as_u32())
     }
 }

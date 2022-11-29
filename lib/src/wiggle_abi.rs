@@ -11,6 +11,8 @@
 
 pub use self::dictionary_impl::DictionaryError;
 
+pub use self::geo_impl::GeolocationError;
+
 use {
     self::{
         fastly_abi::FastlyAbi,
@@ -63,6 +65,7 @@ wiggle::from_witx!({
     witx: ["$CARGO_MANIFEST_DIR/compute-at-edge-abi/compute-at-edge.witx"],
     errors: { fastly_status => Error },
     async: {
+        fastly_async_io::{select},
         fastly_object_store::{insert},
         fastly_http_body::{append, read, write},
         fastly_http_req::{pending_req_select, pending_req_wait, send},

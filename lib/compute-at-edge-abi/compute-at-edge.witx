@@ -508,6 +508,36 @@
     )
 )
 
+(module $fastly_async_io
+    ;;; Blocks until one of the given objects is ready for I/O, or the optional timeout expires.
+    ;;;
+    ;;; Valid object handles includes bodies and pending requests. See the `async_item_handle`
+    ;;; definition for more details, including what I/O actions are associated with each handle
+    ;;; type.
+    ;;;
+    ;;; The timeout is specified in milliseconds, or 0 if no timeout is desired.
+    ;;;
+    ;;; Returns the _index_ (not handle!) of the first object that is ready, or u32::MAX if the
+    ;;; timeout expires before any objects are ready for I/O.
+    (@interface func (export "select")
+        (param $hs (list $async_item_handle))
+        (param $timeout_ms u32)
+        (result $err (expected $ready_idx (error $fastly_status)))
+    )
+
+    ;;; Returns 1 if the given async item is "ready" for its associated I/O action, 0 otherwise.
+    ;;;
+    ;;; If an object is ready, the I/O action is guaranteed to complete without blocking.
+    ;;;
+    ;;; Valid object handles includes bodies and pending requests. See the `async_item_handle`
+    ;;; definition for more details, including what I/O actions are associated with each handle
+    ;;; type.
+    (@interface func (export "is_ready")
+        (param $handle $async_item_handle)
+        (result $err (expected $is_done (error $fastly_status)))
+    )
+)
+
 (module $fastly_purge
     (@interface func (export "purge_surrogate_key")
         (param $surrogate_key string)
