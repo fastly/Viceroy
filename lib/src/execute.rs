@@ -224,7 +224,7 @@ impl ExecuteCtx {
                 Ok(_) => Response::new(Body::empty()),
                 Err(ExecutionError::WasmTrap(_e)) => {
                     #[allow(unused_mut)]
-                        let mut response = Response::builder()
+                    let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::empty())
                         .unwrap();
@@ -336,8 +336,8 @@ impl ExecuteCtx {
 
 fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {
     use wasmtime::{
-        Config, InstanceAllocationStrategy, PoolingAllocationStrategy,
-        WasmBacktraceDetails,PoolingAllocationConfig
+        Config, InstanceAllocationStrategy, PoolingAllocationConfig, PoolingAllocationStrategy,
+        WasmBacktraceDetails,
     };
 
     let mut config = Config::new();
@@ -372,8 +372,9 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     // handled concurrently.
     pooling_allocation_config.strategy(PoolingAllocationStrategy::NextAvailable);
 
-
-    config.allocation_strategy(InstanceAllocationStrategy::Pooling(pooling_allocation_config));
+    config.allocation_strategy(InstanceAllocationStrategy::Pooling(
+        pooling_allocation_config,
+    ));
 
     config
 }
