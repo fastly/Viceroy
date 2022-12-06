@@ -242,37 +242,16 @@ impl ExecuteCtx {
         incoming_req: Request<hyper::Body>,
         remote: IpAddr,
     ) -> Result<Response<Body>, Error> {
-        let req = prepare_request(incoming_req)?;
-        let (sender, receiver) = oneshot::channel();
-
-        let req_id = self
-            .next_req_id
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
-        // if the guest sends one, while the guest continues to run afterward within its task.
-        let guest_handle = tokio::task::spawn(
-            self.run_guest(req, req_id, sender, remote)
-                .instrument(info_span!("request", id = req_id)),
-        );
-
-        let resp = match receiver.await {
-            Ok(resp) => resp,
-            Err(_) => match guest_handle
-                .await
-                .expect("guest worker finished without panicking")
-            {
-                Ok(_) => Response::new(Body::empty()),
-                Err(ExecutionError::WasmTrap(_e)) => {
-                    println!("There was an error handling the request {}", _e.to_string());
-                    let body = format!("{:?}",_e);
-                    Response::builder()
-                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from(body.as_bytes()))
-                        .unwrap()
-                }
-                Err(e) => panic!("failed to run guest: {}", e),
-            },
+        let result = self.handle_request(incoming_req, remote).await?;
+        let resp = match result.1 {
+            None => result.0,
+            Some(err) => {
+                let body = format!("{:?}",err);
+                Response::builder()
+                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from(body.as_bytes()))
+                    .unwrap()
+            }
         };
 
         Ok(resp)
