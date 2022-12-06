@@ -1,6 +1,5 @@
 use {
     crate::common::{TestResult, RUST_FIXTURE_PATH},
-    http::header::WARNING,
     hyper::{Body, Request, StatusCode},
     viceroy_lib::{ExecuteCtx, ProfilingStrategy},
 };
@@ -14,22 +13,26 @@ async fn fatal_error_traps() -> TestResult {
     let ctx = ExecuteCtx::new(module_path, ProfilingStrategy::None)?;
     let req = Request::get("http://127.0.0.1:7878/").body(Body::from(""))?;
     let resp = ctx
-        .handle_request(req, "127.0.0.1".parse().unwrap())
+        .handle_request_with_runtime_error(req, "127.0.0.1".parse().unwrap())
         .await?;
 
     // The Guest was terminated and so should return a 500.
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = resp.into_body().read_into_string().await?;
 
+    assert!(body.starts_with("error while executing at wasm backtrace"));
     // Examine the WARNING message in the response headers and assert that it is the expected
     // Trap error supplied by the Guest.
-    if let Some(warning) = resp.headers().get(WARNING) {
-        assert_eq!(
-            warning,
-            "A fatal error occurred in the test-only implementation of header_values_get"
-        );
-    } else {
-        panic!("The response did not contain the expected warning header");
-    }
+    // println!("Body: {}", body);
+
+    // if let Some(warning) = resp.headers().get(WARNING) {
+    //     assert_eq!(
+    //         warning,
+    //         "A fatal error occurred in the test-only implementation of header_values_get"
+    //     );
+    // } else {
+    //     panic!("The response did not contain the expected warning header");
+    // }
 
     Ok(())
 }

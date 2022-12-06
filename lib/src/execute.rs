@@ -12,7 +12,6 @@ use {
         upstream::TlsConfig,
         Error,
     },
-    cfg_if::cfg_if,
     hyper::{Request, Response},
     std::{
         net::IpAddr,
@@ -200,6 +199,48 @@ impl ExecuteCtx {
         self,
         incoming_req: Request<hyper::Body>,
         remote: IpAddr,
+    ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
+        let req = prepare_request(incoming_req)?;
+        let (sender, receiver) = oneshot::channel();
+
+        let req_id = self
+            .next_req_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
+        // if the guest sends one, while the guest continues to run afterward within its task.
+        let guest_handle = tokio::task::spawn(
+            self.run_guest(req, req_id, sender, remote)
+                .instrument(info_span!("request", id = req_id)),
+        );
+
+        let resp = match receiver.await {
+            Ok(resp) => (resp,None),
+            Err(_) => match guest_handle
+                .await
+                .expect("guest worker finished without panicking")
+            {
+                Ok(_) => (Response::new(Body::empty()),None),
+                Err(ExecutionError::WasmTrap(_e)) => {
+                    println!("There was an error handling the request {}", _e.to_string());
+                    #[allow(unused_mut)]
+                        let mut response = Response::builder()
+                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::empty())
+                        .unwrap();
+                    (response, Some(_e))
+                }
+                Err(e) => panic!("failed to run guest: {}", e),
+            },
+        };
+
+        Ok(resp)
+    }
+
+    pub async fn handle_request_with_runtime_error(
+        self,
+        incoming_req: Request<hyper::Body>,
+        remote: IpAddr,
     ) -> Result<Response<Body>, Error> {
         let req = prepare_request(incoming_req)?;
         let (sender, receiver) = oneshot::channel();
@@ -223,30 +264,12 @@ impl ExecuteCtx {
             {
                 Ok(_) => Response::new(Body::empty()),
                 Err(ExecutionError::WasmTrap(_e)) => {
-                    #[allow(unused_mut)]
-                    let mut response = Response::builder()
+                    println!("There was an error handling the request {}", _e.to_string());
+                    let body = format!("{:?}",_e);
+                    Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::empty())
-                        .unwrap();
-
-                    cfg_if! {
-                        // The special functionality sequestered here in this cfg_if! block allows the trap-test
-                        // fixture to affirm that the FatalError was experienced by the Guest.
-                        if #[cfg(feature = "test-fatalerror-config")] {
-
-                            // Slice off the first line of the error message returned in the GuestError.
-                            let error_msg = _e.to_string();
-                            let msg = error_msg.split('\n').next().unwrap();
-
-                            // Create a HeaderValue from the error message and place it in the response.
-                            let hdr_val =
-                                http::header::HeaderValue::from_str(&msg).expect("error message is a valid header");
-
-                            response.headers_mut().insert(http::header::WARNING, hdr_val);
-                        }
-                    }
-
-                    response
+                        .body(Body::from(body.as_bytes()))
+                        .unwrap()
                 }
                 Err(e) => panic!("failed to run guest: {}", e),
             },
