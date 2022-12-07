@@ -4,11 +4,11 @@ use {
     clap::{Parser, ValueEnum},
     std::net::{IpAddr, Ipv4Addr},
     std::{
+        collections::HashSet,
         net::SocketAddr,
         path::{Path, PathBuf},
-        collections::HashSet,
     },
-    viceroy_lib::{Error, ProfilingStrategy, config::WasiModule},
+    viceroy_lib::{config::WasiModule, Error, ProfilingStrategy},
 };
 
 // Command-line arguments for the Viceroy CLI.
@@ -90,21 +90,20 @@ impl Opts {
 
     // Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<WasiModule> {
-        self.wasi_modules.iter().map(|x| { x.into() }).collect()
+        self.wasi_modules.iter().map(|x| x.into()).collect()
     }
 }
-
 
 /// Enum of available (experimental) wasi modules
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
 pub enum WasiModuleArg {
-    WasiNn
+    WasiNn,
 }
 
 impl From<WasiModuleArg> for WasiModule {
     fn from(arg: WasiModuleArg) -> WasiModule {
         match arg {
-            WasiModuleArg::WasiNn => WasiModule::WasiNn
+            WasiModuleArg::WasiNn => WasiModule::WasiNn,
         }
     }
 }
@@ -112,7 +111,7 @@ impl From<WasiModuleArg> for WasiModule {
 impl From<&WasiModuleArg> for WasiModule {
     fn from(arg: &WasiModuleArg) -> WasiModule {
         match arg {
-            WasiModuleArg::WasiNn => WasiModule::WasiNn
+            WasiModuleArg::WasiNn => WasiModule::WasiNn,
         }
     }
 }
@@ -120,7 +119,7 @@ impl From<&WasiModuleArg> for WasiModule {
 impl From<WasiModule> for WasiModuleArg {
     fn from(module: WasiModule) -> WasiModuleArg {
         match module {
-            WasiModule::WasiNn => WasiModuleArg::WasiNn
+            WasiModule::WasiNn => WasiModuleArg::WasiNn,
         }
     }
 }
@@ -128,7 +127,7 @@ impl From<WasiModule> for WasiModuleArg {
 impl From<&WasiModule> for WasiModuleArg {
     fn from(module: &WasiModule) -> WasiModuleArg {
         match module {
-            WasiModule::WasiNn => WasiModuleArg::WasiNn
+            WasiModule::WasiNn => WasiModuleArg::WasiNn,
         }
     }
 }
@@ -206,12 +205,12 @@ mod opts_tests {
         ];
         match Opts::try_parse_from(args_with_bad_addr) {
             Err(err)
-            if err.kind() == ErrorKind::ValueValidation
-                && (err.to_string().contains("invalid socket address syntax")
-                || err.to_string().contains("invalid IP address syntax")) =>
-                {
-                    Ok(())
-                }
+                if err.kind() == ErrorKind::ValueValidation
+                    && (err.to_string().contains("invalid socket address syntax")
+                        || err.to_string().contains("invalid IP address syntax")) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }
@@ -238,12 +237,12 @@ mod opts_tests {
         let args_with_nonexistent_file = &["dummy-program-name", "path/to/a/nonexistent/file"];
         match Opts::try_parse_from(args_with_nonexistent_file) {
             Err(err)
-            if err.kind() == ErrorKind::ValueValidation
-                && (err.to_string().contains("No such file or directory")
-                || err.to_string().contains("cannot find the path specified")) =>
-                {
-                    Ok(())
-                }
+                if err.kind() == ErrorKind::ValueValidation
+                    && (err.to_string().contains("No such file or directory")
+                        || err.to_string().contains("cannot find the path specified")) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }
@@ -255,11 +254,11 @@ mod opts_tests {
         let expected_msg = format!("{}", viceroy_lib::Error::FileFormat);
         match Opts::try_parse_from(args_with_invalid_file) {
             Err(err)
-            if err.kind() == ErrorKind::ValueValidation
-                && err.to_string().contains(&expected_msg) =>
-                {
-                    Ok(())
-                }
+                if err.kind() == ErrorKind::ValueValidation
+                    && err.to_string().contains(&expected_msg) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }

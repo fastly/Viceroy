@@ -180,9 +180,8 @@ pub struct LocalServerConfig {
 /// Enum of available (experimental) wasi modules
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum WasiModule {
-    WasiNn
+    WasiNn,
 }
-
 
 /// Internal deserializer used to read the `[testing]` section of a `fastly.toml` file.
 ///

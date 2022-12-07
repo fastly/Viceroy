@@ -122,9 +122,9 @@ impl Test {
     /// a `Response<Vec<u8>>`. Each one is spawned onto a dedicated Tokio task, which will be
     /// gracefully shut down when the test completes.
     pub fn host<HostFn>(mut self, port: u16, service: HostFn) -> Self
-        where
-            HostFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
-            HostFn: Send + Sync + 'static,
+    where
+        HostFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
+        HostFn: Send + Sync + 'static,
     {
         let service = Arc::new(TestService::Sync(Arc::new(service)));
         self.hosts.push(HostSpec { port, service });
@@ -132,9 +132,9 @@ impl Test {
     }
 
     pub fn async_host<HostFn>(mut self, port: u16, service: HostFn) -> Self
-        where
-            HostFn: Fn(Request<HyperBody>) -> AsyncResp,
-            HostFn: Send + Sync + 'static,
+    where
+        HostFn: Fn(Request<HyperBody>) -> AsyncResp,
+        HostFn: Send + Sync + 'static,
     {
         let service = Arc::new(TestService::Async(Arc::new(service)));
         self.hosts.push(HostSpec { port, service });
@@ -250,7 +250,7 @@ impl Test {
                     .clone()
                     .handle_request(req.map(Into::into), addr.ip())
                     .await
-                    .map(|result| { result.0 })
+                    .map(|result| result.0)
                     .expect("failed to handle the request");
                 responses.push(resp);
             }
@@ -310,7 +310,7 @@ impl HostSpec {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
                         let mut body = Box::new(body); // for pinning
-                        // read out all of the bytes from the body into a vector, then re-assemble the request
+                                                       // read out all of the bytes from the body into a vector, then re-assemble the request
                         let mut body_bytes = Vec::new();
                         while let Some(chunk) = body.next().await {
                             body_bytes.extend_from_slice(&chunk.unwrap());
@@ -373,4 +373,4 @@ pub enum TestService {
     Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
 }
 
-type AsyncResp = Box<dyn Future<Output=Response<HyperBody>> + Send + Sync>;
+type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;

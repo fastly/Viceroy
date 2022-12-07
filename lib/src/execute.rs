@@ -14,12 +14,12 @@ use {
     },
     hyper::{Request, Response},
     std::{
+        collections::HashSet,
         net::IpAddr,
         path::{Path, PathBuf},
         sync::atomic::AtomicU64,
         sync::Arc,
         time::Instant,
-        collections::HashSet,
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
@@ -229,7 +229,7 @@ impl ExecuteCtx {
                 Err(ExecutionError::WasmTrap(_e)) => {
                     println!("There was an error handling the request {}", _e.to_string());
                     #[allow(unused_mut)]
-                        let mut response = Response::builder()
+                    let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::empty())
                         .unwrap();
