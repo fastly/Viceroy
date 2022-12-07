@@ -205,12 +205,12 @@ mod opts_tests {
         ];
         match Opts::try_parse_from(args_with_bad_addr) {
             Err(err)
-            if err.kind() == ErrorKind::ValueValidation
-                && (err.to_string().contains("invalid socket address syntax")
-                || err.to_string().contains("invalid IP address syntax")) =>
-                {
-                    Ok(())
-                }
+                if err.kind() == ErrorKind::ValueValidation
+                    && (err.to_string().contains("invalid socket address syntax")
+                        || err.to_string().contains("invalid IP address syntax")) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }
@@ -237,12 +237,12 @@ mod opts_tests {
         let args_with_nonexistent_file = &["dummy-program-name", "path/to/a/nonexistent/file"];
         match Opts::try_parse_from(args_with_nonexistent_file) {
             Err(err)
-            if err.kind() == ErrorKind::ValueValidation
-                && (err.to_string().contains("No such file or directory")
-                || err.to_string().contains("cannot find the path specified")) =>
-                {
-                    Ok(())
-                }
+                if err.kind() == ErrorKind::ValueValidation
+                    && (err.to_string().contains("No such file or directory")
+                        || err.to_string().contains("cannot find the path specified")) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }
@@ -254,11 +254,11 @@ mod opts_tests {
         let expected_msg = format!("{}", viceroy_lib::Error::FileFormat);
         match Opts::try_parse_from(args_with_invalid_file) {
             Err(err)
-            if err.kind() == ErrorKind::ValueValidation
-                && err.to_string().contains(&expected_msg) =>
-                {
-                    Ok(())
-                }
+                if err.kind() == ErrorKind::ValueValidation
+                    && err.to_string().contains(&expected_msg) =>
+            {
+                Ok(())
+            }
             res => panic!("unexpected result: {:?}", res),
         }
     }

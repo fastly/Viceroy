@@ -230,7 +230,7 @@ impl ExecuteCtx {
                 Err(ExecutionError::WasmTrap(_e)) => {
                     println!("There was an error handling the request {}", _e.to_string());
                     #[allow(unused_mut)]
-                        let mut response = Response::builder()
+                    let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::empty())
                         .unwrap();

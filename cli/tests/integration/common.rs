@@ -3,7 +3,10 @@
 
 use futures::stream::StreamExt;
 use hyper::{service, Body as HyperBody, Request, Response, Server};
-use std::{convert::Infallible, future::Future, net::SocketAddr, path::PathBuf, sync::Arc, collections::HashSet};
+use std::{
+    collections::HashSet, convert::Infallible, future::Future, net::SocketAddr, path::PathBuf,
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
