@@ -3,7 +3,7 @@
 
 use futures::stream::StreamExt;
 use hyper::{service, Body as HyperBody, Request, Response, Server};
-use std::{convert::Infallible, future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{convert::Infallible, future::Future, net::SocketAddr, path::PathBuf, sync::Arc, collections::HashSet};
 use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
@@ -197,7 +197,7 @@ impl Test {
             .try_init()
             .ok();
 
-        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None)
+        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None, HashSet::new())
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_dictionaries(self.dictionaries.clone())

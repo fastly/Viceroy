@@ -61,7 +61,7 @@ pub struct ExecuteCtx {
 }
 
 impl ExecuteCtx {
-    /// Create a new execution context, given the path to a module.
+    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
     pub fn new(
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
@@ -191,11 +191,12 @@ impl ExecuteCtx {
     /// # Example
     ///
     /// ```no_run
-    /// # use hyper::{Body, http::Request};
+    /// # use std::collections::HashSet;
+    /// use hyper::{Body, http::Request};
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new())?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }
@@ -229,7 +230,7 @@ impl ExecuteCtx {
                 Err(ExecutionError::WasmTrap(_e)) => {
                     println!("There was an error handling the request {}", _e.to_string());
                     #[allow(unused_mut)]
-                    let mut response = Response::builder()
+                        let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::empty())
                         .unwrap();
