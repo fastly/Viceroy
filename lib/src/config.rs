@@ -19,21 +19,27 @@ mod limits;
 
 /// Types and deserializers for dictionaries configuration settings.
 mod dictionaries;
+
 pub use self::dictionaries::Dictionary;
 pub use self::dictionaries::DictionaryName;
+
 pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;
+
 pub use self::backends::Backend;
+
 pub type Backends = HashMap<String, Arc<Backend>>;
 
 /// Types and deserializers for geolocation configuration settings.
 mod geolocation;
+
 pub use self::geolocation::Geolocation;
 
 /// Types and deserializers for object store configuration settings.
 mod object_store;
+
 pub use crate::object_store::ObjectStore;
 
 /// Fastly-specific configuration information.
@@ -170,6 +176,13 @@ pub struct LocalServerConfig {
     dictionaries: DictionariesConfig,
     object_store: ObjectStoreConfig,
 }
+
+/// Enum of available (experimental) wasi modules
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum WasiModule {
+    WasiNn
+}
+
 
 /// Internal deserializer used to read the `[testing]` section of a `fastly.toml` file.
 ///

@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, Geolocation},
+        config::{Backends, Dictionaries, Geolocation, WasiModule},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -19,6 +19,7 @@ use {
         sync::atomic::AtomicU64,
         sync::Arc,
         time::Instant,
+        collections::HashSet,
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
@@ -55,6 +56,8 @@ pub struct ExecuteCtx {
     next_req_id: Arc<AtomicU64>,
     /// The ObjectStore associated with this instance of Viceroy
     object_store: Arc<ObjectStore>,
+    // Whether to enable wasi-nn functionality
+    // wasi_modules: HashSet<WasiModule>,
 }
 
 impl ExecuteCtx {
@@ -62,11 +65,12 @@ impl ExecuteCtx {
     pub fn new(
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
+        wasi_modules: HashSet<WasiModule>,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
         let mut linker = Linker::new(&engine);
-        link_host_functions(&mut linker)?;
+        link_host_functions(&mut linker, &wasi_modules)?;
         let module = Module::from_file(&engine, module_path)?;
 
         let mut dummy_store = dummy_store(&engine);
@@ -84,6 +88,7 @@ impl ExecuteCtx {
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: Arc::new(ObjectStore::new()),
+            // wasi_modules,
         })
     }
 
@@ -215,12 +220,12 @@ impl ExecuteCtx {
         );
 
         let resp = match receiver.await {
-            Ok(resp) => (resp,None),
+            Ok(resp) => (resp, None),
             Err(_) => match guest_handle
                 .await
                 .expect("guest worker finished without panicking")
             {
-                Ok(_) => (Response::new(Body::empty()),None),
+                Ok(_) => (Response::new(Body::empty()), None),
                 Err(ExecutionError::WasmTrap(_e)) => {
                     println!("There was an error handling the request {}", _e.to_string());
                     #[allow(unused_mut)]
@@ -246,7 +251,7 @@ impl ExecuteCtx {
         let resp = match result.1 {
             None => result.0,
             Some(err) => {
-                let body = format!("{:?}",err);
+                let body = format!("{:?}", err);
                 Response::builder()
                     .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from(body.as_bytes()))

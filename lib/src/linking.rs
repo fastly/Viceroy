@@ -1,7 +1,8 @@
 //! Linking and name resolution.
 
 use {
-    crate::{execute::ExecuteCtx, logging::LogEndpoint, session::Session, wiggle_abi, Error},
+    crate::{execute::ExecuteCtx, logging::LogEndpoint, session::Session, wiggle_abi, Error, config::WasiModule},
+    std::collections::HashSet,
     anyhow::Context,
     wasi_common::{pipe::WritePipe, WasiCtx},
     wasmtime::{Engine, Linker, Store},
@@ -98,9 +99,13 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
     Ok(wasi_ctx.build())
 }
 
-pub fn link_host_functions(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
+pub fn link_host_functions(linker: &mut Linker<WasmCtx>, wasi_modules: &HashSet<WasiModule>) -> Result<(), Error> {
+    wasi_modules.iter().try_for_each(|wasi_module| {
+        match wasi_module {
+            WasiModule::WasiNn => wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn)
+        }
+    })?;
     wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
-    wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
