@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use {
     crate::common::{TestResult, RUST_FIXTURE_PATH},
     hyper::{Body, Request, StatusCode},
@@ -10,7 +11,7 @@ mod common;
 #[tokio::test(flavor = "multi_thread")]
 async fn fatal_error_traps() -> TestResult {
     let module_path = format!("../../{}/response.wasm", RUST_FIXTURE_PATH);
-    let ctx = ExecuteCtx::new(module_path, ProfilingStrategy::None)?;
+    let ctx = ExecuteCtx::new(module_path, ProfilingStrategy::None, HashSet::new())?;
     let req = Request::get("http://127.0.0.1:7878/").body(Body::from(""))?;
     let resp = ctx
         .handle_request_with_runtime_error(req, "127.0.0.1".parse().unwrap())
