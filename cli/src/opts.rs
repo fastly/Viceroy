@@ -8,7 +8,7 @@ use {
         net::SocketAddr,
         path::{Path, PathBuf},
     },
-    viceroy_lib::{config::WasiModule, Error, ProfilingStrategy},
+    viceroy_lib::{config::ExperimentalModule, Error, ProfilingStrategy},
 };
 
 // Command-line arguments for the Viceroy CLI.
@@ -45,8 +45,8 @@ pub struct Opts {
     #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
     profiler: Option<ProfilingStrategy>,
     /// Set of experimental WASI modules to link against.
-    #[arg(value_enum, long = "modules", default_value = "")]
-    wasi_modules: Vec<WasiModuleArg>,
+    #[arg(value_enum, long = "experimental_modules", default_value = "")]
+    experimental_modules: Vec<ExperimentalModuleArg>,
 }
 
 impl Opts {
@@ -89,45 +89,45 @@ impl Opts {
     }
 
     // Set of experimental wasi modules to link against.
-    pub fn wasi_modules(&self) -> HashSet<WasiModule> {
-        self.wasi_modules.iter().map(|x| x.into()).collect()
+    pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
+        self.experimental_modules.iter().map(|x| x.into()).collect()
     }
 }
 
 /// Enum of available (experimental) wasi modules
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
-pub enum WasiModuleArg {
+pub enum ExperimentalModuleArg {
     WasiNn,
 }
 
-impl From<WasiModuleArg> for WasiModule {
-    fn from(arg: WasiModuleArg) -> WasiModule {
+impl From<ExperimentalModuleArg> for ExperimentalModule {
+    fn from(arg: ExperimentalModuleArg) -> ExperimentalModule {
         match arg {
-            WasiModuleArg::WasiNn => WasiModule::WasiNn,
+            ExperimentalModuleArg::WasiNn => ExperimentalModule::WasiNn,
         }
     }
 }
 
-impl From<&WasiModuleArg> for WasiModule {
-    fn from(arg: &WasiModuleArg) -> WasiModule {
+impl From<&ExperimentalModuleArg> for ExperimentalModule {
+    fn from(arg: &ExperimentalModuleArg) -> ExperimentalModule {
         match arg {
-            WasiModuleArg::WasiNn => WasiModule::WasiNn,
+            ExperimentalModuleArg::WasiNn => ExperimentalModule::WasiNn,
         }
     }
 }
 
-impl From<WasiModule> for WasiModuleArg {
-    fn from(module: WasiModule) -> WasiModuleArg {
+impl From<ExperimentalModule> for ExperimentalModuleArg {
+    fn from(module: ExperimentalModule) -> ExperimentalModuleArg {
         match module {
-            WasiModule::WasiNn => WasiModuleArg::WasiNn,
+            ExperimentalModule::WasiNn => ExperimentalModuleArg::WasiNn,
         }
     }
 }
 
-impl From<&WasiModule> for WasiModuleArg {
-    fn from(module: &WasiModule) -> WasiModuleArg {
+impl From<&ExperimentalModule> for ExperimentalModuleArg {
+    fn from(module: &ExperimentalModule) -> ExperimentalModuleArg {
         match module {
-            WasiModule::WasiNn => WasiModuleArg::WasiNn,
+            ExperimentalModule::WasiNn => ExperimentalModuleArg::WasiNn,
         }
     }
 }

@@ -179,7 +179,7 @@ pub struct LocalServerConfig {
 
 /// Enum of available (experimental) wasi modules
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum WasiModule {
+pub enum ExperimentalModule {
     WasiNn,
 }
 

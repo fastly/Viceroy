@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        config::WasiModule, execute::ExecuteCtx, logging::LogEndpoint, session::Session,
+        config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint, session::Session,
         wiggle_abi, Error,
     },
     anyhow::Context,
@@ -104,12 +104,12 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
 
 pub fn link_host_functions(
     linker: &mut Linker<WasmCtx>,
-    wasi_modules: &HashSet<WasiModule>,
+    experimental_modules: &HashSet<ExperimentalModule>,
 ) -> Result<(), Error> {
-    wasi_modules
+    experimental_modules
         .iter()
-        .try_for_each(|wasi_module| match wasi_module {
-            WasiModule::WasiNn => wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn),
+        .try_for_each(|experimental_module| match experimental_module {
+            ExperimentalModule::WasiNn => wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn),
         })?;
     wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;

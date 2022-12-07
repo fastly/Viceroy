@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, Geolocation, WasiModule},
+        config::{Backends, Dictionaries, Geolocation, ExperimentalModule},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -65,7 +65,7 @@ impl ExecuteCtx {
     pub fn new(
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
-        wasi_modules: HashSet<WasiModule>,
+        wasi_modules: HashSet<ExperimentalModule>,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
