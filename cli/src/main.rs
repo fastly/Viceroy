@@ -13,6 +13,10 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+use itertools::Itertools;
+use std::process::ExitCode;
+use viceroy_lib::TestStatus;
+
 mod opts;
 
 use {
@@ -27,7 +31,9 @@ use {
     tokio::time::timeout,
     tracing::{event, Level, Metadata},
     tracing_subscriber::{filter::EnvFilter, fmt::writer::MakeWriter, FmtSubscriber},
-    viceroy_lib::{config::FastlyConfig, BackendConnector, Error, ExecuteCtx, ViceroyService},
+    viceroy_lib::{
+        config::FastlyConfig, BackendConnector, Error, ExecuteCtx, TestResult, ViceroyService,
+    },
 };
 
 /// Starts up a Viceroy server.
@@ -112,23 +118,117 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
 }
 
 #[tokio::main]
-pub async fn main() -> Result<(), Error> {
+pub async fn main() -> ExitCode {
     // Parse the command-line options, exiting if there are any errors
     let opts = Opts::parse();
 
     install_tracing_subscriber(&opts);
-
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            Ok(())
+    if opts.test_mode() {
+        println!("Using Viceroy to run tests...");
+        match run_wasm_tests(opts).await {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::FAILURE,
         }
-        res = serve(opts) => {
-            if let Err(ref e) = res {
-                event!(Level::ERROR, "{}", e);
+    } else {
+        match {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    Ok(())
+                }
+                res = serve(opts) => {
+                    if let Err(ref e) = res {
+                        event!(Level::ERROR, "{}", e);
+                    }
+                    res
+                }
             }
-            res
+        } {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::FAILURE,
         }
     }
+}
+
+const GREEN_OK: &str = "\x1b[32mok\x1b[0m";
+const RED_FAILED: &str = "\x1b[31mFAILED\x1b[0m";
+const YELLOW_IGNORED: &str = "\x1b[33mignored\x1b[0m";
+/// Execute a Wasm program in the Viceroy environment.
+pub async fn run_wasm_tests(opts: Opts) -> Result<(), anyhow::Error> {
+    // Load the wasm module into an execution context
+    let ctx = create_execution_context(opts)?;
+
+    // Call the wasm module with the `--list` argument to get test names
+    let tests = ctx.clone().list_test_names(false).await?;
+    // Call the wasm module with `--list --ignored`to get ignored tests
+    let ignored_tests = ctx.clone().list_test_names(true).await?;
+
+    // Run the tests
+    println!("running {} tests", tests.len());
+    let mut results: Vec<TestResult> = Vec::new();
+    for test in &tests {
+        if ignored_tests.contains(test) {
+            // todo: diff these lists more efficiently
+            println!("test {} ... {YELLOW_IGNORED}", test);
+            results.push(TestResult::new(
+                test.clone(),
+                TestStatus::IGNORED,
+                String::new(),
+                String::new(),
+            ));
+            continue;
+        }
+        print!("test {} ... ", test);
+        let result = ctx.clone().execute_test(&test).await?;
+        print!(
+            "{}\n",
+            if result.status == TestStatus::PASSED {
+                GREEN_OK
+            } else {
+                RED_FAILED
+            }
+        );
+        results.push(result);
+    }
+
+    print_test_results(results);
+    Ok(())
+}
+
+fn print_test_results(results: Vec<TestResult>) {
+    let counts = results.iter().counts_by(|r| r.status);
+    let failed = results
+        .iter()
+        .filter(|r| r.status == TestStatus::FAILED)
+        .collect::<Vec<&TestResult>>();
+
+    // Get the stderr output for each failing test
+    let stderr_block = failed
+        .iter()
+        .map(|f| format!("---- {} stderr ----\n{}", f.name, f.stderr))
+        .join("\n");
+
+    // Get the list of names of failing tests
+    let failure_list = failed.iter().map(|f| format!("\t{}", f.name)).join("\n");
+
+    let result_summary = format!(
+        "test result: {}. {} passed; {} failed; {} ignored",
+        if counts.contains_key(&TestStatus::FAILED) {
+            RED_FAILED
+        } else {
+            GREEN_OK
+        },
+        counts.get(&TestStatus::PASSED).unwrap_or(&0),
+        counts.get(&TestStatus::FAILED).unwrap_or(&0),
+        counts.get(&TestStatus::IGNORED).unwrap_or(&0)
+    );
+
+    if failed.len() > 0 {
+        print!("\nfailures:\n\n");
+        print!("{stderr_block}");
+        print!("\nfailures:\n");
+        print!("{failure_list}\n");
+    }
+    println!("\n{result_summary}");
 }
 
 fn install_tracing_subscriber(opts: &Opts) {
@@ -223,4 +323,35 @@ impl<'a> MakeWriter<'a> for StdWriter {
             Stdio::Stdout(io::stdout())
         }
     }
+}
+
+fn create_execution_context(opts: Opts) -> Result<ExecuteCtx, anyhow::Error> {
+    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy())?
+        .with_log_stderr(opts.log_stderr())
+        .with_log_stdout(opts.log_stdout());
+    if let Some(config_path) = opts.config_path() {
+        let config = FastlyConfig::from_file(config_path)?;
+        let backends = config.backends();
+        let dictionaries = config.dictionaries();
+        let backend_names = itertools::join(backends.keys(), ", ");
+
+        ctx = ctx
+            .with_backends(backends.clone())
+            .with_dictionaries(dictionaries.clone())
+            .with_config_path(config_path.into());
+
+        if backend_names.is_empty() {
+            event!(
+                Level::WARN,
+                "no backend definitions found in {}",
+                config_path.display()
+            );
+        }
+    } else {
+        event!(
+            Level::WARN,
+            "no configuration provided, invoke with `-C <TOML_FILE>` to provide a configuration"
+        );
+    }
+    Ok(ctx)
 }

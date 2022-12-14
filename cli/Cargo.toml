@@ -30,6 +30,7 @@ name = "viceroy"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "^1.0.31"
 hyper = { version = "^0.14.20", features = ["full"] }
 itertools = "^0.10.5"
 serde_json = "^1.0.59"

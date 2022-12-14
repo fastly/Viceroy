@@ -30,6 +30,9 @@ pub struct Opts {
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
+    /// Whether to use Viceroy as a test runner for cargo test
+    #[arg(short = 't', long = "test", default_value = "false")]
+    test_mode: bool,
     /// Whether to treat stdout as a logging endpoint
     #[arg(long = "log-stdout", default_value = "false")]
     log_stdout: bool,
@@ -64,6 +67,11 @@ impl Opts {
     /// The path to a `local_server` configuration file.
     pub fn config_path(&self) -> Option<&Path> {
         self.config_path.as_deref()
+    }
+
+    /// Whether to run Viceroy as a test runner
+    pub fn test_mode(&self) -> bool {
+        self.test_mode
     }
 
     /// Whether to treat stdout as a logging endpoint

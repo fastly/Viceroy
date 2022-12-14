@@ -20,7 +20,7 @@ pub struct WasmCtx {
 }
 
 impl WasmCtx {
-    fn wasi(&mut self) -> &mut WasiCtx {
+    pub fn wasi(&mut self) -> &mut WasiCtx {
         &mut self.wasi
     }
 
@@ -28,7 +28,7 @@ impl WasmCtx {
         &mut self.wasi_nn
     }
 
-    fn session(&mut self) -> &mut Session {
+    pub fn session(&mut self) -> &mut Session {
         &mut self.session
     }
 }
