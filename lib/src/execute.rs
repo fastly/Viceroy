@@ -228,7 +228,7 @@ impl ExecuteCtx {
             {
                 Ok(_) => (Response::new(Body::empty()), None),
                 Err(ExecutionError::WasmTrap(_e)) => {
-                    println!("There was an error handling the request {}", _e.to_string());
+                    eprintln!("There was an error handling the request {}", _e.to_string());
                     #[allow(unused_mut)]
                     let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
@@ -252,7 +252,7 @@ impl ExecuteCtx {
         let resp = match result.1 {
             None => result.0,
             Some(err) => {
-                let body = format!("{:?}", err);
+                let body = err.root_cause().to_string();
                 Response::builder()
                     .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from(body.as_bytes()))

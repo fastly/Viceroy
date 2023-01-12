@@ -19,21 +19,16 @@ async fn fatal_error_traps() -> TestResult {
 
     // The Guest was terminated and so should return a 500.
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    // Examine the cause in the body and assert that it is the expected
+    // Trap error supplied by the Guest.
+
     let body = resp.into_body().read_into_string().await?;
 
-    assert!(body.starts_with("error while executing at wasm backtrace"));
-    // Examine the WARNING message in the response headers and assert that it is the expected
-    // Trap error supplied by the Guest.
-    // println!("Body: {}", body);
-
-    // if let Some(warning) = resp.headers().get(WARNING) {
-    //     assert_eq!(
-    //         warning,
-    //         "A fatal error occurred in the test-only implementation of header_values_get"
-    //     );
-    // } else {
-    //     panic!("The response did not contain the expected warning header");
-    // }
-
+    assert_eq!(
+        body,
+        "Fatal error: [A fatal error occurred in the test-only implementation of header_values_get]"
+    );
+    
     Ok(())
 }
