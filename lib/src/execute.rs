@@ -56,8 +56,6 @@ pub struct ExecuteCtx {
     next_req_id: Arc<AtomicU64>,
     /// The ObjectStore associated with this instance of Viceroy
     object_store: Arc<ObjectStore>,
-    // Whether to enable wasi-nn functionality
-    // wasi_modules: HashSet<WasiModule>,
 }
 
 impl ExecuteCtx {
@@ -88,7 +86,6 @@ impl ExecuteCtx {
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: Arc::new(ObjectStore::new()),
-            // wasi_modules,
         })
     }
 
@@ -228,7 +225,11 @@ impl ExecuteCtx {
             {
                 Ok(_) => (Response::new(Body::empty()), None),
                 Err(ExecutionError::WasmTrap(_e)) => {
-                    eprintln!("There was an error handling the request {}", _e.to_string());
+                    event!(
+                        Level::ERROR,
+                        "There was an error handling the request {}",
+                        _e.to_string()
+                    );
                     #[allow(unused_mut)]
                     let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
