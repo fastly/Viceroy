@@ -165,6 +165,11 @@ fn install_tracing_subscriber(opts: &Opts) {
             }
         }
     }
+    // If the quiet flag is passed in, don't log anything (this should maybe
+    // just be a verbosity setting)
+    if opts.quiet() {
+        env::set_var("RUST_LOG", "viceroy=off,viceroy-lib=off");
+    }
     // Build a subscriber, using the default `RUST_LOG` environment variable for our filter.
     let builder = FmtSubscriber::builder()
         .with_writer(StdWriter::new())

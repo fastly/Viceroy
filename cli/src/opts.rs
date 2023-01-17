@@ -51,6 +51,9 @@ pub struct Opts {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    /// Don't log viceroy events to stdout or stderr
+    #[arg(short = 'q', long = "quiet", default_value = "false")]
+    quiet: bool,
     // Command line to start child process
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     run: Vec<String>,
@@ -103,6 +106,10 @@ impl Opts {
     pub fn run(&self) -> &[String] {
         self.run.as_ref()
     }
+    pub fn quiet(&self) -> bool {
+        self.quiet
+    }
+
     // Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
         self.experimental_modules.iter().map(|x| x.into()).collect()
