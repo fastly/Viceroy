@@ -31,31 +31,6 @@ use {
     wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
 };
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub enum TestStatus {
-    PASSED,
-    FAILED,
-    IGNORED,
-}
-
-pub struct TestResult {
-    pub name: String,
-    pub status: TestStatus,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl TestResult {
-    pub fn new(name: String, status: TestStatus, stdout: String, stderr: String) -> Self {
-        Self {
-            name,
-            status,
-            stdout,
-            stderr,
-        }
-    }
-}
-
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
 ///
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
@@ -383,61 +358,7 @@ impl ExecuteCtx {
         outcome
     }
 
-    pub async fn list_test_names(self, only_ignored: bool) -> Result<Vec<String>, anyhow::Error> {
-        // We're just using this instance to list the test names, so we can use
-        // a mock session rather than setting up a bunch of state just to throw
-        // it away
-        let session = Session::mock();
-
-        let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
-        store.data_mut().wasi().push_arg("wasm_program")?;
-        store.data_mut().wasi().push_arg("--list")?;
-        if only_ignored {
-            store.data_mut().wasi().push_arg("--ignored")?;
-        }
-
-        let wp = wasi_common::pipe::WritePipe::new_in_memory();
-        let stdout = Box::new(wp.clone());
-        store.data_mut().wasi().set_stdout(stdout);
-
-        let instance = self
-            .instance_pre
-            .instantiate_async(&mut store)
-            .await
-            .map_err(ExecutionError::Instantiation)?;
-
-        // Pull out the `_start` function, which by convention with WASI is the main entry point for
-        // an application.
-        let main_func = instance
-            .get_typed_func::<(), (), _>(&mut store, "_start")
-            .map_err(ExecutionError::Typechecking)?;
-
-        // Invoke the entrypoint function and collect its exit code
-        if let Err(trap) = main_func.call_async(&mut store, ()).await {
-            if let Some(st) = trap.i32_exit_status() {
-                if st != 0 {
-                    Err(anyhow!("program exited with non-zero exit code: {st}"))?
-                }
-            } else {
-                Err(trap)?
-            }
-        };
-        // Ensure the downstream response channel is closed, whether or not a response was
-        // sent during execution.
-        store.data_mut().close_downstream_response_sender();
-
-        drop(store);
-
-        let output_string = String::from_utf8(
-            wp.try_into_inner()
-                .map_err(|_| anyhow!("multiple references outstanding to WritePipe"))?
-                .into_inner(),
-        )?;
-        let test_names = parse_list_output(output_string)?;
-        Ok(test_names)
-    }
-
-    pub async fn execute_test(self, name: &str) -> Result<TestResult, anyhow::Error> {
+    pub async fn run_main(self, args: &[String]) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
@@ -459,16 +380,9 @@ impl ExecuteCtx {
 
         let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
         store.data_mut().wasi().push_arg("wasm_program")?;
-        store.data_mut().wasi().push_arg("--exact")?;
-        store.data_mut().wasi().push_arg("--nocapture")?;
-        store.data_mut().wasi().push_arg(name)?;
-
-        let out_pipe = wasi_common::pipe::WritePipe::new_in_memory();
-        let err_pipe = wasi_common::pipe::WritePipe::new_in_memory();
-        let stdout = Box::new(out_pipe.clone());
-        let stderr = Box::new(err_pipe.clone());
-        store.data_mut().wasi().set_stdout(stdout);
-        store.data_mut().wasi().set_stderr(stderr);
+        for arg in args {
+            store.data_mut().wasi().push_arg(arg)?;
+        }
 
         let instance = self
             .instance_pre
@@ -488,69 +402,11 @@ impl ExecuteCtx {
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
         store.data_mut().close_downstream_response_sender();
-
-        // Drop the store so we can read our stdout and stderr pipes
-        drop(store);
-
-        let stdout_str = pipe_to_string(out_pipe)?;
-        let stderr_str = pipe_to_string(err_pipe)?;
-
         match test_outcome {
-            Ok(()) => Ok(TestResult::new(
-                String::from(name),
-                TestStatus::PASSED,
-                stdout_str,
-                stderr_str,
-            )),
-            Err(_) => Ok(TestResult::new(
-                String::from(name),
-                TestStatus::FAILED,
-                stdout_str,
-                stderr_str,
-            )),
+            Ok(_) => Ok(()),
+            Err(_) => Err(anyhow!("Error running _start")),
         }
     }
-}
-
-// This function takes a string in the following format and converts it into a
-// list of test names:
-// ```
-// test_name_1: test
-// test_name_2: test
-// test_name_3: test
-//
-// 5 tests, 0 benchmarks
-// ```
-fn parse_list_output(output_string: String) -> Result<Vec<String>, anyhow::Error> {
-    if output_string.starts_with("0 tests") {
-        return Ok(vec![]);
-    }
-    let (list_contents, _) = output_string
-        .split_once("\n\n")
-        .ok_or_else(|| anyhow!("expected double newlines in the test's --list output"))?;
-    let test_names = list_contents
-        .split("\n")
-        .map(|line| {
-            Ok::<String, anyhow::Error>(
-                line.split_once(": ")
-                    .ok_or_else(|| anyhow!("expected test line to contain the substring ': '"))?
-                    .0
-                    .to_string(),
-            )
-        })
-        .collect::<Result<Vec<String>, _>>()?;
-    Ok(test_names)
-}
-
-fn pipe_to_string(
-    pipe: wasi_common::pipe::WritePipe<std::io::Cursor<Vec<u8>>>,
-) -> Result<String, anyhow::Error> {
-    let stdout_string = String::from_utf8(
-        pipe.try_into_inner()
-            .map_err(|_| anyhow!("multiple references outstanding to WritePipe"))?
-            .into_inner(),
-    )?;
-    Ok(stdout_string)
 }
 
 fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {

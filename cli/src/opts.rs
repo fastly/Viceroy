@@ -30,9 +30,10 @@ pub struct Opts {
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
-    /// Whether to use Viceroy as a test runner for cargo test
-    #[arg(short = 't', long = "test", default_value = "false")]
-    test_mode: bool,
+    /// Use Viceroy to run a module's _start function once, rather than in a
+    /// web server loop
+    #[arg(short = 'r', long = "run", default_value = "false")]
+    run_mode: bool,
     /// Whether to treat stdout as a logging endpoint
     #[arg(long = "log-stdout", default_value = "false")]
     log_stdout: bool,
@@ -50,6 +51,9 @@ pub struct Opts {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    // Command line to start child process
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    run: Vec<String>,
 }
 
 impl Opts {
@@ -70,8 +74,8 @@ impl Opts {
     }
 
     /// Whether to run Viceroy as a test runner
-    pub fn test_mode(&self) -> bool {
-        self.test_mode
+    pub fn run_mode(&self) -> bool {
+        self.run_mode
     }
 
     /// Whether to treat stdout as a logging endpoint
@@ -96,6 +100,9 @@ impl Opts {
         self.profiler.unwrap_or(ProfilingStrategy::None)
     }
 
+    pub fn run(&self) -> &[String] {
+        self.run.as_ref()
+    }
     // Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
         self.experimental_modules.iter().map(|x| x.into()).collect()
