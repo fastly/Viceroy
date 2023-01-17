@@ -10,10 +10,10 @@ homepage = "https://github.com/fastly/Viceroy"
 repository = "https://github.com/fastly/Viceroy"
 keywords = ["wasm", "fastly"]
 categories = [
-  "development-tools",
-  "network-programming",
-  "simulation",
-  "wasm"
+    "development-tools",
+    "network-programming",
+    "simulation",
+    "wasm"
 ]
 include = [
     "../CHANGELOG.md",
@@ -50,11 +50,12 @@ toml = "^0.5.9"
 tracing = "^0.1.37"
 tracing-futures = "^0.2.5"
 url = "^2.3.1"
-wasi-common = "^2.0.0"
-wasmtime = "^2.0.0"
-wasmtime-wasi = { version = "^2.0.0", features = ["tokio"] }
+wasi-common = "^3.0.0"
+wasmtime = "^3.0.0"
+wasmtime-wasi = "^3.0.0"
+wasmtime-wasi-nn = "^3.0.0"
 webpki = "^0.21.0"
-wiggle = { version = "^2.0.0", features = ["wasmtime_async"] }
+wiggle = "^3.0.0"
 
 [dev-dependencies]
 tempfile = "^3.2.0"

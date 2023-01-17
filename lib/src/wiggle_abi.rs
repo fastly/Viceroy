@@ -111,7 +111,7 @@ impl FastlyAbi for Session {
 }
 
 impl UserErrorConversion for Session {
-    fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, wiggle::Trap> {
+    fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, anyhow::Error> {
         match e {
             Error::UnknownBackend(ref backend) => {
                 let config_path = &self.config_path();
@@ -154,7 +154,7 @@ impl UserErrorConversion for Session {
 
         match e {
             // If a Fatal Error was encountered, propagate the error message out.
-            Error::FatalError(msg) => Err(wiggle::Trap::String(msg)),
+            Error::FatalError(msg) => Err(anyhow::Error::new(Error::FatalError(msg))),
             // Propagate the actionable error to the guest.
             _ => Ok(e.to_fastly_status()),
         }

@@ -245,7 +245,7 @@ pub(crate) enum ExecutionError {
     ///
     /// [call]: https://docs.rs/wasmtime/latest/wasmtime/struct.Func.html#method.call
     #[error("WebAssembly execution trapped: {0}")]
-    WasmTrap(wasmtime::Trap),
+    WasmTrap(anyhow::Error),
 
     /// Errors thrown when trying to instantiate a guest context.
     #[error("Error creating context: {0}")]

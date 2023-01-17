@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, Geolocation},
+        config::{Backends, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, dummy_store, link_host_functions, WasmCtx},
@@ -12,9 +12,9 @@ use {
         upstream::TlsConfig,
         Error,
     },
-    cfg_if::cfg_if,
     hyper::{Request, Response},
     std::{
+        collections::HashSet,
         net::IpAddr,
         path::{Path, PathBuf},
         sync::atomic::AtomicU64,
@@ -23,6 +23,7 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
+    wasi_common::I32Exit,
     wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
 };
 
@@ -58,15 +59,16 @@ pub struct ExecuteCtx {
 }
 
 impl ExecuteCtx {
-    /// Create a new execution context, given the path to a module.
+    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
     pub fn new(
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
+        wasi_modules: HashSet<ExperimentalModule>,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
         let mut linker = Linker::new(&engine);
-        link_host_functions(&mut linker)?;
+        link_host_functions(&mut linker, &wasi_modules)?;
         let module = Module::from_file(&engine, module_path)?;
 
         let mut dummy_store = dummy_store(&engine);
@@ -186,11 +188,12 @@ impl ExecuteCtx {
     /// # Example
     ///
     /// ```no_run
-    /// # use hyper::{Body, http::Request};
+    /// # use std::collections::HashSet;
+    /// use hyper::{Body, http::Request};
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new())?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }
@@ -199,7 +202,7 @@ impl ExecuteCtx {
         self,
         incoming_req: Request<hyper::Body>,
         remote: IpAddr,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
         let req = prepare_request(incoming_req)?;
         let (sender, receiver) = oneshot::channel();
 
@@ -215,40 +218,47 @@ impl ExecuteCtx {
         );
 
         let resp = match receiver.await {
-            Ok(resp) => resp,
+            Ok(resp) => (resp, None),
             Err(_) => match guest_handle
                 .await
                 .expect("guest worker finished without panicking")
             {
-                Ok(_) => Response::new(Body::empty()),
+                Ok(_) => (Response::new(Body::empty()), None),
                 Err(ExecutionError::WasmTrap(_e)) => {
+                    event!(
+                        Level::ERROR,
+                        "There was an error handling the request {}",
+                        _e.to_string()
+                    );
                     #[allow(unused_mut)]
                     let mut response = Response::builder()
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::empty())
                         .unwrap();
-
-                    cfg_if! {
-                        // The special functionality sequestered here in this cfg_if! block allows the trap-test
-                        // fixture to affirm that the FatalError was experienced by the Guest.
-                        if #[cfg(feature = "test-fatalerror-config")] {
-
-                            // Slice off the first line of the error message returned in the GuestError.
-                            let error_msg = _e.to_string();
-                            let msg = error_msg.split('\n').next().unwrap();
-
-                            // Create a HeaderValue from the error message and place it in the response.
-                            let hdr_val =
-                                http::header::HeaderValue::from_str(&msg).expect("error message is a valid header");
-
-                            response.headers_mut().insert(http::header::WARNING, hdr_val);
-                        }
-                    }
-
-                    response
+                    (response, Some(_e))
                 }
                 Err(e) => panic!("failed to run guest: {}", e),
             },
+        };
+
+        Ok(resp)
+    }
+
+    pub async fn handle_request_with_runtime_error(
+        self,
+        incoming_req: Request<hyper::Body>,
+        remote: IpAddr,
+    ) -> Result<Response<Body>, Error> {
+        let result = self.handle_request(incoming_req, remote).await?;
+        let resp = match result.1 {
+            None => result.0,
+            Some(err) => {
+                let body = err.root_cause().to_string();
+                Response::builder()
+                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from(body.as_bytes()))
+                    .unwrap()
+            }
         };
 
         Ok(resp)
@@ -294,17 +304,22 @@ impl ExecuteCtx {
             .map_err(ExecutionError::Typechecking)?;
 
         // Invoke the entrypoint function, which may or may not send a downstream response.
-        let outcome = main_func
-            .call_async(&mut store, ())
-            .await
-            .map(|_| ())
-            .map_err(|trap| {
-                // Be sure that we only log non-zero status codes.
-                if trap.i32_exit_status() != Some(0) {
-                    event!(Level::ERROR, "WebAssembly trapped: {}", trap);
+        let outcome = match main_func.call_async(&mut store, ()).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let Some(exit) = e.downcast_ref::<I32Exit>() {
+                    if exit.0 == 0 {
+                        Ok(())
+                    } else {
+                        event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);
+                        Err(ExecutionError::WasmTrap(e))
+                    }
+                } else {
+                    event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
+                    Err(ExecutionError::WasmTrap(e))
                 }
-                ExecutionError::WasmTrap(trap)
-            });
+            }
+        };
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
@@ -330,7 +345,7 @@ impl ExecuteCtx {
 
 fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {
     use wasmtime::{
-        Config, InstanceAllocationStrategy, InstanceLimits, PoolingAllocationStrategy,
+        Config, InstanceAllocationStrategy, PoolingAllocationConfig, PoolingAllocationStrategy,
         WasmBacktraceDetails,
     };
 
@@ -342,31 +357,33 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     config.profiler(profiling_strategy);
 
     const MB: usize = 1 << 20;
+    let mut pooling_allocation_config = PoolingAllocationConfig::default();
 
-    let instance_limits = InstanceLimits {
-        // This number matches C@E production
-        size: MB,
+    // This number matches C@E production
+    pooling_allocation_config.instance_size(MB);
 
-        // Core wasm programs have 1 memory
-        memories: 1,
-        // allow for up to 128MiB of linear memory. Wasm pages are 64k
-        memory_pages: 128 * (MB as u64) / (64 * 1024),
-        // Core wasm programs have 1 table
-        tables: 1,
-        // Some applications create a large number of functions, in particular
-        // when compiled in debug mode or applications written in swift. Every
-        // function can end up in the table
-        table_elements: 98765,
-        // Number of instances: the pool will allocate virtual memory for this
-        // many instances, which limits the number of requests which can be
-        // handled concurrently.
-        count: InstanceLimits::default().count,
-    };
+    // Core wasm programs have 1 memory
+    pooling_allocation_config.instance_memories(1);
 
-    config.allocation_strategy(InstanceAllocationStrategy::Pooling {
-        strategy: PoolingAllocationStrategy::NextAvailable,
-        instance_limits,
-    });
+    // allow for up to 128MiB of linear memory. Wasm pages are 64k
+    pooling_allocation_config.instance_memory_pages(128 * (MB as u64) / (64 * 1024));
+
+    // Core wasm programs have 1 table
+    pooling_allocation_config.instance_tables(1);
+
+    // Some applications create a large number of functions, in particular
+    // when compiled in debug mode or applications written in swift. Every
+    // function can end up in the table
+    pooling_allocation_config.instance_table_elements(98765);
+
+    // Number of instances: the pool will allocate virtual memory for this
+    // many instances, which limits the number of requests which can be
+    // handled concurrently.
+    pooling_allocation_config.strategy(PoolingAllocationStrategy::NextAvailable);
+
+    config.allocation_strategy(InstanceAllocationStrategy::Pooling(
+        pooling_allocation_config,
+    ));
 
     config
 }
