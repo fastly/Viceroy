@@ -8,10 +8,9 @@ license = "Apache-2.0 WITH LLVM-exception"
 publish = false
 
 [dependencies]
-# TODO ACF 2022-11-14: update to a non-prerelease version for testing once available
-fastly = "=0.9.0-pre1"
-fastly-shared = "=0.9.0-pre1"
-fastly-sys = "=0.9.0-pre1"
+fastly = "^0.9.0"
+fastly-shared = "^0.9.0"
+fastly-sys = "^0.9.0"
 bytes = "1.0.0"
 http = "0.2.1"
 serde = "1.0.114"
