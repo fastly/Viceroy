@@ -72,7 +72,7 @@ async fn responses_can_be_streamed_downstream() -> TestResult {
     // accumulate the entire body to a vector
     let mut body = Vec::new();
     while let Some(chunk) = resp.data().await {
-        body.extend_from_slice(&chunk?);
+        body.extend_from_slice(&chunk.unwrap());
     }
 
     // work with the body as a string, breaking it into lines

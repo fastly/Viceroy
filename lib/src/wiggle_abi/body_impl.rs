@@ -101,7 +101,11 @@ impl FastlyHttpBody for Session {
 
     fn close(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
         // Drop the body and pass up an error if the handle does not exist
-        self.drop_body(body_handle)?;
-        Ok(())
+        if self.is_streaming_body(body_handle) {
+            // Make sure a streaming body gets a `finish` message
+            self.take_streaming_body(body_handle)?.finish()
+        } else {
+            Ok(self.drop_body(body_handle)?)
+        }
     }
 }
