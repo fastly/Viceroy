@@ -251,7 +251,7 @@ impl<'a> MakeWriter<'a> for StdWriter {
 }
 
 async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Error> {
-    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy())?
+    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy(), opts.wasi_modules())?
         .with_log_stderr(opts.log_stderr())
         .with_log_stdout(opts.log_stdout());
 
