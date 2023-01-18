@@ -1,10 +1,7 @@
 //! Body type, for request and response bodies.
 
-use crate::streaming_body::StreamingBodyItem;
-use crate::Error;
-
 use {
-    crate::error,
+    crate::{error, streaming_body::StreamingBodyItem, Error},
     bytes::{BufMut, BytesMut},
     flate2::write::GzDecoder,
     futures::pin_mut,
