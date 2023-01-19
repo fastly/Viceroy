@@ -190,7 +190,7 @@ where
         cursor: types::MultiValueCursor,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<types::MultiValueCursorResult, Error> {
-        let mut buf = memory.as_slice_mut()?;
+        let mut buf = memory.as_slice_mut()?.ok_or(Error::SharedMemory)?;
 
         // Note: the prior implementation multi_value_writer would first
         // terminate the buffer, write -1 to the ending cursor, and zero the nwritten

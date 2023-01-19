@@ -121,6 +121,9 @@ pub enum Error {
 
     #[error("Unfinished streaming body")]
     UnfinishedStreamingBody,
+
+    #[error("Shared memory not supported yet")]
+    SharedMemory,
 }
 
 impl Error {
@@ -173,7 +176,8 @@ impl Error {
             | Error::HttpError(_)
             | Error::UnknownObjectStore(_)
             | Error::ObjectStoreKeyValidationError(_)
-            | Error::UnfinishedStreamingBody => FastlyStatus::Error,
+            | Error::UnfinishedStreamingBody
+            | Error::SharedMemory => FastlyStatus::Error,
         }
     }
 

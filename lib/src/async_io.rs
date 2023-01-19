@@ -17,13 +17,20 @@ impl FastlyAsyncIo for Session {
         handles: &GuestPtr<'a, [AsyncItemHandle]>,
         timeout_ms: u32,
     ) -> Result<u32, Error> {
-        let handles = handles.as_slice()?;
+        let handles = GuestPtr::<'a, [u32]>::new(handles.mem(), handles.offset())
+            .as_slice()?
+            .ok_or(Error::SharedMemory)?;
         if handles.len() == 0 && timeout_ms == 0 {
             return Err(Error::InvalidArgument);
         }
 
         let select_fut = self
-            .select_impl(handles.iter().copied().map(Into::into))
+            .select_impl(
+                handles
+                    .iter()
+                    .copied()
+                    .map(|i| AsyncItemHandle::from(i).into()),
+            )
             .map_ok(|done_idx| done_idx as u32);
 
         if timeout_ms == 0 {
