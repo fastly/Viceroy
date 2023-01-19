@@ -300,7 +300,7 @@ impl ExecuteCtx {
         // Pull out the `_start` function, which by convention with WASI is the main entry point for
         // an application.
         let main_func = instance
-            .get_typed_func::<(), (), _>(&mut store, "_start")
+            .get_typed_func::<(), ()>(&mut store, "_start")
             .map_err(ExecutionError::Typechecking)?;
 
         // Invoke the entrypoint function, which may or may not send a downstream response.

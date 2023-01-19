@@ -70,7 +70,7 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
         }
 
         let value = {
-            let name = HeaderName::from_bytes(&name.as_slice()?)?;
+            let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
             self.get(&name).ok_or(Error::InvalidArgument)?
         };
 
@@ -86,7 +86,10 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
         }
         let value_len =
             u32::try_from(value_bytes.len()).expect("smaller than value_max_len means it must fit");
-        let mut value_out = value_ptr.as_array(value_len).as_slice_mut()?;
+        let mut value_out = value_ptr
+            .as_array(value_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
         value_out.copy_from_slice(value_bytes);
         nwritten_out.write(value_len)?;
 
@@ -106,7 +109,7 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
         }
 
         let mut values_iter = {
-            let name = HeaderName::from_bytes(&name.as_slice()?)?;
+            let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
             self.get_all(&name).iter()
         };
 
@@ -118,9 +121,10 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
             return Err(Error::InvalidArgument);
         }
 
-        let name = HeaderName::from_bytes(&name.as_slice()?)?;
+        let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
         let values = values
             .as_slice()?
+            .ok_or(Error::SharedMemory)?
             // split slice along nul bytes
             .split(|b| *b == 0)
             // reverse and skip to drop the empty item at the end
@@ -147,8 +151,8 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
             return Err(Error::InvalidArgument);
         }
 
-        let name = HeaderName::from_bytes(&name.as_slice()?)?;
-        let value = HeaderValue::from_bytes(&value.as_slice()?)?;
+        let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
+        let value = HeaderValue::from_bytes(&value.as_slice()?.ok_or(Error::SharedMemory)?)?;
         self.insert(name, value);
         Ok(())
     }
@@ -158,8 +162,8 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
             return Err(Error::InvalidArgument);
         }
 
-        let name = HeaderName::from_bytes(&name.as_slice()?)?;
-        let value = HeaderValue::from_bytes(&value.as_slice()?)?;
+        let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
+        let value = HeaderValue::from_bytes(&value.as_slice()?.ok_or(Error::SharedMemory)?)?;
         self.append(name, value);
         Ok(())
     }
@@ -169,7 +173,7 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
             return Err(Error::InvalidArgument);
         }
 
-        let name = HeaderName::from_bytes(&name.as_slice()?)?;
+        let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
         let _ = self.remove(name).ok_or(Error::InvalidArgument)?;
         Ok(())
     }
