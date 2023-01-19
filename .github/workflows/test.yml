@@ -9,7 +9,7 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-latest, windows-latest, macos-latest]
+        platform: [ubuntu-20.04, windows-2022, macos-11]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -48,7 +48,7 @@ jobs:
   trap-test:
     strategy:
       matrix:
-        platform: [ubuntu-latest, windows-latest, macos-latest]
+        platform: [ubuntu-20.04, windows-2022, macos-11]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -76,7 +76,7 @@ jobs:
       shell: bash
 
   package-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout
         uses: actions/checkout@v3
