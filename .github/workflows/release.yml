@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust-toolchain: [stable]
-        os: [ubuntu-20.04, macos-11, windows-latest]
+        os: [ubuntu-20.04, macos-11, windows-2022]
         arch: [amd64, arm64]
         exclude:
           - os: windows-latest
@@ -22,7 +22,7 @@ jobs:
           - os: macos-11
             name: darwin
             rust_abi: apple-darwin
-          - os: windows-latest
+          - os: windows-2022
             name: windows
             rust_abi: pc-windows-msvc
             extension: .exe
