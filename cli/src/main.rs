@@ -148,7 +148,7 @@ pub async fn main() -> ExitCode {
 pub async fn run_wasm_main(opts: Opts) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
     let ctx = create_execution_context(&opts).await?;
-    ctx.run_main(opts.run()).await
+    ctx.run_main(opts.wasm_args()).await
 }
 
 fn install_tracing_subscriber(opts: &Opts) {

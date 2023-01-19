@@ -54,9 +54,10 @@ pub struct Opts {
     /// Don't log viceroy events to stdout or stderr
     #[arg(short = 'q', long = "quiet", default_value = "false")]
     quiet: bool,
-    // Command line to start child process
+    /// Args to pass along to the binary being executed. This is only used when
+    /// run_mode=true
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    run: Vec<String>,
+    wasm_args: Vec<String>,
 }
 
 impl Opts {
@@ -76,7 +77,7 @@ impl Opts {
         self.config_path.as_deref()
     }
 
-    /// Whether to run Viceroy as a test runner
+    /// Whether Viceroy should run the input once and then exit
     pub fn run_mode(&self) -> bool {
         self.run_mode
     }
@@ -103,9 +104,13 @@ impl Opts {
         self.profiler.unwrap_or(ProfilingStrategy::None)
     }
 
-    pub fn run(&self) -> &[String] {
-        self.run.as_ref()
+    /// The arguments to pass to the underlying binary when run_mode=true
+    pub fn wasm_args(&self) -> &[String] {
+        self.wasm_args.as_ref()
     }
+
+    /// Prevents Viceroy from logging to stdout and stderr (note: any logs
+    /// emitted by the INPUT program will still go to stdout/stderr)
     pub fn quiet(&self) -> bool {
         self.quiet
     }
@@ -348,5 +353,40 @@ mod opts_tests {
             Ok(_) => panic!("unexpected result"),
             Err(_) => Ok(()),
         }
+    }
+
+    /// Test that trailing arguments are collected successfully
+    #[test]
+    fn trailing_args_are_collected() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            &test_file("minimal.wat"),
+            "--",
+            "--trailing-arg",
+            "--trailing-arg-2",
+        ];
+        let opts = Opts::try_parse_from(args)?;
+        assert_eq!(opts.wasm_args(), &["--trailing-arg", "--trailing-arg-2"]);
+        Ok(())
+    }
+
+    /// Input is still accepted after double-dash. This is how the input will be
+    /// passed by cargo nextest if using Viceroy in run-mode to run tests
+    #[test]
+    fn input_accepted_after_double_dash() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--",
+            &test_file("minimal.wat"),
+            "--trailing-arg",
+            "--trailing-arg-2",
+        ];
+        let opts = match Opts::try_parse_from(args) {
+            Ok(opts) => opts,
+            res => panic!("unexpected result: {:?}", res),
+        };
+        assert_eq!(opts.input().to_str().unwrap(), &test_file("minimal.wat"));
+        assert_eq!(opts.wasm_args(), &["--trailing-arg", "--trailing-arg-2"]);
+        Ok(())
     }
 }
