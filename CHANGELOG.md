@@ -1,4 +1,8 @@
-## Unreleased
+## 0.3.4 (2023-01-19)
+- Update to Wasmtime 4.0.0
+  ([#217](https://github.com/fastly/Viceroy/pull/217))
+- Set fixed release build images to improve compatibility of precompiled release artifacts
+  ([#216](https://github.com/fastly/Viceroy/pull/216))
 
 ## 0.3.3 (2023-01-18)
 - Support the streaming body `finish()` method introduced in version 0.9.0 of the Rust SDK
