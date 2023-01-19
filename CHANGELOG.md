@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.3.3 (2023-01-18)
+- Support the streaming body `finish()` method introduced in version 0.9.0 of the Rust SDK
+  ([#203](https://github.com/fastly/Viceroy/pull/203))
+- Update to wasmtime 3.0.0 and enable experimental wasi-nn interface
+  ([#209](https://github.com/fastly/Viceroy/pull/209))
+
 ## 0.3.2 (2022-11-17)
 - Add geolocation implementation to Viceroy
   ([#165](https://github.com/fastly/Viceroy/pull/165))
