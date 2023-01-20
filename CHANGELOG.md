@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.3.4 (2023-01-19)
 - Update to Wasmtime 4.0.0
   ([#217](https://github.com/fastly/Viceroy/pull/217))
