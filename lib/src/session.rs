@@ -13,11 +13,13 @@ use {
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
+        secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
+            ObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle,
+            SecretStoreHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -97,6 +99,18 @@ pub struct Session {
     ///
     /// Populated prior to guest execution.
     object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
+    /// The secret stores configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    secret_stores: Arc<SecretStores>,
+    /// The secret stores configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    secret_stores_by_name: PrimaryMap<SecretStoreHandle, String>,
+    /// The secrets for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -119,6 +133,7 @@ impl Session {
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
         object_store: Arc<ObjectStore>,
+        secret_stores: Arc<SecretStores>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -148,6 +163,9 @@ impl Session {
             dictionaries_by_name: PrimaryMap::new(),
             object_store,
             object_store_by_name: PrimaryMap::new(),
+            secret_stores,
+            secret_stores_by_name: PrimaryMap::new(),
+            secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
         }
@@ -172,6 +190,7 @@ impl Session {
             Arc::new(HashMap::new()),
             Arc::new(None),
             Arc::new(ObjectStore::new()),
+            Arc::new(SecretStores::new()),
         )
     }
 
@@ -636,6 +655,35 @@ impl Session {
         obj_key: &ObjectKey,
     ) -> Result<Vec<u8>, ObjectStoreError> {
         self.object_store.lookup(obj_store_key, obj_key)
+    }
+
+    // ----- Secret Store API -----
+
+    pub fn secret_store_handle(&mut self, name: &str) -> Option<SecretStoreHandle> {
+        self.secret_stores.get_store(name)?;
+        Some(self.secret_stores_by_name.push(name.to_string()))
+    }
+
+    pub fn secret_store_name(&self, handle: SecretStoreHandle) -> Option<String> {
+        self.secret_stores_by_name.get(handle).cloned()
+    }
+
+    pub fn secret_handle(&mut self, store_name: &str, secret_name: &str) -> Option<SecretHandle> {
+        self.secret_stores
+            .get_store(store_name)?
+            .get_secret(secret_name)?;
+        Some(self.secrets_by_name.push(SecretLookup {
+            store_name: store_name.to_string(),
+            secret_name: secret_name.to_string(),
+        }))
+    }
+
+    pub fn secret_lookup(&self, handle: SecretHandle) -> Option<SecretLookup> {
+        self.secrets_by_name.get(handle).cloned()
+    }
+
+    pub fn secret_stores(&self) -> &Arc<SecretStores> {
+        &self.secret_stores
     }
 
     // ----- Pending Requests API -----

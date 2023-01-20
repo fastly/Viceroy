@@ -92,6 +92,9 @@ pub enum Error {
     #[error(transparent)]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 
+    #[error(transparent)]
+    SecretStoreError(#[from] crate::wiggle_abi::SecretStoreError),
+
     #[error{"Expected UTF-8"}]
     Utf8Expected(#[from] std::str::Utf8Error),
 
@@ -151,6 +154,7 @@ impl Error {
             Error::DictionaryError(e) => e.to_fastly_status(),
             Error::GeolocationError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
+            Error::SecretStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -230,9 +234,19 @@ pub enum HandleError {
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
+
     /// An object-store handle was not valid.
     #[error("Invalid object-store handle: {0}")]
     InvalidObjectStoreHandle(crate::wiggle_abi::types::ObjectStoreHandle),
+
+    /// A secret store handle was not valid.
+    #[error("Invalid secret store handle: {0}")]
+    InvalidSecretStoreHandle(crate::wiggle_abi::types::SecretStoreHandle),
+
+    /// A secret handle was not valid.
+    #[error("Invalid secret handle: {0}")]
+    InvalidSecretHandle(crate::wiggle_abi::types::SecretHandle),
+
     /// An async item handle was not valid.
     #[error("Invalid async item handle: {0}")]
     InvalidAsyncItemHandle(crate::wiggle_abi::types::AsyncItemHandle),
@@ -305,6 +319,13 @@ pub enum FastlyConfigError {
         name: String,
         #[source]
         err: ObjectStoreConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidSecretStoreDefinition {
+        name: String,
+        #[source]
+        err: SecretStoreConfigError,
     },
 
     /// An error that occurred while deserializing the file.
@@ -517,6 +538,39 @@ pub enum ObjectStoreConfigError {
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
     #[error("Invalid `key` value used: {0}.")]
     KeyValidationError(#[from] crate::object_store::KeyValidationError),
+}
+
+/// Errors that may occur while validating secret store configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum SecretStoreConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("The `path` and `data` keys for the object `{0}` are set. Only one can be used.")]
+    PathAndData(String),
+    #[error("The `path` or `data` key for the object `{0}` is not set. One must be used.")]
+    NoPathOrData(String),
+    #[error("The `data` value for the object `{0}` is not a string.")]
+    DataNotAString(String),
+    #[error("The `path` value for the object `{0}` is not a string.")]
+    PathNotAString(String),
+
+    #[error("The `key` key for an object is not set. It must be used.")]
+    NoKey,
+    #[error("The `key` value for an object is not a string.")]
+    KeyNotAString,
+
+    #[error("There is no array of objects for the given store.")]
+    NotAnArray,
+    #[error("There is an object in the given store that is not a table of keys.")]
+    NotATable,
+
+    #[error("Invalid secret store name: {0}")]
+    InvalidSecretStoreName(String),
+
+    #[error("Invalid secret name: {0}")]
+    InvalidSecretName(String),
 }
 
 /// Errors related to the downstream request.
