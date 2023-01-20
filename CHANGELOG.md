@@ -1,5 +1,8 @@
 ## Unreleased
 
+## 0.3.5 (2023-01-20)
+- Add support for Secret Store ([#210](https://github.com/fastly/Viceroy/pull/210))
+
 ## 0.3.4 (2023-01-19)
 - Update to Wasmtime 4.0.0
   ([#217](https://github.com/fastly/Viceroy/pull/217))
