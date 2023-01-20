@@ -13,7 +13,7 @@ jobs:
         os: [ubuntu-20.04, macos-11, windows-2022]
         arch: [amd64, arm64]
         exclude:
-          - os: windows-latest
+          - os: windows-2022
             arch: arm64
         include:
           - os: ubuntu-20.04
