@@ -37,75 +37,7 @@ use {
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(opts: Opts) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy(), opts.wasi_modules())?
-        .with_log_stderr(opts.log_stderr())
-        .with_log_stdout(opts.log_stdout());
-
-    if let Some(config_path) = opts.config_path() {
-        let config = FastlyConfig::from_file(config_path)?;
-        let backends = config.backends();
-        let geolocation = config.geolocation();
-        let dictionaries = config.dictionaries();
-        let object_store = config.object_store();
-        let secret_stores = config.secret_stores();
-        let backend_names = itertools::join(backends.keys(), ", ");
-
-        ctx = ctx
-            .with_backends(backends.clone())
-            .with_geolocation(geolocation.clone())
-            .with_dictionaries(dictionaries.clone())
-            .with_object_store(object_store.clone())
-            .with_secret_stores(secret_stores.clone())
-            .with_config_path(config_path.into());
-
-        if backend_names.is_empty() {
-            event!(
-                Level::WARN,
-                "no backend definitions found in {}",
-                config_path.display()
-            );
-        }
-
-        for (name, backend) in backends.iter() {
-            let client = Client::builder().build(BackendConnector::new(
-                backend.clone(),
-                ctx.tls_config().clone(),
-            ));
-            let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
-
-            event!(Level::INFO, "checking if backend '{}' is up", name);
-            match timeout(Duration::from_secs(5), client.request(req)).await {
-                // In the case that we don't time out but we have an error, we
-                // check that it's specifically a connection error as this is
-                // the only one that happens if the server is not up.
-                //
-                // We can't combine this with the case above due to needing the
-                // inner error to check if it's a connection error. The type
-                // checker complains about it.
-                Ok(Err(ref e)) if e.is_connect() => event!(
-                    Level::WARN,
-                    "backend '{}' on '{}' is not up right now",
-                    name,
-                    backend.uri
-                ),
-                // In the case we timeout we assume the backend is not up as 5
-                // seconds to do a simple get should be enough for a healthy
-                // service
-                Err(_) => event!(
-                    Level::WARN,
-                    "backend '{}' on '{}' is not up right now",
-                    name,
-                    backend.uri
-                ),
-                Ok(_) => event!(Level::INFO, "backend '{}' is up", name),
-            }
-        }
-    } else {
-        event!(
-            Level::WARN,
-            "no configuration provided, invoke with `-C <TOML_FILE>` to provide a configuration"
-        );
-    }
+    let ctx = create_execution_context(&opts).await?;
 
     let addr = opts.addr();
     ViceroyService::new(ctx).serve(addr).await?;
@@ -261,6 +193,7 @@ async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Err
         let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
         let object_store = config.object_store();
+        let secret_stores = config.secret_stores();
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
@@ -268,6 +201,7 @@ async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Err
             .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
             .with_object_store(object_store.clone())
+            .with_secret_stores(secret_stores.clone())
             .with_config_path(config_path.into());
 
         if backend_names.is_empty() {

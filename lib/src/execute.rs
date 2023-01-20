@@ -376,6 +376,7 @@ impl ExecuteCtx {
             self.dictionaries.clone(),
             self.config_path.clone(),
             self.object_store.clone(),
+            self.secret_stores.clone(),
         );
 
         let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
