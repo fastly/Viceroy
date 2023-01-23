@@ -32,6 +32,8 @@ jobs:
             rust_arch: x86_64
 
     runs-on: ${{ matrix.os }}
+    outputs:
+      draft_release_id: ${{ steps.release.outputs.id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -74,9 +76,27 @@ jobs:
           tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
-        uses: softprops/action-gh-release@v1 # TODO: https://github.com/softprops/action-gh-release/pull/264
+        id: release
+        uses: softprops/action-gh-release@v1
         with:
+          draft: true
           files: |
             target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish:
+    needs: build
+    runs-on: ubuntu-20.04
+    steps:
+      - name: publish
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              release_id: ${{ needs.build.outputs.draft_release_id }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              draft: false
+            })
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
