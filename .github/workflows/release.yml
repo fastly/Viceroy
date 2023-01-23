@@ -74,9 +74,20 @@ jobs:
           tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
-        uses: softprops/action-gh-release@v1 # TODO: https://github.com/softprops/action-gh-release/pull/264
+        uses: softprops/action-gh-release@v1
         with:
+          draft: true
           files: |
             target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish:
+    needs: build
+    runs-on: ubuntu-20.04
+    steps:
+      - name: publish
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
