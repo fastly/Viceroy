@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust-toolchain: [stable]
-        os: [ubuntu-20.04, macos-11, windows-2022]
+        os: [ubuntu-20.04]
         arch: [amd64, arm64]
         exclude:
           - os: windows-2022
@@ -19,19 +19,14 @@ jobs:
           - os: ubuntu-20.04
             name: linux
             rust_abi: unknown-linux-gnu
-          - os: macos-11
-            name: darwin
-            rust_abi: apple-darwin
-          - os: windows-2022
-            name: windows
-            rust_abi: pc-windows-msvc
-            extension: .exe
           - arch: arm64
             rust_arch: aarch64
           - arch: amd64
             rust_arch: x86_64
 
     runs-on: ${{ matrix.os }}
+    outputs:
+      draft_release_id: ${{ steps.release.outputs.id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -54,29 +49,49 @@ jobs:
         uses: olegtarasov/get-tag@v2.1.2
         id: tagName
 
-      - name: Build
-        run: |
-          cargo build --release --all --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+      # - name: Build
+      #   run: |
+      #     cargo build --release --all --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
-      - name: Strip symbols (linux)
-        if: ${{ matrix.name == 'linux' }}
-        run: |
-          ${{ matrix.rust_arch }}-linux-gnu-strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+      # - name: Strip symbols (linux)
+      #   if: ${{ matrix.name == 'linux' }}
+      #   run: |
+      #     ${{ matrix.rust_arch }}-linux-gnu-strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
 
-      - name: Strip symbols (non-linux)
-        if: ${{ matrix.name != 'linux' }}
-        run: |
-          strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+      # - name: Strip symbols (non-linux)
+      #   if: ${{ matrix.name != 'linux' }}
+      #   run: |
+      #     strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
 
-      - name: Package
-        run: |
-          cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
+      # - name: Package
+      #   run: |
+      #     cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release
+      #     tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
+      - name: Rando file
+        run: echo viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }} > Release.txt
 
       - name: Release
-        uses: softprops/action-gh-release@v1 # TODO: https://github.com/softprops/action-gh-release/pull/264
+        id: release
+        uses: softprops/action-gh-release@v1
         with:
+          draft: true
           files: |
-            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
+            Release.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish:
+    needs: build
+    runs-on: ubuntu-20.04
+    steps:
+      - name: publish
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              release_id: ${{ needs.build.outputs.draft_release_id }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              draft: false
+            })
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
