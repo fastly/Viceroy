@@ -30,9 +30,10 @@ pub struct Opts {
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
-    /// Use Viceroy to run a module's _start function once, rather than in a
-    /// web server loop
-    #[arg(short = 'r', long = "run", default_value = "false")]
+    /// [EXPERIMENTAL] Use Viceroy to run a module's _start function once,
+    /// rather than in a web server loop. This is experimental and the specific
+    /// interface for this is going to change in the near future.
+    #[arg(short = 'r', long = "run", default_value = "false", hide = true)]
     run_mode: bool,
     /// Whether to treat stdout as a logging endpoint
     #[arg(long = "log-stdout", default_value = "false")]
@@ -54,9 +55,9 @@ pub struct Opts {
     /// Don't log viceroy events to stdout or stderr
     #[arg(short = 'q', long = "quiet", default_value = "false")]
     quiet: bool,
-    /// Args to pass along to the binary being executed. This is only used when
-    /// run_mode=true
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    /// [EXPERIMENTAL] Args to pass along to the binary being executed. This is
+    /// only used when run_mode=true
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
     wasm_args: Vec<String>,
 }
 
