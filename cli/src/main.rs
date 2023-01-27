@@ -51,7 +51,6 @@ pub async fn main() -> ExitCode {
     let opts = Opts::parse();
     install_tracing_subscriber(&opts);
     if opts.run_mode() {
-        // println!("Using Viceroy to run tests...");
         match run_wasm_main(opts).await {
             Ok(_) => ExitCode::SUCCESS,
             Err(_) => ExitCode::FAILURE,
@@ -80,7 +79,11 @@ pub async fn main() -> ExitCode {
 pub async fn run_wasm_main(opts: Opts) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
     let ctx = create_execution_context(&opts).await?;
-    ctx.run_main(opts.wasm_args()).await
+    ctx.run_main(
+        opts.input().file_stem().unwrap().to_str().unwrap(),
+        opts.wasm_args(),
+    )
+    .await
 }
 
 fn install_tracing_subscriber(opts: &Opts) {

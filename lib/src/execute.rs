@@ -2,7 +2,6 @@
 
 use std::net::Ipv4Addr;
 
-use anyhow::anyhow;
 use {
     crate::{
         body::Body,
@@ -358,7 +357,7 @@ impl ExecuteCtx {
         outcome
     }
 
-    pub async fn run_main(self, args: &[String]) -> Result<(), anyhow::Error> {
+    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
@@ -380,7 +379,7 @@ impl ExecuteCtx {
         );
 
         let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
-        store.data_mut().wasi().push_arg("wasm_program")?;
+        store.data_mut().wasi().push_arg(program_name)?;
         for arg in args {
             store.data_mut().wasi().push_arg(arg)?;
         }
@@ -398,15 +397,13 @@ impl ExecuteCtx {
             .map_err(ExecutionError::Typechecking)?;
 
         // Invoke the entrypoint function and collect its exit code
-        let test_outcome = main_func.call_async(&mut store, ()).await;
+        let result = main_func.call_async(&mut store, ()).await;
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
         store.data_mut().close_downstream_response_sender();
-        match test_outcome {
-            Ok(_) => Ok(()),
-            Err(_) => Err(anyhow!("Error running _start")),
-        }
+
+        result
     }
 }
 
