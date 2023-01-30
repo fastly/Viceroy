@@ -79,11 +79,11 @@ pub async fn main() -> ExitCode {
 pub async fn run_wasm_main(opts: Opts) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
     let ctx = create_execution_context(&opts).await?;
-    ctx.run_main(
-        opts.input().file_stem().unwrap().to_str().unwrap(),
-        opts.wasm_args(),
-    )
-    .await
+    let program_name = match opts.input().file_stem() {
+        Some(stem) => stem.to_string_lossy(),
+        None => panic!("program cannot be a directory"),
+    };
+    ctx.run_main(&program_name, opts.wasm_args()).await
 }
 
 fn install_tracing_subscriber(opts: &Opts) {
