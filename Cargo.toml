@@ -36,8 +36,9 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasi-common = "11.0.1"
-wasmtime = "11.0.1"
-wasmtime-wasi = "11.0.1"
-wasmtime-wasi-nn = "11.0.1"
-wiggle = "11.0.1"
+wasi-common = { git = "https://github.com/bytecodealliance/wasmtime", rev = "217de07e76b0aaec90b065eb875a92ab5f5823d8" }
+wasmparser = "0.110.0"
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", rev = "217de07e76b0aaec90b065eb875a92ab5f5823d8" }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", rev = "217de07e76b0aaec90b065eb875a92ab5f5823d8" }
+wasmtime-wasi-nn = { git = "https://github.com/bytecodealliance/wasmtime", rev = "217de07e76b0aaec90b065eb875a92ab5f5823d8" }
+wiggle = { git = "https://github.com/bytecodealliance/wasmtime", rev = "217de07e76b0aaec90b065eb875a92ab5f5823d8" }

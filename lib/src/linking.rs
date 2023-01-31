@@ -7,9 +7,8 @@ use {
     },
     anyhow::Context,
     std::collections::HashSet,
-    wasi_common::{pipe::WritePipe, WasiCtx},
     wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
-    wasmtime_wasi::WasiCtxBuilder,
+    wasmtime_wasi::preview2,
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
@@ -43,8 +42,131 @@ impl wasmtime::ResourceLimiter for Limiter {
     }
 }
 
+#[allow(unused)]
+pub struct ComponentCtx {
+    table: preview2::Table,
+    wasi: preview2::WasiCtx,
+    session: Session,
+    guest_profiler: Option<Box<GuestProfiler>>,
+    limiter: Limiter,
+}
+
+impl ComponentCtx {
+    pub fn wasi(&mut self) -> &mut preview2::WasiCtx {
+        &mut self.wasi
+    }
+
+    pub fn session(&mut self) -> &mut Session {
+        &mut self.session
+    }
+
+    pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
+        self.guest_profiler.take()
+    }
+
+    pub fn limiter(&self) -> &Limiter {
+        &self.limiter
+    }
+
+    pub fn close_downstream_response_sender(&mut self) {
+        self.session.close_downstream_response_sender()
+    }
+
+    /// Initialize a new [`Store`][store], given an [`ExecuteCtx`][ctx].
+    ///
+    /// [ctx]: ../wiggle_abi/struct.ExecuteCtx.html
+    /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
+    pub(crate) fn create_store<'a>(
+        ctx: &ExecuteCtx,
+        args: &[&str],
+        session: Session,
+        guest_profiler: Option<GuestProfiler>,
+    ) -> Result<Store<Self>, anyhow::Error> {
+        let mut table = preview2::Table::new();
+        let wasi = make_wasi_preview2_ctx(ctx, args, &session, &mut table)
+            .context("creating Wasi context")?;
+        let wasm_ctx = Self {
+            table,
+            wasi,
+            session,
+            guest_profiler: guest_profiler.map(Box::new),
+            limiter: Limiter::default(),
+        };
+        let mut store = Store::new(ctx.engine(), wasm_ctx);
+        store.set_epoch_deadline(1);
+        store.epoch_deadline_callback(|mut store| {
+            if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+                prof.sample(&store);
+                store.data_mut().guest_profiler = Some(prof);
+            }
+            Ok(UpdateDeadline::Yield(1))
+        });
+        store.limiter(|ctx| &mut ctx.limiter);
+        Ok(store)
+    }
+}
+
+/// Constructs a fresh `WasiCtx` for _each_ incoming request.
+fn make_wasi_preview2_ctx(
+    ctx: &ExecuteCtx,
+    args: &[&str],
+    session: &Session,
+    table: &mut preview2::Table,
+) -> Result<preview2::WasiCtx, anyhow::Error> {
+    let mut wasi_ctx = preview2::WasiCtxBuilder::new();
+
+    // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
+    // Compute@Edge platform provides:
+    wasi_ctx = wasi_ctx.set_env(&[
+        // signal that we're in a local testing environment
+        ("FASTLY_HOSTNAME", "localhost"),
+        // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
+        ("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id())),
+    ]);
+
+    wasi_ctx = if !args.is_empty() {
+        wasi_ctx.set_args(args)
+    } else {
+        wasi_ctx
+    };
+
+    wasi_ctx = if ctx.log_stdout() {
+        wasi_ctx.set_stdout(preview2::pipe::AsyncWriteStream::new(LogEndpoint::new(
+            b"stdout",
+        )))
+    } else {
+        wasi_ctx.inherit_stdout()
+    };
+
+    wasi_ctx = if ctx.log_stderr() {
+        wasi_ctx = wasi_ctx.set_stderr(preview2::pipe::AsyncWriteStream::new(LogEndpoint::new(
+            b"stderr",
+        )));
+        wasi_ctx
+    } else {
+        wasi_ctx.inherit_stderr()
+    };
+
+    wasi_ctx.build(table)
+}
+
+impl preview2::WasiView for ComponentCtx {
+    fn table(&self) -> &preview2::Table {
+        &self.table
+    }
+    fn table_mut(&mut self) -> &mut preview2::Table {
+        &mut self.table
+    }
+    fn ctx(&self) -> &preview2::WasiCtx {
+        &self.wasi
+    }
+    fn ctx_mut(&mut self) -> &mut preview2::WasiCtx {
+        &mut self.wasi
+    }
+}
+
 pub struct WasmCtx {
-    wasi: WasiCtx,
+    wasi: wasi_common::WasiCtx,
     wasi_nn: WasiNnCtx,
     session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
@@ -52,7 +174,8 @@ pub struct WasmCtx {
 }
 
 impl WasmCtx {
-    pub fn wasi(&mut self) -> &mut WasiCtx {
+    #[allow(unused)]
+    pub fn wasi(&mut self) -> &mut wasi_common::WasiCtx {
         &mut self.wasi
     }
 
@@ -83,7 +206,7 @@ impl WasmCtx {
 ///
 /// [ctx]: ../wiggle_abi/struct.ExecuteCtx.html
 /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
-pub(crate) fn create_store(
+pub(crate) fn create_store<'a>(
     ctx: &ExecuteCtx,
     session: Session,
     guest_profiler: Option<GuestProfiler>,
@@ -111,8 +234,11 @@ pub(crate) fn create_store(
 }
 
 /// Constructs a fresh `WasiCtx` for _each_ incoming request.
-fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow::Error> {
-    let mut wasi_ctx = WasiCtxBuilder::new();
+fn make_wasi_ctx(
+    ctx: &ExecuteCtx,
+    session: &Session,
+) -> Result<wasi_common::WasiCtx, anyhow::Error> {
+    let mut wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new();
 
     // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
     // Compute@Edge platform provides:
@@ -124,13 +250,17 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()))?;
 
     if ctx.log_stdout() {
-        wasi_ctx = wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
+        wasi_ctx = wasi_ctx.stdout(Box::new(wasi_common::pipe::WritePipe::new(
+            LogEndpoint::new(b"stdout"),
+        )));
     } else {
         wasi_ctx = wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        wasi_ctx = wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
+        wasi_ctx = wasi_ctx.stderr(Box::new(wasi_common::pipe::WritePipe::new(
+            LogEndpoint::new(b"stderr"),
+        )));
     } else {
         wasi_ctx = wasi_ctx.inherit_stderr();
     }

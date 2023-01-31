@@ -1,0 +1,35 @@
+package viceroy:xqd
+
+world xqd {
+  import wasi:clocks/wall-clock
+  import wasi:clocks/monotonic-clock
+  import wasi:clocks/timezone
+  import wasi:filesystem/filesystem
+  import wasi:random/random
+  import wasi:poll/poll
+  import wasi:io/streams
+  import wasi:cli-base/environment
+  import wasi:cli-base/preopens
+  import wasi:cli-base/exit
+  import wasi:cli-base/stdin
+  import wasi:cli-base/stdout
+  import wasi:cli-base/stderr
+
+  import fastly:compute-at-edge/async-io
+  import fastly:compute-at-edge/backend
+  import fastly:compute-at-edge/cache
+  import fastly:compute-at-edge/dictionary
+  import fastly:compute-at-edge/geo
+  import fastly:compute-at-edge/http-body
+  import fastly:compute-at-edge/http-req
+  import fastly:compute-at-edge/http-resp
+  import fastly:compute-at-edge/http-types
+  import fastly:compute-at-edge/log
+  import fastly:compute-at-edge/object-store
+  import fastly:compute-at-edge/purge
+  import fastly:compute-at-edge/secret-store
+  import fastly:compute-at-edge/types
+  import fastly:compute-at-edge/uap
+
+  export fastly:compute-at-edge/reactor
+}

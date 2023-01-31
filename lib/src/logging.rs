@@ -4,6 +4,7 @@ use {
         io::{self, Write},
         sync::Mutex,
     },
+    tokio::io::AsyncWrite,
 };
 
 /// A logging endpoint, which for Viceroy is just a name.
@@ -69,5 +70,29 @@ impl Write for LogEndpoint {
 
     fn flush(&mut self) -> io::Result<()> {
         LOG_WRITER.lock().unwrap().flush()
+    }
+}
+
+impl AsyncWrite for LogEndpoint {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, io::Error>> {
+        std::task::Poll::Ready(self.as_mut().write(buf))
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), io::Error>> {
+        std::task::Poll::Ready(self.as_mut().flush())
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), io::Error>> {
+        std::task::Poll::Ready(Ok(()))
     }
 }
