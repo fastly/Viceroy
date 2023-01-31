@@ -2197,6 +2197,7 @@ dependencies = [
  "futures",
  "hyper",
  "itertools",
+ "libc",
  "serde_json",
  "tokio",
  "tracing",
@@ -2204,6 +2205,8 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "viceroy-lib",
+ "wasi-common",
+ "wasmtime",
  "wat",
 ]
 
