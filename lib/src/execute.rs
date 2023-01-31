@@ -1,5 +1,7 @@
 //! Guest code execution.
 
+use std::net::Ipv4Addr;
+
 use {
     crate::{
         body::Body,
@@ -353,6 +355,55 @@ impl ExecuteCtx {
         info!("request completed in {:.0?}", request_duration);
 
         outcome
+    }
+
+    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
+        // placeholders for request, result sender channel, and remote IP
+        let req = Request::get("http://example.com/").body(Body::empty())?;
+        let req_id = 0;
+        let (sender, _) = oneshot::channel();
+        let remote = Ipv4Addr::LOCALHOST.into();
+
+        let session = Session::new(
+            req_id,
+            req,
+            sender,
+            remote,
+            self.backends.clone(),
+            self.geolocation.clone(),
+            self.tls_config.clone(),
+            self.dictionaries.clone(),
+            self.config_path.clone(),
+            self.object_store.clone(),
+            self.secret_stores.clone(),
+        );
+
+        let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
+        store.data_mut().wasi().push_arg(program_name)?;
+        for arg in args {
+            store.data_mut().wasi().push_arg(arg)?;
+        }
+
+        let instance = self
+            .instance_pre
+            .instantiate_async(&mut store)
+            .await
+            .map_err(ExecutionError::Instantiation)?;
+
+        // Pull out the `_start` function, which by convention with WASI is the main entry point for
+        // an application.
+        let main_func = instance
+            .get_typed_func::<(), ()>(&mut store, "_start")
+            .map_err(ExecutionError::Typechecking)?;
+
+        // Invoke the entrypoint function and collect its exit code
+        let result = main_func.call_async(&mut store, ()).await;
+
+        // Ensure the downstream response channel is closed, whether or not a response was
+        // sent during execution.
+        store.data_mut().close_downstream_response_sender();
+
+        result
     }
 }
 

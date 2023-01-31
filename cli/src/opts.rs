@@ -30,6 +30,11 @@ pub struct Opts {
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
+    /// [EXPERIMENTAL] Use Viceroy to run a module's _start function once,
+    /// rather than in a web server loop. This is experimental and the specific
+    /// interface for this is going to change in the near future.
+    #[arg(short = 'r', long = "run", default_value = "false", hide = true)]
+    run_mode: bool,
     /// Whether to treat stdout as a logging endpoint
     #[arg(long = "log-stdout", default_value = "false")]
     log_stdout: bool,
@@ -47,6 +52,13 @@ pub struct Opts {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    /// Don't log viceroy events to stdout or stderr
+    #[arg(short = 'q', long = "quiet", default_value = "false")]
+    quiet: bool,
+    /// [EXPERIMENTAL] Args to pass along to the binary being executed. This is
+    /// only used when run_mode=true
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+    wasm_args: Vec<String>,
 }
 
 impl Opts {
@@ -64,6 +76,11 @@ impl Opts {
     /// The path to a `local_server` configuration file.
     pub fn config_path(&self) -> Option<&Path> {
         self.config_path.as_deref()
+    }
+
+    /// Whether Viceroy should run the input once and then exit
+    pub fn run_mode(&self) -> bool {
+        self.run_mode
     }
 
     /// Whether to treat stdout as a logging endpoint
@@ -86,6 +103,17 @@ impl Opts {
     // Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
         self.profiler.unwrap_or(ProfilingStrategy::None)
+    }
+
+    /// The arguments to pass to the underlying binary when run_mode=true
+    pub fn wasm_args(&self) -> &[String] {
+        self.wasm_args.as_ref()
+    }
+
+    /// Prevents Viceroy from logging to stdout and stderr (note: any logs
+    /// emitted by the INPUT program will still go to stdout/stderr)
+    pub fn quiet(&self) -> bool {
+        self.quiet
     }
 
     // Set of experimental wasi modules to link against.
@@ -326,5 +354,40 @@ mod opts_tests {
             Ok(_) => panic!("unexpected result"),
             Err(_) => Ok(()),
         }
+    }
+
+    /// Test that trailing arguments are collected successfully
+    #[test]
+    fn trailing_args_are_collected() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            &test_file("minimal.wat"),
+            "--",
+            "--trailing-arg",
+            "--trailing-arg-2",
+        ];
+        let opts = Opts::try_parse_from(args)?;
+        assert_eq!(opts.wasm_args(), &["--trailing-arg", "--trailing-arg-2"]);
+        Ok(())
+    }
+
+    /// Input is still accepted after double-dash. This is how the input will be
+    /// passed by cargo nextest if using Viceroy in run-mode to run tests
+    #[test]
+    fn input_accepted_after_double_dash() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--",
+            &test_file("minimal.wat"),
+            "--trailing-arg",
+            "--trailing-arg-2",
+        ];
+        let opts = match Opts::try_parse_from(args) {
+            Ok(opts) => opts,
+            res => panic!("unexpected result: {:?}", res),
+        };
+        assert_eq!(opts.input().to_str().unwrap(), &test_file("minimal.wat"));
+        assert_eq!(opts.wasm_args(), &["--trailing-arg", "--trailing-arg-2"]);
+        Ok(())
     }
 }
