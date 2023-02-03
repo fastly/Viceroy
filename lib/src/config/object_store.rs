@@ -1,19 +1,19 @@
 use {
     crate::{
         error::{FastlyConfigError, ObjectStoreConfigError},
-        object_store::{ObjectKey, ObjectStore, ObjectStoreKey},
+        object_store::{ObjectKey, ObjectStoreKey, ObjectStores},
     },
     std::fs,
     toml::value::Table,
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct ObjectStoreConfig(pub(crate) ObjectStore);
+pub struct ObjectStoreConfig(pub(crate) ObjectStores);
 
 impl TryFrom<Table> for ObjectStoreConfig {
     type Error = FastlyConfigError;
     fn try_from(toml: Table) -> Result<Self, Self::Error> {
-        let obj_store = ObjectStore::new();
+        let obj_store = ObjectStores::new();
         for (store, items) in toml.iter() {
             let items = items.as_array().ok_or_else(|| {
                 FastlyConfigError::InvalidObjectStoreDefinition {

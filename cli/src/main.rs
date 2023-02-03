@@ -195,7 +195,7 @@ async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Err
         let backends = config.backends();
         let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
-        let object_store = config.object_store();
+        let object_stores = config.object_stores();
         let secret_stores = config.secret_stores();
         let backend_names = itertools::join(backends.keys(), ", ");
 
@@ -203,7 +203,7 @@ async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Err
             .with_backends(backends.clone())
             .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
-            .with_object_store(object_store.clone())
+            .with_object_stores(object_stores.clone())
             .with_secret_stores(secret_stores.clone())
             .with_config_path(config_path.into());
 

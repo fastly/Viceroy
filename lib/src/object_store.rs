@@ -7,12 +7,12 @@ use {
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct ObjectStore {
+pub struct ObjectStores {
     #[allow(clippy::type_complexity)]
     stores: Arc<RwLock<BTreeMap<ObjectStoreKey, BTreeMap<ObjectKey, Vec<u8>>>>>,
 }
 
-impl ObjectStore {
+impl ObjectStores {
     pub fn new() -> Self {
         Self {
             stores: Arc::new(RwLock::new(BTreeMap::new())),
