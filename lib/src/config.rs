@@ -101,7 +101,7 @@ impl FastlyConfig {
 
     /// Get the secret store configuration.
     pub fn secret_stores(&self) -> &SecretStores {
-        &self.local_server.secret_store.0
+        &self.local_server.secret_stores.0
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -185,7 +185,7 @@ pub struct LocalServerConfig {
     geolocation: Geolocation,
     dictionaries: DictionariesConfig,
     object_stores: ObjectStoreConfig,
-    secret_store: SecretStoreConfig,
+    secret_stores: SecretStoreConfig,
 }
 
 /// Enum of available (experimental) wasi modules
@@ -205,7 +205,7 @@ struct RawLocalServerConfig {
     dictionaries: Option<Table>,
     #[serde(alias = "object_store")]
     object_stores: Option<Table>,
-    secret_store: Option<Table>,
+    secret_stores: Option<Table>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
@@ -216,7 +216,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             geolocation,
             dictionaries,
             object_stores,
-            secret_store,
+            secret_stores,
         } = self;
         let backends = if let Some(backends) = backends {
             backends.try_into()?
@@ -238,7 +238,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             ObjectStoreConfig::default()
         };
-        let secret_store = if let Some(secret_store) = secret_store {
+        let secret_stores = if let Some(secret_store) = secret_stores {
             secret_store.try_into()?
         } else {
             SecretStoreConfig::default()
@@ -249,7 +249,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             geolocation,
             dictionaries,
             object_stores,
-            secret_store,
+            secret_stores,
         })
     }
 }

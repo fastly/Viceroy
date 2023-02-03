@@ -547,14 +547,14 @@ pub enum SecretStoreConfigError {
     #[error(transparent)]
     IoError(std::io::Error),
 
-    #[error("The `path` and `data` keys for the object `{0}` are set. Only one can be used.")]
-    PathAndData(String),
-    #[error("The `path` or `data` key for the object `{0}` is not set. One must be used.")]
-    NoPathOrData(String),
+    #[error("The `file` and `data` keys for the object `{0}` are set. Only one can be used.")]
+    FileAndData(String),
+    #[error("The `file` or `data` key for the object `{0}` is not set. One must be used.")]
+    NoFileOrData(String),
     #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
-    #[error("The `path` value for the object `{0}` is not a string.")]
-    PathNotAString(String),
+    #[error("The `file` value for the object `{0}` is not a string.")]
+    FileNotAString(String),
 
     #[error("The `key` key for an object is not set. It must be used.")]
     NoKey,

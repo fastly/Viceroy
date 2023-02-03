@@ -11,7 +11,7 @@ async fn secret_store_works() -> TestResult {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        secret_store.store_one = [{key = "first", data = "This is some data"},{key = "second", path = "../test-fixtures/data/object-store.txt"}]
+        secret_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/object-store.txt"}]
     "#;
 
     let resp = Test::using_fixture("secret-store.wasm")
@@ -48,7 +48,7 @@ fn bad_config_test(toml_fragment: &str) -> Result<FastlyConfig, FastlyConfigErro
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_store_not_array() -> TestResult {
-    const TOML_FRAGMENT: &str = "secret_store.store_one = 1";
+    const TOML_FRAGMENT: &str = "secret_stores.store_one = 1";
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::NotAnArray,
@@ -62,7 +62,7 @@ async fn bad_config_store_not_array() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_store_not_table() -> TestResult {
-    const TOML_FRAGMENT: &str = "secret_store.store_one = [1]";
+    const TOML_FRAGMENT: &str = "secret_stores.store_one = [1]";
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::NotATable,
@@ -76,7 +76,7 @@ async fn bad_config_store_not_table() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_no_key() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_store.store_one = [{data = "This is some data"}]"#;
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{data = "This is some data"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::NoKey,
@@ -91,7 +91,7 @@ async fn bad_config_no_key() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_key_not_string() -> TestResult {
     const TOML_FRAGMENT: &str =
-        r#"secret_store.store_one = [{key = 1, data = "This is some data"}]"#;
+        r#"secret_stores.store_one = [{key = 1, data = "This is some data"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::KeyNotAString,
@@ -104,28 +104,28 @@ async fn bad_config_key_not_string() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bad_config_no_data_or_path() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_store.store_one = [{key = "first"}]"#;
+async fn bad_config_no_data_or_file() -> TestResult {
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
-            err: SecretStoreConfigError::NoPathOrData(_),
+            err: SecretStoreConfigError::NoFileOrData(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoPathOrData"),
+        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoFileOrData"),
         _ => panic!("Expected an error"),
     }
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bad_config_both_data_and_path() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_store.store_one = [{key = "first", path = "file.txt", data = "This is some data"}]"#;
+async fn bad_config_both_data_and_file() -> TestResult {
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first", file = "file.txt", data = "This is some data"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
-            err: SecretStoreConfigError::PathAndData(_),
+            err: SecretStoreConfigError::FileAndData(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::PathAndData"),
+        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileAndData"),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -133,7 +133,7 @@ async fn bad_config_both_data_and_path() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_data_not_string() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_store.store_one = [{key = "first", data = 1}]"#;
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first", data = 1}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::DataNotAString(_),
@@ -146,23 +146,23 @@ async fn bad_config_data_not_string() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bad_config_path_not_string() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_store.store_one = [{key = "first", path = 1}]"#;
+async fn bad_config_file_not_string() -> TestResult {
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first", file = 1}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
-            err: SecretStoreConfigError::PathNotAString(_),
+            err: SecretStoreConfigError::FileNotAString(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::PathNotAString"),
+        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileNotAString"),
         _ => panic!("Expected an error"),
     }
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bad_config_path_nonexistent() -> TestResult {
+async fn bad_config_file_nonexistent() -> TestResult {
     const TOML_FRAGMENT: &str =
-        r#"secret_store.store_one = [{key = "first", path = "nonexistent.txt"}]"#;
+        r#"secret_stores.store_one = [{key = "first", file = "nonexistent.txt"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::IoError(_),
@@ -177,7 +177,7 @@ async fn bad_config_path_nonexistent() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_invalid_store_name() -> TestResult {
     const TOML_FRAGMENT: &str =
-        r#"secret_store.store*one = [{key = "first", data = "This is some data"}]"#;
+        r#"secret_stores.store*one = [{key = "first", data = "This is some data"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidFastlyToml(_)) => (),
         Err(_) => panic!("Expected a FastlyConfigError::InvalidFastlyToml"),
@@ -189,7 +189,7 @@ async fn bad_config_invalid_store_name() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_invalid_secret_name() -> TestResult {
     const TOML_FRAGMENT: &str =
-        r#"secret_store.store_one = [{key = "first*", data = "This is some data"}]"#;
+        r#"secret_stores.store_one = [{key = "first*", data = "This is some data"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::InvalidSecretName(_),
@@ -203,7 +203,7 @@ async fn bad_config_invalid_secret_name() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_config_secret_name_too_long() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_store.store_one = [{key = "firstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirst", data = "This is some data"}]"#;
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "firstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirstfirst", data = "This is some data"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
             err: SecretStoreConfigError::InvalidSecretName(_),
