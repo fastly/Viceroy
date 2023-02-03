@@ -203,6 +203,7 @@ struct RawLocalServerConfig {
     backends: Option<Table>,
     geolocation: Option<Table>,
     dictionaries: Option<Table>,
+    #[serde(alias = "object_store")]
     object_stores: Option<Table>,
     secret_store: Option<Table>,
 }

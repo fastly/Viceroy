@@ -29,6 +29,36 @@ async fn object_store() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn object_store_backward_compat() -> TestResult {
+    // Previously the "object_stores" key was named "object_store" and
+    // the "file" key was named "path".  This test ensures that both
+    // still work.
+    const FASTLY_TOML: &str = r#"
+        name = "object-store-test"
+        description = "object store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        object_store.empty_store = []
+        object_store.store_one = [{key = "first", data = "This is some data"},{key = "second", path = "../test-fixtures/data/object-store.txt"}]
+    "#;
+
+    let resp = Test::using_fixture("object_store.wasm")
+        .using_fastly_toml(FASTLY_TOML)?
+        .against_empty()
+        .await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(to_bytes(resp.into_body())
+        .await
+        .expect("can read body")
+        .to_vec()
+        .is_empty());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn object_store_bad_configs() -> TestResult {
     const BAD_1_FASTLY_TOML: &str = r#"
         name = "object-store-test"

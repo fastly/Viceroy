@@ -39,6 +39,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         err: ObjectStoreConfigError::NotATable,
                     }
                 })?;
+
                 let key = item
                     .get("key")
                     .ok_or_else(|| FastlyConfigError::InvalidObjectStoreDefinition {
@@ -50,7 +51,16 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         name: store.to_string(),
                         err: ObjectStoreConfigError::KeyNotAString,
                     })?;
-                let bytes = match (item.get("file"), item.get("data")) {
+
+                // Previously the "file" key was named "path".  We want
+                // to continue supporting the old name.
+                let file = match (item.get("file"), item.get("path")) {
+                    (None, None) => None,
+                    (Some(file), _) => Some(file),
+                    (None, Some(path)) => Some(path),
+                };
+
+                let bytes = match (file, item.get("data")) {
                     (None, None) => {
                         return Err(FastlyConfigError::InvalidObjectStoreDefinition {
                             name: store.to_string(),
@@ -86,6 +96,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         .as_bytes()
                         .to_vec(),
                 };
+
                 obj_store
                     .insert(
                         ObjectStoreKey::new(store),
