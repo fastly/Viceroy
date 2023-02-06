@@ -41,7 +41,7 @@ pub use self::geolocation::Geolocation;
 /// Types and deserializers for object store configuration settings.
 mod object_store;
 
-pub use crate::object_store::ObjectStore;
+pub use crate::object_store::ObjectStores;
 
 /// Types and deserializers for secret store configuration settings.
 mod secret_store;
@@ -95,13 +95,13 @@ impl FastlyConfig {
     }
 
     /// Get the object store configuration.
-    pub fn object_store(&self) -> &ObjectStore {
-        &self.local_server.object_store.0
+    pub fn object_stores(&self) -> &ObjectStores {
+        &self.local_server.object_stores.0
     }
 
     /// Get the secret store configuration.
     pub fn secret_stores(&self) -> &SecretStores {
-        &self.local_server.secret_store.0
+        &self.local_server.secret_stores.0
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -184,8 +184,8 @@ pub struct LocalServerConfig {
     backends: BackendsConfig,
     geolocation: Geolocation,
     dictionaries: DictionariesConfig,
-    object_store: ObjectStoreConfig,
-    secret_store: SecretStoreConfig,
+    object_stores: ObjectStoreConfig,
+    secret_stores: SecretStoreConfig,
 }
 
 /// Enum of available (experimental) wasi modules
@@ -203,8 +203,9 @@ struct RawLocalServerConfig {
     backends: Option<Table>,
     geolocation: Option<Table>,
     dictionaries: Option<Table>,
-    object_store: Option<Table>,
-    secret_store: Option<Table>,
+    #[serde(alias = "object_store")]
+    object_stores: Option<Table>,
+    secret_stores: Option<Table>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
@@ -214,8 +215,8 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             backends,
             geolocation,
             dictionaries,
-            object_store,
-            secret_store,
+            object_stores,
+            secret_stores,
         } = self;
         let backends = if let Some(backends) = backends {
             backends.try_into()?
@@ -232,12 +233,12 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             DictionariesConfig::default()
         };
-        let object_store = if let Some(object_store) = object_store {
+        let object_stores = if let Some(object_store) = object_stores {
             object_store.try_into()?
         } else {
             ObjectStoreConfig::default()
         };
-        let secret_store = if let Some(secret_store) = secret_store {
+        let secret_stores = if let Some(secret_store) = secret_stores {
             secret_store.try_into()?
         } else {
             SecretStoreConfig::default()
@@ -247,8 +248,8 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             backends,
             geolocation,
             dictionaries,
-            object_store,
-            secret_store,
+            object_stores,
+            secret_stores,
         })
     }
 }

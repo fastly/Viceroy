@@ -12,7 +12,7 @@ use {
         config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, Geolocation},
         error::{Error, HandleError},
         logging::LogEndpoint,
-        object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
+        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
         secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
         upstream::{PendingRequest, SelectTarget, TlsConfig},
@@ -94,7 +94,7 @@ pub struct Session {
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) object_store: Arc<ObjectStore>,
+    pub(crate) object_store: Arc<ObjectStores>,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
@@ -132,7 +132,7 @@ impl Session {
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
-        object_store: Arc<ObjectStore>,
+        object_store: Arc<ObjectStores>,
         secret_stores: Arc<SecretStores>,
     ) -> Session {
         let (parts, body) = req.into_parts();
@@ -189,7 +189,7 @@ impl Session {
             TlsConfig::new().unwrap(),
             Arc::new(HashMap::new()),
             Arc::new(None),
-            Arc::new(ObjectStore::new()),
+            Arc::new(ObjectStores::new()),
             Arc::new(SecretStores::new()),
         )
     }

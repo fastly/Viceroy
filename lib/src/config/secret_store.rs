@@ -58,24 +58,24 @@ impl TryFrom<Table> for SecretStoreConfig {
                     });
                 }
 
-                let bytes = match (item.get("path"), item.get("data")) {
+                let bytes = match (item.get("file"), item.get("data")) {
                     (None, None) => {
                         return Err(FastlyConfigError::InvalidSecretStoreDefinition {
                             name: store_name.to_string(),
-                            err: SecretStoreConfigError::NoPathOrData(key.to_string()),
+                            err: SecretStoreConfigError::NoFileOrData(key.to_string()),
                         })
                     }
                     (Some(_), Some(_)) => {
                         return Err(FastlyConfigError::InvalidSecretStoreDefinition {
                             name: store_name.to_string(),
-                            err: SecretStoreConfigError::PathAndData(key.to_string()),
+                            err: SecretStoreConfigError::FileAndData(key.to_string()),
                         })
                     }
                     (Some(path), None) => {
                         let path = path.as_str().ok_or_else(|| {
                             FastlyConfigError::InvalidSecretStoreDefinition {
                                 name: store_name.to_string(),
-                                err: SecretStoreConfigError::PathNotAString(key.to_string()),
+                                err: SecretStoreConfigError::FileNotAString(key.to_string()),
                             }
                         })?;
                         fs::read(&path)
