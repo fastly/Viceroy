@@ -19,3 +19,10 @@ viceroy-lib = { path = "../../../lib", features = ["test-fatalerror-config"] }
 # To indicate to cargo that this trap-test is not a member of the testing workspace specified by
 # ~/cli/tests/fixtures/Cargo.toml, place an empty workspace specification here.
 [workspace]
+
+[patch.crates-io]
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wasi-common = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wasmtime-wasi-nn = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wiggle = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }

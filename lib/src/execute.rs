@@ -8,7 +8,7 @@ use {
         config::{Backends, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
-        linking::{create_store, dummy_store, link_host_functions, WasmCtx},
+        linking::{create_store, link_host_functions, WasmCtx},
         object_store::ObjectStores,
         secret_store::SecretStores,
         session::Session,
@@ -75,9 +75,7 @@ impl ExecuteCtx {
         let mut linker = Linker::new(&engine);
         link_host_functions(&mut linker, &wasi_modules)?;
         let module = Module::from_file(&engine, module_path)?;
-
-        let mut dummy_store = dummy_store(&engine);
-        let instance_pre = linker.instantiate_pre(&mut dummy_store, &module)?;
+        let instance_pre = linker.instantiate_pre(&module)?;
 
         Ok(Self {
             engine,
@@ -409,8 +407,7 @@ impl ExecuteCtx {
 
 fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {
     use wasmtime::{
-        Config, InstanceAllocationStrategy, PoolingAllocationConfig, PoolingAllocationStrategy,
-        WasmBacktraceDetails,
+        Config, InstanceAllocationStrategy, PoolingAllocationConfig, WasmBacktraceDetails,
     };
 
     let mut config = Config::new();
@@ -440,10 +437,10 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     // function can end up in the table
     pooling_allocation_config.instance_table_elements(98765);
 
-    // Number of instances: the pool will allocate virtual memory for this
-    // many instances, which limits the number of requests which can be
-    // handled concurrently.
-    pooling_allocation_config.strategy(PoolingAllocationStrategy::NextAvailable);
+    // Maximum number of slots in the pooling allocator to keep "warm", or those
+    // to keep around to possibly satisfy an affine allocation request or an
+    // instantiation of a module previously instantiated within the pool.
+    pooling_allocation_config.max_unused_warm_slots(100);
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling(
         pooling_allocation_config,

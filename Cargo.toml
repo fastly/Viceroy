@@ -14,3 +14,10 @@ exclude = [
 # commands like `cargo run` will run the CLI binary by default.
 # See: https://doc.rust-lang.org/cargo/reference/workspaces.html#package-selection
 default-members = [ "cli" ]
+
+[patch.crates-io]
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wasi-common = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wasmtime-wasi-nn = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
+wiggle = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'release-6.0.0' }
