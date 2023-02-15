@@ -101,9 +101,7 @@ mod deserialization {
     use {
         super::{DictionariesConfig, Dictionary, DictionaryName},
         crate::{
-            config::limits::{
-                DICTIONARY_ITEM_KEY_MAX_LEN, DICTIONARY_ITEM_VALUE_MAX_LEN, DICTIONARY_MAX_LEN,
-            },
+            config::limits::{DICTIONARY_ITEM_KEY_MAX_LEN, DICTIONARY_ITEM_VALUE_MAX_LEN},
             error::{DictionaryConfigError, FastlyConfigError},
         },
         std::{collections::HashMap, path::PathBuf, str::FromStr},
@@ -225,11 +223,6 @@ mod deserialization {
         dict: &HashMap<String, String>,
     ) -> Result<(), DictionaryConfigError> {
         info!("checking if dictionary adheres to Fastly's API",);
-        if dict.len() > DICTIONARY_MAX_LEN {
-            return Err(DictionaryConfigError::DictionaryCountTooLong {
-                size: DICTIONARY_MAX_LEN.try_into().unwrap(),
-            });
-        }
 
         for (key, value) in dict.iter() {
             if key.chars().count() > DICTIONARY_ITEM_KEY_MAX_LEN {
