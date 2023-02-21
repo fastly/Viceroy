@@ -171,29 +171,6 @@ impl Session {
         }
     }
 
-    /// We need to create a Session in order to typecheck a module into an
-    /// InstancePre, but we will never actually execute code that accesses the
-    /// Session. Therefore, all of the data inside this Session is bogus.
-    ///
-    /// Do not use the Session created by this constructor for any other
-    /// purpose.
-    pub(crate) fn mock() -> Session {
-        let (sender, _receiver) = tokio::sync::oneshot::channel();
-        Session::new(
-            0,
-            Request::new(Body::empty()),
-            sender,
-            "0.0.0.0".parse().unwrap(),
-            Arc::new(HashMap::new()),
-            Arc::new(Geolocation::new()),
-            TlsConfig::new().unwrap(),
-            Arc::new(HashMap::new()),
-            Arc::new(None),
-            Arc::new(ObjectStores::new()),
-            Arc::new(SecretStores::new()),
-        )
-    }
-
     // ----- Downstream Request API -----
 
     /// Retrieve the downstream client IP address associated with this session.

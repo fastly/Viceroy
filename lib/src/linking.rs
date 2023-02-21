@@ -8,7 +8,7 @@ use {
     anyhow::Context,
     std::collections::HashSet,
     wasi_common::{pipe::WritePipe, WasiCtx},
-    wasmtime::{Engine, Linker, Store},
+    wasmtime::{Linker, Store},
     wasmtime_wasi::WasiCtxBuilder,
     wasmtime_wasi_nn::WasiNnCtx,
 };
@@ -57,22 +57,6 @@ pub(crate) fn create_store(
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.out_of_fuel_async_yield(u64::MAX, 10000);
     Ok(store)
-}
-
-/// Create a `Store<WasmCtx>` which will only be used to check whether pre-initialization is
-/// possible, and never used to execute code
-pub(crate) fn dummy_store(engine: &Engine) -> Store<WasmCtx> {
-    let wasi = WasiCtxBuilder::new().build();
-    let wasi_nn = WasiNnCtx::new().unwrap();
-    let session = Session::mock();
-    Store::new(
-        engine,
-        WasmCtx {
-            wasi,
-            wasi_nn,
-            session,
-        },
-    )
 }
 
 /// Constructs a fresh `WasiCtx` for _each_ incoming request.
