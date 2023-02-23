@@ -18,7 +18,7 @@ use std::process::ExitCode;
 mod opts;
 
 use {
-    crate::opts::Opts,
+    crate::opts::*,
     clap::Parser,
     hyper::{client::Client, Body, Request},
     std::{
@@ -35,11 +35,11 @@ use {
 /// Starts up a Viceroy server.
 ///
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
-pub async fn serve(opts: Opts) -> Result<(), Error> {
+pub async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(&opts).await?;
+    let ctx = create_execution_context(&serve_args.shared(), true).await?;
 
-    let addr = opts.addr();
+    let addr = serve_args.addr();
     ViceroyService::new(ctx).serve(addr).await?;
 
     unreachable!()
@@ -49,62 +49,62 @@ pub async fn serve(opts: Opts) -> Result<(), Error> {
 pub async fn main() -> ExitCode {
     // Parse the command-line options, exiting if there are any errors
     let opts = Opts::parse();
-    install_tracing_subscriber(&opts);
-    if opts.run_mode() {
-        match run_wasm_main(opts).await {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(_) => ExitCode::FAILURE,
-        }
-    } else {
-        match {
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
-                    Ok(())
-                }
-                res = serve(opts) => {
-                    if let Err(ref e) = res {
-                        event!(Level::ERROR, "{}", e);
-                    }
-                    res
-                }
+    let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
+    match cmd {
+        Commands::Run(run_args) => {
+            install_tracing_subscriber(0);
+            if let Ok(_) = run_wasm_main(run_args).await {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
             }
-        } {
-            Ok(_) => ExitCode::SUCCESS,
-            Err(_) => ExitCode::FAILURE,
+        }
+        Commands::Serve(serve_args) => {
+            install_tracing_subscriber(serve_args.verbosity());
+            match {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {
+                        Ok(())
+                    }
+                    res = serve(serve_args) => {
+                        if let Err(ref e) = res {
+                            event!(Level::ERROR, "{}", e);
+                        }
+                        res
+                    }
+                }
+            } {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(_) => ExitCode::FAILURE,
+            }
         }
     }
 }
 
 /// Execute a Wasm program in the Viceroy environment.
-pub async fn run_wasm_main(opts: Opts) -> Result<(), anyhow::Error> {
+pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(&opts).await?;
-    let program_name = match opts.input().file_stem() {
+    let ctx = create_execution_context(&run_args.shared(), false).await?;
+    let input = run_args.shared().input();
+    let program_name = match input.file_stem() {
         Some(stem) => stem.to_string_lossy(),
         None => panic!("program cannot be a directory"),
     };
-    ctx.run_main(&program_name, opts.wasm_args()).await
+    ctx.run_main(&program_name, run_args.wasm_args()).await
 }
 
-fn install_tracing_subscriber(opts: &Opts) {
+fn install_tracing_subscriber(verbosity: u8) {
     // Default to whatever a user provides, but if not set logging to work for
     // viceroy and viceroy-lib so that they can have output in the terminal
     if env::var("RUST_LOG").ok().is_none() {
-        match opts.verbosity() {
-            0 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
-            1 => {
-                env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug");
-            }
-            _ => {
-                env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace");
-            }
+        match verbosity {
+            0 => env::set_var("RUST_LOG", "viceroy=off,viceroy-lib=off"),
+            1 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
+            2 => env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug"),
+            _ => env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace"),
         }
     }
-    // If the quiet flag is passed in, don't log anything (this should maybe
-    // just be a verbosity setting)
-    if opts.quiet() {
-        env::set_var("RUST_LOG", "viceroy=off,viceroy-lib=off");
-    }
+
     // Build a subscriber, using the default `RUST_LOG` environment variable for our filter.
     let builder = FmtSubscriber::builder()
         .with_writer(StdWriter::new())
@@ -185,12 +185,16 @@ impl<'a> MakeWriter<'a> for StdWriter {
     }
 }
 
-async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Error> {
-    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy(), opts.wasi_modules())?
-        .with_log_stderr(opts.log_stderr())
-        .with_log_stdout(opts.log_stdout());
+async fn create_execution_context(
+    args: &SharedArgs,
+    check_backends: bool,
+) -> Result<ExecuteCtx, anyhow::Error> {
+    let input = args.input();
+    let mut ctx = ExecuteCtx::new(input, args.profiling_strategy(), args.wasi_modules())?
+        .with_log_stderr(args.log_stderr())
+        .with_log_stdout(args.log_stdout());
 
-    if let Some(config_path) = opts.config_path() {
+    if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
         let geolocation = config.geolocation();
@@ -214,7 +218,7 @@ async fn create_execution_context(opts: &Opts) -> Result<ExecuteCtx, anyhow::Err
                 config_path.display()
             );
         }
-        if !opts.run_mode() {
+        if check_backends {
             for (name, backend) in backends.iter() {
                 let client = Client::builder().build(BackendConnector::new(
                     backend.clone(),

@@ -355,7 +355,11 @@ impl ExecuteCtx {
         outcome
     }
 
-    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
+    pub async fn run_main(
+        self,
+        program_name: &str,
+        args: &Vec<String>,
+    ) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
