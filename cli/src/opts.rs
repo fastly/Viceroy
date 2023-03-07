@@ -61,8 +61,7 @@ pub struct RunArgs {
     #[command(flatten)]
     shared: SharedArgs,
 
-    /// [EXPERIMENTAL] Args to pass along to the binary being executed. This is
-    /// only used when run_mode=true
+    /// Args to pass along to the binary being executed.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     wasm_args: Vec<String>,
 }
