@@ -60,7 +60,7 @@ pub async fn main() -> ExitCode {
             }
         }
         Commands::Serve(serve_args) => {
-            install_tracing_subscriber(std::cmp::max(1, serve_args.verbosity()));
+            install_tracing_subscriber(serve_args.verbosity());
             match {
                 tokio::select! {
                     _ = tokio::signal::ctrl_c() => {
