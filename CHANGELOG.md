@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 0.4.0 (2023-03-17)
+- Add a run-mode that executes the input program once and then exits ([#211](https://github.com/fastly/Viceroy/pull/211))
+- Update to Wasmtime 6.0.0 ([#226](https://github.com/fastly/Viceroy/pull/226))
+- Make object and secret store config names consistent ([#206](https://github.com/fastly/Viceroy/pull/206))
+- Remove dictionary count limit ([#227](https://github.com/fastly/Viceroy/pull/227))
+- Split out run-mode and serve mode into subcommands ([#229](https://github.com/fastly/Viceroy/pull/229))
+
 ## 0.3.5 (2023-01-20)
 - Add support for Secret Store ([#210](https://github.com/fastly/Viceroy/pull/210))
 
