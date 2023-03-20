@@ -164,7 +164,8 @@
        $cert_hostname
        $ca_cert
        $ciphers
-       $sni_hostname))
+       $sni_hostname
+       $dont_pool))
 
 (typename $dynamic_backend_config
   (record
