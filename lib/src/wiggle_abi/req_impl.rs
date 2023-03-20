@@ -191,12 +191,6 @@ impl FastlyHttpReq for Session {
             return Err(Error::InvalidArgument);
         }
 
-        // If someone has set any bits we don't know about, let's also return false,
-        // as there's either bad data or an API compatibility problem.
-        if backend_info_mask != BackendConfigOptions::from_bits_truncate(backend_info_mask.bits()) {
-            return Err(Error::InvalidArgument);
-        }
-
         let override_host = if backend_info_mask.contains(BackendConfigOptions::HOST_OVERRIDE) {
             if config.host_override_len == 0 {
                 return Err(Error::InvalidArgument);
