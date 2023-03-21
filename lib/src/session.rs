@@ -548,6 +548,11 @@ impl Session {
             .or_else(|| self.dynamic_backends.get(name))
     }
 
+    /// Look up a dynamic backend (only) by name.
+    pub fn dynamic_backend(&self, name: &str) -> Option<&Arc<Backend>> {
+        self.dynamic_backends.get(name)
+    }
+
     /// Return the full list of static and dynamic backend names as an [`Iterator`].
     pub fn backend_names(&self) -> impl Iterator<Item = &String> {
         self.backends.keys().chain(self.dynamic_backends.keys())

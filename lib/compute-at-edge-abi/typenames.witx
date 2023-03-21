@@ -135,6 +135,17 @@
 (typename $inserted u32)
 (typename $ready_idx u32)
 
+(typename $port u16)
+(typename $timeout_ms u32)
+(typename $backend_exists u32)
+(typename $is_dynamic u32)
+(typename $is_ssl u32)
+(typename $backend_health
+    (enum (@witx tag u32)
+        $unknown
+        $healthy
+        $unhealthy))
+
 (typename $content_encodings
     (flags (@witx repr u32)
         $gzip))

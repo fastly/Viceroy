@@ -127,6 +127,12 @@ pub enum Error {
 
     #[error("Shared memory not supported yet")]
     SharedMemory,
+
+    #[error("Value absent from structure")]
+    ValueAbsent,
+
+    #[error("String conversion error")]
+    ToStr(#[from] http::header::ToStrError),
 }
 
 impl Error {
@@ -139,7 +145,7 @@ impl Error {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         match self {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
-            Error::InvalidArgument => FastlyStatus::Inval,
+            Error::InvalidArgument | Error::ValueAbsent => FastlyStatus::Inval,
             Error::Unsupported { .. } => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
@@ -181,7 +187,8 @@ impl Error {
             | Error::UnknownObjectStore(_)
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
-            | Error::SharedMemory => FastlyStatus::Error,
+            | Error::SharedMemory
+            | Error::ToStr(_) => FastlyStatus::Error,
         }
     }
 
