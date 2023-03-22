@@ -529,6 +529,93 @@
     )
 )
 
+(module $fastly_backend
+    ;; Returns 1 if a backend with this name exists.
+    (@interface func (export "exists")
+        (param $backend string)
+        (result $err (expected
+                $backend_exists
+                (error $fastly_status)))
+    )
+
+    ;; Returns 1 if the backend is a "dynamic" backend.
+    (@interface func (export "is_dynamic")
+        (param $backend string)
+        (result $err (expected $is_dynamic (error $fastly_status)))
+    )
+
+    ;; Get the host of this backend.
+    (@interface func (export "get_host")
+        (param $backend string)
+        (param $value (@witx pointer (@witx char8)))
+        (param $value_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;; Get the "override host" for this backend.
+    ;;
+    ;; This is used to change the `Host` header sent to the backend. See the Fastly documentation
+    ;; on this topic here: https://docs.fastly.com/en/guides/specifying-an-override-host
+    (@interface func (export "get_override_host")
+        (param $backend string)
+        (param $value (@witx pointer (@witx char8)))
+        (param $value_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;; Get the remote TCP port of the backend connection for the request.
+    (@interface func (export "get_port")
+        (param $backend string)
+        (result $err (expected
+                $port
+                (error $fastly_status)))
+    )
+
+    ;; Get the connection timeout of the backend.
+    (@interface func (export "get_connect_timeout_ms")
+        (param $backend string)
+        (result $err (expected
+                $timeout_ms
+                (error $fastly_status)))
+    )
+
+    ;; Get the first byte timeout of the backend.
+    (@interface func (export "get_first_byte_timeout_ms")
+        (param $backend string)
+        (result $err (expected
+                $timeout_ms
+                (error $fastly_status)))
+    )
+
+    ;; Get the between byte timeout of the backend.
+    (@interface func (export "get_between_bytes_timeout_ms")
+        (param $backend string)
+        (result $err (expected
+                $timeout_ms
+                (error $fastly_status)))
+    )
+
+    ;; Returns 1 if the backend is configured to use SSL.
+    (@interface func (export "is_ssl")
+        (param $backend string)
+        (result $err (expected $is_ssl (error $fastly_status)))
+    )
+
+    ;; Get the minimum SSL version this backend will use.
+    (@interface func (export "get_ssl_min_version")
+        (param $backend string)
+        (result $err (expected $tls_version (error $fastly_status)))
+    )
+
+    ;; Get the maximum SSL version this backend will use.
+    (@interface func (export "get_ssl_max_version")
+        (param $backend string)
+        (result $err (expected $tls_version (error $fastly_status)))
+    )
+)
+
 (module $fastly_async_io
     ;;; Blocks until one of the given objects is ready for I/O, or the optional timeout expires.
     ;;;
