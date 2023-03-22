@@ -1,6 +1,5 @@
 //! Guest code execution.
 
-use std::net::Ipv4Addr;
 
 use {
     crate::{
@@ -18,7 +17,7 @@ use {
     hyper::{Request, Response},
     std::{
         collections::HashSet,
-        net::IpAddr,
+        net::{Ipv4Addr, IpAddr},
         path::{Path, PathBuf},
         sync::atomic::AtomicU64,
         sync::Arc,
