@@ -14,3 +14,9 @@ exclude = [
 # commands like `cargo run` will run the CLI binary by default.
 # See: https://doc.rust-lang.org/cargo/reference/workspaces.html#package-selection
 default-members = [ "cli" ]
+
+[workspace.package]
+version = "0.4.2"
+
+[workspace.dependencies]
+viceroy-lib = { path = "lib", version = "^0.4.2" }

@@ -20,11 +20,11 @@ Below are the steps needed to do a Viceroy release:
    crates.io registry. Note that we must do this in order of dependencies. So,
   1. `(cd lib && cargo publish)`
   1. `(cd cli && cargo publish)`
-1. Now, we should return to our release PR.
-  1. Update the version fields in `lib/Cargo.toml` and `cli/Cargo.toml` to the
-     next patch version (so `z + 1`).
-  1. Update the dependency on `viceroy-lib` in `cli/Cargo.toml` to the next
-     patch version.
+1. Now prepare the release PR for merging.
+  1. Update the `version` field under `[workspace.package]` in `/Cargo.toml` to
+     the next patch version (so `z + 1`).
+  1. Update the dependency on `viceroy-lib` in under `[workspace.dependencies]`
+     in `/Cargo.toml` to the same new patch version.
   1. Update all the lockfiles by running `make generate-lockfile`.
   1. Restore the `## Unreleased` header at the top of `CHANGELOG.md`.
 1. Get another approval and merge when CI passes.
