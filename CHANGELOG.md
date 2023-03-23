@@ -1,5 +1,8 @@
 ## Unreleased
 
+## 0.4.1 (2023-03-23)
+- Add `fastly_backend` interfaces for backend introspection ([#236](https://github.com/fastly/Viceroy/pull/236))
+
 ## 0.4.0 (2023-03-17)
 - Add a run-mode that executes the input program once and then exits ([#211](https://github.com/fastly/Viceroy/pull/211))
 - Update to Wasmtime 6.0.0 ([#226](https://github.com/fastly/Viceroy/pull/226))
