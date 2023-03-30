@@ -202,6 +202,7 @@ pub enum ExperimentalModule {
 struct RawLocalServerConfig {
     backends: Option<Table>,
     geolocation: Option<Table>,
+    #[serde(alias = "config_stores")]
     dictionaries: Option<Table>,
     #[serde(alias = "object_store")]
     object_stores: Option<Table>,
