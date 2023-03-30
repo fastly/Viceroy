@@ -138,6 +138,45 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
     assert!(dictionary.is_json());
 }
 
+/// Show that we can successfully parse a `fastly.toml` with local_server.config_stores configurations.
+///
+/// This provides an example `fastly.toml` file including a `#[local_server.config_stores]` section.
+#[test]
+fn fastly_toml_files_with_simple_config_store_configurations_can_be_read() {
+    let dir = tempdir().unwrap();
+
+    let file_path = dir.path().join("a.json");
+    let mut file = File::create(&file_path).unwrap();
+    writeln!(file, "{{}}").unwrap();
+    let config = FastlyConfig::from_str(format!(
+        r#"
+            manifest_version = "1.2.3"
+            name = "dictionary-config-example"
+            description = "a toml example with config store configuration"
+            authors = [
+                "Amelia Watson <awatson@fastly.com>",
+                "Inugami Korone <kinugami@fastly.com>",
+            ]
+            language = "rust"
+
+            [local_server]
+                [local_server.config_stores]
+                    [local_server.config_stores.a]
+                    file='{}'
+                    format = "json"
+    "#,
+        &file_path.to_str().unwrap()
+    ))
+    .expect("can read toml data containing local dictionary configurations");
+
+    let dictionary = config
+        .dictionaries()
+        .get(&DictionaryName::new("a".to_string()))
+        .expect("dictionary configurations can be accessed");
+    assert_eq!(dictionary.file_path().unwrap(), file_path);
+    assert!(dictionary.is_json());
+}
+
 /// Check that the `local_server` section can be deserialized.
 // This case is technically redundant, but it is nice to have a unit test that demonstrates the
 // happy path for this group of unit tests.
@@ -307,7 +346,7 @@ mod backend_config_tests {
     }
 }
 
-/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+/// Unit tests for dictionaries/config_stores in the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// These tests check that we deserialize and validate the dictionary configurations section of
 /// the TOML data properly regardless of the format.
@@ -334,12 +373,30 @@ mod dictionary_config_tests {
             res => panic!("unexpected result: {:?}", res),
         }
     }
+
+    /// Check that config_store definitions have a valid `format`.
+    #[test]
+    fn config_store_configs_have_a_valid_format() {
+        use DictionaryConfigError::InvalidDictionaryFormat;
+        let invalid_format_field = r#"
+            [config_stores.a]
+            format = "foo"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&invalid_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidDictionaryFormat(format),
+                ..
+            }) if format == "foo" => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
 }
 
-/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+/// Unit tests for dictionaries/config-stores in the `local_server` section of a `fastly.toml` package manifest.
 ///
-/// These tests check that we deserialize and validate the dictionary configurations section of
-/// the TOML data properly for dictionaries using JSON files to store their data.
+/// These tests check that we deserialize and validate the dictionary/config-store configurations section of
+/// the TOML data properly for dictionaries/config-stores using JSON files to store their data.
 mod json_dictionary_config_tests {
     use {
         super::read_local_server_config,
@@ -354,6 +411,23 @@ mod json_dictionary_config_tests {
         use DictionaryConfigError::InvalidEntryType;
         static BAD_DEF: &str = r#"
             [dictionaries]
+            "thing" = "stuff"
+        "#;
+        match read_local_server_config(BAD_DEF) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidEntryType,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that config_store definitions must be given as TOML tables.
+    #[test]
+    fn config_store_configs_must_use_toml_tables() {
+        use DictionaryConfigError::InvalidEntryType;
+        static BAD_DEF: &str = r#"
+            [config_stores]
             "thing" = "stuff"
         "#;
         match read_local_server_config(BAD_DEF) {
@@ -390,12 +464,53 @@ mod json_dictionary_config_tests {
         }
     }
 
+    /// Check that config_store definitions cannot contain unrecognized keys.
+    #[test]
+    fn config_store_configs_cannot_contain_unrecognized_keys() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        use DictionaryConfigError::UnrecognizedKey;
+        let bad_default = format!(
+            r#"
+            [config_stores]
+            thing = {{ file = '{}', format = "json", shrimp = true }}
+        "#,
+            file_path.to_str().unwrap()
+        );
+        match read_local_server_config(&bad_default) {
+            Err(InvalidDictionaryDefinition {
+                err: UnrecognizedKey(key),
+                ..
+            }) if key == "shrimp" => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
     /// Check that dictionary definitions *must* include a `file` field.
     #[test]
     fn dictionary_configs_must_provide_a_file() {
         use DictionaryConfigError::MissingFile;
         static NO_FILE: &str = r#"
             [dictionaries]
+            thing = {format = "json"}
+        "#;
+        match read_local_server_config(NO_FILE) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFile, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that config_store definitions *must* include a `file` field.
+    #[test]
+    fn config_store_configs_must_provide_a_file() {
+        use DictionaryConfigError::MissingFile;
+        static NO_FILE: &str = r#"
+            [config_stores]
             thing = {format = "json"}
         "#;
         match read_local_server_config(NO_FILE) {
@@ -418,6 +533,30 @@ mod json_dictionary_config_tests {
         let no_format_field = format!(
             r#"
             [dictionaries]
+            "thing" = {{ file = '{}' }}
+        "#,
+            file_path.to_str().unwrap()
+        );
+        match read_local_server_config(&no_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFormat, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that config_store definitions *must* include a `format` field.
+    #[test]
+    fn config_store_configs_must_provide_a_format() {
+        use DictionaryConfigError::MissingFormat;
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let no_format_field = format!(
+            r#"
+            [config_stores]
             "thing" = {{ file = '{}' }}
         "#,
             file_path.to_str().unwrap()
@@ -455,12 +594,54 @@ mod json_dictionary_config_tests {
         }
     }
 
+    /// Check that config_store definitions must include a *valid* `name` field.
+    #[test]
+    fn config_store_configs_must_provide_a_valid_name() {
+        use DictionaryConfigError::InvalidName;
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let bad_name_field = format!(
+            r#"
+            [config_stores]
+            "1" = {{ file = '{}', format = "json" }}
+        "#,
+            file_path.to_str().unwrap()
+        );
+        match read_local_server_config(&bad_name_field) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidName(_),
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
     /// Check that file field is a string.
     #[test]
     fn dictionary_configs_must_provide_file_as_a_string() {
         use DictionaryConfigError::InvalidFileEntry;
         static BAD_FILE_FIELD: &str = r#"
             [dictionaries]
+            "thing" = { file = 3, format = "json" }
+        "#;
+        match read_local_server_config(BAD_FILE_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidFileEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that file field is a string.
+    #[test]
+    fn config_store_configs_must_provide_file_as_a_string() {
+        use DictionaryConfigError::InvalidFileEntry;
+        static BAD_FILE_FIELD: &str = r#"
+            [config_stores]
             "thing" = { file = 3, format = "json" }
         "#;
         match read_local_server_config(BAD_FILE_FIELD) {
@@ -489,6 +670,23 @@ mod json_dictionary_config_tests {
         }
     }
 
+    /// Check that file field is non empty.
+    #[test]
+    fn config_store_configs_must_provide_a_non_empty_file() {
+        use DictionaryConfigError::EmptyFileEntry;
+        static EMPTY_FILE_FIELD: &str = r#"
+            [config_stores]
+            "thing" = { file = "", format = "json" }
+        "#;
+        match read_local_server_config(EMPTY_FILE_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: EmptyFileEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
     /// Check that format field is a string.
     #[test]
     fn dictionary_configs_must_provide_format_as_a_string() {
@@ -506,12 +704,46 @@ mod json_dictionary_config_tests {
         }
     }
 
+    /// Check that format field is a string.
+    #[test]
+    fn config_store_configs_must_provide_format_as_a_string() {
+        use DictionaryConfigError::InvalidFormatEntry;
+        static BAD_FORMAT_FIELD: &str = r#"
+            [config_stores]
+            "thing" = { format = 3}
+        "#;
+        match read_local_server_config(BAD_FORMAT_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidFormatEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
     /// Check that format field is non empty.
     #[test]
     fn dictionary_configs_must_provide_a_non_empty_format() {
         use DictionaryConfigError::EmptyFormatEntry;
         static EMPTY_FORMAT_FIELD: &str = r#"
             [dictionaries]
+            "thing" = { format = "" }
+        "#;
+        match read_local_server_config(EMPTY_FORMAT_FIELD) {
+            Err(InvalidDictionaryDefinition {
+                err: EmptyFormatEntry,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that format field is non empty.
+    #[test]
+    fn config_store_configs_must_provide_a_non_empty_format() {
+        use DictionaryConfigError::EmptyFormatEntry;
+        static EMPTY_FORMAT_FIELD: &str = r#"
+            [config_stores]
             "thing" = { format = "" }
         "#;
         match read_local_server_config(EMPTY_FORMAT_FIELD) {
@@ -542,12 +774,32 @@ mod json_dictionary_config_tests {
             "can read toml data containing local dictionary configurations using json format",
         );
     }
+
+    /// Check that format field set to json is valid.
+    #[test]
+    fn valid_config_store_config_with_format_set_to_json() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("secrets.json");
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+
+        let dictionary = format!(
+            r#"
+            [config_stores]
+            "thing" = {{ file = '{}', format = "json" }}
+        "#,
+            file_path.to_str().unwrap()
+        );
+        read_local_server_config(&dictionary).expect(
+            "can read toml data containing local dictionary configurations using json format",
+        );
+    }
 }
 
-/// Unit tests for dictionaries in the `local_server` section of a `fastly.toml` package manifest.
+/// Unit tests for dictionaries/config_stores in the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// These tests check that we deserialize and validate the dictionary configurations section of
-/// the TOML data properly for dictionaries using inline TOML to store their data.
+/// the TOML data properly for dictionaries/config_stores using inline TOML to store their data.
 mod inline_toml_dictionary_config_tests {
     use {
         super::read_local_server_config,
@@ -566,12 +818,40 @@ mod inline_toml_dictionary_config_tests {
         );
     }
 
+    #[test]
+    fn valid_inline_toml_config_stores_can_be_parsed() {
+        let dictionary = r#"
+            [config_stores.inline_toml_example]
+            format = "inline-toml"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        read_local_server_config(&dictionary).expect(
+            "can read toml data containing local dictionary configurations using json format",
+        );
+    }
+
     /// Check that dictionary definitions *must* include a `format` field.
     #[test]
     fn dictionary_configs_must_provide_a_format() {
         use DictionaryConfigError::MissingFormat;
         let no_format_field = r#"
             [dictionaries.missing_format]
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&no_format_field) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingFormat, ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that config_store definitions *must* include a `format` field.
+    #[test]
+    fn config_store_configs_must_provide_a_format() {
+        use DictionaryConfigError::MissingFormat;
+        let no_format_field = r#"
+            [config_stores.missing_format]
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
         match read_local_server_config(&no_format_field) {
@@ -599,12 +879,47 @@ mod inline_toml_dictionary_config_tests {
         }
     }
 
+    /// Check that config_store definitions *must* include a `contents` field.
+    #[test]
+    fn config_store_configs_must_provide_contents() {
+        use DictionaryConfigError::MissingContents;
+        let missing_contents = r#"
+            [config_stores.missing_contents]
+            format = "inline-toml"
+        "#;
+        match read_local_server_config(&missing_contents) {
+            Err(InvalidDictionaryDefinition {
+                err: MissingContents,
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
     /// Check that dictionary definitions must include a *valid* `name` field.
     #[test]
     fn dictionary_configs_must_provide_a_valid_name() {
         use DictionaryConfigError::InvalidName;
         let bad_name_field = r#"
             [dictionaries."1"]
+            format = "inline-toml"
+            contents = { apple = "fruit", potato = "vegetable" }
+        "#;
+        match read_local_server_config(&bad_name_field) {
+            Err(InvalidDictionaryDefinition {
+                err: InvalidName(_),
+                ..
+            }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Check that config_store definitions must include a *valid* `name` field.
+    #[test]
+    fn config_store_configs_must_provide_a_valid_name() {
+        use DictionaryConfigError::InvalidName;
+        let bad_name_field = r#"
+            [config_stores."1"]
             format = "inline-toml"
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
