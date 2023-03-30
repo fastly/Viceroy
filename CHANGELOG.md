@@ -1,5 +1,8 @@
 ## Unreleased
 
+## 0.4.2 (2023-03-30)
+- Allow config-stores to be defined using `[local_server.config_stores]` ([#240](https://github.com/fastly/Viceroy/pull/240))
+
 ## 0.4.1 (2023-03-23)
 - Add `fastly_backend` interfaces for backend introspection ([#236](https://github.com/fastly/Viceroy/pull/236))
 
