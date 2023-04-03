@@ -500,6 +500,20 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "lookup_async")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $pending_body_handle_out (@witx pointer $pending_object_store_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "pending_lookup_wait")
+        (param $store $object_store_handle)
+        (param $pending_body_handle (@witx pointer $pending_object_store_handle))
+        (param $body_handle_out (@witx pointer $body_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+    
     (@interface func (export "insert")
         (param $store $object_store_handle)
         (param $key string)

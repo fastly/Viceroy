@@ -94,6 +94,8 @@
 (typename $dictionary_handle (handle))
 ;;; A handle to an Object Store.
 (typename $object_store_handle (handle))
+;;; A handle to a pending Object Store request.
+(typename $pending_object_store_handle (handle))
 ;;; A handle to a Secret Store.
 (typename $secret_store_handle (handle))
 ;;; A handle to an individual secret.
