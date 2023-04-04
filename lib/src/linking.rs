@@ -108,6 +108,7 @@ pub fn link_host_functions(
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_backend::add_to_linker(linker, WasmCtx::session)?;
     link_legacy_aliases(linker)?;
     Ok(())
 }
