@@ -1,5 +1,8 @@
 ## Unreleased
 
+## 0.4.4 (2023-04-11)
+- feat: Allow local KV Stores to be defined using `[local_server.kv_stores]` ([#245](https://github.com/fastly/Viceroy/pull/245))
+
 ## 0.4.3 (2023-04-04)
 - Add the `fastly_backend` module to the wiggle abi ([#243](https://github.com/fastly/Viceroy/pull/243))
 
