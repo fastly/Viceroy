@@ -1,5 +1,8 @@
 ## Unreleased
 
+## 0.4.3 (2023-04-04)
+- Add the `fastly_backend` module to the wiggle abi ([#243](https://github.com/fastly/Viceroy/pull/243))
+
 ## 0.4.2 (2023-03-30)
 - Allow config-stores to be defined using `[local_server.config_stores]` ([#240](https://github.com/fastly/Viceroy/pull/240))
 
