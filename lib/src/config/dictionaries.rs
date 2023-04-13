@@ -245,16 +245,8 @@ mod deserialization {
     impl FromStr for DictionaryName {
         type Err = DictionaryConfigError;
         fn from_str(name: &str) -> Result<Self, Self::Err> {
-            // Name must start with alphabetical and contain only alphanumeric, underscore, and whitespace
-            if name.starts_with(char::is_alphabetic)
-                && name
-                    .chars()
-                    .all(|c| char::is_alphanumeric(c) || c == '_' || char::is_whitespace(c))
-            {
-                Ok(Self(name.to_owned()))
-            } else {
-                Err(DictionaryConfigError::InvalidName(name.to_owned()))
-            }
+            // We do not do any validation on the name as Config Stores and Dictionaries have different validation rules
+            Ok(Self(name.to_owned()))
         }
     }
 }
