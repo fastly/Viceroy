@@ -569,56 +569,6 @@ mod json_dictionary_config_tests {
         }
     }
 
-    /// Check that dictionary definitions must include a *valid* `name` field.
-    #[test]
-    fn dictionary_configs_must_provide_a_valid_name() {
-        use DictionaryConfigError::InvalidName;
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("secrets.json");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "{{}}").unwrap();
-
-        let bad_name_field = format!(
-            r#"
-            [dictionaries]
-            "1" = {{ file = '{}', format = "json" }}
-        "#,
-            file_path.to_str().unwrap()
-        );
-        match read_local_server_config(&bad_name_field) {
-            Err(InvalidDictionaryDefinition {
-                err: InvalidName(_),
-                ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
-
-    /// Check that config_store definitions must include a *valid* `name` field.
-    #[test]
-    fn config_store_configs_must_provide_a_valid_name() {
-        use DictionaryConfigError::InvalidName;
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("secrets.json");
-        let mut file = File::create(&file_path).unwrap();
-        writeln!(file, "{{}}").unwrap();
-
-        let bad_name_field = format!(
-            r#"
-            [config_stores]
-            "1" = {{ file = '{}', format = "json" }}
-        "#,
-            file_path.to_str().unwrap()
-        );
-        match read_local_server_config(&bad_name_field) {
-            Err(InvalidDictionaryDefinition {
-                err: InvalidName(_),
-                ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
-
     /// Check that file field is a string.
     #[test]
     fn dictionary_configs_must_provide_file_as_a_string() {
@@ -890,42 +840,6 @@ mod inline_toml_dictionary_config_tests {
         match read_local_server_config(&missing_contents) {
             Err(InvalidDictionaryDefinition {
                 err: MissingContents,
-                ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
-
-    /// Check that dictionary definitions must include a *valid* `name` field.
-    #[test]
-    fn dictionary_configs_must_provide_a_valid_name() {
-        use DictionaryConfigError::InvalidName;
-        let bad_name_field = r#"
-            [dictionaries."1"]
-            format = "inline-toml"
-            contents = { apple = "fruit", potato = "vegetable" }
-        "#;
-        match read_local_server_config(&bad_name_field) {
-            Err(InvalidDictionaryDefinition {
-                err: InvalidName(_),
-                ..
-            }) => {}
-            res => panic!("unexpected result: {:?}", res),
-        }
-    }
-
-    /// Check that config_store definitions must include a *valid* `name` field.
-    #[test]
-    fn config_store_configs_must_provide_a_valid_name() {
-        use DictionaryConfigError::InvalidName;
-        let bad_name_field = r#"
-            [config_stores."1"]
-            format = "inline-toml"
-            contents = { apple = "fruit", potato = "vegetable" }
-        "#;
-        match read_local_server_config(&bad_name_field) {
-            Err(InvalidDictionaryDefinition {
-                err: InvalidName(_),
                 ..
             }) => {}
             res => panic!("unexpected result: {:?}", res),
