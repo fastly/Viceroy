@@ -1,5 +1,8 @@
 ## Unreleased
 
+## 0.4.5 (2023-04-13)
+-  Remove validation on config store and dictionary names ([#248](https://github.com/fastly/Viceroy/pull/248))
+
 ## 0.4.4 (2023-04-11)
 - feat: Allow local KV Stores to be defined using `[local_server.kv_stores]` ([#245](https://github.com/fastly/Viceroy/pull/245))
 
