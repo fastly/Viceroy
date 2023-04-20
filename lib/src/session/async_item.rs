@@ -1,4 +1,5 @@
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
+use anyhow::anyhow;
 use futures::Future;
 use futures::FutureExt;
 use http::Response;
@@ -133,8 +134,10 @@ impl<T: Send + 'static> PeekableTask<T> {
                 *self = PeekableTask::Complete(v)
             } else {
                 // todo, not the correct error type
-                *self =
-                    PeekableTask::Complete(Err(Error::GuestError(wiggle::GuestError::PtrOverflow)));
+                *self = PeekableTask::Complete(Err(anyhow!(
+                    "peekable task sender unexpectedly dropped"
+                )
+                .into()));
             }
         }
     }
@@ -143,7 +146,7 @@ impl<T: Send + 'static> PeekableTask<T> {
         match self {
             PeekableTask::Waiting(rx) => rx
                 .await
-                .map_err(|_| Error::GuestError(wiggle::GuestError::PtrOverflow))?,
+                .map_err(|_| anyhow!("peekable task sender unexpectedly dropped"))?,
             PeekableTask::Complete(res) => res,
         }
     }

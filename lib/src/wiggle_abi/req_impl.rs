@@ -555,11 +555,11 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config()));
+        let task =
+            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
 
-        // return a handle to the pending request
-        Ok(self.insert_pending_request(pending_req.await))
+        // return a handle to the pending task
+        Ok(self.insert_pending_request(task))
     }
 
     async fn send_async_streaming<'a>(
@@ -583,11 +583,11 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config()));
+        let task =
+            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
 
-        // return a handle to the pending request
-        Ok(self.insert_pending_request(pending_req.await))
+        // return a handle to the pending task
+        Ok(self.insert_pending_request(task))
     }
 
     // note: The first value in the return tuple represents whether the request is done: 0 when not
@@ -598,16 +598,19 @@ impl FastlyHttpReq for Session {
     ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
         let handle: PendingRequestHandle = pending_req_handle.into();
 
-        let outcome = match self.async_item_mut(handle.into())?.is_some() {
-            true => {
-                let resp = self
-                    .take_pending_request(pending_req_handle)?
-                    .recv()
-                    .await?;
-                let (resp_handle, resp_body_handle) = self.insert_response(resp);
-                (1, resp_handle, resp_body_handle)
-            }
-            false => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
+        let outcome = match self.async_item_mut(handle.into())? {
+            Some(item) => match item.is_ready() {
+                true => {
+                    let resp = self
+                        .take_pending_request(pending_req_handle)?
+                        .recv()
+                        .await?;
+                    let (resp_handle, resp_body_handle) = self.insert_response(resp);
+                    (1, resp_handle, resp_body_handle)
+                }
+                false => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
+            },
+            None => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
         };
         Ok(outcome)
     }
