@@ -598,21 +598,17 @@ impl FastlyHttpReq for Session {
     ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
         let handle: PendingRequestHandle = pending_req_handle.into();
 
-        let outcome = match self.async_item_mut(handle.into())? {
-            Some(item) => match item.is_ready() {
-                true => {
-                    let resp = self
-                        .take_pending_request(pending_req_handle)?
-                        .recv()
-                        .await?;
-                    let (resp_handle, resp_body_handle) = self.insert_response(resp);
-                    (1, resp_handle, resp_body_handle)
-                }
-                false => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
-            },
-            None => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
-        };
-        Ok(outcome)
+        match self.async_item_mut(handle.into()) {
+            Ok(_) => {
+                let resp = self
+                    .take_pending_request(pending_req_handle)?
+                    .recv()
+                    .await?;
+                let (resp_handle, resp_body_handle) = self.insert_response(resp);
+                Ok((1, resp_handle, resp_body_handle))
+            }
+            Err(_) => Ok((0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into())),
+        }
     }
 
     async fn pending_req_wait(

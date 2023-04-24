@@ -787,11 +787,14 @@ impl Session {
     pub fn async_item_mut(
         &mut self,
         handle: AsyncItemHandle,
-    ) -> Result<Option<&mut AsyncItem>, HandleError> {
-        self.async_items
-            .get_mut(handle)
-            .map(|ai| ai.as_mut())
-            .ok_or_else(|| HandleError::InvalidAsyncItemHandle(handle.into()))
+    ) -> Result<&mut AsyncItem, HandleError> {
+        match self.async_items.get_mut(handle).map(|ai| ai.as_mut()) {
+            Some(opt_item) => match opt_item {
+                Some(item) => Ok(item),
+                None => Err(HandleError::InvalidAsyncItemHandle(handle.into()))?,
+            },
+            None => Err(HandleError::InvalidAsyncItemHandle(handle.into()))?,
+        }
     }
 
     pub fn take_async_item(&mut self, handle: AsyncItemHandle) -> Result<AsyncItem, HandleError> {
