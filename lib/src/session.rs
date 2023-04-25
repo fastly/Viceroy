@@ -788,11 +788,8 @@ impl Session {
         &mut self,
         handle: AsyncItemHandle,
     ) -> Result<&mut AsyncItem, HandleError> {
-        match self.async_items.get_mut(handle).map(|ai| ai.as_mut()) {
-            Some(opt_item) => match opt_item {
-                Some(item) => Ok(item),
-                None => Err(HandleError::InvalidAsyncItemHandle(handle.into()))?,
-            },
+        match self.async_items.get_mut(handle).and_then(|ai| ai.as_mut()) {
+            Some(item) => Ok(item),
             None => Err(HandleError::InvalidAsyncItemHandle(handle.into()))?,
         }
     }
