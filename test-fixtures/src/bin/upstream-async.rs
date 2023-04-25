@@ -68,10 +68,23 @@ fn test_wait() {
     tracker.assert_complete();
 }
 
-/// Run the test using the `poll` API, polling both responses in a loop and processing them as they become ready.
 fn test_poll() {
+    let req1 = Request::get("http://www.example1.com/")
+        .send_async("backend1")
+        .unwrap();
+
+    // req1 should not be ready until a request is sent to backend2
+    let PollResult::Pending(req1) = req1.poll() else {
+        panic!("req1 finished too soon")
+    };
+
+    // sending req2 should unblock req1, and req2 itself should return immediately.
+    let req2 = Request::get("http://www.example2.com/")
+        .send_async("backend2")
+        .unwrap();
+
+    // avoid races by resolving the responses to both requests in a loop
     let mut tracker = ResponseTracker::new();
-    let (req1, req2) = send_async_reqs();
     let mut reqs = vec![req1, req2];
 
     while !reqs.is_empty() {
