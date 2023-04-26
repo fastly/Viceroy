@@ -15,7 +15,7 @@ async fn direct_wasm_works() -> TestResult {
 async fn heap_limit_test_ok() -> TestResult {
     let resp = Test::using_wat_fixture("combined_heap_limits.wat")
         .against(
-            Request::get("http://127.0.0.1:17878/")
+            Request::get("/")
                 .header("guest-kb", "235")
                 .header("header-kb", "1")
                 .header("body-kb", "16")
@@ -40,7 +40,7 @@ async fn heap_limit_test_ok() -> TestResult {
 async fn heap_limit_test_bad() -> TestResult {
     let resp = Test::using_wat_fixture("combined_heap_limits.wat")
         .against(
-            Request::get("http://127.0.0.1:17878/")
+            Request::get("/")
                 .header("guest-kb", "150000")
                 .body("")
                 .unwrap(),

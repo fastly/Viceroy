@@ -4,8 +4,6 @@ use {
 };
 
 /// A single backend definition.
-///
-/// Currently, a backend only consists of a [`Uri`], but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub struct Backend {
     pub uri: Uri,

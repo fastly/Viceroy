@@ -9,8 +9,8 @@ async fn upstream_streaming() -> TestResult {
     // Set up the test harness
     let test = Test::using_fixture("upstream-streaming.wasm")
         // The "origin" backend simply echos the request body
-        .backend("origin", "http://127.0.0.1:9000/", None)
-        .host(9000, |req| Response::new(req.into_body()));
+        .backend("origin", "/", None, |req| Response::new(req.into_body()))
+        .await;
 
     // Test with an empty request
     let mut resp = test.against_empty().await;

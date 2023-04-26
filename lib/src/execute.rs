@@ -440,7 +440,13 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     // Maximum number of slots in the pooling allocator to keep "warm", or those
     // to keep around to possibly satisfy an affine allocation request or an
     // instantiation of a module previously instantiated within the pool.
-    pooling_allocation_config.max_unused_warm_slots(100);
+    pooling_allocation_config.max_unused_warm_slots(10);
+
+    // Use a large pool, but one smaller than the default of 1000 to avoid runnign out of virtual
+    // memory space if multiple engines are spun up in a single process. We'll likely want to move
+    // to the on-demand allocator eventually for most purposes; see
+    // https://github.com/fastly/Viceroy/issues/255
+    pooling_allocation_config.instance_count(100);
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling(
         pooling_allocation_config,

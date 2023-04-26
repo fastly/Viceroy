@@ -14,19 +14,23 @@ async fn upstream_sync() -> TestResult {
 
     // Set up the test harness
     let test = Test::using_fixture("upstream.wasm")
-        .backend("origin", "http://127.0.0.1:9000/", None)
         // The "origin" backend simply echos the request body
-        .host(9000, |req| {
+        .backend("origin", "/", None, |req| {
             let body = req.into_body();
             Response::new(body)
         })
+        .await
         // The "prefix-*" backends return the request URL as the response body
-        .backend("prefix-hello", "http://127.0.0.1:9001/hello", None)
-        .backend("prefix-hello-slash", "http://127.0.0.1:9001/hello/", None)
-        .host(9001, |req| {
+        .backend("prefix-hello", "/hello", None, |req| {
             let body = req.uri().to_string().into_bytes();
             Response::new(body)
-        });
+        })
+        .await
+        .backend("prefix-hello-slash", "/hello/", None, |req| {
+            let body = req.uri().to_string().into_bytes();
+            Response::new(body)
+        })
+        .await;
 
     ////////////////////////////////////////////////////////////////////////////////////
     // A simple round-trip echo test to "origin"
@@ -34,7 +38,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::post("http://localhost/")
+            Request::post("/")
                 .header("Viceroy-Backend", "origin")
                 .body("Hello, Viceroy!")
                 .unwrap(),
@@ -53,7 +57,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost/")
+            Request::get("/")
                 .header("Viceroy-Backend", "prefix-hello")
                 .body("")
                 .unwrap(),
@@ -64,7 +68,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost/")
+            Request::get("/")
                 .header("Viceroy-Backend", "prefix-hello-slash")
                 .body("")
                 .unwrap(),
@@ -75,7 +79,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost/greeting.html")
+            Request::get("/greeting.html")
                 .header("Viceroy-Backend", "prefix-hello")
                 .body("")
                 .unwrap(),
@@ -89,7 +93,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost/greeting.html")
+            Request::get("/greeting.html")
                 .header("Viceroy-Backend", "prefix-hello-slash")
                 .body("")
                 .unwrap(),
@@ -107,7 +111,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost/greeting.html")
+            Request::get("/greeting.html")
                 .header("Viceroy-Backend", "nonsense")
                 .body("")
                 .unwrap(),
@@ -122,23 +126,19 @@ async fn upstream_sync() -> TestResult {
 async fn override_host_works() -> TestResult {
     // Set up the test harness
     let test = Test::using_fixture("upstream.wasm")
-        .backend(
-            "override-host",
-            "http://127.0.0.1:9000/",
-            Some("otherhost.com"),
-        )
-        .host(9000, |req| {
+        .backend("override-host", "/", Some("otherhost.com"), |req| {
             assert_eq!(
                 req.headers().get(header::HOST),
                 Some(&HeaderValue::from_static("otherhost.com"))
             );
             Response::new(vec![])
-        });
+        })
+        .await;
 
     let resp = test
         .via_hyper()
         .against(
-            Request::get("http://localhost:17878/override")
+            Request::get("/override")
                 .header("Viceroy-Backend", "override-host")
                 .body("")
                 .unwrap(),
@@ -154,8 +154,7 @@ async fn override_host_works() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn transparent_gunzip() -> TestResult {
     let resp = Test::using_fixture("gzipped-response.wasm")
-        .backend("echo", "http://127.0.0.1:9000/", None)
-        .host(9000, |mut req| {
+        .backend("echo", "/", None, |mut req| {
             let mut response_builder = Response::builder();
 
             for (key, value) in req.headers_mut().drain() {
@@ -169,6 +168,7 @@ async fn transparent_gunzip() -> TestResult {
                 .body(req.into_body())
                 .unwrap()
         })
+        .await
         .against_empty()
         .await;
 
