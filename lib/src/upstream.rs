@@ -19,7 +19,6 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpStream,
-    sync::oneshot::{self, error::TryRecvError},
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use tracing::warn;
@@ -272,63 +271,11 @@ pub fn send_request(
 }
 
 /// The type ultimately yielded by a `PendingRequest`.
-pub type PendingRequestResult = Result<Response<Body>, Error>;
 
 /// An asynchronous request awaiting a response.
 #[derive(Debug)]
 pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.
-    Waiting(oneshot::Receiver<PendingRequestResult>),
-    Complete(PendingRequestResult),
-}
-
-impl PendingRequest {
-    /// Create a `PendingRequest` for the given request by spawning a Tokio task to drive sending
-    /// and receiving to completion.
-    pub fn spawn(
-        req: impl Future<Output = Result<Response<Body>, Error>> + Send + 'static,
-    ) -> Self {
-        let (sender, receiver) = oneshot::channel();
-        tokio::task::spawn(async move { sender.send(req.await) });
-        Self::Waiting(receiver)
-    }
-
-    /// Check whether a response happens to be available for this pending request.
-    ///
-    /// This function does _not_ block, nor does it require being in an `async` context.
-    pub fn poll(&mut self) {
-        match self {
-            Self::Waiting(ref mut rx) => match rx.try_recv() {
-                Err(TryRecvError::Closed) => {
-                    panic!("Pending request sender was dropped")
-                }
-                // the request is still in flight
-                Err(TryRecvError::Empty) => {}
-                Ok(res) => *self = Self::Complete(res),
-            },
-            // the request is already completed
-            Self::Complete(_) => {}
-        }
-    }
-
-    /// Block until the response is ready, and then return it.
-    pub async fn wait(mut self) -> PendingRequestResult {
-        self.await_ready().await;
-        match self {
-            Self::Complete(res) => res,
-            Self::Waiting(_) => unreachable!("PendingRequest should have completed"),
-        }
-    }
-
-    pub async fn await_ready(&mut self) {
-        if let Self::Waiting(rx) = self {
-            let res = match rx.await {
-                Err(_) => panic!("Pending request was unable to complete"),
-                Ok(res) => res,
-            };
-            *self = Self::Complete(res);
-        }
-    }
 }
 
 /// A pair of a pending request and the handle that pointed to it in the session, suitable for
