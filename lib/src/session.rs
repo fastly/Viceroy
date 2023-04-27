@@ -3,7 +3,7 @@
 mod async_item;
 mod downstream;
 
-pub use async_item::AsyncItem;
+pub use async_item::{AsyncItem, PeekableTask};
 
 use {
     self::downstream::DownstreamResponse,
@@ -15,7 +15,7 @@ use {
         object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
         secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
-        upstream::{PendingRequest, SelectTarget, TlsConfig},
+        upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
             ObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle,
@@ -674,7 +674,10 @@ impl Session {
     ///
     /// This method returns a new [`PendingRequestHandle`], which can then be used to access
     /// and mutate the pending request.
-    pub fn insert_pending_request(&mut self, pending: PendingRequest) -> PendingRequestHandle {
+    pub fn insert_pending_request(
+        &mut self,
+        pending: PeekableTask<Response<Body>>,
+    ) -> PendingRequestHandle {
         self.async_items
             .push(Some(AsyncItem::PendingReq(pending)))
             .into()
@@ -687,7 +690,7 @@ impl Session {
     pub fn pending_request(
         &self,
         handle: PendingRequestHandle,
-    ) -> Result<&PendingRequest, HandleError> {
+    ) -> Result<&PeekableTask<Response<Body>>, HandleError> {
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
@@ -702,7 +705,7 @@ impl Session {
     pub fn pending_request_mut(
         &mut self,
         handle: PendingRequestHandle,
-    ) -> Result<&mut PendingRequest, HandleError> {
+    ) -> Result<&mut PeekableTask<Response<Body>>, HandleError> {
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -717,7 +720,7 @@ impl Session {
     pub fn take_pending_request(
         &mut self,
         handle: PendingRequestHandle,
-    ) -> Result<PendingRequest, HandleError> {
+    ) -> Result<PeekableTask<Response<Body>>, HandleError> {
         // check that this is a pending request before removing it
         let _ = self.pending_request(handle)?;
 
@@ -731,7 +734,7 @@ impl Session {
     pub fn reinsert_pending_request(
         &mut self,
         handle: PendingRequestHandle,
-        pending_req: PendingRequest,
+        pending_req: PeekableTask<Response<Body>>,
     ) -> Result<(), HandleError> {
         *self
             .async_items
@@ -784,11 +787,11 @@ impl Session {
     pub fn async_item_mut(
         &mut self,
         handle: AsyncItemHandle,
-    ) -> Result<Option<&mut AsyncItem>, HandleError> {
-        self.async_items
-            .get_mut(handle)
-            .map(|ai| ai.as_mut())
-            .ok_or_else(|| HandleError::InvalidAsyncItemHandle(handle.into()))
+    ) -> Result<&mut AsyncItem, HandleError> {
+        match self.async_items.get_mut(handle).and_then(|ai| ai.as_mut()) {
+            Some(item) => Ok(item),
+            None => Err(HandleError::InvalidAsyncItemHandle(handle.into()))?,
+        }
     }
 
     pub fn take_async_item(&mut self, handle: AsyncItemHandle) -> Result<AsyncItem, HandleError> {

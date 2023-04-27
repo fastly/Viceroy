@@ -407,9 +407,6 @@ pub enum DictionaryConfigError {
     #[error("definition was not provided as a TOML table")]
     InvalidEntryType,
 
-    #[error("invalid string: {0}")]
-    InvalidName(String),
-
     #[error("'name' field was not a string")]
     InvalidNameEntry,
 

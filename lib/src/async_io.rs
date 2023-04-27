@@ -44,7 +44,6 @@ impl FastlyAsyncIo for Session {
     fn is_ready(&mut self, handle: AsyncItemHandle) -> Result<u32, Error> {
         if self
             .async_item_mut(handle.into())?
-            .unwrap()
             .await_ready()
             .now_or_never()
             .is_some()

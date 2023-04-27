@@ -11,7 +11,7 @@ async fn secret_store_works() -> TestResult {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        secret_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/object-store.txt"}]
+        secret_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/kv-store.txt"}]
     "#;
 
     let resp = Test::using_fixture("secret-store.wasm")

@@ -204,7 +204,7 @@ struct RawLocalServerConfig {
     geolocation: Option<Table>,
     #[serde(alias = "config_stores")]
     dictionaries: Option<Table>,
-    #[serde(alias = "object_store")]
+    #[serde(alias = "object_store", alias = "kv_stores")]
     object_stores: Option<Table>,
     secret_stores: Option<Table>,
 }
