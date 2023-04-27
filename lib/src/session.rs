@@ -18,8 +18,8 @@ use {
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle,
-            SecretStoreHandle,
+            ObjectStoreHandle, PendingObjectStoreHandle, PendingRequestHandle, RequestHandle,
+            ResponseHandle, SecretHandle, SecretStoreHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},

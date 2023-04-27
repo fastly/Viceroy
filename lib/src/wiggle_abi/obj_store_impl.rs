@@ -1,7 +1,7 @@
 //! fastly_obj_store` hostcall implementations.
 
-use crate::session::PeekableTask;
 use super::types::PendingObjectStoreHandle;
+use crate::session::PeekableTask;
 
 use {
     crate::{
