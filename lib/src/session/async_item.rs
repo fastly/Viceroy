@@ -1,3 +1,4 @@
+use crate::object_store::ObjectStoreError;
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
 use futures::Future;
@@ -14,6 +15,7 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
+    PendingLookup(PeekableTask<Result<Vec<u8>, ObjectStoreError>>),
 }
 
 impl AsyncItem {
@@ -70,6 +72,20 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_pending_lookup(&self) -> Option<&PeekableTask<Result<Vec<u8>, ObjectStoreError>>> {
+        match self {
+            Self::PendingLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_lookup(self) -> Option<PeekableTask<Result<Vec<u8>, ObjectStoreError>>> {
+        match self {
+            Self::PendingLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
     pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
@@ -96,6 +112,7 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
+            Self::PendingLookup(obj) => obj.await_ready().await,
         }
     }
 
@@ -107,6 +124,12 @@ impl AsyncItem {
 impl From<PeekableTask<Response<Body>>> for AsyncItem {
     fn from(req: PeekableTask<Response<Body>>) -> Self {
         Self::PendingReq(req)
+    }
+}
+
+impl From<PeekableTask<Result<Vec<u8>, ObjectStoreError>>> for AsyncItem {
+    fn from(req: PeekableTask<Result<Vec<u8>, ObjectStoreError>>) -> Self {
+        Self::PendingLookup(req)
     }
 }
 

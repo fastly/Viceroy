@@ -18,7 +18,7 @@ use {
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle,
+            ObjectStoreHandle, PendingObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle,
             SecretStoreHandle,
         },
     },
@@ -639,6 +639,52 @@ impl Session {
         self.object_store.lookup(obj_store_key, obj_key)
     }
 
+    /// Insert a [`PendingLookup`] into the session.
+    ///
+    /// This method returns a new [`PendingObjectStoreHandle`], which can then be used to access
+    /// and mutate the pending lookup.
+    pub fn insert_pending_lookup(
+        &mut self,
+        pending: PeekableTask<Result<Vec<u8>, ObjectStoreError>>,
+    ) -> PendingObjectStoreHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingLookup(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingLookup`], given its [`PendingObjectStoreHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending lookup in the
+    /// session.
+    pub fn take_pending_lookup(
+        &mut self,
+        handle: PendingObjectStoreHandle,
+    ) -> Result<PeekableTask<Result<Vec<u8>, ObjectStoreError>>, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_lookup(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_lookup)
+            .ok_or(HandleError::InvalidPendingLookupHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingLookup`], given its [`PendingObjectStoreHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a lookup in the
+    /// session.
+    pub fn pending_lookup(
+        &self,
+        handle: PendingObjectStoreHandle,
+    ) -> Result<&PeekableTask<Result<Vec<u8>, ObjectStoreError>>, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_lookup)
+            .ok_or(HandleError::InvalidPendingLookupHandle(handle))
+    }
+
     // ----- Secret Store API -----
 
     pub fn secret_store_handle(&mut self, name: &str) -> Option<SecretStoreHandle> {
@@ -910,5 +956,17 @@ impl From<types::AsyncItemHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for types::AsyncItemHandle {
     fn from(h: AsyncItemHandle) -> types::AsyncItemHandle {
         types::AsyncItemHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingObjectStoreHandle> for AsyncItemHandle {
+    fn from(h: PendingObjectStoreHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingObjectStoreHandle {
+    fn from(h: AsyncItemHandle) -> PendingObjectStoreHandle {
+        PendingObjectStoreHandle::from(h.as_u32())
     }
 }

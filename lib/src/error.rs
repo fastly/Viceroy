@@ -238,6 +238,10 @@ pub enum HandleError {
     #[error("Invalid pending request handle: {0}")]
     InvalidPendingRequestHandle(crate::wiggle_abi::types::PendingRequestHandle),
 
+    /// A lookup handle was not valid.
+    #[error("Invalid pending lookup handle: {0}")]
+    InvalidPendingLookupHandle(crate::wiggle_abi::types::PendingObjectStoreHandle),
+
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
