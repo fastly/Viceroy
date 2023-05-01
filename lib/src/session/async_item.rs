@@ -6,6 +6,8 @@ use futures::FutureExt;
 use http::Response;
 use tokio::sync::oneshot;
 
+pub type PendingKvTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
+
 /// Represents either a full body, or the write end of a streaming body.
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
@@ -15,7 +17,7 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
-    PendingLookup(PeekableTask<Result<Vec<u8>, ObjectStoreError>>),
+    PendingKvLookup(PendingKvTask),
 }
 
 impl AsyncItem {
@@ -72,16 +74,16 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_pending_lookup(&self) -> Option<&PeekableTask<Result<Vec<u8>, ObjectStoreError>>> {
+    pub fn as_pending_lookup(&self) -> Option<&PendingKvTask> {
         match self {
-            Self::PendingLookup(req) => Some(req),
+            Self::PendingKvLookup(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn into_pending_lookup(self) -> Option<PeekableTask<Result<Vec<u8>, ObjectStoreError>>> {
+    pub fn into_pending_lookup(self) -> Option<PendingKvTask> {
         match self {
-            Self::PendingLookup(req) => Some(req),
+            Self::PendingKvLookup(req) => Some(req),
             _ => None,
         }
     }
@@ -112,7 +114,7 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
-            Self::PendingLookup(obj) => obj.await_ready().await,
+            Self::PendingKvLookup(obj) => obj.await_ready().await,
         }
     }
 
@@ -127,9 +129,9 @@ impl From<PeekableTask<Response<Body>>> for AsyncItem {
     }
 }
 
-impl From<PeekableTask<Result<Vec<u8>, ObjectStoreError>>> for AsyncItem {
-    fn from(req: PeekableTask<Result<Vec<u8>, ObjectStoreError>>) -> Self {
-        Self::PendingLookup(req)
+impl From<PendingKvTask> for AsyncItem {
+    fn from(task: PendingKvTask) -> Self {
+        Self::PendingKvLookup(task)
     }
 }
 

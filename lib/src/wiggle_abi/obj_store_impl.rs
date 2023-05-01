@@ -1,6 +1,6 @@
 //! fastly_obj_store` hostcall implementations.
 
-use super::types::PendingObjectStoreHandle;
+use super::types::PendingKvLookupHandle;
 use crate::session::PeekableTask;
 
 use {
@@ -56,7 +56,7 @@ impl FastlyObjectStore for Session {
         &mut self,
         store: ObjectStoreHandle,
         key: &GuestPtr<str>,
-        opt_pending_body_handle_out: &GuestPtr<PendingObjectStoreHandle>,
+        opt_pending_body_handle_out: &GuestPtr<PendingKvLookupHandle>,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap();
         let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
@@ -69,7 +69,7 @@ impl FastlyObjectStore for Session {
 
     async fn pending_lookup_wait<'a>(
         &mut self,
-        pending_body_handle: PendingObjectStoreHandle,
+        pending_body_handle: PendingKvLookupHandle,
         opt_body_handle_out: &GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
         let pending_obj = self
