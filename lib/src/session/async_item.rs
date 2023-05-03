@@ -1,9 +1,12 @@
+use crate::object_store::ObjectStoreError;
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
 use futures::Future;
 use futures::FutureExt;
 use http::Response;
 use tokio::sync::oneshot;
+
+pub type PendingKvTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
 
 /// Represents either a full body, or the write end of a streaming body.
 ///
@@ -14,6 +17,7 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
+    PendingKvLookup(PendingKvTask),
 }
 
 impl AsyncItem {
@@ -70,6 +74,20 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvTask> {
+        match self {
+            Self::PendingKvLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_lookup(self) -> Option<PendingKvTask> {
+        match self {
+            Self::PendingKvLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
     pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
@@ -96,6 +114,7 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
+            Self::PendingKvLookup(obj) => obj.await_ready().await,
         }
     }
 
@@ -107,6 +126,12 @@ impl AsyncItem {
 impl From<PeekableTask<Response<Body>>> for AsyncItem {
     fn from(req: PeekableTask<Response<Body>>) -> Self {
         Self::PendingReq(req)
+    }
+}
+
+impl From<PendingKvTask> for AsyncItem {
+    fn from(task: PendingKvTask) -> Self {
+        Self::PendingKvLookup(task)
     }
 }
 
