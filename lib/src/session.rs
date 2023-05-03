@@ -643,7 +643,7 @@ impl Session {
     ///
     /// This method returns a new [`PendingKvLookupHandle`], which can then be used to access
     /// and mutate the pending lookup.
-    pub fn insert_pending_lookup(&mut self, pending: PendingKvTask) -> PendingKvLookupHandle {
+    pub fn insert_pending_kv_lookup(&mut self, pending: PendingKvTask) -> PendingKvLookupHandle {
         self.async_items
             .push(Some(AsyncItem::PendingKvLookup(pending)))
             .into()
@@ -653,17 +653,17 @@ impl Session {
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a pending lookup in the
     /// session.
-    pub fn take_pending_lookup(
+    pub fn take_pending_kv_lookup(
         &mut self,
         handle: PendingKvLookupHandle,
     ) -> Result<PendingKvTask, HandleError> {
         // check that this is a pending request before removing it
-        let _ = self.pending_lookup(handle)?;
+        let _ = self.pending_kv_lookup(handle)?;
 
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::take)
-            .and_then(AsyncItem::into_pending_lookup)
+            .and_then(AsyncItem::into_pending_kv_lookup)
             .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
     }
 
@@ -671,14 +671,14 @@ impl Session {
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a lookup in the
     /// session.
-    pub fn pending_lookup(
+    pub fn pending_kv_lookup(
         &self,
         handle: PendingKvLookupHandle,
     ) -> Result<&PendingKvTask, HandleError> {
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
-            .and_then(AsyncItem::as_pending_lookup)
+            .and_then(AsyncItem::as_pending_kv_lookup)
             .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
     }
 

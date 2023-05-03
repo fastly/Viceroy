@@ -63,7 +63,7 @@ impl FastlyObjectStore for Session {
         // just create a future that's already ready
         let fut = futures::future::ok(self.obj_lookup(store, &key));
         let task = PeekableTask::spawn(fut).await;
-        opt_pending_body_handle_out.write(self.insert_pending_lookup(task))?;
+        opt_pending_body_handle_out.write(self.insert_pending_kv_lookup(task))?;
         Ok(())
     }
 
@@ -73,7 +73,7 @@ impl FastlyObjectStore for Session {
         opt_body_handle_out: &GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
         let pending_obj = self
-            .take_pending_lookup(pending_body_handle)?
+            .take_pending_kv_lookup(pending_body_handle)?
             .recv()
             .await?;
         // proceed with the normal match from lookup()

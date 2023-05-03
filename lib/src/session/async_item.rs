@@ -74,14 +74,14 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_pending_lookup(&self) -> Option<&PendingKvTask> {
+    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvTask> {
         match self {
             Self::PendingKvLookup(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn into_pending_lookup(self) -> Option<PendingKvTask> {
+    pub fn into_pending_kv_lookup(self) -> Option<PendingKvTask> {
         match self {
             Self::PendingKvLookup(req) => Some(req),
             _ => None,
