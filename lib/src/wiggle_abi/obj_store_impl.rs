@@ -1,14 +1,12 @@
 //! fastly_obj_store` hostcall implementations.
 
-use super::types::PendingKvLookupHandle;
-use crate::session::PeekableTask;
-
 use {
+    super::types::{PendingKvInsertHandle, PendingKvLookupHandle},
     crate::{
         body::Body,
         error::Error,
         object_store::{ObjectKey, ObjectStoreError},
-        session::Session,
+        session::{PeekableTask, Session},
         wiggle_abi::{
             fastly_object_store::FastlyObjectStore,
             types::{BodyHandle, ObjectStoreHandle},
@@ -56,24 +54,24 @@ impl FastlyObjectStore for Session {
         &mut self,
         store: ObjectStoreHandle,
         key: &GuestPtr<str>,
-        opt_pending_body_handle_out: &GuestPtr<PendingKvLookupHandle>,
+        pending_lookup_handle_out: &GuestPtr<PendingKvLookupHandle>,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap();
         let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
         // just create a future that's already ready
         let fut = futures::future::ok(self.obj_lookup(store, &key));
         let task = PeekableTask::spawn(fut).await;
-        opt_pending_body_handle_out.write(self.insert_pending_kv_lookup(task))?;
+        pending_lookup_handle_out.write(self.insert_pending_kv_lookup(task))?;
         Ok(())
     }
 
     async fn pending_lookup_wait<'a>(
         &mut self,
-        pending_body_handle: PendingKvLookupHandle,
+        pending_lookup_handle: PendingKvLookupHandle,
         opt_body_handle_out: &GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
         let pending_obj = self
-            .take_pending_kv_lookup(pending_body_handle)?
+            .take_pending_kv_lookup(pending_lookup_handle)?
             .recv()
             .await?;
         // proceed with the normal match from lookup()
@@ -99,6 +97,33 @@ impl FastlyObjectStore for Session {
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
         self.obj_insert(store, key, bytes)?;
 
+        Ok(())
+    }
+
+    async fn insert_async<'a>(
+        &mut self,
+        store: ObjectStoreHandle,
+        key: &GuestPtr<str>,
+        body_handle: BodyHandle,
+        opt_pending_insert_handle_out: &GuestPtr<PendingKvInsertHandle>,
+    ) -> Result<(), Error> {
+        let store = self.get_obj_store_key(store).unwrap().clone();
+        let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
+        let bytes = self.take_body(body_handle)?.read_into_vec().await?;
+        // just create a future that's already ready
+        let fut = futures::future::ok(self.obj_insert(store, key, bytes));
+        let task = PeekableTask::spawn(fut).await;
+        opt_pending_insert_handle_out.write(self.insert_pending_kv_insert(task))?;
+        Ok(())
+    }
+
+    async fn pending_insert_wait(
+        &mut self,
+        pending_insert_handle: PendingKvInsertHandle,
+    ) -> Result<(), Error> {
+        self.take_pending_kv_insert(pending_insert_handle)?
+            .recv()
+            .await??;
         Ok(())
     }
 }
