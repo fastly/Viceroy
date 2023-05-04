@@ -25,7 +25,7 @@ fn is_reserved_endpoint(name: &[u8]) -> bool {
 
 impl FastlyLog for Session {
     fn endpoint_get<'a>(&mut self, name: &GuestPtr<'a, [u8]>) -> Result<EndpointHandle, Error> {
-        let name = name.as_slice()?;
+        let name = name.as_slice()?.ok_or(Error::SharedMemory)?;
 
         if is_reserved_endpoint(&name) {
             return Err(Error::InvalidArgument);
@@ -40,7 +40,7 @@ impl FastlyLog for Session {
         msg: &GuestPtr<'a, [u8]>,
     ) -> Result<u32, Error> {
         let endpoint = self.log_endpoint(endpoint_handle)?;
-        let msg = msg.as_slice()?;
+        let msg = msg.as_slice()?.ok_or(Error::SharedMemory)?;
         endpoint
             .write_entry(&msg)
             .map(|_| msg.len() as u32)

@@ -4,8 +4,8 @@ use {
     crate::{
         config::Backend,
         error::Error,
-        session::{Session, ViceroyRequestMetadata},
-        upstream::{self, PendingRequest},
+        session::{AsyncItem, PeekableTask, Session, ViceroyRequestMetadata},
+        upstream,
         wiggle_abi::{
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
@@ -68,7 +68,10 @@ impl FastlyHttpReq for Session {
                 let octets = addr.octets();
                 let octets_bytes = octets.len() as u32;
                 debug_assert_eq!(octets_bytes, 4);
-                let mut octets_slice = addr_octets_ptr.as_array(octets_bytes).as_slice_mut()?;
+                let mut octets_slice = addr_octets_ptr
+                    .as_array(octets_bytes)
+                    .as_slice_mut()?
+                    .ok_or(Error::SharedMemory)?;
                 octets_slice.copy_from_slice(&octets);
                 Ok(octets_bytes)
             }
@@ -76,7 +79,10 @@ impl FastlyHttpReq for Session {
                 let octets = addr.octets();
                 let octets_bytes = octets.len() as u32;
                 debug_assert_eq!(octets_bytes, 16);
-                let mut octets_slice = addr_octets_ptr.as_array(octets_bytes).as_slice_mut()?;
+                let mut octets_slice = addr_octets_ptr
+                    .as_array(octets_bytes)
+                    .as_slice_mut()?
+                    .ok_or(Error::SharedMemory)?;
                 octets_slice.copy_from_slice(&octets);
                 Ok(octets_bytes)
             }
@@ -170,9 +176,12 @@ impl FastlyHttpReq for Session {
         backend_info_mask: BackendConfigOptions,
         backend_info: &GuestPtr<'a, DynamicBackendConfig<'a>>,
     ) -> Result<(), Error> {
-        let name_slice = name.as_byte_ptr().as_slice()?;
+        let name_slice = name.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
         let name = std::str::from_utf8(&name_slice)?;
-        let origin_name_slice = upstream_dynamic.as_byte_ptr().as_slice()?;
+        let origin_name_slice = upstream_dynamic
+            .as_bytes()
+            .as_slice()?
+            .ok_or(Error::SharedMemory)?;
         let origin_name = std::str::from_utf8(&origin_name_slice)?;
         let config = backend_info.read()?;
 
@@ -200,7 +209,8 @@ impl FastlyHttpReq for Session {
             let byte_slice = config
                 .host_override
                 .as_array(config.host_override_len)
-                .as_slice()?;
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
 
             Some(HeaderValue::from_bytes(&byte_slice)?)
         } else {
@@ -225,7 +235,8 @@ impl FastlyHttpReq for Session {
             let byte_slice = config
                 .cert_hostname
                 .as_array(config.cert_hostname_len)
-                .as_slice()?;
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
 
             Some(std::str::from_utf8(&byte_slice)?.to_owned())
         } else {
@@ -241,7 +252,8 @@ impl FastlyHttpReq for Session {
                 let byte_slice = config
                     .sni_hostname
                     .as_array(config.sni_hostname_len)
-                    .as_slice()?;
+                    .as_slice()?
+                    .ok_or(Error::SharedMemory)?;
                 let sni_hostname = std::str::from_utf8(&byte_slice)?;
                 if let Some(cert_host) = &cert_host {
                     if cert_host != sni_hostname {
@@ -412,7 +424,10 @@ impl FastlyHttpReq for Session {
         let req_method_len = u32::try_from(req_method_bytes.len())
             .expect("smaller than method_max_len means it must fit");
 
-        let mut buf_slice = buf.as_array(req_method_len).as_slice_mut()?;
+        let mut buf_slice = buf
+            .as_array(req_method_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
         buf_slice.copy_from_slice(&req_method_bytes);
         nwritten_out.write(req_method_len)?;
 
@@ -425,7 +440,7 @@ impl FastlyHttpReq for Session {
         method: &GuestPtr<'a, str>,
     ) -> Result<(), Error> {
         let method_ref = &mut self.request_parts_mut(req_handle)?.method;
-        let method_slice = method.as_byte_ptr().as_slice()?;
+        let method_slice = method.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
         *method_ref = Method::from_bytes(method_slice.deref())?;
 
         Ok(())
@@ -454,7 +469,10 @@ impl FastlyHttpReq for Session {
         let req_uri_len =
             u32::try_from(req_uri_bytes.len()).expect("smaller than uri_max_len means it must fit");
 
-        let mut buf_slice = buf.as_array(req_uri_len).as_slice_mut()?;
+        let mut buf_slice = buf
+            .as_array(req_uri_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
         buf_slice.copy_from_slice(&req_uri_bytes);
         nwritten_out.write(req_uri_len)?;
 
@@ -467,7 +485,7 @@ impl FastlyHttpReq for Session {
         uri: &GuestPtr<'a, str>,
     ) -> Result<(), Error> {
         let uri_ref = &mut self.request_parts_mut(req_handle)?.uri;
-        let req_uri_str = uri.as_str()?;
+        let req_uri_str = uri.as_str()?.ok_or(Error::SharedMemory)?;
         let req_uri_bytes = req_uri_str.as_bytes();
 
         *uri_ref = Uri::try_from(req_uri_bytes)?;
@@ -497,7 +515,10 @@ impl FastlyHttpReq for Session {
         body_handle: BodyHandle,
         backend_bytes: &GuestPtr<'a, str>,
     ) -> Result<(ResponseHandle, BodyHandle), Error> {
-        let backend_bytes_slice = backend_bytes.as_byte_ptr().as_slice()?;
+        let backend_bytes_slice = backend_bytes
+            .as_bytes()
+            .as_slice()?
+            .ok_or(Error::SharedMemory)?;
         let backend_name = std::str::from_utf8(&backend_bytes_slice)?;
 
         // prepare the request
@@ -513,13 +534,16 @@ impl FastlyHttpReq for Session {
         Ok(self.insert_response(resp))
     }
 
-    fn send_async<'a>(
+    async fn send_async<'a>(
         &mut self,
         req_handle: RequestHandle,
         body_handle: BodyHandle,
         backend_bytes: &GuestPtr<'a, str>,
     ) -> Result<PendingRequestHandle, Error> {
-        let backend_bytes_slice = backend_bytes.as_byte_ptr().as_slice()?;
+        let backend_bytes_slice = backend_bytes
+            .as_bytes()
+            .as_slice()?
+            .ok_or(Error::SharedMemory)?;
         let backend_name = std::str::from_utf8(&backend_bytes_slice)?;
 
         // prepare the request
@@ -531,20 +555,23 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req =
-            PendingRequest::spawn(upstream::send_request(req, backend, self.tls_config()));
+        let task =
+            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
 
-        // return a handle to the pending request
-        Ok(self.insert_pending_request(pending_req))
+        // return a handle to the pending task
+        Ok(self.insert_pending_request(task))
     }
 
-    fn send_async_streaming<'a>(
+    async fn send_async_streaming<'a>(
         &mut self,
         req_handle: RequestHandle,
         body_handle: BodyHandle,
         backend_bytes: &GuestPtr<'a, str>,
     ) -> Result<PendingRequestHandle, Error> {
-        let backend_bytes_slice = backend_bytes.as_byte_ptr().as_slice()?;
+        let backend_bytes_slice = backend_bytes
+            .as_bytes()
+            .as_slice()?
+            .ok_or(Error::SharedMemory)?;
         let backend_name = std::str::from_utf8(&backend_bytes_slice)?;
 
         // prepare the request
@@ -556,39 +583,42 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let pending_req =
-            PendingRequest::spawn(upstream::send_request(req, backend, self.tls_config()));
+        let task =
+            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
 
-        // return a handle to the pending request
-        Ok(self.insert_pending_request(pending_req))
+        // return a handle to the pending task
+        Ok(self.insert_pending_request(task))
     }
 
     // note: The first value in the return tuple represents whether the request is done: 0 when not
     // done, 1 when done.
-    fn pending_req_poll(
+    async fn pending_req_poll(
         &mut self,
         pending_req_handle: PendingRequestHandle,
     ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
-        let pending_req = self.pending_request_mut(pending_req_handle)?;
+        let handle: PendingRequestHandle = pending_req_handle.into();
 
-        let outcome = match pending_req.poll() {
-            None => (0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()),
-            Some(resp) => {
-                // the request is done; remove it from the map
-                drop(self.take_pending_request(pending_req_handle)?);
-                let (resp_handle, resp_body_handle) = self.insert_response(resp?);
-                (1, resp_handle, resp_body_handle)
-            }
-        };
-        Ok(outcome)
+        if self.async_item_mut(handle.into())?.is_ready() {
+            let resp = self
+                .take_pending_request(pending_req_handle)?
+                .recv()
+                .await?;
+            let (resp_handle, resp_body_handle) = self.insert_response(resp);
+            Ok((1, resp_handle, resp_body_handle))
+        } else {
+            Ok((0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()))
+        }
     }
 
     async fn pending_req_wait(
         &mut self,
         pending_req_handle: PendingRequestHandle,
     ) -> Result<(ResponseHandle, BodyHandle), Error> {
-        let pending_req = self.take_pending_request(pending_req_handle)?;
-        Ok(self.insert_response(pending_req.wait().await?))
+        let pending_req = self
+            .take_pending_request(pending_req_handle)?
+            .recv()
+            .await?;
+        Ok(self.insert_response(pending_req))
     }
 
     // First element of return tuple is the "done index"
@@ -599,26 +629,40 @@ impl FastlyHttpReq for Session {
         if pending_req_handles.len() == 0 {
             return Err(Error::InvalidArgument);
         }
-        let targets = self.prepare_select_targets(&pending_req_handles.as_slice()?)?;
+        let pending_req_handles: GuestPtr<'a, [u32]> =
+            GuestPtr::new(pending_req_handles.mem(), pending_req_handles.offset());
 
         // perform the select operation
-        let (fut_result, done_index, rest) = futures::future::select_all(targets).await;
+        let done_index = self
+            .select_impl(
+                pending_req_handles
+                    .as_slice()?
+                    .ok_or(Error::SharedMemory)?
+                    .iter()
+                    .map(|handle| PendingRequestHandle::from(*handle).into()),
+            )
+            .await? as u32;
 
-        // reinsert the other receivers before doing anything else, so they don't get dropped
-        self.reinsert_select_targets(rest);
+        let item = self.take_async_item(
+            PendingRequestHandle::from(pending_req_handles.get(done_index).unwrap().read()?).into(),
+        )?;
 
-        let outcome = match fut_result {
-            Ok(resp) => {
-                let (resp_handle, body_handle) = self.insert_response(resp);
-                (done_index as u32, resp_handle, body_handle)
-            }
-            // Unfortunately, the ABI provides no means of returning error information
-            // from completed `select`.
-            Err(_) => (
-                done_index as u32,
-                INVALID_RESPONSE_HANDLE.into(),
-                INVALID_BODY_HANDLE.into(),
-            ),
+        let outcome = match item {
+            AsyncItem::PendingReq(task) => match task {
+                PeekableTask::Complete(res) => match res {
+                    Ok(res) => {
+                        let (resp_handle, body_handle) = self.insert_response(res);
+                        (done_index, resp_handle, body_handle)
+                    }
+                    Err(_) => (
+                        done_index,
+                        INVALID_RESPONSE_HANDLE.into(),
+                        INVALID_BODY_HANDLE.into(),
+                    ),
+                },
+                _ => panic!("Pending request was not completed"),
+            },
+            _ => panic!("AsyncItem was not a pending request"),
         };
 
         Ok(outcome)

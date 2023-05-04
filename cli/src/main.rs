@@ -13,10 +13,12 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+use std::process::ExitCode;
+
 mod opts;
 
 use {
-    crate::opts::Opts,
+    crate::opts::*,
     clap::Parser,
     hyper::{client::Client, Body, Request},
     std::{
@@ -33,116 +35,76 @@ use {
 /// Starts up a Viceroy server.
 ///
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
-pub async fn serve(opts: Opts) -> Result<(), Error> {
+pub async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let mut ctx = ExecuteCtx::new(opts.input(), opts.profiling_strategy())?
-        .with_log_stderr(opts.log_stderr())
-        .with_log_stdout(opts.log_stdout());
+    let ctx = create_execution_context(&serve_args.shared(), true).await?;
 
-    if let Some(config_path) = opts.config_path() {
-        let config = FastlyConfig::from_file(config_path)?;
-        let backends = config.backends();
-        let geolocation = config.geolocation();
-        let dictionaries = config.dictionaries();
-        let object_store = config.object_store();
-        let backend_names = itertools::join(backends.keys(), ", ");
-
-        ctx = ctx
-            .with_backends(backends.clone())
-            .with_geolocation(geolocation.clone())
-            .with_dictionaries(dictionaries.clone())
-            .with_object_store(object_store.clone())
-            .with_config_path(config_path.into());
-
-        if backend_names.is_empty() {
-            event!(
-                Level::WARN,
-                "no backend definitions found in {}",
-                config_path.display()
-            );
-        }
-
-        for (name, backend) in backends.iter() {
-            let client = Client::builder().build(BackendConnector::new(
-                backend.clone(),
-                ctx.tls_config().clone(),
-            ));
-            let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
-
-            event!(Level::INFO, "checking if backend '{}' is up", name);
-            match timeout(Duration::from_secs(5), client.request(req)).await {
-                // In the case that we don't time out but we have an error, we
-                // check that it's specifically a connection error as this is
-                // the only one that happens if the server is not up.
-                //
-                // We can't combine this with the case above due to needing the
-                // inner error to check if it's a connection error. The type
-                // checker complains about it.
-                Ok(Err(ref e)) if e.is_connect() => event!(
-                    Level::WARN,
-                    "backend '{}' on '{}' is not up right now",
-                    name,
-                    backend.uri
-                ),
-                // In the case we timeout we assume the backend is not up as 5
-                // seconds to do a simple get should be enough for a healthy
-                // service
-                Err(_) => event!(
-                    Level::WARN,
-                    "backend '{}' on '{}' is not up right now",
-                    name,
-                    backend.uri
-                ),
-                Ok(_) => event!(Level::INFO, "backend '{}' is up", name),
-            }
-        }
-    } else {
-        event!(
-            Level::WARN,
-            "no configuration provided, invoke with `-C <TOML_FILE>` to provide a configuration"
-        );
-    }
-
-    let addr = opts.addr();
+    let addr = serve_args.addr();
     ViceroyService::new(ctx).serve(addr).await?;
 
     unreachable!()
 }
 
 #[tokio::main]
-pub async fn main() -> Result<(), Error> {
+pub async fn main() -> ExitCode {
     // Parse the command-line options, exiting if there are any errors
     let opts = Opts::parse();
-
-    install_tracing_subscriber(&opts);
-
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            Ok(())
-        }
-        res = serve(opts) => {
-            if let Err(ref e) = res {
-                event!(Level::ERROR, "{}", e);
+    let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
+    match cmd {
+        Commands::Run(run_args) => {
+            install_tracing_subscriber(0);
+            if let Ok(_) = run_wasm_main(run_args).await {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
             }
-            res
+        }
+        Commands::Serve(serve_args) => {
+            install_tracing_subscriber(serve_args.verbosity());
+            match {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {
+                        Ok(())
+                    }
+                    res = serve(serve_args) => {
+                        if let Err(ref e) = res {
+                            event!(Level::ERROR, "{}", e);
+                        }
+                        res
+                    }
+                }
+            } {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(_) => ExitCode::FAILURE,
+            }
         }
     }
 }
 
-fn install_tracing_subscriber(opts: &Opts) {
+/// Execute a Wasm program in the Viceroy environment.
+pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
+    // Load the wasm module into an execution context
+    let ctx = create_execution_context(&run_args.shared(), false).await?;
+    let input = run_args.shared().input();
+    let program_name = match input.file_stem() {
+        Some(stem) => stem.to_string_lossy(),
+        None => panic!("program cannot be a directory"),
+    };
+    ctx.run_main(&program_name, run_args.wasm_args()).await
+}
+
+fn install_tracing_subscriber(verbosity: u8) {
     // Default to whatever a user provides, but if not set logging to work for
     // viceroy and viceroy-lib so that they can have output in the terminal
     if env::var("RUST_LOG").ok().is_none() {
-        match opts.verbosity() {
-            0 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
-            1 => {
-                env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug");
-            }
-            _ => {
-                env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace");
-            }
+        match verbosity {
+            0 => env::set_var("RUST_LOG", "viceroy=off,viceroy-lib=off"),
+            1 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
+            2 => env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug"),
+            _ => env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace"),
         }
     }
+
     // Build a subscriber, using the default `RUST_LOG` environment variable for our filter.
     let builder = FmtSubscriber::builder()
         .with_writer(StdWriter::new())
@@ -221,4 +183,82 @@ impl<'a> MakeWriter<'a> for StdWriter {
             Stdio::Stdout(io::stdout())
         }
     }
+}
+
+async fn create_execution_context(
+    args: &SharedArgs,
+    check_backends: bool,
+) -> Result<ExecuteCtx, anyhow::Error> {
+    let input = args.input();
+    let mut ctx = ExecuteCtx::new(input, args.profiling_strategy(), args.wasi_modules())?
+        .with_log_stderr(args.log_stderr())
+        .with_log_stdout(args.log_stdout());
+
+    if let Some(config_path) = args.config_path() {
+        let config = FastlyConfig::from_file(config_path)?;
+        let backends = config.backends();
+        let geolocation = config.geolocation();
+        let dictionaries = config.dictionaries();
+        let object_stores = config.object_stores();
+        let secret_stores = config.secret_stores();
+        let backend_names = itertools::join(backends.keys(), ", ");
+
+        ctx = ctx
+            .with_backends(backends.clone())
+            .with_geolocation(geolocation.clone())
+            .with_dictionaries(dictionaries.clone())
+            .with_object_stores(object_stores.clone())
+            .with_secret_stores(secret_stores.clone())
+            .with_config_path(config_path.into());
+
+        if backend_names.is_empty() {
+            event!(
+                Level::WARN,
+                "no backend definitions found in {}",
+                config_path.display()
+            );
+        }
+        if check_backends {
+            for (name, backend) in backends.iter() {
+                let client = Client::builder().build(BackendConnector::new(
+                    backend.clone(),
+                    ctx.tls_config().clone(),
+                ));
+                let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
+
+                event!(Level::INFO, "checking if backend '{}' is up", name);
+                match timeout(Duration::from_secs(5), client.request(req)).await {
+                    // In the case that we don't time out but we have an error, we
+                    // check that it's specifically a connection error as this is
+                    // the only one that happens if the server is not up.
+                    //
+                    // We can't combine this with the case above due to needing the
+                    // inner error to check if it's a connection error. The type
+                    // checker complains about it.
+                    Ok(Err(ref e)) if e.is_connect() => event!(
+                        Level::WARN,
+                        "backend '{}' on '{}' is not up right now",
+                        name,
+                        backend.uri
+                    ),
+                    // In the case we timeout we assume the backend is not up as 5
+                    // seconds to do a simple get should be enough for a healthy
+                    // service
+                    Err(_) => event!(
+                        Level::WARN,
+                        "backend '{}' on '{}' is not up right now",
+                        name,
+                        backend.uri
+                    ),
+                    Ok(_) => event!(Level::INFO, "backend '{}' is up", name),
+                }
+            }
+        }
+    } else {
+        event!(
+            Level::WARN,
+            "no configuration provided, invoke with `-C <TOML_FILE>` to provide a configuration"
+        );
+    }
+    Ok(ctx)
 }

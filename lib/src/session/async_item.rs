@@ -1,4 +1,12 @@
-use crate::{body::Body, streaming_body::StreamingBody, upstream::PendingRequest};
+use crate::object_store::ObjectStoreError;
+use crate::{body::Body, error::Error, streaming_body::StreamingBody};
+use anyhow::anyhow;
+use futures::Future;
+use futures::FutureExt;
+use http::Response;
+use tokio::sync::oneshot;
+
+pub type PendingKvTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
 
 /// Represents either a full body, or the write end of a streaming body.
 ///
@@ -8,7 +16,8 @@ use crate::{body::Body, streaming_body::StreamingBody, upstream::PendingRequest}
 pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
-    PendingReq(PendingRequest),
+    PendingReq(PeekableTask<Response<Body>>),
+    PendingKvLookup(PendingKvTask),
 }
 
 impl AsyncItem {
@@ -65,24 +74,113 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_pending_req(&self) -> Option<&PendingRequest> {
+    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvTask> {
+        match self {
+            Self::PendingKvLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_lookup(self) -> Option<PendingKvTask> {
+        match self {
+            Self::PendingKvLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn as_pending_req_mut(&mut self) -> Option<&mut PendingRequest> {
+    pub fn as_pending_req_mut(&mut self) -> Option<&mut PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn into_pending_req(self) -> Option<PendingRequest> {
+    pub fn into_pending_req(self) -> Option<PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
             _ => None,
+        }
+    }
+
+    pub async fn await_ready(&mut self) {
+        match self {
+            Self::StreamingBody(body) => body.await_ready().await,
+            Self::Body(body) => body.await_ready().await,
+            Self::PendingReq(req) => req.await_ready().await,
+            Self::PendingKvLookup(obj) => obj.await_ready().await,
+        }
+    }
+
+    pub fn is_ready(&mut self) -> bool {
+        self.await_ready().now_or_never().is_some()
+    }
+}
+
+impl From<PeekableTask<Response<Body>>> for AsyncItem {
+    fn from(req: PeekableTask<Response<Body>>) -> Self {
+        Self::PendingReq(req)
+    }
+}
+
+impl From<PendingKvTask> for AsyncItem {
+    fn from(task: PendingKvTask) -> Self {
+        Self::PendingKvLookup(task)
+    }
+}
+
+#[derive(Debug)]
+pub enum PeekableTask<T> {
+    Waiting(oneshot::Receiver<Result<T, Error>>),
+    Complete(Result<T, Error>),
+}
+
+impl<T: Send + 'static> PeekableTask<T> {
+    pub async fn spawn(fut: impl Future<Output = Result<T, Error>> + 'static + Send) -> Self {
+        let (sender, receiver) = oneshot::channel();
+        tokio::task::spawn(async move { sender.send(fut.await) });
+        Self::Waiting(receiver)
+    }
+
+    pub fn complete(t: T) -> Self {
+        PeekableTask::Complete(Ok(t))
+    }
+
+    /// Block until a response is ready.
+    pub async fn await_ready(&mut self) {
+        if let PeekableTask::Waiting(rx) = self {
+            if let Ok(v) = rx.await {
+                *self = PeekableTask::Complete(v)
+            } else {
+                // todo, not the correct error type
+                *self = PeekableTask::Complete(Err(anyhow!(
+                    "peekable task sender unexpectedly dropped"
+                )
+                .into()));
+            }
+        }
+    }
+
+    pub async fn recv(self) -> Result<T, Error> {
+        match self {
+            PeekableTask::Waiting(rx) => rx
+                .await
+                .map_err(|_| anyhow!("peekable task sender unexpectedly dropped"))?,
+            PeekableTask::Complete(res) => res,
+        }
+    }
+
+    pub fn get_mut(&mut self) -> Option<&mut Result<T, Error>> {
+        if let PeekableTask::Complete(res) = self {
+            Some(res)
+        } else {
+            None
         }
     }
 }

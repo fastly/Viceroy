@@ -54,6 +54,62 @@ be used to make requests to your Compute@Edge service locally. You can make requ
 by using [curl](https://curl.se/), or you can send a simple GET request by visiting
 the URL in your web browser.
 
+## Usage as a test runner
+Viceroy can also be used as a test runner for running Rust unit tests for Compute@Edge applications in the following way:
+
+1. Ensure the `viceroy` command is available in your path
+2. Add the following to your project's `.cargo/config`:
+```
+[build]
+target = "wasm32-wasi"
+
+[target.wasm32-wasi]
+runner = "viceroy run -C fastly.toml -- "
+```
+3. Install [cargo-nextest](https://nexte.st/book/installation.html)
+4. Write your tests that use the fastly crate. For example:
+```Rust
+#[test]
+fn test_using_client_request() {
+    let client_req = fastly::Request::from_client();
+    assert_eq!(client_req.get_method(), Method::GET);
+    assert_eq!(client_req.get_path(), "/");
+}
+
+#[test]
+fn test_using_bodies() {
+    let mut body1 = fastly::Body::new();
+    body1.write_str("hello, ");
+    let mut body2 = fastly::Body::new();
+    body2.write_str("Viceroy!");
+    body1.append(body2);
+    let appended_str = body1.into_string();
+    assert_eq!(appended_str, "hello, Viceroy!");
+}
+
+#[test]
+fn test_a_handler_with_fastly_types() {
+    let req = fastly::Request::get("http://example.com/Viceroy");
+    let resp = some_handler(req).expect("request succeeds");
+    assert_eq!(resp.get_content_type(), Some(TEXT_PLAIN_UTF_8));
+    assert_eq!(resp.into_body_str(), "hello, /Viceroy!");
+}
+```
+5. Run your tests with `cargo nextest run`:
+```
+ % cargo nextest run
+   Compiling unit-tests-test v0.1.0
+    Finished test [unoptimized + debuginfo] target(s) in 1.16s
+    Starting 3 tests across 1 binaries
+        PASS [   2.106s] unit-tests-test::bin/unit-tests-test tests::test_a_handler_with_fastly_types
+        PASS [   2.225s] unit-tests-test::bin/unit-tests-test tests::test_using_bodies
+        PASS [   2.223s] unit-tests-test::bin/unit-tests-test tests::test_using_client_request
+------------
+     Summary [   2.230s] 3 tests run: 3 passed, 0 skipped
+```
+
+The reason that `cargo-nextest` is needed rather than just `cargo test` is to allow tests to keep executing if any other test fails. There is no way to recover from a panic in wasm, so test execution would halt as soon as the first test failure occurs. Because of this, we need each test to be executed in its own wasm instance and have the results aggregated to report overall success/failure. cargo-nextest [handles that orchestration for us](https://nexte.st/book/how-it-works.html#the-nextest-model).
+
 ## Documentation
 
 Since the Fastly CLI uses Viceroy under the hood, the two share documentation for

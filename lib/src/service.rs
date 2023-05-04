@@ -40,9 +40,10 @@ impl ViceroyService {
     /// # Example
     ///
     /// ```no_run
-    /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
+    /// # use std::collections::HashSet;
+    /// use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # fn f() -> Result<(), Error> {
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new())?;
     /// let svc = ViceroyService::new(ctx);
     /// # Ok(())
     /// # }
@@ -127,6 +128,6 @@ impl Service<Request<hyper::Body>> for RequestService {
         let remote = self.remote_addr;
 
         // Now, use the execution context to handle the request.
-        Box::pin(async move { ctx.handle_request(req, remote).await })
+        Box::pin(async move { ctx.handle_request(req, remote).await.map(|result| result.0) })
     }
 }

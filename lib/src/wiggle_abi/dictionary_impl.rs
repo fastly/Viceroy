@@ -35,7 +35,7 @@ impl DictionaryError {
 
 impl FastlyDictionary for Session {
     fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        self.dictionary_handle(&name.as_str()?)
+        self.dictionary_handle(&name.as_str()?.ok_or(Error::SharedMemory)?)
     }
 
     fn get(
@@ -50,7 +50,7 @@ impl FastlyDictionary for Session {
             .contents()
             .map_err(|err| Error::Other(err.into()))?;
 
-        let key: &str = &key.as_str()?;
+        let key: &str = &key.as_str()?.ok_or(Error::SharedMemory)?;
         let item_bytes = dict
             .get(key)
             .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
@@ -65,7 +65,10 @@ impl FastlyDictionary for Session {
         let item_len = u32::try_from(item_bytes.len())
             .expect("smaller than dictionary_item_max_len means it must fit");
 
-        let mut buf_slice = buf.as_array(item_len).as_slice_mut()?;
+        let mut buf_slice = buf
+            .as_array(item_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
         buf_slice.copy_from_slice(item_bytes);
         Ok(item_len)
     }

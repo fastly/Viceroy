@@ -3,12 +3,17 @@
 
 use futures::stream::StreamExt;
 use hyper::{service, Body as HyperBody, Request, Response, Server};
-use std::{convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet, convert::Infallible, future::Future, net::SocketAddr, path::PathBuf,
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStore},
+    config::{
+        Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
+    },
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
@@ -48,7 +53,8 @@ pub struct Test {
     backends: Backends,
     dictionaries: Dictionaries,
     geolocation: Geolocation,
-    object_store: ObjectStore,
+    object_stores: ObjectStores,
+    secret_stores: SecretStores,
     hosts: Vec<HostSpec>,
     log_stdout: bool,
     log_stderr: bool,
@@ -66,7 +72,8 @@ impl Test {
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
-            object_store: ObjectStore::new(),
+            object_stores: ObjectStores::new(),
+            secret_stores: SecretStores::new(),
             hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
@@ -84,7 +91,8 @@ impl Test {
             backends: Backends::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
-            object_store: ObjectStore::new(),
+            object_stores: ObjectStores::new(),
+            secret_stores: SecretStores::new(),
             hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
@@ -99,7 +107,8 @@ impl Test {
             backends: config.backends().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
             geolocation: config.geolocation().to_owned(),
-            object_store: config.object_store().to_owned(),
+            object_stores: config.object_stores().to_owned(),
+            secret_stores: config.secret_stores().to_owned(),
             ..self
         })
     }
@@ -126,7 +135,17 @@ impl Test {
         HostFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
         HostFn: Send + Sync + 'static,
     {
-        let service = Arc::new(service);
+        let service = Arc::new(TestService::Sync(Arc::new(service)));
+        self.hosts.push(HostSpec { port, service });
+        self
+    }
+
+    pub fn async_host<HostFn>(mut self, port: u16, service: HostFn) -> Self
+    where
+        HostFn: Fn(Request<HyperBody>) -> AsyncResp,
+        HostFn: Send + Sync + 'static,
+    {
+        let service = Arc::new(TestService::Async(Arc::new(service)));
         self.hosts.push(HostSpec { port, service });
         self
     }
@@ -187,12 +206,13 @@ impl Test {
             .try_init()
             .ok();
 
-        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None)
+        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None, HashSet::new())
             .expect("failed to set up execution context")
             .with_backends(self.backends.clone())
             .with_dictionaries(self.dictionaries.clone())
             .with_geolocation(self.geolocation.clone())
-            .with_object_store(self.object_store.clone())
+            .with_object_stores(self.object_stores.clone())
+            .with_secret_stores(self.secret_stores.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);
         let addr: SocketAddr = "127.0.0.1:17878".parse().unwrap();
@@ -240,6 +260,7 @@ impl Test {
                     .clone()
                     .handle_request(req.map(Into::into), addr.ip())
                     .await
+                    .map(|result| result.0)
                     .expect("failed to handle the request");
                 responses.push(resp);
             }
@@ -273,7 +294,7 @@ impl Test {
 /// The specification of a mock host, as part of a `Test` builder.
 struct HostSpec {
     port: u16,
-    service: Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>,
+    service: Arc<TestService>,
 }
 
 /// A handle to a running mock host, used to gracefully shut down the host on test completion.
@@ -292,21 +313,26 @@ impl HostSpec {
         // we transform `service` into an async function that consumes Hyper bodies. that requires a bit
         // of `Arc` and `move` operations because each invocation needs to produce a distinct `Future`
         let async_service = Arc::new(move |req: Request<HyperBody>| {
-            let (parts, body) = req.into_parts();
-            let mut body = Box::new(body); // for pinning
             let service = service.clone();
 
             async move {
-                // read out all of the bytes from the body into a vector, then re-assemble the request
-                let mut body_bytes = Vec::new();
-                while let Some(chunk) = body.next().await {
-                    body_bytes.extend_from_slice(&chunk.unwrap());
-                }
-                let req = Request::from_parts(parts, body_bytes);
+                let resp = match &*service {
+                    TestService::Sync(s) => {
+                        let (parts, body) = req.into_parts();
+                        let mut body = Box::new(body); // for pinning
+                                                       // read out all of the bytes from the body into a vector, then re-assemble the request
+                        let mut body_bytes = Vec::new();
+                        while let Some(chunk) = body.next().await {
+                            body_bytes.extend_from_slice(&chunk.unwrap());
+                        }
+                        let req = Request::from_parts(parts, body_bytes);
 
-                // pass the request through the host function, then convert its body into the form
-                // that Hyper wants
-                let resp = service(req).map(HyperBody::from);
+                        // pass the request through the host function, then convert its body into the form
+                        // that Hyper wants
+                        s(req).map(HyperBody::from)
+                    }
+                    TestService::Async(s) => Box::into_pin(s(req)).await.map(HyperBody::from),
+                };
 
                 let res: Result<_, hyper::Error> = Ok(resp);
                 res
@@ -345,8 +371,16 @@ impl HostHandle {
         self.terminate_signal
             .send(())
             .expect("could not send terminate signal to mock host");
-        self.task_handle
-            .await
-            .expect("mock host did not terminate cleanly")
+        if !self.task_handle.is_finished() {
+            self.task_handle.abort();
+        }
     }
 }
+
+#[derive(Clone)]
+pub enum TestService {
+    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
+    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
+}
+
+type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
