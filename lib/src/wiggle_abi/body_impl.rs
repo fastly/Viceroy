@@ -44,7 +44,10 @@ impl FastlyHttpBody for Session {
         buf: &GuestPtr<'a, u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let mut buf_slice = buf.as_array(buf_len).as_slice_mut()?;
+        let mut buf_slice = buf
+            .as_array(buf_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
 
         // only normal bodies (not streaming bodies) can be read from
         let body = self.body_mut(body_handle)?;
@@ -74,7 +77,7 @@ impl FastlyHttpBody for Session {
         end: BodyWriteEnd,
     ) -> Result<u32, Error> {
         // Validate the body handle and the buffer.
-        let buf = &buf.as_slice()?[..];
+        let buf = &buf.as_slice()?.ok_or(Error::SharedMemory)?[..];
 
         // Push the buffer onto the front or back of the body based on the `BodyWriteEnd` flag.
         match end {
@@ -101,7 +104,11 @@ impl FastlyHttpBody for Session {
 
     fn close(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
         // Drop the body and pass up an error if the handle does not exist
-        self.drop_body(body_handle)?;
-        Ok(())
+        if self.is_streaming_body(body_handle) {
+            // Make sure a streaming body gets a `finish` message
+            self.take_streaming_body(body_handle)?.finish()
+        } else {
+            Ok(self.drop_body(body_handle)?)
+        }
     }
 }

@@ -3,8 +3,8 @@ use crate::{
     config::Backend,
     error::Error,
     headers::filter_outgoing_headers,
-    session::ViceroyRequestMetadata,
-    wiggle_abi::types::{ContentEncodings, PendingRequestHandle},
+    session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
+    wiggle_abi::types::ContentEncodings,
 };
 use futures::Future;
 use http::{uri, HeaderValue};
@@ -19,7 +19,6 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpStream,
-    sync::oneshot,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use tracing::warn;
@@ -272,44 +271,11 @@ pub fn send_request(
 }
 
 /// The type ultimately yielded by a `PendingRequest`.
-pub type ResponseResult = Result<Response<Body>, Error>;
 
 /// An asynchronous request awaiting a response.
 #[derive(Debug)]
-pub struct PendingRequest {
+pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.
-    receiver: oneshot::Receiver<ResponseResult>,
-}
-
-impl PendingRequest {
-    /// Create a `PendingRequest` for the given request by spawning a Tokio task to drive sending
-    /// and receiving to completion.
-    pub fn spawn(
-        req: impl Future<Output = Result<Response<Body>, Error>> + Send + 'static,
-    ) -> Self {
-        let (sender, receiver) = oneshot::channel();
-        tokio::task::spawn(async move { sender.send(req.await) });
-        Self { receiver }
-    }
-
-    /// Check whether a response happens to be available for this pending request.
-    ///
-    /// This function does _not_ block, nor does it require being in an `async` context.
-    pub fn poll(&mut self) -> Option<ResponseResult> {
-        match self.receiver.try_recv() {
-            Err(oneshot::error::TryRecvError::Closed) => {
-                panic!("Pending request sender was dropped")
-            }
-            // the request is still in flight
-            Err(oneshot::error::TryRecvError::Empty) => None,
-            Ok(res) => Some(res),
-        }
-    }
-
-    /// Block until the response is ready, and then return it.
-    pub async fn wait(self) -> ResponseResult {
-        self.receiver.await.expect("Pending request receiver error")
-    }
 }
 
 /// A pair of a pending request and the handle that pointed to it in the session, suitable for
@@ -319,21 +285,8 @@ impl PendingRequest {
 /// the leftover futures. We have to build our own future to keep the handle-receiver association.
 #[derive(Debug)]
 pub struct SelectTarget {
-    pub handle: PendingRequestHandle,
-    pub pending_req: PendingRequest,
-}
-
-impl Future for SelectTarget {
-    type Output = ResponseResult;
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context,
-    ) -> std::task::Poll<Self::Output> {
-        std::pin::Pin::new(&mut self.pending_req.receiver)
-            .poll(cx)
-            .map(|res| res.expect("Pending request receiver was dropped"))
-    }
+    pub handle: AsyncItemHandle,
+    pub item: AsyncItem,
 }
 
 // Boilerplate forwarding implementations for `Connection`:

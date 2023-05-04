@@ -7,4 +7,6 @@ fn main() {
     for i in 0..1000 {
         writeln!(stream, "{}", i).unwrap();
     }
+
+    stream.finish().unwrap();
 }

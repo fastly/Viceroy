@@ -94,6 +94,24 @@
 (typename $dictionary_handle (handle))
 ;;; A handle to an Object Store.
 (typename $object_store_handle (handle))
+;;; A handle to a pending KV request.
+(typename $pending_kv_lookup_handle (handle))
+;;; A handle to a Secret Store.
+(typename $secret_store_handle (handle))
+;;; A handle to an individual secret.
+(typename $secret_handle (handle))
+;;; A handle to an object supporting generic async operations.
+;;; Can be either a `body_handle` or a `pending_request_handle`.
+;;;
+;;; Each async item has an associated I/O action:
+;;;
+;;; * Pending requests: awaiting the response headers / `Response` object
+;;; * Normal bodies: reading bytes from the body
+;;; * Streaming bodies: writing bytes to the body
+;;;
+;;; For writing bytes, note that there is a large host-side buffer that bytes can eagerly be written
+;;; into, even before the origin itself consumes that data.
+(typename $async_item_handle (handle))
 
 ;;; A "multi-value" cursor.
 (typename $multi_value_cursor u32)
@@ -117,6 +135,18 @@
 (typename $is_done u32)
 (typename $done_idx u32)
 (typename $inserted u32)
+(typename $ready_idx u32)
+
+(typename $port u16)
+(typename $timeout_ms u32)
+(typename $backend_exists u32)
+(typename $is_dynamic u32)
+(typename $is_ssl u32)
+(typename $backend_health
+    (enum (@witx tag u32)
+        $unknown
+        $healthy
+        $unhealthy))
 
 (typename $content_encodings
     (flags (@witx repr u32)
@@ -147,7 +177,8 @@
        $cert_hostname
        $ca_cert
        $ciphers
-       $sni_hostname))
+       $sni_hostname
+       $dont_pool))
 
 (typename $dynamic_backend_config
   (record

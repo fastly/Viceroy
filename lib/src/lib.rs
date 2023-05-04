@@ -19,11 +19,13 @@ pub mod error;
 pub mod logging;
 pub mod session;
 
+mod async_io;
 mod downstream;
 mod execute;
 mod headers;
 mod linking;
 mod object_store;
+mod secret_store;
 mod service;
 mod streaming_body;
 mod upstream;

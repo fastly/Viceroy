@@ -87,6 +87,8 @@ fn main() -> Result<(), SendError> {
             streaming_body.write_bytes(tiny_bit);
         }
 
+        streaming_body.finish().unwrap();
+
         pending_req
     };
     let mut unpacked_stream_async = unpacked_stream_pending.wait()?;

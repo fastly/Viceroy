@@ -3,24 +3,29 @@
 mod async_item;
 mod downstream;
 
+pub use async_item::{AsyncItem, PeekableTask, PendingKvTask};
+
 use {
-    self::{async_item::AsyncItem, downstream::DownstreamResponse},
+    self::downstream::DownstreamResponse,
     crate::{
         body::Body,
         config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, Geolocation},
         error::{Error, HandleError},
         logging::LogEndpoint,
-        object_store::{ObjectKey, ObjectStore, ObjectStoreError, ObjectStoreKey},
+        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
+        secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
-        upstream::{PendingRequest, SelectTarget, TlsConfig},
+        upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, ObjectStoreHandle,
-            PendingRequestHandle, RequestHandle, ResponseHandle,
+            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
+            ObjectStoreHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
+            ResponseHandle, SecretHandle, SecretStoreHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
+    futures::future::{self, FutureExt},
     http::{request, response, HeaderMap, Request, Response},
-    std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc},
+    std::{collections::HashMap, future::Future, net::IpAddr, path::PathBuf, sync::Arc},
     tokio::sync::oneshot::Sender,
 };
 
@@ -89,11 +94,23 @@ pub struct Session {
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) object_store: Arc<ObjectStore>,
+    pub(crate) object_store: Arc<ObjectStores>,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
     object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
+    /// The secret stores configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    secret_stores: Arc<SecretStores>,
+    /// The secret stores configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    secret_stores_by_name: PrimaryMap<SecretStoreHandle, String>,
+    /// The secrets for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -115,7 +132,8 @@ impl Session {
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
-        object_store: Arc<ObjectStore>,
+        object_store: Arc<ObjectStores>,
+        secret_stores: Arc<SecretStores>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -145,31 +163,12 @@ impl Session {
             dictionaries_by_name: PrimaryMap::new(),
             object_store,
             object_store_by_name: PrimaryMap::new(),
+            secret_stores,
+            secret_stores_by_name: PrimaryMap::new(),
+            secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
         }
-    }
-
-    /// We need to create a Session in order to typecheck a module into an
-    /// InstancePre, but we will never actually execute code that accesses the
-    /// Session. Therefore, all of the data inside this Session is bogus.
-    ///
-    /// Do not use the Session created by this constructor for any other
-    /// purpose.
-    pub(crate) fn mock() -> Session {
-        let (sender, _receiver) = tokio::sync::oneshot::channel();
-        Session::new(
-            0,
-            Request::new(Body::empty()),
-            sender,
-            "0.0.0.0".parse().unwrap(),
-            Arc::new(HashMap::new()),
-            Arc::new(Geolocation::new()),
-            TlsConfig::new().unwrap(),
-            Arc::new(HashMap::new()),
-            Arc::new(None),
-            Arc::new(ObjectStore::new()),
-        )
     }
 
     // ----- Downstream Request API -----
@@ -549,6 +548,11 @@ impl Session {
             .or_else(|| self.dynamic_backends.get(name))
     }
 
+    /// Look up a dynamic backend (only) by name.
+    pub fn dynamic_backend(&self, name: &str) -> Option<&Arc<Backend>> {
+        self.dynamic_backends.get(name)
+    }
+
     /// Return the full list of static and dynamic backend names as an [`Iterator`].
     pub fn backend_names(&self) -> impl Iterator<Item = &String> {
         self.backends.keys().chain(self.dynamic_backends.keys())
@@ -635,13 +639,88 @@ impl Session {
         self.object_store.lookup(obj_store_key, obj_key)
     }
 
+    /// Insert a [`PendingLookup`] into the session.
+    ///
+    /// This method returns a new [`PendingKvLookupHandle`], which can then be used to access
+    /// and mutate the pending lookup.
+    pub fn insert_pending_kv_lookup(&mut self, pending: PendingKvTask) -> PendingKvLookupHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingKvLookup(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingLookup`], given its [`PendingKvLookupHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending lookup in the
+    /// session.
+    pub fn take_pending_kv_lookup(
+        &mut self,
+        handle: PendingKvLookupHandle,
+    ) -> Result<PendingKvTask, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_kv_lookup(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_kv_lookup)
+            .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingLookup`], given its [`PendingKvLookupHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a lookup in the
+    /// session.
+    pub fn pending_kv_lookup(
+        &self,
+        handle: PendingKvLookupHandle,
+    ) -> Result<&PendingKvTask, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_kv_lookup)
+            .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
+    }
+
+    // ----- Secret Store API -----
+
+    pub fn secret_store_handle(&mut self, name: &str) -> Option<SecretStoreHandle> {
+        self.secret_stores.get_store(name)?;
+        Some(self.secret_stores_by_name.push(name.to_string()))
+    }
+
+    pub fn secret_store_name(&self, handle: SecretStoreHandle) -> Option<String> {
+        self.secret_stores_by_name.get(handle).cloned()
+    }
+
+    pub fn secret_handle(&mut self, store_name: &str, secret_name: &str) -> Option<SecretHandle> {
+        self.secret_stores
+            .get_store(store_name)?
+            .get_secret(secret_name)?;
+        Some(self.secrets_by_name.push(SecretLookup {
+            store_name: store_name.to_string(),
+            secret_name: secret_name.to_string(),
+        }))
+    }
+
+    pub fn secret_lookup(&self, handle: SecretHandle) -> Option<SecretLookup> {
+        self.secrets_by_name.get(handle).cloned()
+    }
+
+    pub fn secret_stores(&self) -> &Arc<SecretStores> {
+        &self.secret_stores
+    }
+
     // ----- Pending Requests API -----
 
     /// Insert a [`PendingRequest`] into the session.
     ///
     /// This method returns a new [`PendingRequestHandle`], which can then be used to access
     /// and mutate the pending request.
-    pub fn insert_pending_request(&mut self, pending: PendingRequest) -> PendingRequestHandle {
+    pub fn insert_pending_request(
+        &mut self,
+        pending: PeekableTask<Response<Body>>,
+    ) -> PendingRequestHandle {
         self.async_items
             .push(Some(AsyncItem::PendingReq(pending)))
             .into()
@@ -654,7 +733,7 @@ impl Session {
     pub fn pending_request(
         &self,
         handle: PendingRequestHandle,
-    ) -> Result<&PendingRequest, HandleError> {
+    ) -> Result<&PeekableTask<Response<Body>>, HandleError> {
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
@@ -669,7 +748,7 @@ impl Session {
     pub fn pending_request_mut(
         &mut self,
         handle: PendingRequestHandle,
-    ) -> Result<&mut PendingRequest, HandleError> {
+    ) -> Result<&mut PeekableTask<Response<Body>>, HandleError> {
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -684,7 +763,7 @@ impl Session {
     pub fn take_pending_request(
         &mut self,
         handle: PendingRequestHandle,
-    ) -> Result<PendingRequest, HandleError> {
+    ) -> Result<PeekableTask<Response<Body>>, HandleError> {
         // check that this is a pending request before removing it
         let _ = self.pending_request(handle)?;
 
@@ -695,26 +774,36 @@ impl Session {
             .ok_or(HandleError::InvalidPendingRequestHandle(handle))
     }
 
+    pub fn reinsert_pending_request(
+        &mut self,
+        handle: PendingRequestHandle,
+        pending_req: PeekableTask<Response<Body>>,
+    ) -> Result<(), HandleError> {
+        *self
+            .async_items
+            .get_mut(handle.into())
+            .ok_or(HandleError::InvalidPendingRequestHandle(handle))? =
+            Some(AsyncItem::PendingReq(pending_req));
+        Ok(())
+    }
+
     /// Take ownership of multiple [`PendingRequest`]s in preparation for a `select`.
     ///
     /// Returns a [`HandleError`] if any of the handles are not associated with a pending
     /// request in the session.
     pub fn prepare_select_targets(
         &mut self,
-        handles: &[PendingRequestHandle],
+        handles: impl IntoIterator<Item = AsyncItemHandle>,
     ) -> Result<Vec<SelectTarget>, HandleError> {
         // Prepare a vector of targets from the given handles; if any of the handles are invalid,
         // put back all the targets we've extracted so far
         let mut targets = vec![];
-        for handle in handles.iter().copied() {
-            if let Ok(pending_req) = self.take_pending_request(handle) {
-                targets.push(SelectTarget {
-                    handle,
-                    pending_req,
-                });
+        for handle in handles {
+            if let Ok(item) = self.take_async_item(handle) {
+                targets.push(SelectTarget { handle, item });
             } else {
                 self.reinsert_select_targets(targets);
-                return Err(HandleError::InvalidPendingRequestHandle(handle));
+                return Err(HandleError::InvalidPendingRequestHandle(handle.into()));
             }
         }
         Ok(targets)
@@ -724,8 +813,7 @@ impl Session {
     /// stored within each [`SelectTarget`].
     pub fn reinsert_select_targets(&mut self, targets: Vec<SelectTarget>) {
         for target in targets {
-            let async_handle: AsyncItemHandle = target.handle.into();
-            self.async_items[async_handle] = Some(AsyncItem::PendingReq(target.pending_req));
+            self.async_items[target.handle] = Some(target.item);
         }
     }
 
@@ -737,6 +825,73 @@ impl Session {
     /// Access the path to the configuration file for this invocation.
     pub fn config_path(&self) -> &Arc<Option<PathBuf>> {
         &self.config_path
+    }
+
+    pub fn async_item_mut(
+        &mut self,
+        handle: AsyncItemHandle,
+    ) -> Result<&mut AsyncItem, HandleError> {
+        match self.async_items.get_mut(handle).and_then(|ai| ai.as_mut()) {
+            Some(item) => Ok(item),
+            None => Err(HandleError::InvalidAsyncItemHandle(handle.into()))?,
+        }
+    }
+
+    pub fn take_async_item(&mut self, handle: AsyncItemHandle) -> Result<AsyncItem, HandleError> {
+        // check that this is an async item before removing it
+        let _ = self.async_item_mut(handle)?;
+
+        self.async_items
+            .get_mut(handle)
+            .and_then(|tracked| tracked.take())
+            .ok_or_else(|| HandleError::InvalidAsyncItemHandle(handle.into()))
+    }
+
+    pub async fn select_impl(
+        &mut self,
+        handles: impl IntoIterator<Item = AsyncItemHandle>,
+    ) -> Result<usize, Error> {
+        // we have to temporarily move the async items out of the session table,
+        // because we need &mut borrows of all of them simultaneously.
+        let targets = self.prepare_select_targets(handles)?;
+        let mut selected = SelectedTargets::new(self, targets);
+        let done_index = selected.future().await;
+
+        Ok(done_index)
+    }
+}
+
+pub struct SelectedTargets<'session> {
+    session: &'session mut Session,
+    targets: Vec<SelectTarget>,
+}
+
+impl<'session> SelectedTargets<'session> {
+    fn new(session: &'session mut Session, targets: Vec<SelectTarget>) -> Self {
+        Self { session, targets }
+    }
+
+    fn future(&mut self) -> Box<dyn Future<Output = usize> + Unpin + Send + Sync + '_> {
+        // for each target, we produce a future for checking on the "readiness"
+        // of the associated primary I/O operation
+        let mut futures = Vec::new();
+        for target in &mut *self.targets {
+            futures.push(Box::pin(target.item.await_ready()))
+        }
+        if futures.is_empty() {
+            // if there are no futures, we wait forever; this waiting will always be bounded by a timeout,
+            // since the `select` hostcall requires a timeout when no handles are given.
+            Box::new(future::pending())
+        } else {
+            Box::new(future::select_all(futures).map(|f| f.1))
+        }
+    }
+}
+
+impl<'session> Drop for SelectedTargets<'session> {
+    fn drop(&mut self) {
+        let targets = std::mem::replace(&mut self.targets, Vec::new());
+        self.session.reinsert_select_targets(targets);
     }
 }
 
@@ -786,5 +941,29 @@ impl From<PendingRequestHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingRequestHandle {
     fn from(h: AsyncItemHandle) -> PendingRequestHandle {
         PendingRequestHandle::from(h.as_u32())
+    }
+}
+
+impl From<types::AsyncItemHandle> for AsyncItemHandle {
+    fn from(h: types::AsyncItemHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for types::AsyncItemHandle {
+    fn from(h: AsyncItemHandle) -> types::AsyncItemHandle {
+        types::AsyncItemHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingKvLookupHandle> for AsyncItemHandle {
+    fn from(h: PendingKvLookupHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingKvLookupHandle {
+    fn from(h: AsyncItemHandle) -> PendingKvLookupHandle {
+        PendingKvLookupHandle::from(h.as_u32())
     }
 }

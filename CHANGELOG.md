@@ -1,6 +1,55 @@
 ## Unreleased
 
-## 0.3.0 (2022-10-11)
+## 0.4.5 (2023-04-13)
+-  Remove validation on config store and dictionary names ([#248](https://github.com/fastly/Viceroy/pull/248))
+
+## 0.4.4 (2023-04-11)
+- feat: Allow local KV Stores to be defined using `[local_server.kv_stores]` ([#245](https://github.com/fastly/Viceroy/pull/245))
+
+## 0.4.3 (2023-04-04)
+- Add the `fastly_backend` module to the wiggle abi ([#243](https://github.com/fastly/Viceroy/pull/243))
+
+## 0.4.2 (2023-03-30)
+- Allow config-stores to be defined using `[local_server.config_stores]` ([#240](https://github.com/fastly/Viceroy/pull/240))
+
+## 0.4.1 (2023-03-23)
+- Add `fastly_backend` interfaces for backend introspection ([#236](https://github.com/fastly/Viceroy/pull/236))
+
+## 0.4.0 (2023-03-17)
+- Add a run-mode that executes the input program once and then exits ([#211](https://github.com/fastly/Viceroy/pull/211))
+- Update to Wasmtime 6.0.0 ([#226](https://github.com/fastly/Viceroy/pull/226))
+- Make object and secret store config names consistent ([#206](https://github.com/fastly/Viceroy/pull/206))
+- Remove dictionary count limit ([#227](https://github.com/fastly/Viceroy/pull/227))
+- Split out run-mode and serve mode into subcommands ([#229](https://github.com/fastly/Viceroy/pull/229))
+
+## 0.3.5 (2023-01-20)
+- Add support for Secret Store ([#210](https://github.com/fastly/Viceroy/pull/210))
+
+## 0.3.4 (2023-01-19)
+- Update to Wasmtime 4.0.0
+  ([#217](https://github.com/fastly/Viceroy/pull/217))
+- Set fixed release build images to improve compatibility of precompiled release artifacts
+  ([#216](https://github.com/fastly/Viceroy/pull/216))
+
+## 0.3.3 (2023-01-18)
+- Support the streaming body `finish()` method introduced in version 0.9.0 of the Rust SDK
+  ([#203](https://github.com/fastly/Viceroy/pull/203))
+- Update to wasmtime 3.0.0 and enable experimental wasi-nn interface
+  ([#209](https://github.com/fastly/Viceroy/pull/209))
+
+## 0.3.2 (2022-11-17)
+- Add geolocation implementation to Viceroy
+  ([#165](https://github.com/fastly/Viceroy/pull/165))
+- Implement async select hostcalls for Viceroy
+  ([#188](https://github.com/fastly/Viceroy/pull/188))
+- Update wasmtime dependency to 2.0
+  ([#194](https://github.com/fastly/Viceroy/pull/194))
+- Return a FastlyStatus::Inval when opening a non-existant object-store
+  ([#196](https://github.com/fastly/Viceroy/pull/196))
+- Add limit exceeded variant to fastly_status witx definition
+  ([#199](https://github.com/fastly/Viceroy/pull/199))
+
+## 0.3.1 (2022-10-11)
 
 - Add stubs for fastly purge
   ([#184](https://github.com/fastly/Viceroy/pull/184))
@@ -10,6 +59,11 @@
   ([#181](https://github.com/fastly/Viceroy/pull/181))
 - Add stubs for `redirect_to_`
   ([#187](https://github.com/fastly/Viceroy/pull/187))
+
+## 0.3.0 (2022-10-11)
+- Tagged but not released due to invalid metadata added in
+  [#173](https://github.com/fastly/Viceroy/pull/189). See
+  [#189](https://github.com/fastly/Viceroy/pull/189) for more details
 
 ## 0.2.15 (2022-08-19)
 
