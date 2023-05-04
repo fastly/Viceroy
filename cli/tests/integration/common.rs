@@ -1,21 +1,22 @@
 //! Common values and types used by test fixtures
-#![allow(dead_code)] // The exported values are used by other modules in the test suite
 
 use futures::stream::StreamExt;
-use hyper::{service, Body as HyperBody, Request, Response, Server};
+use hyper::{service, Body as HyperBody, Request, Response, Server, Uri};
+use std::net::Ipv4Addr;
 use std::{
     collections::HashSet, convert::Infallible, future::Future, net::SocketAddr, path::PathBuf,
     sync::Arc,
 };
-use tokio::sync::Mutex;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::{
     body::Body,
-    config::{
-        Backend, Backends, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
-    },
+    config::{Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores},
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
+
+pub use self::backends::TestBackends;
+
+mod backends;
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
 ///
@@ -43,19 +44,14 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 /// Handy alias for the return type of async Tokio tests
 pub type TestResult = Result<(), Error>;
 
-/// We use a lock to serialize execution of test harnesses, becasue they involve spinning
-/// up hosts on ports that may overlap with other tests.
-static TEST_LOCK: Mutex<()> = Mutex::const_new(());
-
 /// A builder for running individual requests through a wasm fixture.
 pub struct Test {
     module_path: PathBuf,
-    backends: Backends,
+    backends: TestBackends,
     dictionaries: Dictionaries,
     geolocation: Geolocation,
     object_stores: ObjectStores,
     secret_stores: SecretStores,
-    hosts: Vec<HostSpec>,
     log_stdout: bool,
     log_stderr: bool,
     via_hyper: bool,
@@ -69,12 +65,11 @@ impl Test {
 
         Self {
             module_path,
-            backends: Backends::new(),
+            backends: TestBackends::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
-            hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
@@ -88,12 +83,11 @@ impl Test {
 
         Self {
             module_path,
-            backends: Backends::new(),
+            backends: TestBackends::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
-            hosts: Vec::new(),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
@@ -104,7 +98,7 @@ impl Test {
     pub fn using_fastly_toml(self, fastly_toml: &str) -> Result<Self, Error> {
         let config = fastly_toml.parse::<FastlyConfig>()?;
         Ok(Self {
-            backends: config.backends().to_owned(),
+            backends: TestBackends::from_backend_configs(config.backends()),
             dictionaries: config.dictionaries().to_owned(),
             geolocation: config.geolocation().to_owned(),
             object_stores: config.object_stores().to_owned(),
@@ -113,40 +107,86 @@ impl Test {
         })
     }
 
+    /// Use existing [`TestBackends`] for this test, replacing any previously existing backends.
+    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
+    pub fn using_test_backends(mut self, test_backends: &TestBackends) -> Self {
+        self.backends = test_backends.clone();
+        self
+    }
+
     /// Add a backend definition to this test.
-    pub fn backend(mut self, name: &str, url: &str, override_host: Option<&str>) -> Self {
-        let backend = Backend {
-            uri: url.parse().expect("invalid backend URL"),
-            override_host: override_host.map(|s| s.parse().expect("can parse override_host")),
-            cert_host: None,
-            use_sni: true,
-        };
-        self.backends.insert(name.to_owned(), Arc::new(backend));
-        self
-    }
-
-    /// Add a mock backend host, serving on `port` at localhost.
     ///
-    /// Mock hosts are specified as a synchronous function taking a `Request<Vec<u8>>` and returning
-    /// a `Response<Vec<u8>>`. Each one is spawned onto a dedicated Tokio task, which will be
-    /// gracefully shut down when the test completes.
-    pub fn host<HostFn>(mut self, port: u16, service: HostFn) -> Self
+    /// The `name` is the static backend name that can be passed as, for example, the argument to
+    /// `Request::send()`.
+    ///
+    /// The `path` is the path that will be prepended to the URLs of requests sent to this
+    /// backend. Note that the host and port used to send requests to this backend will be
+    /// automatically determined when the test servers are started.
+    ///
+    /// `override_host` optionally sets the corresponding parameter in the backend definition.
+    ///
+    /// `service` is the synchronous function that the test server will run on each request this
+    /// backend receives in order to determine what response to send.
+    pub async fn backend<ServiceFn>(
+        self,
+        name: &str,
+        path: &str,
+        override_host: Option<&str>,
+        service: ServiceFn,
+    ) -> Self
     where
-        HostFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
-        HostFn: Send + Sync + 'static,
+        ServiceFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
+        ServiceFn: Send + Sync + 'static,
     {
-        let service = Arc::new(TestService::Sync(Arc::new(service)));
-        self.hosts.push(HostSpec { port, service });
+        let uri: Uri = path.parse().expect("invalid backend URL");
+        let mut builder = self
+            .backends
+            .test_backend(name)
+            .path(uri.path())
+            .use_sni(true)
+            .test_service(service);
+        if let Some(override_host) = override_host {
+            builder = builder.override_host(override_host);
+        }
+        builder.build().await;
         self
     }
 
-    pub fn async_host<HostFn>(mut self, port: u16, service: HostFn) -> Self
+    /// Add a backend definition to this test with an asynchronous test server function.
+    ///
+    /// The `name` is the static backend name that can be passed as, for example, the argument to
+    /// `Request::send()`.
+    ///
+    /// The `path` is the path that will be prepended to the URLs of requests sent to this
+    /// backend. Note that the host and port used to send requests to this backend will be
+    /// automatically determined when the test servers are started.
+    ///
+    /// `override_host` optionally sets the corresponding parameter in the backend definition.
+    ///
+    /// `service` is the asynchronous function that the test server will run on each request this
+    /// backend receives in order to determine what response to send.
+    pub async fn async_backend<ServiceFn>(
+        self,
+        name: &str,
+        url: &str,
+        override_host: Option<&str>,
+        service: ServiceFn,
+    ) -> Self
     where
-        HostFn: Fn(Request<HyperBody>) -> AsyncResp,
-        HostFn: Send + Sync + 'static,
+        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Send + Sync + 'static,
     {
-        let service = Arc::new(TestService::Async(Arc::new(service)));
-        self.hosts.push(HostSpec { port, service });
+        let uri: Uri = url.parse().expect("invalid backend URL");
+        let mut builder = self
+            .backends
+            .test_backend(name)
+            .path(uri.path())
+            .use_sni(true)
+            .async_test_service(service);
+        if let Some(override_host) = override_host {
+            builder = builder.override_host(override_host);
+        }
+        builder.build().await;
         self
     }
 
@@ -177,19 +217,22 @@ impl Test {
 
     /// Pass the given requests through this test, returning the associated responses.
     ///
-    /// A `Test` can be used repeatedly against different requests, either individually
-    /// (as with `against()`) or in batches (as with `against_many()`). The difference
-    /// between calling this function with many requests, rather than calling `against()`
-    /// multiple times, is that the requests shared in an `against_many()` call will share
-    /// the same execution context. This can be useful when validating interactions across
-    /// shared state in the context.
+    /// A `Test` can be used repeatedly against different requests, either individually (as with
+    /// `against()`) or in batches (as with `against_many()`).
     ///
-    /// Subsequent calls to `against_many()` (or `against()`) will use a fresh context.
+    /// The difference between calling this function with many requests, rather than calling
+    /// `against()` multiple times, is that the requests shared in an `against_many()` call will
+    /// share the same Wasm execution context. This can be useful when validating interactions
+    /// across shared state in the context. Subsequent calls to `against_many()` (or `against()`)
+    /// will use a fresh context.
+    ///
+    /// When this function is called, the test servers for its defined backends will be started, if
+    /// they have not been already. Those test servers will remain running for the lifetime of this
+    /// [`Test`] object, and are therefore potentially reused for multiple `against*()` invocations.
     pub async fn against_many(
         &self,
         mut reqs: Vec<Request<impl Into<HyperBody>>>,
     ) -> Vec<Response<Body>> {
-        let _test_lock_guard = TEST_LOCK.lock().await;
         let mut responses = Vec::with_capacity(reqs.len());
 
         // Install a tracing subscriber. We use a human-readable event formatter in tests, using a
@@ -206,41 +249,58 @@ impl Test {
             .try_init()
             .ok();
 
+        // Start the backend test servers so that we can ask `TestBackends` for the final backend
+        // configurations, including the ephemeral ports we'll need for requests to actually land on
+        // the right servers. The test servers will remain running until after this [`Test`] is
+        // dropped.
+        if !self.backends.servers_are_running().await {
+            self.backends.start_servers().await;
+        }
+
         let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None, HashSet::new())
             .expect("failed to set up execution context")
-            .with_backends(self.backends.clone())
+            .with_backends(self.backends.backend_configs().await)
             .with_dictionaries(self.dictionaries.clone())
             .with_geolocation(self.geolocation.clone())
             .with_object_stores(self.object_stores.clone())
             .with_secret_stores(self.secret_stores.clone())
             .with_log_stderr(self.log_stderr)
             .with_log_stdout(self.log_stdout);
-        let addr: SocketAddr = "127.0.0.1:17878".parse().unwrap();
-
-        // spawn any mock hosts, keeping a handle on each host task for clean termination.
-        let host_handles: Vec<_> = self.hosts.iter().map(HostSpec::spawn).collect();
 
         if self.via_hyper {
             let svc = ViceroyService::new(ctx);
-            // We are going to host the service at port 17878, and so it's vital to make sure
-            // that we shut down the service after our test request, so that if there are
-            // additional tests we can spin up a fresh service at the same port.
-            //
-            // We do this using the "graceful shutdown" capability of Hyper, with a oneshot
-            // channel signaling completion:
+            // We use the "graceful shutdown" capability of Hyper, with a oneshot channel signaling
+            // completion:
             let (tx, rx) = tokio::sync::oneshot::channel();
             // NB the server is spawned onto a dedicated async task; we are going to use the
             // _current_ task to act as the client.
-            let server_handle = tokio::spawn(
-                hyper::Server::bind(&addr)
-                    .serve(svc)
-                    .with_graceful_shutdown(async {
-                        rx.await
-                            .expect("receiver error while shutting down hyper server")
-                    }),
-            );
+            let (server_handle, server_addr) = {
+                // Bind the server to an ephemeral port to allow for parallel test execution.
+                let server = hyper::Server::bind(&([127, 0, 0, 1], 0).into()).serve(svc);
+                let server_addr = server.local_addr();
+                let server_handle = tokio::spawn(server.with_graceful_shutdown(async {
+                    rx.await
+                        .expect("receiver error while shutting down hyper server")
+                }));
+                (server_handle, server_addr)
+            };
 
-            for req in reqs.drain(..) {
+            for mut req in reqs.drain(..) {
+                // Fix up the request URI to include the ephemeral port assignment. The `http::Uri`
+                // interface makes this unfortunately verbose.
+                let new_uri = Uri::builder()
+                    .scheme("http")
+                    .authority(server_addr.to_string())
+                    .path_and_query(
+                        req.uri()
+                            .path_and_query()
+                            .map(|p_and_q| p_and_q.as_str())
+                            .unwrap_or(""),
+                    )
+                    .build()
+                    .unwrap();
+                *req.uri_mut() = new_uri;
+
                 // Pass the request to the server via a Hyper client on the _current_ task:
                 let resp = hyper::Client::new()
                     .request(req.map(Into::into))
@@ -255,10 +315,24 @@ impl Test {
             // Reap the task handle to ensure that the server did indeed shut down.
             let _ = server_handle.await.expect("hyper server yielded an error");
         } else {
-            for req in reqs.drain(..) {
+            for mut req in reqs.drain(..) {
+                // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
+                // still normalize the request URI for consistency.
+                let new_uri = Uri::builder()
+                    .scheme("http")
+                    .authority("localhost")
+                    .path_and_query(
+                        req.uri()
+                            .path_and_query()
+                            .map(|p_and_q| p_and_q.as_str())
+                            .unwrap_or(""),
+                    )
+                    .build()
+                    .unwrap();
+                *req.uri_mut() = new_uri;
                 let resp = ctx
                     .clone()
-                    .handle_request(req.map(Into::into), addr.ip())
+                    .handle_request(req.map(Into::into), Ipv4Addr::LOCALHOST.into())
                     .await
                     .map(|result| result.0)
                     .expect("failed to handle the request");
@@ -266,14 +340,13 @@ impl Test {
             }
         }
 
-        for host in host_handles {
-            host.shutdown().await;
-        }
-
         responses
     }
 
-    /// Pass the given request through this test.
+    /// Pass the given request to a Viceroy execution context defined by this test.
+    ///
+    /// Only the path, query, and fragment of the request URI will be used; the host and port will
+    /// be rewritten as appropriate to connect to the Viceroy context.
     ///
     /// A `Test` can be used repeatedly against different requests. Note, however, that
     /// a fresh execution context is set up each time.
@@ -284,31 +357,74 @@ impl Test {
             .expect("singleton back from against_many")
     }
 
-    /// Pass an empty `GET 127.0.0.1:17878` request through this test.
+    /// Pass an empty `GET /` request through this test.
     pub async fn against_empty(&self) -> Response<Body> {
-        self.against(Request::get("http://127.0.0.1:17878/").body("").unwrap())
-            .await
+        self.against(Request::get("/").body("").unwrap()).await
+    }
+
+    /// Start the test servers for this test's [`TestBackends`].
+    ///
+    /// Panics if a test service has not been set for all configured backends. This is unlikely to
+    /// occur unless using [`Test::using_fastly_toml()] or [`Test::using_backends()`], as the
+    /// convenience methods for defining backends require a test service.
+    pub async fn start_backend_servers(&self) {
+        self.backends.start_servers().await;
+    }
+
+    /// Get the [`Uri`] suitable for sending a request to a running backend test server.
+    ///
+    /// Specifically, this `Uri` will include the ephemeral port assigned when the test server was
+    /// started, which must be known in advance to properly test fixtures using dynamic backends.
+    ///
+    /// Panics if no backend by this name is defined, or if the backend test servers have not yet
+    /// been started.
+    pub async fn uri_for_backend_server(&self, name: &str) -> Uri {
+        self.backends.uri_for_backend_server(name).await
     }
 }
 
-/// The specification of a mock host, as part of a `Test` builder.
-struct HostSpec {
-    port: u16,
-    service: Arc<TestService>,
-}
-
-/// A handle to a running mock host, used to gracefully shut down the host on test completion.
-struct HostHandle {
-    terminate_signal: tokio::sync::oneshot::Sender<()>,
+/// A handle to a running test server, used to keep track of its assigned ephemeral port and to
+/// gracefully shut down the server when it's no longer needed.
+#[derive(Debug)]
+struct TestServer {
+    bound_addr: SocketAddr,
+    terminate_signal: Option<tokio::sync::oneshot::Sender<()>>,
     task_handle: tokio::task::JoinHandle<()>,
 }
 
-impl HostSpec {
-    /// Spawn a mock host onto its own dedicated Tokio task, returning a handle to allow for graceful
-    /// termination of the host on test completion.
-    fn spawn(&self) -> HostHandle {
-        let port = self.port;
-        let service = self.service.clone();
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.terminate_signal
+            .take()
+            .unwrap()
+            .send(())
+            .expect("could not send terminate signal to test server");
+        if !self.task_handle.is_finished() {
+            self.task_handle.abort();
+        }
+    }
+}
+
+#[derive(Clone)]
+enum TestService {
+    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
+    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
+}
+
+impl std::fmt::Debug for TestService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sync(_) => f.debug_tuple("Sync").finish(),
+            Self::Async(_) => f.debug_tuple("Async").finish(),
+        }
+    }
+}
+
+impl TestService {
+    /// Spawn a test server onto a dedicated Tokio task, returning a handle to allow for graceful
+    /// termination of the server when it is no longer needed.
+    fn spawn(&self) -> TestServer {
+        let service = self.clone();
 
         // we transform `service` into an async function that consumes Hyper bodies. that requires a bit
         // of `Arc` and `move` operations because each invocation needs to produce a distinct `Future`
@@ -316,7 +432,7 @@ impl HostSpec {
             let service = service.clone();
 
             async move {
-                let resp = match &*service {
+                let resp = match service {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
                         let mut body = Box::new(body); // for pinning
@@ -327,8 +443,8 @@ impl HostSpec {
                         }
                         let req = Request::from_parts(parts, body_bytes);
 
-                        // pass the request through the host function, then convert its body into the form
-                        // that Hyper wants
+                        // pass the request through the service function, then convert its body into
+                        // the form that Hyper wants
                         s(req).map(HyperBody::from)
                     }
                     TestService::Async(s) => Box::into_pin(s(req)).await.map(HyperBody::from),
@@ -345,42 +461,27 @@ impl HostSpec {
             async move { Ok::<_, Infallible>(service::service_fn(move |req| async_host(req))) }
         });
 
-        // finally we can set up and spawn the actual server on localhost
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        // we set up a "graceful shutdown" for the host, with a oneshot channel signaling completion.
-        // that way multiple tests can be run (serially) with mock hosts at the same port; we ensure
-        // shutdown at the end of a test.
+        // we set up a "graceful shutdown" for the server, with a oneshot channel signaling completion.
         let (terminate_signal, rx) = tokio::sync::oneshot::channel();
-        let server = Server::bind(&addr)
-            .serve(make_service)
-            .with_graceful_shutdown(async {
-                rx.await
-                    .expect("receiver error while shutting down mock host")
-            });
-        let task_handle =
-            tokio::spawn(async { server.await.expect("mock host shut down with hyper error") });
-        HostHandle {
-            terminate_signal,
+        // Bind the test server to an ephemeral port to avoid conflicts between
+        // concurrently-executing tests.
+        let server = Server::bind(&([127, 0, 0, 1], 0).into()).serve(make_service);
+        let bound_addr = server.local_addr();
+        let graceful_server = server.with_graceful_shutdown(async {
+            rx.await
+                .expect("receiver error while shutting down mock host")
+        });
+        let task_handle = tokio::spawn(async {
+            graceful_server
+                .await
+                .expect("mock host shut down with hyper error")
+        });
+        TestServer {
+            bound_addr,
+            terminate_signal: Some(terminate_signal),
             task_handle,
         }
     }
-}
-
-impl HostHandle {
-    async fn shutdown(self) {
-        self.terminate_signal
-            .send(())
-            .expect("could not send terminate signal to mock host");
-        if !self.task_handle.is_finished() {
-            self.task_handle.abort();
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum TestService {
-    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
-    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
 }
 
 type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;

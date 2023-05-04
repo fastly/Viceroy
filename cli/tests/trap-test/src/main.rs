@@ -1,16 +1,21 @@
 use std::collections::HashSet;
 use {
-    crate::common::{TestResult, RUST_FIXTURE_PATH},
     hyper::{Body, Request, StatusCode},
     viceroy_lib::{ExecuteCtx, ProfilingStrategy},
 };
 
-#[path = "../../integration/common.rs"]
-mod common;
+/// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
+const RUST_FIXTURE_PATH: &str = "../../../test-fixtures/target/wasm32-wasi/debug/";
+
+/// A catch-all error, so we can easily use `?` in test cases.
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+
+/// Handy alias for the return type of async Tokio tests
+pub type TestResult = Result<(), Error>;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fatal_error_traps() -> TestResult {
-    let module_path = format!("../../{}/response.wasm", RUST_FIXTURE_PATH);
+    let module_path = format!("{RUST_FIXTURE_PATH}/response.wasm");
     let ctx = ExecuteCtx::new(module_path, ProfilingStrategy::None, HashSet::new())?;
     let req = Request::get("http://127.0.0.1:7878/").body(Body::from(""))?;
     let resp = ctx
@@ -29,6 +34,6 @@ async fn fatal_error_traps() -> TestResult {
         body,
         "Fatal error: [A fatal error occurred in the test-only implementation of header_values_get]"
     );
-    
+
     Ok(())
 }

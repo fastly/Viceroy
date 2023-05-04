@@ -11,7 +11,7 @@ fn main() -> Result<(), SendError> {
 
     // Test framework sanity check: a request without the auto_decompress flag
     // should bounce back to us unchanged.
-    let standard_echo = Request::put("http://127.0.0.1:9000")
+    let standard_echo = Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .send(echo_server.clone())?;
@@ -27,7 +27,7 @@ fn main() -> Result<(), SendError> {
 
     // Similarly, if we set the auto_decompress flag to false, it should also
     // bounce back to us unchanged.
-    let explicit_no = Request::put("http://127.0.0.1:9000")
+    let explicit_no = Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .with_auto_decompress_gzip(false)
@@ -38,7 +38,7 @@ fn main() -> Result<(), SendError> {
 
     // But if we set the auto_decompress flag to true, and send a compressed
     // file, we should get the uncompressed version back
-    let mut unpacked_echo = Request::put("http://127.0.0.1:9000")
+    let mut unpacked_echo = Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .with_auto_decompress_gzip(true)
@@ -51,7 +51,7 @@ fn main() -> Result<(), SendError> {
 
     // This should work when the header is "x-gzip", as well; see
     // https://httpwg.org/http-core/draft-ietf-httpbis-semantics-latest.html#gzip.coding
-    let mut xunpacked_echo = Request::put("http://127.0.0.1:9000")
+    let mut xunpacked_echo = Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "x-gzip")
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .with_auto_decompress_gzip(true)
@@ -63,7 +63,7 @@ fn main() -> Result<(), SendError> {
     assert_eq!(HELLO_WORLD, &xhopefully_unpacked);
 
     // The same, but now we're going to use await.
-    let unpacked_echo_pending = Request::put("http://127.0.0.1:9000")
+    let unpacked_echo_pending = Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .with_auto_decompress_gzip(true)
@@ -78,7 +78,7 @@ fn main() -> Result<(), SendError> {
     // The same, but now we're going to stream the data over.
     let unpacked_stream_pending = {
         // braces to force the drop on the body
-        let (mut streaming_body, pending_req) = Request::put("http://127.0.0.1:9000")
+        let (mut streaming_body, pending_req) = Request::put("http://127.0.0.1")
             .with_header("Content-Encoding", "gzip")
             .with_auto_decompress_gzip(true)
             .send_async_streaming(echo_server.clone())?;
@@ -101,7 +101,7 @@ fn main() -> Result<(), SendError> {
 
     // That being said, if we set the flag to true and send it a text file,
     // we should just get it back unchanged.
-    let mut yes_but_uncompressed = Request::put("http://127.0.0.1:9000")
+    let mut yes_but_uncompressed = Request::put("http://127.0.0.1")
         .with_body_octet_stream(HELLO_WORLD.as_bytes())
         .with_auto_decompress_gzip(true)
         .send(echo_server.clone())?;
@@ -113,7 +113,7 @@ fn main() -> Result<(), SendError> {
     // don't actually send a gzip'd file. We should get a response, and
     // it should technically be OK, but we should get an error when we
     // try to do anything with the body.
-    let mut bad_gzip = Request::put("http://127.0.0.1:9000")
+    let mut bad_gzip = Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD.as_bytes())
         .with_auto_decompress_gzip(true)
@@ -127,7 +127,7 @@ fn main() -> Result<(), SendError> {
 
     // Just for fun, let's return the response to the caller, and make
     // sure things come out there, as well.
-    Request::put("http://127.0.0.1:9000")
+    Request::put("http://127.0.0.1")
         .with_header("Content-Encoding", "gzip")
         .with_body_octet_stream(HELLO_WORLD_GZ)
         .with_auto_decompress_gzip(true)

@@ -14,21 +14,25 @@ async fn upstream_sync() -> TestResult {
 
     // Set up the test harness
     let test = Test::using_fixture("upstream-dynamic.wasm")
-        .backend("origin", "http://127.0.0.1:9000/", None)
         // The "origin" backend simply echos the request body
-        .host(9000, |req| {
+        .backend("origin", "/", None, |req| {
             let body = req.into_body();
             Response::new(body)
-        });
+        })
+        .await;
 
     ////////////////////////////////////////////////////////////////////////////////////
     // A simple round-trip echo test to "origin", but with a dynamic backend
     ////////////////////////////////////////////////////////////////////////////////////
 
+    // Make sure the backends are started so we can know where to direct the requests
+    test.start_backend_servers().await;
+    let backend_uri = test.uri_for_backend_server("origin").await;
+
     let resp = test
         .against(
-            Request::post("http://localhost/")
-                .header("Dynamic-Backend", "127.0.0.1:9000")
+            Request::post("/")
+                .header("Dynamic-Backend", backend_uri.authority().unwrap().as_str())
                 .body("Hello, Viceroy!")
                 .unwrap(),
         )
@@ -45,7 +49,7 @@ async fn upstream_sync() -> TestResult {
 
     let resp = test
         .against(
-            Request::post("http://localhost/")
+            Request::post("/")
                 .header("Static-Backend", "origin")
                 .body("Hello, Viceroy!")
                 .unwrap(),
@@ -66,22 +70,26 @@ async fn override_host_works() -> TestResult {
     let test = Test::using_fixture("upstream-dynamic.wasm")
         .backend(
             "override-host",
-            "http://127.0.0.1:9000/",
+            "/",
             None, // Some("otherhost.com"),
+            |req| {
+                assert_eq!(
+                    req.headers().get(header::HOST),
+                    Some(&HeaderValue::from_static("otherhost.com"))
+                );
+                Response::new(vec![])
+            },
         )
-        .host(9000, |req| {
-            assert_eq!(
-                req.headers().get(header::HOST),
-                Some(&HeaderValue::from_static("otherhost.com"))
-            );
-            Response::new(vec![])
-        });
+        .await;
+    // Make sure the backends are started so we can know where to direct the request
+    test.start_backend_servers().await;
+    let backend_uri = test.uri_for_backend_server("override-host").await;
 
     let resp = test
         .via_hyper()
         .against(
-            Request::get("http://localhost:17878/override")
-                .header("Dynamic-Backend", "127.0.0.1:9000")
+            Request::get("/override")
+                .header("Dynamic-Backend", backend_uri.authority().unwrap().as_str())
                 .header("With-Override", "otherhost.com")
                 .body("")
                 .unwrap(),
@@ -97,13 +105,17 @@ async fn override_host_works() -> TestResult {
 async fn duplication_errors_right() -> TestResult {
     // Set up the test harness
     let test = Test::using_fixture("upstream-dynamic.wasm")
-        .backend("static", "http://127.0.0.1:9000/", None)
-        .host(9000, |_| Response::new(vec![]));
+        .backend("static", "/", None, |_| Response::new(vec![]))
+        .await;
+    // Make sure the backends are started so we can know where to direct the request
+    test.start_backend_servers().await;
+    let backend_uri = test.uri_for_backend_server("static").await;
+    let backend_authority = backend_uri.authority().unwrap().as_str();
 
     let resp = test
         .against(
-            Request::get("http://localhost:17878/override")
-                .header("Dynamic-Backend", "127.0.0.1:9000")
+            Request::get("/override")
+                .header("Dynamic-Backend", backend_authority)
                 .header("Supplementary-Backend", "dynamic-backend")
                 .body("")
                 .unwrap(),
@@ -114,8 +126,8 @@ async fn duplication_errors_right() -> TestResult {
 
     let resp = test
         .against(
-            Request::get("http://localhost:17878/override")
-                .header("Dynamic-Backend", "127.0.0.1:9000")
+            Request::get("/override")
+                .header("Dynamic-Backend", backend_authority)
                 .header("Supplementary-Backend", "static")
                 .body("")
                 .unwrap(),
