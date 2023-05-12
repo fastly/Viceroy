@@ -5,6 +5,9 @@ mod downstream;
 
 pub use async_item::{AsyncItem, PeekableTask, PendingKvTask};
 
+use crate::cache::{Cache, CacheEntry};
+use crate::wiggle_abi::types::CacheHandle;
+
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -117,6 +120,8 @@ pub struct Session {
     config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
+    /// A handle to the cache for this execution context.
+    cache: Cache,
 }
 
 impl Session {
@@ -134,6 +139,7 @@ impl Session {
         config_path: Arc<Option<PathBuf>>,
         object_store: Arc<ObjectStores>,
         secret_stores: Arc<SecretStores>,
+        cache: Cache,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -168,6 +174,7 @@ impl Session {
             secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
+            cache,
         }
     }
 
@@ -304,7 +311,8 @@ impl Session {
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
-    /// Returns `true` if and only if the provided `BodyHandle` is the downstream body being sent.
+    /// Returns `true` if and only if the provided `BodyHandle` is currently streaming to its
+    /// destination.
     ///
     /// To get a mutable reference to the streaming body `Sender`, see
     /// [`Session::streaming_body_mut`](struct.Session.html#method.streaming_body_mut).
@@ -317,9 +325,9 @@ impl Session {
     }
 
     /// Get a mutable reference to the streaming body `Sender`, if and only if the provided
-    /// `BodyHandle` is the downstream body being sent.
+    /// `BodyHandle` is a currently-streaming body.
     ///
-    /// To check if a handle is the currently-streaming downstream response body, see
+    /// To check if a handle is a currently-streaming body, see
     /// [`Session::is_streaming_body`](struct.Session.html#method.is_streaming_body).
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
@@ -336,8 +344,8 @@ impl Session {
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
-    /// Take ownership of a streaming body `Sender`, if and only if the provided
-    /// `BodyHandle` is the downstream body being sent.
+    /// Take ownership of a streaming body `Sender`, if and only if the provided `BodyHandle` is
+    /// currently streaming.
     ///
     /// To check if a handle is the currently-streaming downstream response body, see
     /// [`Session::is_streaming_body`](struct.Session.html#method.is_streaming_body).
@@ -859,6 +867,59 @@ impl Session {
 
         Ok(done_index)
     }
+
+    pub fn cache(&self) -> &Cache {
+        &self.cache
+    }
+
+    pub fn insert_cache_entry(&mut self, task: PeekableTask<CacheEntry>) -> CacheHandle {
+        self.async_items
+            .push(Some(AsyncItem::CacheEntry(task)))
+            .into()
+    }
+
+    pub fn take_cache_entry(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<PeekableTask<CacheEntry>, Error> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(|maybe_item| {
+                if maybe_item
+                    .as_mut()
+                    .and_then(AsyncItem::as_cache_entry_mut)
+                    .is_some()
+                {
+                    maybe_item.take().and_then(AsyncItem::into_cache_entry)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| HandleError::InvalidCacheHandle(handle).into())
+    }
+
+    /// Get mutable access to a cache entry, which may require blocking on the entry becoming available.
+    pub async fn cache_entry_mut(&mut self, handle: CacheHandle) -> Result<&mut CacheEntry, Error> {
+        // First, grab the `PeekableTask` wrapper around the entry:
+        let peekable_entry = self
+            .async_items
+            .get_mut(handle.into())
+            .and_then(|maybe_item| maybe_item.as_mut().and_then(AsyncItem::as_cache_entry_mut))
+            .ok_or_else(|| HandleError::InvalidCacheHandle(handle))?;
+        // Block until the entry is available:
+        peekable_entry.await_ready().await;
+        // Now return the result:
+        if let Some(result) = peekable_entry.get_mut() {
+            // If the entry resolved to a hostcall error, extract the error, replacing it with a handle error
+            // to return if further attempts are made to access the entry:
+            result.as_mut().map_err(|err_ref| {
+                std::mem::replace(err_ref, HandleError::InvalidCacheHandle(handle).into())
+            })
+        } else {
+            // this should not be possible given the `await_ready` above, but we'll return a handle error
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
+    }
 }
 
 pub struct SelectedTargets<'session> {
@@ -965,5 +1026,17 @@ impl From<PendingKvLookupHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvLookupHandle {
     fn from(h: AsyncItemHandle) -> PendingKvLookupHandle {
         PendingKvLookupHandle::from(h.as_u32())
+    }
+}
+
+impl From<CacheHandle> for AsyncItemHandle {
+    fn from(h: CacheHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for CacheHandle {
+    fn from(h: AsyncItemHandle) -> CacheHandle {
+        CacheHandle::from(h.as_u32())
     }
 }

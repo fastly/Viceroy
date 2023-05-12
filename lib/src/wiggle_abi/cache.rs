@@ -1,26 +1,67 @@
-use crate::session::Session;
+use sha2::{Digest, Sha256};
+use wiggle::GuestPtr;
+
+use crate::cache::{CacheKey, LookupOptions};
+use crate::session::{PeekableTask, Session};
 
 use super::fastly_cache::FastlyCache;
 use super::{types, Error};
 
-#[allow(unused_variables)]
-impl FastlyCache for Session {
-    fn lookup<'a>(
-        &mut self,
-        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+fn salt_cache_key(unsalted: &[u8]) -> Result<CacheKey, Error> {
+    const LOW_LEVEL_CACHED_SALT: &'static [u8] = b"viceroy_lib::wiggle_abi::cache";
+    let salted = Sha256::new()
+        .chain(LOW_LEVEL_CACHED_SALT)
+        .chain(unsalted)
+        .finalize();
+    salted.as_slice().try_into()
+}
+
+impl LookupOptions {
+    fn from_guest(
+        session: &Session,
         options_mask: types::CacheLookupOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
+        options: &GuestPtr<types::CacheLookupOptions>,
+    ) -> Result<Self, Error> {
+        let options = options.read()?;
+        let request_headers =
+            if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
+                Some(
+                    session
+                        .request_parts(options.request_headers.into())?
+                        .headers
+                        .clone(),
+                )
+            } else {
+                None
+            };
+
+        Ok(Self { request_headers })
+    }
+}
+
+#[allow(unused_variables)]
+#[wiggle::async_trait]
+impl FastlyCache for Session {
+    async fn lookup<'a>(
+        &mut self,
+        cache_key: &GuestPtr<'a, [u8]>,
+        options_mask: types::CacheLookupOptionsMask,
+        options: &GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        let unsalted = cache_key.as_slice()?.ok_or(Error::SharedMemory)?;
+        let cache_key = salt_cache_key(&unsalted)?;
+        let options = LookupOptions::from_guest(self, options_mask, options)?;
+        let cache = self.cache().clone();
+        let entry_task =
+            PeekableTask::spawn(async move { cache.lookup(cache_key, options).await }).await;
+        Ok(self.insert_cache_entry(entry_task).into())
     }
 
     fn insert<'a>(
         &mut self,
-        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+        cache_key: &GuestPtr<'a, [u8]>,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: &GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -29,9 +70,9 @@ impl FastlyCache for Session {
 
     fn transaction_lookup<'a>(
         &mut self,
-        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+        cache_key: &GuestPtr<'a, [u8]>,
         options_mask: types::CacheLookupOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
+        options: &GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -42,7 +83,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: &GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -53,7 +94,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: &GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -64,7 +105,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: &GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<(), Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -92,9 +133,9 @@ impl FastlyCache for Session {
     fn get_user_metadata<'a>(
         &mut self,
         handle: types::CacheHandle,
-        user_metadata_out_ptr: &wiggle::GuestPtr<'a, u8>,
+        user_metadata_out_ptr: &GuestPtr<'a, u8>,
         user_metadata_out_len: u32,
-        nwritten_out: &wiggle::GuestPtr<'a, u32>,
+        nwritten_out: &GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",

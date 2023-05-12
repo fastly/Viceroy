@@ -2,6 +2,8 @@
 
 use std::net::Ipv4Addr;
 
+use crate::cache::Cache;
+
 use {
     crate::{
         body::Body,
@@ -61,6 +63,8 @@ pub struct ExecuteCtx {
     object_store: Arc<ObjectStores>,
     /// The secret stores for this execution.
     secret_stores: Arc<SecretStores>,
+    /// The Cache for this execution.
+    cache: Cache,
 }
 
 impl ExecuteCtx {
@@ -90,6 +94,7 @@ impl ExecuteCtx {
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: Arc::new(ObjectStores::new()),
             secret_stores: Arc::new(SecretStores::new()),
+            cache: Cache::new(),
         })
     }
 
@@ -297,6 +302,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.cache.clone(),
         );
         // We currently have to postpone linking and instantiation to the guest task
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
@@ -374,6 +380,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.cache.clone(),
         );
 
         let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;

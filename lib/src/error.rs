@@ -261,6 +261,10 @@ pub enum HandleError {
     /// An async item handle was not valid.
     #[error("Invalid async item handle: {0}")]
     InvalidAsyncItemHandle(crate::wiggle_abi::types::AsyncItemHandle),
+
+    /// A cache handle was not valid.
+    #[error("Invalid cache handle: {0}")]
+    InvalidCacheHandle(crate::wiggle_abi::types::CacheHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.

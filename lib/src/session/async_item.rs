@@ -1,3 +1,4 @@
+use crate::cache::CacheEntry;
 use crate::object_store::ObjectStoreError;
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
@@ -8,15 +9,13 @@ use tokio::sync::oneshot;
 
 pub type PendingKvTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
 
-/// Represents either a full body, or the write end of a streaming body.
-///
-/// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
-/// body (writeable only). It is used within the body handle map in `Session`.
+/// The different types which may participate in `async_io::select`.
 #[derive(Debug)]
 pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
+    CacheEntry(PeekableTask<CacheEntry>),
     PendingKvLookup(PendingKvTask),
 }
 
@@ -109,11 +108,26 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_cache_entry_mut(&mut self) -> Option<&mut PeekableTask<CacheEntry>> {
+        match self {
+            Self::CacheEntry(entry) => Some(entry),
+            _ => None,
+        }
+    }
+
+    pub fn into_cache_entry(self) -> Option<PeekableTask<CacheEntry>> {
+        match self {
+            Self::CacheEntry(entry) => Some(entry),
+            _ => None,
+        }
+    }
+
     pub async fn await_ready(&mut self) {
         match self {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
+            Self::CacheEntry(entry) => entry.await_ready().await,
             Self::PendingKvLookup(obj) => obj.await_ready().await,
         }
     }

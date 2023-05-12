@@ -20,6 +20,7 @@ pub mod logging;
 pub mod session;
 
 mod async_io;
+mod cache;
 mod downstream;
 mod execute;
 mod headers;

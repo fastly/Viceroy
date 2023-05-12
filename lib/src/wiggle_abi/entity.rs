@@ -3,7 +3,7 @@
 //! [ref]: https://docs.rs/cranelift-entity/latest/cranelift_entity/trait.EntityRef.html
 
 use super::types::{
-    AsyncItemHandle, BodyHandle, DictionaryHandle, EndpointHandle, ObjectStoreHandle,
+    AsyncItemHandle, BodyHandle, CacheHandle, DictionaryHandle, EndpointHandle, ObjectStoreHandle,
     PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
 };
 
@@ -49,3 +49,4 @@ wiggle_entity!(ObjectStoreHandle);
 wiggle_entity!(SecretStoreHandle);
 wiggle_entity!(SecretHandle);
 wiggle_entity!(AsyncItemHandle);
+wiggle_entity!(CacheHandle);
