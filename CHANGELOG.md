@@ -1,5 +1,14 @@
 ## Unreleased
 
+## 0.5.0 (2023-05-11)
+
+- 🚧 Add stubs for Cache API primitives ([#260](https://github.com/fastly/Viceroy/pull/260))
+- Make is_healthy always return Unknown instead of an unsupporte…
+- 🕷️ Rework integration tests to allow parallel test execution ([#257](https://github.com/fastly/Viceroy/pull/257))
+- Add KVStore async lookup ([#253](https://github.com/fastly/Viceroy/pull/253))
+- Update to Wasmtime 8 ([#251](https://github.com/fastly/Viceroy/pull/251))
+- Add documentation explaining how to run rust unit tests w/ viceroy ([#242](https://github.com/fastly/Viceroy/pull/242))
+
 ## 0.4.5 (2023-04-13)
 -  Remove validation on config store and dictionary names ([#248](https://github.com/fastly/Viceroy/pull/248))
 
