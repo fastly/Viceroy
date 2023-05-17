@@ -460,6 +460,13 @@
         (param $mode $framing_headers_mode)
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Adjust the response's connection reuse mode.
+    (@interface func (export "http_keepalive_mode_set")
+        (param $h $response_handle)
+        (param $mode $http_keepalive_mode)
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_dictionary

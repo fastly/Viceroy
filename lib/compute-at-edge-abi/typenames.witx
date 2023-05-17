@@ -157,6 +157,11 @@
         $automatic
         $manually_from_headers))
 
+(typename $http_keepalive_mode
+    (enum (@witx tag u32)
+        $automatic
+        $no_keepalive))
+
 (typename $tls_version
     (enum (@witx tag u32)
        $tls_1

@@ -1,16 +1,15 @@
-//! A guest program to test that object store works properly.
+//! A guest program to test that KV store works properly.
 
-use fastly::ObjectStore;
-use fastly::object_store::ObjectStoreError::ObjectStoreNotFound;
+use fastly::kv_store::{KVStore, KVStoreError::KVStoreNotFound};
 
 fn main() {
     // Check we can't get a store that does not exist
-    match ObjectStore::open("non_existant") {
-        Err(ObjectStoreNotFound(_)) => {},
+    match KVStore::open("non_existant") {
+        Err(KVStoreNotFound(_)) => {}
         _ => panic!(),
     }
 
-    let store_one = ObjectStore::open("store_one").unwrap().unwrap();
+    let store_one = KVStore::open("store_one").unwrap().unwrap();
     // Test that we can get data using the `data` config key
     assert_eq!(
         store_one.lookup_str("first").unwrap().unwrap(),
@@ -22,7 +21,7 @@ fn main() {
         "More data"
     );
 
-    let mut empty_store = ObjectStore::open("empty_store").unwrap().unwrap();
+    let mut empty_store = KVStore::open("empty_store").unwrap().unwrap();
     // Check that the value "bar" is not in the store
     assert_eq!(empty_store.lookup_str("bar"), Ok(None));
     empty_store.insert("bar", "foo").unwrap();
