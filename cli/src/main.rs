@@ -39,7 +39,7 @@ use {
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(&serve_args.shared(), true).await?;
+    let ctx = create_execution_context(serve_args.shared(), true).await?;
 
     let addr = serve_args.addr();
     ViceroyService::new(ctx).serve(addr).await?;
@@ -85,7 +85,7 @@ pub async fn main() -> ExitCode {
 /// Execute a Wasm program in the Viceroy environment.
 pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(&run_args.shared(), false).await?;
+    let ctx = create_execution_context(run_args.shared(), false).await?;
     let input = run_args.shared().input();
     let program_name = match input.file_stem() {
         Some(stem) => stem.to_string_lossy(),

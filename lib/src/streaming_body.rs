@@ -37,12 +37,6 @@ pub enum StreamingBodyItem {
     Finished,
 }
 
-impl From<Chunk> for StreamingBodyItem {
-    fn from(chunk: Chunk) -> Self {
-        Self::Chunk(chunk)
-    }
-}
-
 impl StreamingBody {
     /// Create a new channel for streaming a body, returning write and read ends as a pair.
     pub fn new() -> (StreamingBody, mpsc::Receiver<StreamingBodyItem>) {
@@ -56,7 +50,7 @@ impl StreamingBody {
     /// sending, e.g. due to the receive end being closed.
     pub async fn send_chunk(&mut self, chunk: impl Into<Chunk>) -> Result<(), Error> {
         self.sender
-            .send(Chunk::from(chunk.into()).into())
+            .send(StreamingBodyItem::Chunk(chunk.into()))
             .await
             .map_err(|_| Error::StreamingChunkSend)
     }
@@ -78,9 +72,8 @@ impl StreamingBody {
                 // If the channel is full, maybe the other end is just taking a while to receive all
                 // the bytes. Spawn a task that will send a `finish` message as soon as there's room
                 // in the channel.
-                let sender = self.sender.clone();
                 tokio::task::spawn(async move {
-                    let _ = sender.send(StreamingBodyItem::Finished).await;
+                    let _ = self.sender.send(StreamingBodyItem::Finished).await;
                 });
                 Ok(())
             }

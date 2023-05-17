@@ -353,7 +353,7 @@ impl ExecuteCtx {
 
         info!(
             "request completed using {} of WebAssembly heap",
-            bytesize::ByteSize::kib(heap_pages as u64 * 64)
+            bytesize::ByteSize::kib(heap_pages * 64)
         );
 
         info!("request completed in {:.0?}", request_duration);

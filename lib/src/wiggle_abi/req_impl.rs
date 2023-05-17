@@ -596,9 +596,7 @@ impl FastlyHttpReq for Session {
         &mut self,
         pending_req_handle: PendingRequestHandle,
     ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
-        let handle: PendingRequestHandle = pending_req_handle.into();
-
-        if self.async_item_mut(handle.into())?.is_ready() {
+        if self.async_item_mut(pending_req_handle.into())?.is_ready() {
             let resp = self
                 .take_pending_request(pending_req_handle)?
                 .recv()

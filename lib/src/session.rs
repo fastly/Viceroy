@@ -890,7 +890,7 @@ impl<'session> SelectedTargets<'session> {
 
 impl<'session> Drop for SelectedTargets<'session> {
     fn drop(&mut self) {
-        let targets = std::mem::replace(&mut self.targets, Vec::new());
+        let targets = std::mem::take(&mut self.targets);
         self.session.reinsert_select_targets(targets);
     }
 }
