@@ -41,6 +41,9 @@ tracing-futures = "^0.2.5"
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
 viceroy-lib = { path = "../lib", version = "^0.5.2" }
 wat = "^1.0.38"
+wasi-common = "8.0.1"
+wasmtime = "8.0.1"
+libc = "^0.2.139"
 
 [dev-dependencies]
 anyhow = "^1.0.31"
