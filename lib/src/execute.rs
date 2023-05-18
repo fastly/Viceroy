@@ -359,7 +359,7 @@ impl ExecuteCtx {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
-        let (sender, _) = oneshot::channel();
+        let (sender, receiver) = oneshot::channel();
         let remote = Ipv4Addr::LOCALHOST.into();
 
         let session = Session::new(
@@ -400,6 +400,11 @@ impl ExecuteCtx {
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
         store.data_mut().close_downstream_response_sender();
+
+        // We don't do anything with any response on the receiver, but
+        // it's important to keep it alive until after the program has
+        // finished.
+        drop(receiver);
 
         result
     }
