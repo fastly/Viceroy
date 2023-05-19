@@ -119,10 +119,9 @@
 (typename $multi_value_cursor_result s64)
 
 ;;; An override for response caching behavior.
+;;; A zero value indicates that the origin response's cache control headers should be used.
 (typename $cache_override_tag
     (flags (@witx repr u32)
-        ;;; Do not override the behavior specified in the origin response's cache control headers.
-        $none
         ;;; Do not cache the response to this request, regardless of the origin response's headers.
         $pass
         $ttl
