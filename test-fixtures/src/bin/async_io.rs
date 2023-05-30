@@ -2,6 +2,7 @@
 //! a distinct backend. Checks each for readiness, and then does a select with timeout against
 //! all of them.
 
+use std::io::Write;
 use std::str::FromStr;
 
 use fastly::handle::{BodyHandle, RequestHandle, ResponseHandle};
@@ -54,7 +55,9 @@ fn test_select() -> Result<(), Error> {
     write_body_req.set_cache_override(&pass);
     write_body_req.set_method(&Method::POST);
     let mut write_body_initial = BodyHandle::new();
-    let initial_bytes = write_body_initial.write_bytes(&vec![0; INITIAL_BYTE_COUNT]);
+    let initial_bytes = write_body_initial
+        .write(&vec![0; INITIAL_BYTE_COUNT])
+        .expect("failed to write to body handle");
     assert_eq!(initial_bytes, INITIAL_BYTE_COUNT);
     let (mut write_body, _write_body_pending_req) =
         write_body_req.send_async_streaming(write_body_initial, "WriteBody")?;
@@ -65,7 +68,9 @@ fn test_select() -> Result<(), Error> {
     // body we are streaming to it.
     let one_chunk = vec![0; 8 * 1024];
     while is_ready(write_body_handle) {
-        let nwritten = write_body.write_bytes(&one_chunk);
+        let nwritten = write_body
+            .write(&one_chunk)
+            .expect("failed to write to streaming body handle");
         assert!(nwritten > 0);
     }
 
