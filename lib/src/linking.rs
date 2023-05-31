@@ -55,7 +55,8 @@ pub(crate) fn create_store(
         session,
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
-    store.out_of_fuel_async_yield(u64::MAX, 10000);
+    store.set_epoch_deadline(1);
+    store.epoch_deadline_async_yield_and_update(1);
     Ok(store)
 }
 
