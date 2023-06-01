@@ -1,13 +1,9 @@
-use crate::common::Test;
-use crate::common::TestResult;
-use hyper::body::HttpBody;
-use hyper::Body;
-use hyper::Request;
-use hyper::Response;
-use hyper::StatusCode;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use crate::common::{Test, TestResult};
+use hyper::{body::HttpBody, Body, Request, Response, StatusCode};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use tokio::sync::Barrier;
 
 // On Windows, streaming body backpressure doesn't seem to work as expected, either
@@ -87,11 +83,11 @@ async fn async_io_methods() -> TestResult {
             Box::new(async move {
                 match req_count_3.load(Ordering::Relaxed) {
                     3 => {
-                        // Read at least 4MB from the request to relieve
-                        // back-pressure for the guest
+                        // Read at least 4MB and one 8K chunk from the request
+                        // to relieve back-pressure for the guest
                         let mut bod = req.into_body();
                         let mut bytes_read = 0;
-                        while bytes_read < 4 * 1024 * 1024 {
+                        while bytes_read < (4 * 1024 * 1024) + (8 * 1024) {
                             if let Some(Ok(bytes)) = bod.data().await {
                                 bytes_read += bytes.len();
                             }
