@@ -17,8 +17,7 @@ async fn upstream_async_methods() -> TestResult {
     let sema_backend1 = Arc::new(Semaphore::new(0));
     let sema_backend2 = sema_backend1.clone();
     let test = Test::using_fixture("upstream-async.wasm")
-        .backend("backend1", "http://127.0.0.1:9000/", None)
-        .async_host(9000, move |_| {
+        .async_backend("backend1", "/", None, move |_| {
             let sema_backend1 = sema_backend1.clone();
             Box::new(async move {
                 sema_backend1.acquire().await.unwrap().forget();
@@ -29,8 +28,8 @@ async fn upstream_async_methods() -> TestResult {
                     .unwrap()
             })
         })
-        .backend("backend2", "http://127.0.0.1:9001/", None)
-        .async_host(9001, move |_| {
+        .await
+        .async_backend("backend2", "/", None, move |_| {
             let sema_backend2 = sema_backend2.clone();
             Box::new(async move {
                 sema_backend2.add_permits(1);
@@ -40,7 +39,8 @@ async fn upstream_async_methods() -> TestResult {
                     .body(hyper::Body::empty())
                     .unwrap()
             })
-        });
+        })
+        .await;
 
     // The meat of the test is on the guest side; we just check that we made it through successfully
     let resp = test.against_empty().await;

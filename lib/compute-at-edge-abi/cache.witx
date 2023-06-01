@@ -1,0 +1,244 @@
+;;; The outcome of a cache lookup (either bare or as part of a cache transaction)
+(typename $cache_handle (handle))
+(typename $cache_object_length u64)
+(typename $cache_duration_ns u64)
+(typename $cache_hit_count u64)
+
+;;; Extensible options for cache lookup operations; currently used for both `lookup` and `transaction_lookup`.
+(typename $cache_lookup_options
+    (record
+        (field $request_headers $request_handle) ;; a full request handle, but used only for its headers
+    )
+)
+
+(typename $cache_lookup_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $request_headers
+    )
+)
+
+;;; Configuration for several hostcalls that write to the cache:
+;;; - `insert`
+;;; - `transaction_insert`
+;;; - `transaction_insert_and_stream_back`
+;;; - `transaction_update`
+;;;
+;;; Some options are only allowed for certain of these hostcalls; see `cache_write_options_mask`.
+(typename $cache_write_options
+    (record
+        (field $max_age_ns $cache_duration_ns) ;; this is a required field; there's no flag for it
+        (field $request_headers $request_handle) ;; a full request handle, but used only for its headers
+        (field $vary_rule_ptr (@witx pointer (@witx char8))) ;; a list of header names separated by spaces
+        (field $vary_rule_len (@witx usize))
+        ;; The initial age of the object in nanoseconds (default: 0).
+        ;;
+        ;; This age is used to determine the freshness lifetime of the object as well as to
+        ;; prioritize which variant to return if a subsequent lookup matches more than one vary rule
+        (field $initial_age_ns $cache_duration_ns)
+        (field $stale_while_revalidate_ns $cache_duration_ns)
+        (field $surrogate_keys_ptr (@witx pointer (@witx char8))) ;; a list of surrogate keys separated by spaces
+        (field $surrogate_keys_len (@witx usize))
+        (field $length $cache_object_length)
+        (field $user_metadata_ptr (@witx pointer u8))
+        (field $user_metadata_len (@witx usize))
+    )
+)
+
+(typename $cache_write_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $request_headers ;;; Only allowed for non-transactional `insert`
+        $vary_rule
+        $initial_age_ns
+        $stale_while_revalidate_ns
+        $surrogate_keys
+        $length
+        $user_metadata
+        $sensitive_data
+    )
+)
+
+(typename $cache_get_body_options
+    (record
+        (field $from u64)
+        (field $to u64)
+    )
+)
+
+(typename $cache_get_body_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $from
+        $to
+    )
+)
+
+;;; The status of this lookup (and potential transaction)
+(typename $cache_lookup_state
+    (flags (@witx repr u32)
+        $found ;; a cached object was found
+        $usable ;; the cached object is valid to use (implies $found)
+        $stale ;; the cached object is stale (but may or may not be valid to use)
+        $must_insert_or_update ;; this client is requested to insert or revalidate an object
+    )
+)
+
+(module $fastly_cache
+    ;;; Performs a non-request-collapsing cache lookup.
+    ;;;
+    ;;; Returns a result without waiting for any request collapsing that may be ongoing.
+    (@interface func (export "lookup")
+        (param $cache_key (list u8))
+        (param $options_mask $cache_lookup_options_mask)
+        (param $options (@witx pointer $cache_lookup_options))
+        (result $err (expected $cache_handle (error $fastly_status)))
+    )
+
+    ;;; Performs a non-request-collapsing cache insertion (or update).
+    ;;;
+    ;;; The returned handle is to a streaming body that is used for writing the object into
+    ;;; the cache.
+    (@interface func (export "insert")
+        (param $cache_key (list u8))
+        (param $options_mask $cache_write_options_mask)
+        (param $options (@witx pointer $cache_write_options))
+        (result $err (expected $body_handle (error $fastly_status)))
+    )
+
+    ;;; The entrypoint to the request-collapsing cache transaction API.
+    ;;;
+    ;;; This operation always participates in request collapsing and may return stale objects. To bypass
+    ;;; request collapsing, use `lookup` and `insert` instead.
+    (@interface func (export "transaction_lookup")
+        (param $cache_key (list u8))
+        (param $options_mask $cache_lookup_options_mask)
+        (param $options (@witx pointer $cache_lookup_options))
+        (result $err (expected $cache_handle (error $fastly_status)))
+    )
+
+    ;;; Insert an object into the cache with the given metadata.
+    ;;;
+    ;;; Can only be used in if the cache handle state includes the `$must_insert_or_update` flag.
+    ;;;
+    ;;; The returned handle is to a streaming body that is used for writing the object into
+    ;;; the cache.
+    (@interface func (export "transaction_insert")
+        (param $handle $cache_handle)
+        (param $options_mask $cache_write_options_mask)
+        (param $options (@witx pointer $cache_write_options))
+        (result $err (expected $body_handle (error $fastly_status)))
+    )
+
+    ;;; Insert an object into the cache with the given metadata, and return a readable stream of the
+    ;;; bytes as they are stored.
+    ;;;
+    ;;; This helps avoid the "slow reader" problem on a teed stream, for example when a program wishes
+    ;;; to store a backend request in the cache while simultaneously streaming to a client in an HTTP
+    ;;; response.
+    ;;;
+    ;;; The returned body handle is to a streaming body that is used for writing the object _into_
+    ;;; the cache. The returned cache handle provides a separate transaction for reading out the
+    ;;; newly cached object to send elsewhere.
+    (@interface func (export "transaction_insert_and_stream_back")
+        (param $handle $cache_handle)
+        (param $options_mask $cache_write_options_mask)
+        (param $options (@witx pointer $cache_write_options))
+        (result $err (expected (tuple $body_handle $cache_handle) (error $fastly_status)))
+    )
+
+    ;;; Update the metadata of an object in the cache without changing its data.
+    ;;;
+    ;;; Can only be used in if the cache handle state includes both of the flags:
+    ;;; - `$found`
+    ;;; - `$must_insert_or_update`
+    (@interface func (export "transaction_update")
+        (param $handle $cache_handle)
+        (param $options_mask $cache_write_options_mask)
+        (param $options (@witx pointer $cache_write_options))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Cancel an obligation to provide an object to the cache.
+    ;;;
+    ;;; Useful if there is an error before streaming is possible, e.g. if a backend is unreachable.
+    (@interface func (export "transaction_cancel")
+        (param $handle $cache_handle)
+        (result $err (expected (error $fastly_status))))
+
+    ;;; Close an ongoing interaction with the cache.
+    ;;;
+    ;;; If the cache handle state includes the `$must_insert_or_update` (and hence no insert or
+    ;;; update has been performed), closing the handle cancels any request collapsing, potentially
+    ;;; choosing a new waiter to perform the insertion/update.
+    (@interface func (export "close")
+        (param $handle $cache_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "get_state")
+        (param $handle $cache_handle)
+        (result $err (expected $cache_lookup_state (error $fastly_status)))
+    )
+
+    ;;; Gets the user metadata of the found object, returning the `$none` error if there
+    ;;; was no found object.
+    (@interface func (export "get_user_metadata")
+        (param $handle $cache_handle)
+        (param $user_metadata_out_ptr (@witx pointer u8))
+        (param $user_metadata_out_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Gets a range of the found object body, returning the `$none` error if there
+    ;;; was no found object.
+    ;;;
+    ;;; The returned `body_handle` must be closed before calling this function again on the same
+    ;;; `cache_handle`.
+    ;;;
+    ;;; Note: until the CacheD protocol is adjusted to fully support this functionality,
+    ;;; the body of objects that are past the stale-while-revalidate period will not
+    ;;; be available, even when other metadata is.
+    (@interface func (export "get_body")
+        (param $handle $cache_handle)
+        (param $options_mask $cache_get_body_options_mask)
+        (param $options $cache_get_body_options)
+        (result $err (expected $body_handle (error $fastly_status)))
+    )
+
+    ;;; Gets the content length of the found object, returning the `$none` error if there
+    ;;; was no found object, or no content length was provided.
+    (@interface func (export "get_length")
+        (param $handle $cache_handle)
+        (result $err (expected $cache_object_length (error $fastly_status)))
+    )
+
+    ;;; Gets the configured max age of the found object, returning the `$none` error if there
+    ;;; was no found object.
+    (@interface func (export "get_max_age_ns")
+        (param $handle $cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Gets the configured stale-while-revalidate period of the found object, returning the
+    ;;; `$none` error if there was no found object.
+    (@interface func (export "get_stale_while_revalidate_ns")
+        (param $handle $cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Gets the age of the found object, returning the `$none` error if there
+    ;;; was no found object.
+    (@interface func (export "get_age_ns")
+        (param $handle $cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Gets the number of cache hits for the found object, returning the `$none` error if there
+    ;;; was no found object.
+    (@interface func (export "get_hits")
+        (param $handle $cache_handle)
+        (result $err (expected $cache_hit_count (error $fastly_status)))
+    )
+)

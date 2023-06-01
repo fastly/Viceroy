@@ -8,8 +8,8 @@ use {
             fastly_http_resp::FastlyHttpResp,
             headers::HttpHeaders,
             types::{
-                BodyHandle, FramingHeadersMode, HttpStatus, HttpVersion, MultiValueCursor,
-                MultiValueCursorResult, ResponseHandle,
+                BodyHandle, FramingHeadersMode, HttpKeepaliveMode, HttpStatus, HttpVersion,
+                MultiValueCursor, MultiValueCursorResult, ResponseHandle,
             },
         },
     },
@@ -183,5 +183,16 @@ impl FastlyHttpResp for Session {
         // the handle given doesn't exist
         self.take_response_parts(resp_handle)?;
         Ok(())
+    }
+
+    fn http_keepalive_mode_set(
+        &mut self,
+        _h: ResponseHandle,
+        mode: HttpKeepaliveMode,
+    ) -> Result<(), Error> {
+        match mode {
+            HttpKeepaliveMode::NoKeepalive => Err(Error::NotAvailable("No Keepalive")),
+            HttpKeepaliveMode::Automatic => Ok(()),
+        }
     }
 }

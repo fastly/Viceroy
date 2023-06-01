@@ -28,8 +28,7 @@ async fn async_io_methods() -> TestResult {
     let barrier_2 = barrier.clone();
 
     let test = Test::using_fixture("async_io.wasm")
-        .backend("Simple", "http://127.0.0.1:9000/", None)
-        .async_host(9000, move |req: Request<Body>| {
+        .async_backend("Simple", "/", None, move |req: Request<Body>| {
             assert_eq!(req.headers()["Host"], "simple.org");
             let req_count_1 = req_count_1.clone();
             let barrier_1 = barrier_1.clone();
@@ -64,8 +63,8 @@ async fn async_io_methods() -> TestResult {
                 }
             })
         })
-        .backend("ReadBody", "http://127.0.0.1:9001/", None)
-        .async_host(9001, move |req: Request<Body>| {
+        .await
+        .async_backend("ReadBody", "/", None, move |req: Request<Body>| {
             assert_eq!(req.headers()["Host"], "readbody.org");
             let req_count_2 = req_count_2.clone();
             Box::new(async move {
@@ -93,8 +92,8 @@ async fn async_io_methods() -> TestResult {
                 }
             })
         })
-        .backend("WriteBody", "http://127.0.0.1:9002/", None)
-        .async_host(9002, move |req: Request<Body>| {
+        .await
+        .async_backend("WriteBody", "/", None, move |req: Request<Body>| {
             assert_eq!(req.headers()["Host"], "writebody.org");
             let req_count_3 = req_count_3.clone();
             let barrier_2 = barrier_2.clone();
@@ -131,17 +130,11 @@ async fn async_io_methods() -> TestResult {
                     _ => unreachable!(),
                 }
             })
-        });
+        })
+        .await;
 
     // request_count is 0 here
-    let resp = test
-        .against(
-            Request::builder()
-                .header("Host", "example.org")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await;
+    let resp = test.against_empty().await;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "false");
@@ -152,14 +145,7 @@ async fn async_io_methods() -> TestResult {
     barrier.wait().await;
 
     request_count.store(1, Ordering::Relaxed);
-    let resp = test
-        .against(
-            Request::builder()
-                .header("Host", "example.org")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await;
+    let resp = test.against_empty().await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "true");
     assert_eq!(resp.headers()["Read-Ready"], "false");
@@ -170,14 +156,7 @@ async fn async_io_methods() -> TestResult {
     barrier.wait().await;
 
     request_count.store(2, Ordering::Relaxed);
-    let resp = test
-        .against(
-            Request::builder()
-                .header("Host", "example.org")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await;
+    let resp = test.against_empty().await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "false");
     assert_eq!(resp.headers()["Read-Ready"], "true");
@@ -186,14 +165,7 @@ async fn async_io_methods() -> TestResult {
     barrier.wait().await;
 
     request_count.store(3, Ordering::Relaxed);
-    let resp = test
-        .against(
-            Request::builder()
-                .header("Host", "example.org")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await;
+    let resp = test.against_empty().await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "false");
     assert_eq!(resp.headers()["Read-Ready"], "false");
@@ -205,8 +177,7 @@ async fn async_io_methods() -> TestResult {
 
     let resp = test
         .against(
-            Request::builder()
-                .header("Host", "example.org")
+            Request::get("/")
                 .header("Empty-Select-Timeout", "0")
                 .body(Body::empty())
                 .unwrap(),
@@ -216,8 +187,7 @@ async fn async_io_methods() -> TestResult {
 
     let resp = test
         .against(
-            Request::builder()
-                .header("Host", "example.org")
+            Request::get("/")
                 .header("Empty-Select-Timeout", "1")
                 .body(Body::empty())
                 .unwrap(),

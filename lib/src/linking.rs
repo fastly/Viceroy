@@ -97,6 +97,7 @@ pub fn link_host_functions(
         })?;
     wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_body::add_to_linker(linker, WasmCtx::session)?;

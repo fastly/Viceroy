@@ -5,7 +5,7 @@ use {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn downstream_request_works() -> TestResult {
-    let req = Request::get("http://127.0.0.1:17878")
+    let req = Request::get("/")
         .header("Accept", "text/html")
         .header("X-Custom-Test", "abcdef")
         .body("Hello, world!")?;
