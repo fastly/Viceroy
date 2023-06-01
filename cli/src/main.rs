@@ -15,6 +15,8 @@
 
 use std::process::ExitCode;
 
+use wasi_common::I32Exit;
+
 mod opts;
 
 use {
@@ -53,10 +55,9 @@ pub async fn main() -> ExitCode {
     match cmd {
         Commands::Run(run_args) => {
             install_tracing_subscriber(0);
-            if let Ok(_) = run_wasm_main(run_args).await {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
+            match run_wasm_main(run_args).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => get_exit_code(e),
             }
         }
         Commands::Serve(serve_args) => {
@@ -127,6 +128,37 @@ fn install_tracing_subscriber(verbosity: u8) {
         "RUST_LOG set to '{}'",
         env::var("RUST_LOG").unwrap_or_else(|_| String::from("<Could not get env>"))
     );
+}
+
+// This function is based on similar exit code logic in the wasmtime cli:
+// https://github.com/bytecodealliance/wasmtime/blob/cc768f/src/commands/run.rs#L214-L246
+fn get_exit_code(e: anyhow::Error) -> ExitCode {
+    // If we exited with a specific WASI exit code, forward that to
+    // the process
+    if let Some(exit) = e.downcast_ref::<I32Exit>() {
+        // On Windows, exit status 3 indicates an abort (see below),
+        // so return 1 indicating a non-zero status to avoid ambiguity.
+        if cfg!(windows) && exit.0 >= 3 {
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::from(exit.0 as u8);
+    }
+
+    // If the program exited because of a trap, return an error code
+    // to the outside environment indicating a more severe problem
+    // than a simple failure.
+    if e.is::<wasmtime::Trap>() {
+        if cfg!(unix) {
+            // On Unix, return the error code of an abort.
+            return ExitCode::from(128u8 + libc::SIGABRT as u8);
+        } else if cfg!(windows) {
+            // On Windows, return 3.
+            // https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/abort?view=vs-2019
+            return ExitCode::from(3u8);
+        }
+    }
+    // Otherwise just return 1
+    ExitCode::FAILURE
 }
 
 pub enum Stdio {

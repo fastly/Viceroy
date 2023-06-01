@@ -30,10 +30,7 @@ impl FastlyBackend for Session {
     ) -> Result<super::types::BackendHealth, Error> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
-        // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "backend healthchecking is not configured in Viceroy",
-        })
+        Ok(super::types::BackendHealth::Unknown)
     }
 
     fn is_dynamic(

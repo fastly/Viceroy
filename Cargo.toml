@@ -14,3 +14,8 @@ exclude = [
 # commands like `cargo run` will run the CLI binary by default.
 # See: https://doc.rust-lang.org/cargo/reference/workspaces.html#package-selection
 default-members = [ "cli" ]
+
+[profile.dev]
+# Since some of the integration tests involve compiling Wasm, a little optimization goes a long way
+# toward making the test suite not take forever
+opt-level = 1
