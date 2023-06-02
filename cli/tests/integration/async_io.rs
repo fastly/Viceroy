@@ -84,7 +84,9 @@ async fn async_io_methods() -> TestResult {
                 match req_count_3.load(Ordering::Relaxed) {
                     3 => {
                         // Read at least 4MB and one 8K chunk from the request
-                        // to relieve back-pressure for the guest
+                        // to relieve back-pressure for the guest. These numbers
+                        // come from the amount of data that the guest writes to
+                        // the request body in test-fixtures/src/bin/async_io.rs
                         let mut bod = req.into_body();
                         let mut bytes_read = 0;
                         while bytes_read < (4 * 1024 * 1024) + (8 * 1024) {
