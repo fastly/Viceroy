@@ -194,7 +194,7 @@ impl From<&ExperimentalModule> for ExperimentalModuleArg {
 /// [opts]: struct.Opts.html
 fn check_module(s: &str) -> Result<String, Error> {
     let path = PathBuf::from(s);
-    let contents = std::fs::read(&path)?;
+    let contents = std::fs::read(path)?;
     match wat::parse_bytes(&contents) {
         Ok(_) => Ok(s.to_string()),
         _ => Err(Error::FileFormat),

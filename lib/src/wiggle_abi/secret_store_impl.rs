@@ -110,7 +110,7 @@ impl FastlySecretStore for Session {
             .as_array(plaintext_len)
             .as_slice_mut()?
             .ok_or(Error::SharedMemory)?;
-        plaintext_out.copy_from_slice(&plaintext);
+        plaintext_out.copy_from_slice(plaintext);
         nwritten_out.write(plaintext_len)?;
 
         Ok(())
