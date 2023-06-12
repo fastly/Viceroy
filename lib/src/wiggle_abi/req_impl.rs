@@ -279,10 +279,11 @@ impl FastlyHttpReq for Session {
             let byte_slice = config
                 .host_override
                 .as_array(config.host_override_len)
-                .as_slice()?
-                .ok_or(Error::SharedMemory)?;
+                .to_vec()?;
 
-            Some(HeaderValue::from_bytes(&byte_slice)?)
+            let string = String::from_utf8(byte_slice).map_err(|_| Error::InvalidArgument)?;
+
+            Some(HeaderValue::from_str(&string)?)
         } else {
             None
         };

@@ -7,7 +7,7 @@ use crate::{
     wiggle_abi::types::ContentEncodings,
 };
 use futures::Future;
-use http::{uri, HeaderValue};
+use http::{uri, HeaderValue, Version};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
 use rustls::client::{ServerName, WantsTransparencyPolicyOrClientCert};
 use std::{
@@ -267,7 +267,13 @@ pub fn send_request(
 
     let h2only = backend.grpc;
     async move {
-        let basic_response = Client::builder()
+        let mut builder = Client::builder();
+
+        if req.version() == Version::HTTP_2 {
+            builder.http2_only(true);
+        }
+
+        let basic_response = builder
             .set_host(false)
             .http2_only(h2only)
             .build(connector)

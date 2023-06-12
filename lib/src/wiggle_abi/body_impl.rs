@@ -1,5 +1,9 @@
 //! fastly_body` hostcall implementations.
 
+use http::{HeaderName, HeaderValue};
+
+use crate::wiggle_abi::headers::HttpHeaders;
+
 use {
     crate::{
         body::Body,
@@ -7,7 +11,7 @@ use {
         session::Session,
         wiggle_abi::{
             fastly_http_body::FastlyHttpBody,
-            types::{BodyHandle, BodyWriteEnd},
+            types::{BodyHandle, BodyWriteEnd, MultiValueCursor, MultiValueCursorResult},
         },
     },
     http_body::Body as HttpBody,
@@ -115,5 +119,81 @@ impl FastlyHttpBody for Session {
     fn abandon(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
         // Drop the body without a `finish` message
         Ok(self.drop_body(body_handle)?)
+    }
+
+    async fn trailer_append<'a>(
+        &mut self,
+        body_handle: BodyHandle,
+        name: &GuestPtr<[u8]>,
+        value: &GuestPtr<[u8]>,
+    ) -> Result<(), Error> {
+        if self.is_streaming_body(body_handle) {
+            let body = self.streaming_body_mut(body_handle)?;
+            let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
+            let value = HeaderValue::from_bytes(&value.as_slice()?.ok_or(Error::SharedMemory)?)?;
+            body.append_trailer(name, value);
+            Ok(())
+        } else {
+            let body = &mut self.body_mut(body_handle)?;
+            let trailers = &mut body.trailers;
+            HttpHeaders::append(trailers, name, value)
+        }
+    }
+
+    fn trailer_names_get<'a>(
+        &mut self,
+        body_handle: BodyHandle,
+        buf: &GuestPtr<u8>,
+        buf_len: u32,
+        cursor: MultiValueCursor,
+        ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let body = self.body_mut(body_handle)?;
+        if body.trailers_ready {
+            let trailers = &body.trailers;
+            return multi_value_result!(
+                trailers.names_get(buf, buf_len, cursor, nwritten_out),
+                ending_cursor_out
+            );
+        }
+        Err(Error::TrailersNotReady)
+    }
+
+    fn trailer_value_get<'a>(
+        &mut self,
+        body_handle: BodyHandle,
+        name: &GuestPtr<[u8]>,
+        value: &GuestPtr<u8>,
+        value_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let body = &mut self.body_mut(body_handle)?;
+        if body.trailers_ready {
+            let trailers = &mut body.trailers;
+            return trailers.value_get(name, value, value_max_len, nwritten_out);
+        }
+        Err(Error::TrailersNotReady)
+    }
+
+    fn trailer_values_get<'a>(
+        &mut self,
+        body_handle: BodyHandle,
+        name: &GuestPtr<[u8]>,
+        buf: &GuestPtr<u8>,
+        buf_len: u32,
+        cursor: MultiValueCursor,
+        ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let body = &mut self.body_mut(body_handle)?;
+        if body.trailers_ready {
+            let trailers = &mut body.trailers;
+            return multi_value_result!(
+                trailers.values_get(name, buf, buf_len, cursor, nwritten_out),
+                ending_cursor_out
+            );
+        }
+        Err(Error::TrailersNotReady)
     }
 }

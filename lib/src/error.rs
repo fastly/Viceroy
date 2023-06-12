@@ -142,6 +142,9 @@ pub enum Error {
 
     #[error("Invalid response to ALPN request; wanted '{0}', got '{1}'")]
     InvalidAlpnRepsonse(&'static str, String),
+
+    #[error("HTTP trailers not yet ready")]
+    TrailersNotReady,
 }
 
 impl Error {
@@ -180,6 +183,7 @@ impl Error {
             Error::GeolocationError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
+            Error::TrailersNotReady => FastlyStatus::Trailersnotready,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
