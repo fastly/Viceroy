@@ -1,5 +1,7 @@
 //! Linking and name resolution.
 
+use wasmtime::UpdateDeadline;
+
 use {
     crate::{
         config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint, session::Session,
@@ -56,7 +58,7 @@ pub(crate) fn create_store(
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.set_epoch_deadline(1);
-    store.epoch_deadline_async_yield_and_update(1);
+    store.epoch_deadline_callback(|_store| Ok(UpdateDeadline::Yield(1)));
     Ok(store)
 }
 
