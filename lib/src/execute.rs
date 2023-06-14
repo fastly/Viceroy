@@ -308,7 +308,7 @@ impl ExecuteCtx {
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
         // However, the fact that the module itself is created within `ExecuteCtx::new`
         // means that the heavy lifting happens only once.
-        let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
+        let mut store = create_store(&self, session, None).map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre
@@ -382,7 +382,7 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
         );
 
-        let mut store = create_store(&self, session).map_err(ExecutionError::Context)?;
+        let mut store = create_store(&self, session, None).map_err(ExecutionError::Context)?;
         store.data_mut().wasi().push_arg(program_name)?;
         for arg in args {
             store.data_mut().wasi().push_arg(arg)?;
