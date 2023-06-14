@@ -32,6 +32,10 @@ impl WasmCtx {
     pub fn session(&mut self) -> &mut Session {
         &mut self.session
     }
+
+    pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
+        self.guest_profiler.take()
+    }
 }
 
 impl WasmCtx {

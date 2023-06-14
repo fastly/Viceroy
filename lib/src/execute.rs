@@ -1,5 +1,7 @@
 //! Guest code execution.
 
+use wasmtime::GuestProfiler;
+
 use {
     crate::{
         body::Body,
@@ -29,6 +31,7 @@ use {
     wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
 };
 
+pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
 ///
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
@@ -40,6 +43,8 @@ pub struct ExecuteCtx {
     engine: Engine,
     /// An almost-linked Instance: each import function is linked, just needs a Store
     instance_pre: Arc<InstancePre<WasmCtx>>,
+    /// The module to run
+    module: Module,
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// The geolocation mappings for this execution.
@@ -63,6 +68,8 @@ pub struct ExecuteCtx {
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
+    /// The path to save a guest profile to
+    guest_profile_path: Option<PathBuf>,
 }
 
 impl ExecuteCtx {
@@ -71,6 +78,7 @@ impl ExecuteCtx {
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
+        guest_profile_path: Option<PathBuf>,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
@@ -80,13 +88,13 @@ impl ExecuteCtx {
         let instance_pre = linker.instantiate_pre(&module)?;
 
         // Create the epoch-increment thread.
-        let epoch_interruption_period = Duration::from_micros(50);
+
         let epoch_increment_stop = Arc::new(AtomicBool::new(false));
         let engine_clone = engine.clone();
         let epoch_increment_stop_clone = epoch_increment_stop.clone();
         let epoch_increment_thread = Some(Arc::new(thread::spawn(move || {
             while !epoch_increment_stop_clone.load(Ordering::Relaxed) {
-                thread::sleep(epoch_interruption_period);
+                thread::sleep(EPOCH_INTERRUPTION_PERIOD);
                 engine_clone.increment_epoch();
             }
         })));
@@ -94,6 +102,7 @@ impl ExecuteCtx {
         Ok(Self {
             engine,
             instance_pre: Arc::new(instance_pre),
+            module,
             backends: Arc::new(Backends::default()),
             geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
@@ -106,6 +115,7 @@ impl ExecuteCtx {
             secret_stores: Arc::new(SecretStores::new()),
             epoch_increment_thread,
             epoch_increment_stop,
+            guest_profile_path,
         })
     }
 
@@ -382,7 +392,14 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
         );
 
-        let mut store = create_store(&self, session, None).map_err(ExecutionError::Context)?;
+        let profiler = self.guest_profile_path.as_ref().map(|_| {
+            GuestProfiler::new(
+                program_name,
+                EPOCH_INTERRUPTION_PERIOD,
+                vec![(program_name.to_string(), self.module.clone())],
+            )
+        });
+        let mut store = create_store(&self, session, profiler).map_err(ExecutionError::Context)?;
         store.data_mut().wasi().push_arg(program_name)?;
         for arg in args {
             store.data_mut().wasi().push_arg(arg)?;
@@ -402,6 +419,23 @@ impl ExecuteCtx {
 
         // Invoke the entrypoint function and collect its exit code
         let result = main_func.call_async(&mut store, ()).await;
+
+        // If we collected a profile, write it to the file
+        if let (Some(profile), Some(path)) = (
+            store.data_mut().take_guest_profiler(),
+            self.guest_profile_path.as_ref(),
+        ) {
+            if let Err(e) = std::fs::File::create(&path)
+                .map_err(anyhow::Error::new)
+                .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
+            {
+                eprintln!("failed writing profile at {}: {e:#}", path.display());
+            } else {
+                eprintln!();
+                eprintln!("Profile written to: {}", path.display());
+                eprintln!("View this profile at https://profiler.firefox.com/.");
+            }
+        }
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.

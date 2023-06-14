@@ -80,9 +80,13 @@ pub struct SharedArgs {
     /// Whether to treat stderr as a logging endpoint
     #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
-    // Whether to enable wasmtime's builtin profiler.
+    /// Whether to enable wasmtime's builtin profiler.
     #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
     profiler: Option<ProfilingStrategy>,
+    /// Whether to profile the wasm guest. Takes an optional filename to save
+    /// the profile to
+    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
+    profile_guest: Option<PathBuf>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -142,6 +146,11 @@ impl SharedArgs {
     // Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
         self.profiler.unwrap_or(ProfilingStrategy::None)
+    }
+
+    /// The path to write a guest profile to
+    pub fn profile_guest(&self) -> Option<&PathBuf> {
+        self.profile_guest.as_ref()
     }
 
     // Set of experimental wasi modules to link against.

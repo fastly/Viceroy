@@ -222,9 +222,14 @@ async fn create_execution_context(
     check_backends: bool,
 ) -> Result<ExecuteCtx, anyhow::Error> {
     let input = args.input();
-    let mut ctx = ExecuteCtx::new(input, args.profiling_strategy(), args.wasi_modules())?
-        .with_log_stderr(args.log_stderr())
-        .with_log_stdout(args.log_stdout());
+    let mut ctx = ExecuteCtx::new(
+        input,
+        args.profiling_strategy(),
+        args.wasi_modules(),
+        args.profile_guest().cloned(),
+    )?
+    .with_log_stderr(args.log_stderr())
+    .with_log_stdout(args.log_stdout());
 
     if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
