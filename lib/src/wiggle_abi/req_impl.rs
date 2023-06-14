@@ -89,6 +89,16 @@ impl FastlyHttpReq for Session {
         }
     }
 
+    #[allow(unused_variables)] // FIXME FGS 2023-06-14: Remove this directive once implemented.
+    fn downstream_client_request_id(
+        &mut self,
+        reqid_out: &GuestPtr<u8>,
+        reqid_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_cipher_openssl_name<'a>(
         &mut self,

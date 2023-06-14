@@ -152,6 +152,12 @@ fn link_legacy_aliases(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
     )?;
     linker.alias(
         req,
+        "downstream_client_request_id",
+        "env",
+        "xqd_req_downstream_client_request_id",
+    )?;
+    linker.alias(
+        req,
         "downstream_tls_cipher_openssl_name",
         "env",
         "xqd_req_downstream_tls_cipher_openssl_name",
