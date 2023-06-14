@@ -96,6 +96,7 @@ impl FastlyHttpReq for Session {
         reqid_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
+        nwritten_out.write(0)?;
         Ok(())
     }
 
