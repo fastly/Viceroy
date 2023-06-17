@@ -9,6 +9,7 @@ use crate::{
 use futures::Future;
 use http::{uri, HeaderValue};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
+use rustls::client::ServerName;
 use std::{
     io,
     pin::Pin,
@@ -22,7 +23,6 @@ use tokio::{
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use tracing::warn;
-use webpki::DNSNameRef;
 
 static GZIP_VALUES: [HeaderValue; 2] = [
     HeaderValue::from_static("gzip"),
@@ -41,19 +41,23 @@ pub struct TlsConfig {
 }
 
 fn setup_rustls(with_sni: bool) -> Result<rustls::ClientConfig, Error> {
-    let mut config = rustls::ClientConfig::new();
-    config.root_store = match rustls_native_certs::load_native_certs() {
-        Ok(store) => store,
-        Err((Some(store), err)) => {
-            warn!(%err, "some certificates could not be loaded");
-            store
+    let mut roots = rustls::RootCertStore::empty();
+    match rustls_native_certs::load_native_certs() {
+        Ok(certs) => {
+            for cert in certs {
+                roots.add(&rustls::Certificate(cert.0)).unwrap();
+            }
         }
-        Err((None, err)) => return Err(Error::BadCerts(err)),
-    };
-    if config.root_store.is_empty() {
+        Err(err) => return Err(Error::BadCerts(err)),
+    }
+    if roots.is_empty() {
         warn!("no CA certificates available");
     }
-    config.alpn_protocols.clear();
+
+    let mut config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
     config.enable_sni = with_sni;
     Ok(config)
 }
@@ -134,7 +138,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     .as_deref()
                     .or_else(|| backend.uri.host())
                     .unwrap_or_default();
-                let dnsname = DNSNameRef::try_from_ascii_str(cert_host).map_err(Box::new)?;
+                let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
 
                 let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
                 Ok(Connection::Https(Box::new(tls)))
