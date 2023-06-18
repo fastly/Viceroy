@@ -89,6 +89,16 @@ impl FastlyHttpReq for Session {
         }
     }
 
+    #[allow(unused_variables)] // FIXME JDC 2023-06-18: Remove this directive once implemented.
+    fn downstream_client_h2_fingerprint<'a>(
+        &mut self,
+        h2fp_out: &GuestPtr<'a, u8>,
+        h2fp_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client H2 fingerprint"))
+    }
+
     fn downstream_client_request_id(
         &mut self,
         reqid_out: &GuestPtr<u8>,
