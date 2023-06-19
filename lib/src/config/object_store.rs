@@ -1,9 +1,8 @@
 use {
     crate::{
         error::{FastlyConfigError, ObjectStoreConfigError},
-        object_store::{ObjectKey, ObjectStoreKey, ObjectStores},
+        object_store::{ObjectStoreKey, ObjectStores},
     },
-    std::fs,
     toml::value::Table,
 };
 
@@ -14,102 +13,19 @@ impl TryFrom<Table> for ObjectStoreConfig {
     type Error = FastlyConfigError;
     fn try_from(toml: Table) -> Result<Self, Self::Error> {
         let obj_store = ObjectStores::new();
-        for (store, items) in toml.iter() {
-            let items = items.as_array().ok_or_else(|| {
+        for (name, destination) in toml.iter() {
+            let destination = destination.as_str().ok_or_else(|| {
                 FastlyConfigError::InvalidObjectStoreDefinition {
-                    name: store.to_string(),
-                    err: ObjectStoreConfigError::NotAnArray,
+                    name: name.to_string(),
+                    err: ObjectStoreConfigError::NotATable,
                 }
             })?;
-            // Handle the case where there are no items to insert, but the store
-            // exists and needs to be in the ObjectStore
-            if items.is_empty() {
-                obj_store
-                    .insert_empty_store(ObjectStoreKey::new(store))
-                    .map_err(|err| FastlyConfigError::InvalidObjectStoreDefinition {
-                        name: store.to_string(),
-                        err: err.into(),
-                    })?;
-                continue;
-            }
-            for item in items.iter() {
-                let item = item.as_table().ok_or_else(|| {
-                    FastlyConfigError::InvalidObjectStoreDefinition {
-                        name: store.to_string(),
-                        err: ObjectStoreConfigError::NotATable,
-                    }
+            obj_store
+                .insert_empty_store(ObjectStoreKey::new(name), destination)
+                .map_err(|err| FastlyConfigError::InvalidObjectStoreDefinition {
+                    name: name.to_string(),
+                    err: err.into(),
                 })?;
-
-                let key = item
-                    .get("key")
-                    .ok_or_else(|| FastlyConfigError::InvalidObjectStoreDefinition {
-                        name: store.to_string(),
-                        err: ObjectStoreConfigError::NoKey,
-                    })?
-                    .as_str()
-                    .ok_or_else(|| FastlyConfigError::InvalidObjectStoreDefinition {
-                        name: store.to_string(),
-                        err: ObjectStoreConfigError::KeyNotAString,
-                    })?;
-
-                // Previously the "file" key was named "path".  We want
-                // to continue supporting the old name.
-                let file = match (item.get("file"), item.get("path")) {
-                    (None, None) => None,
-                    (Some(file), _) => Some(file),
-                    (None, Some(path)) => Some(path),
-                };
-
-                let bytes = match (file, item.get("data")) {
-                    (None, None) => {
-                        return Err(FastlyConfigError::InvalidObjectStoreDefinition {
-                            name: store.to_string(),
-                            err: ObjectStoreConfigError::NoFileOrData(key.to_string()),
-                        })
-                    }
-                    (Some(_), Some(_)) => {
-                        return Err(FastlyConfigError::InvalidObjectStoreDefinition {
-                            name: store.to_string(),
-                            err: ObjectStoreConfigError::FileAndData(key.to_string()),
-                        })
-                    }
-                    (Some(path), None) => {
-                        let path = path.as_str().ok_or_else(|| {
-                            FastlyConfigError::InvalidObjectStoreDefinition {
-                                name: store.to_string(),
-                                err: ObjectStoreConfigError::FileNotAString(key.to_string()),
-                            }
-                        })?;
-                        fs::read(path).map_err(|e| {
-                            FastlyConfigError::InvalidObjectStoreDefinition {
-                                name: store.to_string(),
-                                err: ObjectStoreConfigError::IoError(e),
-                            }
-                        })?
-                    }
-                    (None, Some(data)) => data
-                        .as_str()
-                        .ok_or_else(|| FastlyConfigError::InvalidObjectStoreDefinition {
-                            name: store.to_string(),
-                            err: ObjectStoreConfigError::DataNotAString(key.to_string()),
-                        })?
-                        .as_bytes()
-                        .to_vec(),
-                };
-
-                obj_store
-                    .insert(
-                        ObjectStoreKey::new(store),
-                        ObjectKey::new(key).map_err(|err| {
-                            FastlyConfigError::InvalidObjectStoreDefinition {
-                                name: store.to_string(),
-                                err: err.into(),
-                            }
-                        })?,
-                        bytes,
-                    )
-                    .expect("Lock was not poisoned");
-            }
         }
         Ok(ObjectStoreConfig(obj_store))
     }

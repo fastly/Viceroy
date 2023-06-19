@@ -2371,6 +2371,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "bytesize",
+ "cap-std",
  "cfg-if",
  "cranelift-entity 0.88.2",
  "fastly-shared",

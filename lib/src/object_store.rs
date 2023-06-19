@@ -1,7 +1,9 @@
 use {
     crate::wiggle_abi::types::FastlyStatus,
+    cap_std::{ambient_authority, fs::Dir},
     std::{
         collections::BTreeMap,
+        io::{Read, Write},
         sync::{Arc, RwLock},
     },
 };
@@ -9,7 +11,7 @@ use {
 #[derive(Clone, Debug, Default)]
 pub struct ObjectStores {
     #[allow(clippy::type_complexity)]
-    stores: Arc<RwLock<BTreeMap<ObjectStoreKey, BTreeMap<ObjectKey, Vec<u8>>>>>,
+    stores: Arc<RwLock<BTreeMap<ObjectStoreKey, Dir>>>,
 }
 
 impl ObjectStores {
@@ -33,25 +35,42 @@ impl ObjectStores {
         obj_store_key: &ObjectStoreKey,
         obj_key: &ObjectKey,
     ) -> Result<Vec<u8>, ObjectStoreError> {
-        self.stores
+        let stores = self
+            .stores
             .read()
-            .map_err(|_| ObjectStoreError::PoisonedLock)?
-            .get(obj_store_key)
-            .and_then(|map| map.get(obj_key).cloned())
-            .ok_or(ObjectStoreError::MissingObject)
+            .map_err(|_| ObjectStoreError::PoisonedLock)?;
+        let store = stores.get(obj_store_key);
+        if let Some(store) = store {
+            let mut result = vec![];
+            store
+                .open(&obj_key.0)
+                .map(|mut file| file.read_to_end(&mut result))
+                .map(|_| result)
+                .or_else(|_| Err(ObjectStoreError::MissingObject))
+        } else {
+            Err(ObjectStoreError::UnknownObjectStore(
+                obj_store_key.name.to_owned(),
+            ))
+        }
     }
 
     pub(crate) fn insert_empty_store(
         &self,
         obj_store_key: ObjectStoreKey,
+        destination: impl ToString,
     ) -> Result<(), ObjectStoreError> {
+        let dir = Dir::open_ambient_dir(destination.to_string(), ambient_authority()).or_else(|_|{
+            Err(ObjectStoreError::PoisonedLock)
+        })?;
         self.stores
             .write()
             .map_err(|_| ObjectStoreError::PoisonedLock)?
             .entry(obj_store_key)
-            .and_modify(|_| {})
-            .or_insert_with(BTreeMap::new);
-
+            .or_insert_with(|| {
+                println!("cwd: {:#?}", std::env::current_dir().unwrap());
+                println!("destination: {:#?}", destination.to_string());
+                dir
+            });
         Ok(())
     }
 
@@ -66,12 +85,8 @@ impl ObjectStores {
             .map_err(|_| ObjectStoreError::PoisonedLock)?
             .entry(obj_store_key)
             .and_modify(|store| {
-                store.insert(obj_key.clone(), obj.clone());
-            })
-            .or_insert_with(|| {
-                let mut store = BTreeMap::new();
-                store.insert(obj_key, obj);
-                store
+                let mut file = store.create(obj_key.0).unwrap();
+                file.write_all(&obj).unwrap();
             });
 
         Ok(())
@@ -79,11 +94,15 @@ impl ObjectStores {
 }
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Default)]
-pub struct ObjectStoreKey(String);
+pub struct ObjectStoreKey {
+    name: String,
+}
 
 impl ObjectStoreKey {
-    pub fn new(key: impl ToString) -> Self {
-        Self(key.to_string())
+    pub fn new(name: impl ToString) -> Self {
+        Self {
+            name: name.to_string(),
+        }
     }
 }
 
