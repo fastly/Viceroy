@@ -61,6 +61,11 @@ pub struct RunArgs {
     #[command(flatten)]
     shared: SharedArgs,
 
+    /// Whether to profile the wasm guest. Takes an optional filename to save
+    /// the profile to
+    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
+    profile_guest: Option<PathBuf>,
+
     /// Args to pass along to the binary being executed.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     wasm_args: Vec<String>,
@@ -83,10 +88,6 @@ pub struct SharedArgs {
     /// Whether to enable wasmtime's builtin profiler.
     #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
     profiler: Option<ProfilingStrategy>,
-    /// Whether to profile the wasm guest. Takes an optional filename to save
-    /// the profile to
-    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
-    profile_guest: Option<PathBuf>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -120,6 +121,11 @@ impl RunArgs {
     pub fn shared(&self) -> &SharedArgs {
         &self.shared
     }
+
+    /// The path to write a guest profile to
+    pub fn profile_guest(&self) -> Option<&PathBuf> {
+        self.profile_guest.as_ref()
+    }
 }
 
 impl SharedArgs {
@@ -146,11 +152,6 @@ impl SharedArgs {
     // Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
         self.profiler.unwrap_or(ProfilingStrategy::None)
-    }
-
-    /// The path to write a guest profile to
-    pub fn profile_guest(&self) -> Option<&PathBuf> {
-        self.profile_guest.as_ref()
     }
 
     // Set of experimental wasi modules to link against.

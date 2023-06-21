@@ -68,8 +68,6 @@ pub struct ExecuteCtx {
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
-    /// The path to save a guest profile to
-    guest_profile_path: Option<PathBuf>,
 }
 
 impl ExecuteCtx {
@@ -78,7 +76,6 @@ impl ExecuteCtx {
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
-        guest_profile_path: Option<PathBuf>,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
@@ -115,7 +112,6 @@ impl ExecuteCtx {
             secret_stores: Arc::new(SecretStores::new()),
             epoch_increment_thread,
             epoch_increment_stop,
-            guest_profile_path,
         })
     }
 
@@ -371,7 +367,12 @@ impl ExecuteCtx {
         outcome
     }
 
-    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
+    pub async fn run_main(
+        self,
+        program_name: &str,
+        args: &[String],
+        guest_profile_path: Option<&PathBuf>,
+    ) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
@@ -392,7 +393,7 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
         );
 
-        let profiler = self.guest_profile_path.as_ref().map(|_| {
+        let profiler = guest_profile_path.map(|_| {
             GuestProfiler::new(
                 program_name,
                 EPOCH_INTERRUPTION_PERIOD,
@@ -421,10 +422,9 @@ impl ExecuteCtx {
         let result = main_func.call_async(&mut store, ()).await;
 
         // If we collected a profile, write it to the file
-        if let (Some(profile), Some(path)) = (
-            store.data_mut().take_guest_profiler(),
-            self.guest_profile_path.as_ref(),
-        ) {
+        if let (Some(profile), Some(path)) =
+            (store.data_mut().take_guest_profiler(), guest_profile_path)
+        {
             if let Err(e) = std::fs::File::create(&path)
                 .map_err(anyhow::Error::new)
                 .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
