@@ -89,14 +89,33 @@ impl FastlyHttpReq for Session {
         }
     }
 
-    #[allow(unused_variables)] // FIXME FGS 2023-06-14: Remove this directive once implemented.
     fn downstream_client_request_id(
         &mut self,
         reqid_out: &GuestPtr<u8>,
         reqid_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        nwritten_out.write(0)?;
+        let reqid_bytes = format!("{:032x}", self.req_id()).into_bytes();
+
+        if reqid_bytes.len() > reqid_max_len as usize {
+            // Write out the number of bytes necessary to fit the value, or zero on overflow to
+            // signal an error condition.
+            nwritten_out.write(reqid_bytes.len().try_into().unwrap_or(0))?;
+            return Err(Error::BufferLengthError {
+                buf: "reqid_out",
+                len: "reqid_max_len",
+            });
+        }
+
+        let reqid_len =
+            u32::try_from(reqid_bytes.len()).expect("smaller u32::MAX means it must fit");
+
+        let mut reqid_slice = reqid_out
+            .as_array(reqid_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
+        reqid_slice.copy_from_slice(&reqid_bytes);
+        nwritten_out.write(reqid_len)?;
         Ok(())
     }
 
