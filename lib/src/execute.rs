@@ -429,11 +429,17 @@ impl ExecuteCtx {
                 .map_err(anyhow::Error::new)
                 .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
             {
-                eprintln!("failed writing profile at {}: {e:#}", path.display());
+                event!(
+                    Level::ERROR,
+                    "failed writing profile at {}: {e:#}",
+                    path.display()
+                );
             } else {
-                eprintln!();
-                eprintln!("Profile written to: {}", path.display());
-                eprintln!("View this profile at https://profiler.firefox.com/.");
+                event!(
+                    Level::INFO,
+                    "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
+                    path.display()
+                );
             }
         }
 
