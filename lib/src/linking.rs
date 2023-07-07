@@ -152,12 +152,6 @@ fn link_legacy_aliases(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
     )?;
     linker.alias(
         req,
-        "downstream_client_h2_fingerprint",
-        "env",
-        "xqd_req_downstream_client_h2_fingerprint",
-    )?;
-    linker.alias(
-        req,
         "downstream_client_request_id",
         "env",
         "xqd_req_downstream_client_request_id",
