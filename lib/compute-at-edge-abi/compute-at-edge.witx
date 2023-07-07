@@ -107,6 +107,13 @@
         (result $err (expected $num_bytes (error $fastly_status)))
     )
 
+    (@interface func (export "downstream_client_h2_fingerprint")
+        (param $h2fp_out (@witx pointer (@witx char8)))
+        (param $h2fp_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
     (@interface func (export "downstream_client_request_id")
         (param $reqid_out (@witx pointer (@witx char8)))
         (param $reqid_max_len (@witx usize))
