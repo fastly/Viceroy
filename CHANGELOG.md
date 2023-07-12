@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.6.0 (2023-07-12)
 
 - ⏱️ Add cross-platform ability to profile guest code in run mode ([#280](https://github.com/fastly/Viceroy/pull/280))
