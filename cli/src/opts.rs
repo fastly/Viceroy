@@ -97,7 +97,7 @@ impl ServeArgs {
     /// The address that the service should be bound to.
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
-            .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878))
+            .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676))
     }
 
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
@@ -256,7 +256,7 @@ mod opts_tests {
         let empty_args = &["dummy-program-name", &test_file("minimal.wat")];
         let opts = Opts::try_parse_from(empty_args)?;
         let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
-        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878);
+        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676);
         if let Commands::Serve(serve_args) = cmd {
             assert_eq!(serve_args.addr(), expected);
         }
@@ -269,7 +269,7 @@ mod opts_tests {
         let args_with_bad_addr = &[
             "dummy-program-name",
             "--addr",
-            "999.0.0.1:7878",
+            "999.0.0.1:7676",
             &test_file("minimal.wat"),
         ];
         match Opts::try_parse_from(args_with_bad_addr) {
@@ -290,13 +290,13 @@ mod opts_tests {
         let args_with_ipv6_addr = &[
             "dummy-program-name",
             "--addr",
-            "[::1]:7878",
+            "[::1]:7676",
             &test_file("minimal.wat"),
         ];
         let opts = Opts::try_parse_from(args_with_ipv6_addr)?;
         let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
         let addr_v6 = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
-        let expected = SocketAddr::new(addr_v6, 7878);
+        let expected = SocketAddr::new(addr_v6, 7676);
         if let Commands::Serve(serve_args) = cmd {
             assert_eq!(serve_args.addr(), expected);
         }
