@@ -39,7 +39,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
-viceroy-lib = { path = "../lib", version = "0.6.0" }
+viceroy-lib = { path = "../lib", version = "^0.6.0" }
 wat = "^1.0.38"
 wasi-common = { workspace = true }
 wasmtime = { workspace = true }
