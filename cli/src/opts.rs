@@ -61,6 +61,11 @@ pub struct RunArgs {
     #[command(flatten)]
     shared: SharedArgs,
 
+    /// Whether to profile the wasm guest. Takes an optional filename to save
+    /// the profile to
+    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
+    profile_guest: Option<PathBuf>,
+
     /// Args to pass along to the binary being executed.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     wasm_args: Vec<String>,
@@ -80,7 +85,7 @@ pub struct SharedArgs {
     /// Whether to treat stderr as a logging endpoint
     #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
-    // Whether to enable wasmtime's builtin profiler.
+    /// Whether to enable wasmtime's builtin profiler.
     #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
     profiler: Option<ProfilingStrategy>,
     /// Set of experimental WASI modules to link against.
@@ -115,6 +120,11 @@ impl RunArgs {
 
     pub fn shared(&self) -> &SharedArgs {
         &self.shared
+    }
+
+    /// The path to write a guest profile to
+    pub fn profile_guest(&self) -> Option<&PathBuf> {
+        self.profile_guest.as_ref()
     }
 }
 

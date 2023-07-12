@@ -91,7 +91,12 @@ pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
         Some(stem) => stem.to_string_lossy(),
         None => panic!("program cannot be a directory"),
     };
-    ctx.run_main(&program_name, run_args.wasm_args()).await
+    ctx.run_main(
+        &program_name,
+        run_args.wasm_args(),
+        run_args.profile_guest(),
+    )
+    .await
 }
 
 fn install_tracing_subscriber(verbosity: u8) {

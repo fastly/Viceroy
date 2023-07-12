@@ -8,7 +8,7 @@ use {
     anyhow::Context,
     std::collections::HashSet,
     wasi_common::{pipe::WritePipe, WasiCtx},
-    wasmtime::{Linker, Store},
+    wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
     wasmtime_wasi::WasiCtxBuilder,
     wasmtime_wasi_nn::WasiNnCtx,
 };
@@ -17,6 +17,7 @@ pub struct WasmCtx {
     wasi: WasiCtx,
     wasi_nn: WasiNnCtx,
     session: Session,
+    guest_profiler: Option<Box<GuestProfiler>>,
 }
 
 impl WasmCtx {
@@ -30,6 +31,10 @@ impl WasmCtx {
 
     pub fn session(&mut self) -> &mut Session {
         &mut self.session
+    }
+
+    pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
+        self.guest_profiler.take()
     }
 }
 
@@ -46,6 +51,7 @@ impl WasmCtx {
 pub(crate) fn create_store(
     ctx: &ExecuteCtx,
     session: Session,
+    guest_profiler: Option<GuestProfiler>,
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
     let wasi = make_wasi_ctx(ctx, &session).context("creating Wasi context")?;
     let wasi_nn = WasiNnCtx::new().unwrap();
@@ -53,10 +59,17 @@ pub(crate) fn create_store(
         wasi,
         wasi_nn,
         session,
+        guest_profiler: guest_profiler.map(Box::new),
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.set_epoch_deadline(1);
-    store.epoch_deadline_async_yield_and_update(1);
+    store.epoch_deadline_callback(|mut store| {
+        if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+            prof.sample(&store);
+            store.data_mut().guest_profiler = Some(prof);
+        }
+        Ok(UpdateDeadline::Yield(1))
+    });
     Ok(store)
 }
 
