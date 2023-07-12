@@ -1,5 +1,21 @@
 ## Unreleased
 
+## 0.6.0 (2023-07-12)
+
+- ⏱️ Add cross-platform ability to profile guest code in run mode ([#280](https://github.com/fastly/Viceroy/pull/280))
+- pin to hyper 0.14.26 for the time being ([#285](https://github.com/fastly/Viceroy/pull/285))
+- 😯 Add support for the new secret from_bytes extension. ([#283](https://github.com/fastly/Viceroy/pull/283))
+- feat: Add a stub for downstream_client_h2_fingerprint ([#277](https://github.com/fastly/Viceroy/pull/277))
+- Fill downstream_client_request_id in ([#282](https://github.com/fastly/Viceroy/pull/282))
+- Bump to wasmtime-10.0.0 ([#279](https://github.com/fastly/Viceroy/pull/279))
+- Add a stub for downstream_client_request_id ([#276](https://github.com/fastly/Viceroy/pull/276))
+-  Fix various warnings ([#271](https://github.com/fastly/Viceroy/pull/271))
+- ⛽ -> ⏲️ Switch from fuel to epoch interruptions. ([#273](https://github.com/fastly/Viceroy/pull/273))
+- Bump wasmtime dependencies to 9.0.1 ([#272](https://github.com/fastly/Viceroy/pull/272))
+- ⏩ none should not be defined in cache_override_tag witx ([#269](https://github.com/fastly/Viceroy/pull/269))
+- in single run mode, keep the response receiver alive during execution ([#270](https://github.com/fastly/Viceroy/pull/270))
+- Return appropriate exit code in run-mode, rather than just 0 or 1 ([#224](https://github.com/fastly/Viceroy/pull/224))
+
 ## 0.5.1 (2023-05-17)
 
 -  Update crates and add http_keepalive_mode_set ([#266](https://github.com/fastly/Viceroy/pull/266))
