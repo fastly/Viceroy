@@ -697,7 +697,7 @@ impl Session {
         self.secret_stores
             .get_store(store_name)?
             .get_secret(secret_name)?;
-        Some(self.secrets_by_name.push(SecretLookup {
+        Some(self.secrets_by_name.push(SecretLookup::Standard {
             store_name: store_name.to_string(),
             secret_name: secret_name.to_string(),
         }))
@@ -705,6 +705,11 @@ impl Session {
 
     pub fn secret_lookup(&self, handle: SecretHandle) -> Option<SecretLookup> {
         self.secrets_by_name.get(handle).cloned()
+    }
+
+    pub fn add_secret(&mut self, plaintext: Vec<u8>) -> SecretHandle {
+        self.secrets_by_name
+            .push(SecretLookup::Injected { plaintext })
     }
 
     pub fn secret_stores(&self) -> &Arc<SecretStores> {
