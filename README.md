@@ -49,7 +49,7 @@ built by `fastly compute build`. The Fastly CLI should put the blob at
 viceroy bin/main.wasm
 ```
 
-This will start a local server (by default at: `http://127.0.0.1:7878`), which can
+This will start a local server (by default at: `http://127.0.0.1:7676`), which can
 be used to make requests to your Compute@Edge service locally. You can make requests
 by using [curl](https://curl.se/), or you can send a simple GET request by visiting
 the URL in your web browser.
