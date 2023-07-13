@@ -1,7 +1,9 @@
 //! Service types.
 
+use rcgen::generate_simple_self_signed;
 use {
     crate::{body::Body, execute::ExecuteCtx, Error},
+    axum_server::tls_rustls::RustlsConfig,
     futures::future::{self, Ready},
     hyper::{
         http::{Request, Response},
@@ -15,7 +17,6 @@ use {
         pin::Pin,
         task::{self, Poll},
     },
-    tracing::{event, Level},
 };
 
 /// A Viceroy service uses a Wasm module and a handler function to respond to HTTP requests.
@@ -30,6 +31,7 @@ use {
 /// [req-svc]: struct.RequestService.html
 /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
 /// [serv]: https://docs.rs/hyper/latest/hyper/server/struct.Server.html
+#[derive(Clone)]
 pub struct ViceroyService {
     ctx: ExecuteCtx,
 }
@@ -62,11 +64,40 @@ impl ViceroyService {
     /// This will consume the service, using it to start a server that will execute the given module
     /// each time a new request is sent. This function will only return if an error occurs.
     // FIXME KTM 2020-06-22: Once `!` is stabilized, this should be `Result<!, hyper::Error>`.
-    pub async fn serve(self, addr: SocketAddr) -> Result<(), hyper::Error> {
-        let server = hyper::Server::bind(&addr).serve(self);
-        event!(Level::INFO, "Listening on http://{}", server.local_addr());
-        server.await?;
+    pub async fn serve(self, _addr: SocketAddr) -> Result<(), hyper::Error> {
+        let http = tokio::spawn(self.clone().http_server());
+        let https = tokio::spawn(self.https_server());
+
+        // Ignore errors.
+        let _ = tokio::join!(http, https);
+        // Ignore errors.
         Ok(())
+    }
+
+    async fn http_server(self) {
+        let addr = SocketAddr::from(([127, 0, 0, 1], 7878));
+        println!("http listening on {}", addr);
+        axum_server::bind(addr).serve(self).await.unwrap();
+    }
+
+    async fn https_server(self) {
+        let subject_alt_names = vec!["localhost".to_string()];
+
+        let cert = generate_simple_self_signed(subject_alt_names).unwrap();
+
+        let config = RustlsConfig::from_pem(
+            cert.serialize_pem().unwrap().into_bytes(),
+            cert.serialize_private_key_pem().into_bytes(),
+        )
+        .await
+        .unwrap();
+
+        let addr = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), 7879);
+        println!("https listening on {}", addr);
+        axum_server::bind_rustls(addr, config)
+            .serve(self)
+            .await
+            .unwrap();
     }
 }
 
