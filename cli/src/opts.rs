@@ -85,9 +85,9 @@ pub struct SharedArgs {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
-    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
-    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
-    /// to a value before starting Viceroy
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
+    /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
+    /// effect if you set RUST_LOG to a value before starting Viceroy
     #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbosity: u8,
 }
