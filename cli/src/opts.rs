@@ -46,12 +46,6 @@ pub struct ServeArgs {
     #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
 
-    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
-    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
-    /// to a value before starting Viceroy
-    #[arg(short = 'v', action = clap::ArgAction::Count)]
-    verbosity: u8,
-
     #[command(flatten)]
     shared: SharedArgs,
 }
@@ -91,6 +85,11 @@ pub struct SharedArgs {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
+    /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
+    /// effect if you set RUST_LOG to a value before starting Viceroy
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    verbosity: u8,
 }
 
 impl ServeArgs {
@@ -98,13 +97,6 @@ impl ServeArgs {
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
             .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676))
-    }
-
-    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
-    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
-    /// to a value before starting Viceroy
-    pub fn verbosity(&self) -> u8 {
-        self.verbosity
     }
 
     pub fn shared(&self) -> &SharedArgs {
@@ -157,6 +149,13 @@ impl SharedArgs {
     // Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
         self.experimental_modules.iter().map(|x| x.into()).collect()
+    }
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
+    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
+    /// to a value before starting Viceroy
+    pub fn verbosity(&self) -> u8 {
+        self.verbosity
     }
 }
 

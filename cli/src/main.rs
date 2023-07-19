@@ -54,14 +54,22 @@ pub async fn main() -> ExitCode {
     let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
     match cmd {
         Commands::Run(run_args) => {
-            install_tracing_subscriber(0);
+            install_tracing_subscriber(run_args.shared().verbosity());
             match run_wasm_main(run_args).await {
                 Ok(_) => ExitCode::SUCCESS,
-                Err(e) => get_exit_code(e),
+                Err(e) => {
+                    // Suppress stack trace if the error is due to a
+                    // normal call to proc_exit, leading to a process
+                    // exit.
+                    if !e.is::<I32Exit>() {
+                        event!(Level::ERROR, "{}", e);
+                    }
+                    get_exit_code(e)
+                }
             }
         }
         Commands::Serve(serve_args) => {
-            install_tracing_subscriber(serve_args.verbosity());
+            install_tracing_subscriber(serve_args.shared().verbosity());
             match {
                 tokio::select! {
                     _ = tokio::signal::ctrl_c() => {
@@ -104,7 +112,7 @@ fn install_tracing_subscriber(verbosity: u8) {
     // viceroy and viceroy-lib so that they can have output in the terminal
     if env::var("RUST_LOG").ok().is_none() {
         match verbosity {
-            0 => env::set_var("RUST_LOG", "viceroy=off,viceroy-lib=off"),
+            0 => env::set_var("RUST_LOG", "viceroy=error,viceroy-lib=error"),
             1 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
             2 => env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug"),
             _ => env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace"),
