@@ -1,5 +1,7 @@
 //! Error types.
 
+use std::error::Error as StdError;
+use std::io;
 use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 
 #[derive(Debug, thiserror::Error)]
@@ -153,6 +155,14 @@ impl Error {
             Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
             Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,
             Error::HyperError(e) if e.is_incomplete_message() => FastlyStatus::Httpincomplete,
+            Error::HyperError(e)
+                if e.source()
+                    .and_then(|e| e.downcast_ref::<io::Error>())
+                    .map(|ioe| ioe.kind())
+                    == Some(io::ErrorKind::UnexpectedEof) =>
+            {
+                FastlyStatus::Httpincomplete
+            }
             Error::HyperError(_) => FastlyStatus::Error,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
