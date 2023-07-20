@@ -145,7 +145,8 @@ impl Error {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         match self {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
-            Error::InvalidArgument | Error::ValueAbsent => FastlyStatus::Inval,
+            Error::InvalidArgument => FastlyStatus::Inval,
+            Error::ValueAbsent => FastlyStatus::None,
             Error::Unsupported { .. } => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
