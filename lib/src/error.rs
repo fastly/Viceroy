@@ -152,6 +152,7 @@ impl Error {
             Error::Unsupported { .. } => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
+            Error::UnknownBackend(_) => FastlyStatus::Inval,
             // Map specific kinds of `hyper::Error` into their respective error codes.
             Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
             Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,
@@ -191,7 +192,6 @@ impl Error {
             | Error::Other(_)
             | Error::ProfilingStrategy
             | Error::StreamingChunkSend
-            | Error::UnknownBackend(_)
             | Error::Utf8Expected(_)
             | Error::BackendNameRegistryError(_)
             | Error::HttpError(_)
