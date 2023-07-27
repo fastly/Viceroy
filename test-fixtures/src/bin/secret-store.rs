@@ -22,8 +22,7 @@ fn main() {
         _ => panic!(),
     }
 
-    // FIXME: uncomment this when we release this API more fully
-    //let hello_bytes = "hello, wasm_world!".as_bytes().to_vec();
-    //let secret = Secret::from_bytes(hello_bytes).unwrap();
-    //assert_eq!("hello, wasm_world!", secret.plaintext());
+    let hello_bytes = "hello, wasm_world!".as_bytes().to_vec();
+    let secret = Secret::from_bytes(hello_bytes).unwrap();
+    assert_eq!("hello, wasm_world!", secret.plaintext());
 }
