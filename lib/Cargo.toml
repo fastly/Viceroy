@@ -52,9 +52,9 @@ tracing-futures = { workspace = true }
 url = { workspace = true }
 wasi-common = { workspace = true }
 wasmtime = { workspace = true }
-wasmtime-wasi = "10.0.0"
-wasmtime-wasi-nn = "10.0.0"
-wiggle = "10.0.0"
+wasmtime-wasi = { workspace = true }
+wasmtime-wasi-nn = { workspace = true }
+wiggle = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.6.0"
