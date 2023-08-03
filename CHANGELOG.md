@@ -1,5 +1,3 @@
-## Unreleased
-
 ## 0.6.1 (2023-08-03)
 
 - Support the new config store hostcalls. ([#296](https://github.com/fastly/Viceroy/pull/296))
