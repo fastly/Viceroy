@@ -1,5 +1,6 @@
 (use "typenames.witx")
 (use "cache.witx")
+(use "config-store.witx")
 
 (module $fastly_abi
     (@interface func (export "init")
