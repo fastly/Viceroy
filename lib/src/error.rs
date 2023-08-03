@@ -135,6 +135,9 @@ pub enum Error {
 
     #[error("String conversion error")]
     ToStr(#[from] http::header::ToStrError),
+
+    #[error("invalid client certificate")]
+    InvalidClientCert(#[from] crate::config::ClientCertError),
 }
 
 impl Error {
@@ -152,7 +155,7 @@ impl Error {
             Error::Unsupported { .. } => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
-            Error::UnknownBackend(_) => FastlyStatus::Inval,
+            Error::UnknownBackend(_) | Error::InvalidClientCert(_) => FastlyStatus::Inval,
             // Map specific kinds of `hyper::Error` into their respective error codes.
             Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
             Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,

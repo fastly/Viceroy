@@ -1,7 +1,11 @@
+mod client_cert_info;
+
 use {
     hyper::{header::HeaderValue, Uri},
     std::{collections::HashMap, sync::Arc},
 };
+
+pub use self::client_cert_info::{ClientCertError, ClientCertInfo};
 
 /// A single backend definition.
 #[derive(Clone, Debug)]
@@ -10,6 +14,7 @@ pub struct Backend {
     pub override_host: Option<HeaderValue>,
     pub cert_host: Option<String>,
     pub use_sni: bool,
+    pub client_cert: Option<ClientCertInfo>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -128,6 +133,8 @@ mod deserialization {
                 override_host,
                 cert_host,
                 use_sni,
+                // NOTE: Update when we support client certs in static backends
+                client_cert: None,
             })
         }
     }

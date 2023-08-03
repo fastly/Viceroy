@@ -1,5 +1,9 @@
 //! fastly_req` hostcall implementations.
 
+use super::SecretStoreError;
+use crate::config::ClientCertInfo;
+use crate::secret_store::SecretLookup;
+
 use {
     crate::{
         config::Backend,
@@ -310,6 +314,41 @@ impl FastlyHttpReq for Session {
             true
         };
 
+        let client_cert = if backend_info_mask.contains(BackendConfigOptions::CLIENT_CERT) {
+            let cert_slice = config
+                .client_certificate
+                .as_array(config.client_certificate_len)
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
+            let key_lookup =
+                self.secret_lookup(config.client_key)
+                    .ok_or(Error::SecretStoreError(
+                        SecretStoreError::InvalidSecretHandle(config.client_key),
+                    ))?;
+            let key = match &key_lookup {
+                SecretLookup::Standard {
+                    store_name,
+                    secret_name,
+                } => self
+                    .secret_stores()
+                    .get_store(store_name)
+                    .ok_or(Error::SecretStoreError(
+                        SecretStoreError::InvalidSecretHandle(config.client_key),
+                    ))?
+                    .get_secret(secret_name)
+                    .ok_or(Error::SecretStoreError(
+                        SecretStoreError::InvalidSecretHandle(config.client_key),
+                    ))?
+                    .plaintext(),
+
+                SecretLookup::Injected { plaintext } => plaintext,
+            };
+
+            Some(ClientCertInfo::new(&cert_slice, key)?)
+        } else {
+            None
+        };
+
         let new_backend = Backend {
             uri: Uri::builder()
                 .scheme(scheme)
@@ -319,6 +358,7 @@ impl FastlyHttpReq for Session {
             override_host,
             cert_host,
             use_sni,
+            client_cert,
         };
 
         if !self.add_backend(name, new_backend) {

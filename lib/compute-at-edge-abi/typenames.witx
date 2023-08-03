@@ -183,7 +183,7 @@
        $ciphers
        $sni_hostname
        $dont_pool
-       $client_cer 
+       $client_cert
        ))
 
 (typename $dynamic_backend_config

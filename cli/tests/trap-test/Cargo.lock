@@ -2294,6 +2294,7 @@ dependencies = [
  "regex",
  "rustls",
  "rustls-native-certs",
+ "rustls-pemfile",
  "semver 0.10.0",
  "serde",
  "serde_derive",
