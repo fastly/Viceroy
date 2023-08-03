@@ -51,6 +51,7 @@ macro_rules! multi_value_result {
 mod backend_impl;
 mod body_impl;
 mod cache;
+mod config_store;
 mod dictionary_impl;
 mod entity;
 mod fastly_purge_impl;
