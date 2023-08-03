@@ -2086,6 +2086,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tls-listener"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81294c017957a1a69794f506723519255879e15a870507faf45dfed288b763dd"
+dependencies = [
+ "futures-util",
+ "hyper",
+ "pin-project-lite",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "tokio"
 version = "1.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2328,13 +2342,18 @@ name = "viceroy"
 version = "0.6.2"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "futures",
  "hyper",
  "itertools",
  "libc",
+ "rustls",
+ "rustls-pemfile",
  "serde_json",
+ "tls-listener",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",
