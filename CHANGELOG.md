@@ -1,5 +1,17 @@
 ## Unreleased
 
+## 0.6.1 (2023-08-03)
+
+- Support the new config store hostcalls. ([#296](https://github.com/fastly/Viceroy/pull/296))
+- Bump to wasmtime-11.0.1 ([#295](https://github.com/fastly/Viceroy/pull/295))
+- Unblock Secret::from_bytes test by upgrading the fastly crate dependency. ([#294](https://github.com/fastly/Viceroy/pull/294))
+- Map Error::UnknownBackend to FastlyStatus::Inval ([#293](https://github.com/fastly/Viceroy/pull/293))
+- When an upstream body is unexpectedly closed, return Httpincomplete ([#290](https://github.com/fastly/Viceroy/pull/290))
+- Error::ValueAbsent should map to FastlyStatus::None, not Inval ([#291](https://github.com/fastly/Viceroy/pull/280))
+- Switch default log level to "error", add -v to run ([#288](https://github.com/fastly/Viceroy/pull/288))
+- Update rustls and various dependencies ([#278](https://github.com/fastly/Viceroy/pull/278))
+- Change default port from 7878 to 7676, which is what the Fastly CLI defaults to ([#287](https://github.com/fastly/Viceroy/pull/287))
+
 ## 0.6.0 (2023-07-12)
 
 - ⏱️ Add cross-platform ability to profile guest code in run mode ([#280](https://github.com/fastly/Viceroy/pull/280))
