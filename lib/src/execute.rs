@@ -350,16 +350,13 @@ impl ExecuteCtx {
         // sent during execution.
         store.data_mut().close_downstream_response_sender();
 
-        let heap_pages = instance
-            .get_memory(&mut store, "memory")
-            .expect("`memory` is exported")
-            .size(&store);
+        let heap_bytes = store.data().limiter().memory_allocated;
 
         let request_duration = Instant::now().duration_since(start_timestamp);
 
         info!(
             "request completed using {} of WebAssembly heap",
-            bytesize::ByteSize::kib(heap_pages * 64)
+            bytesize::ByteSize::b(heap_bytes as u64)
         );
 
         info!("request completed in {:.0?}", request_duration);
