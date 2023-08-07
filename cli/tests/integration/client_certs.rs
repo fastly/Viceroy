@@ -1,5 +1,5 @@
-use base64::engine::{Engine, general_purpose};
 use crate::common::{Test, TestResult};
+use base64::engine::{general_purpose, Engine};
 use hyper::http::response;
 use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
@@ -156,9 +156,7 @@ async fn client_certs_work() -> TestResult {
                         Some(mut cert_vec) => {
                             let Certificate(cert) = cert_vec.remove(0);
                             let base64_cert = general_purpose::STANDARD.encode(cert);
-                            response::Builder::new()
-                                .status(200)
-                                .body(base64_cert)
+                            response::Builder::new().status(200).body(base64_cert)
                         }
                     }
                 }
