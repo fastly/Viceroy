@@ -13,11 +13,42 @@ use {
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
+#[derive(Default)]
+pub struct Limiter {
+    /// Total memory allocated so far.
+    pub memory_allocated: usize,
+}
+
+impl wasmtime::ResourceLimiter for Limiter {
+    fn memory_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
+    ) -> anyhow::Result<bool> {
+        // Track the diff in memory allocated over time. As each instance will start with 0 and
+        // gradually resize, this will track the total allocations throughout the lifetime of the
+        // instance.
+        self.memory_allocated += desired - current;
+        Ok(true)
+    }
+
+    fn table_growing(
+        &mut self,
+        _current: u32,
+        _desired: u32,
+        _maximum: Option<u32>,
+    ) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+}
+
 pub struct WasmCtx {
     wasi: WasiCtx,
     wasi_nn: WasiNnCtx,
     session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
+    limiter: Limiter,
 }
 
 impl WasmCtx {
@@ -35,6 +66,10 @@ impl WasmCtx {
 
     pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
         self.guest_profiler.take()
+    }
+
+    pub fn limiter(&self) -> &Limiter {
+        &self.limiter
     }
 }
 
@@ -60,6 +95,7 @@ pub(crate) fn create_store(
         wasi_nn,
         session,
         guest_profiler: guest_profiler.map(Box::new),
+        limiter: Limiter::default(),
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.set_epoch_deadline(1);
@@ -70,6 +106,7 @@ pub(crate) fn create_store(
         }
         Ok(UpdateDeadline::Yield(1))
     });
+    store.limiter(|ctx| &mut ctx.limiter);
     Ok(store)
 }
 
