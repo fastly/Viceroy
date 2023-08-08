@@ -130,6 +130,10 @@ fn build_server_tls_config() -> ServerConfig {
 #[tokio::test(flavor = "multi_thread")]
 async fn client_certs_work() -> TestResult {
     // Set up the test harness
+    std::env::set_var(
+        "SSL_CERT_FILE",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem"),
+    );
     let test = Test::using_fixture("mutual-tls.wasm");
     let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
     let incoming = AddrIncoming::bind(&server_addr).expect("bind");
