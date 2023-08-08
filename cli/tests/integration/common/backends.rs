@@ -73,6 +73,7 @@ impl TestBackends {
                 override_host: backend.override_host.clone(),
                 cert_host: backend.cert_host.clone(),
                 use_sni: backend.use_sni,
+                client_cert: None,
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
         }
@@ -150,7 +151,7 @@ impl TestBackends {
             !inner.servers_are_running,
             "cannot start TestBackend servers more than once"
         );
-        for (name, mut backend) in inner.map.iter_mut() {
+        for (name, backend) in inner.map.iter_mut() {
             let Some(service) = backend.test_service.as_ref() else {
                 panic!("no service defined for backend {name}");
             };

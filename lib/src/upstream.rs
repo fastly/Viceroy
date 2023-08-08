@@ -9,7 +9,7 @@ use crate::{
 use futures::Future;
 use http::{uri, HeaderValue};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
-use rustls::client::ServerName;
+use rustls::client::{ServerName, WantsTransparencyPolicyOrClientCert};
 use std::{
     io,
     pin::Pin,
@@ -31,43 +31,51 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 
 /// Viceroy's preloaded TLS configuration.
 ///
-/// Setting up client configuration is meant to be done once per process. However, we need
-/// two distinct configurations, because backends may choose whether to employ SNI, and that
-/// setting is baked into the configuration data.
+/// We now have too many options to fully precompute this value, so what this actually
+/// holds is a partially-complete TLS config builder, waiting for the point at which
+/// we decide whether or not to provide a client certificate and whether or not to use
+/// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    with_sni: Arc<rustls::ClientConfig>,
-    without_sni: Arc<rustls::ClientConfig>,
-}
-
-fn setup_rustls(with_sni: bool) -> Result<rustls::ClientConfig, Error> {
-    let mut roots = rustls::RootCertStore::empty();
-    match rustls_native_certs::load_native_certs() {
-        Ok(certs) => {
-            for cert in certs {
-                roots.add(&rustls::Certificate(cert.0)).unwrap();
-            }
-        }
-        Err(err) => return Err(Error::BadCerts(err)),
-    }
-    if roots.is_empty() {
-        warn!("no CA certificates available");
-    }
-
-    let mut config = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    config.enable_sni = with_sni;
-    Ok(config)
+    partial_config:
+        rustls::ConfigBuilder<rustls::ClientConfig, WantsTransparencyPolicyOrClientCert>,
 }
 
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
-        Ok(TlsConfig {
-            with_sni: Arc::new(setup_rustls(true)?),
-            without_sni: Arc::new(setup_rustls(false)?),
-        })
+        let mut roots = rustls::RootCertStore::empty();
+        match rustls_native_certs::load_native_certs() {
+            Ok(certs) => {
+                for cert in certs {
+                    roots.add(&rustls::Certificate(cert.0)).unwrap();
+                }
+            }
+            Err(err) => return Err(Error::BadCerts(err)),
+        }
+        if roots.is_empty() {
+            warn!("no CA certificates available");
+        }
+
+        static TEST_CA_PEM: &[u8] = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../test-fixtures/data/ca.pem"
+        ));
+        let mut test_ca_cursor = std::io::Cursor::new(TEST_CA_PEM);
+        // we're OK with all of the rest of this failing, because it could just be an odd build
+        // and this is only used in testing. obviously, if this doesn't work during a testing
+        // run, then the test will fail (with an invalid peer certificate), so we're covered on
+        // that side.
+        if let Ok(certs) = rustls_pemfile::certs(&mut test_ca_cursor) {
+            for cert in certs {
+                let _ = roots.add(&rustls::Certificate(cert));
+            }
+        }
+
+        let partial_config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots);
+
+        Ok(TlsConfig { partial_config })
     }
 }
 
@@ -127,11 +135,15 @@ impl hyper::service::Service<Uri> for BackendConnector {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
             if backend.uri.scheme_str() == Some("https") {
-                let connector = if backend.use_sni {
-                    TlsConnector::from(config.with_sni.clone())
+                let mut config = if let Some(certed_key) = &backend.client_cert {
+                    config
+                        .partial_config
+                        .with_client_auth_cert(certed_key.certs(), certed_key.key())?
                 } else {
-                    TlsConnector::from(config.without_sni.clone())
+                    config.partial_config.with_no_client_auth()
                 };
+                config.enable_sni = backend.use_sni;
+                let connector = TlsConnector::from(Arc::new(config));
 
                 let cert_host = backend
                     .cert_host

@@ -182,7 +182,9 @@
        $ca_cert
        $ciphers
        $sni_hostname
-       $dont_pool))
+       $dont_pool
+       $client_cert
+       ))
 
 (typename $dynamic_backend_config
   (record
@@ -201,6 +203,9 @@
     (field $ciphers_len u32)
     (field $sni_hostname (@witx pointer (@witx char8)))
     (field $sni_hostname_len u32)
+    (field $client_certificate (@witx pointer (@witx char8)))
+    (field $client_certificate_len u32)
+    (field $client_key $secret_handle)
     ))
 
 ;;; TLS client certificate verified result from downstream.

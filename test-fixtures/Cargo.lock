@@ -9,6 +9,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b13c32d80ecc7ab747b80c3784bce54ee8a7a0cc4fbda9bf4cda2cf6fe90854"
 
 [[package]]
+name = "base64"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "604178f6c5c21f02dc555784810edfb88d34ac2c73b2eae109655649ee73ce3d"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -64,9 +70,9 @@ dependencies = [
 
 [[package]]
 name = "fastly"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b59249dde10f901c578a8eb50577e3c6ee062b0e75f70f9d852da05b75c664d"
+checksum = "9c29ec9a24274e7fe2782be8590b188de464b03e04af850676f3295a5abcd6ae"
 dependencies = [
  "anyhow",
  "bytes",
@@ -88,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-macros"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68ee83e8e1c9613d0448f50687a363b289501952f3c046f6cbdcdd82f29e7c2"
+checksum = "0b7dee579ae7c714595ee6cc4224006cb2aec430ef27fc3778f14c4f5541df01"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -99,9 +105,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-shared"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea8c7df017449664ec1ee065dac781b5d4ab405e44533c2483cfb31b3f1c6124"
+checksum = "c0aab3b493a65563fc700c3dac7d26be3f5cb1c095b4ff9485e141a29ae88fe6"
 dependencies = [
  "bitflags",
  "http",
@@ -110,9 +116,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-sys"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50a5c0dc150d4e1eb2bfdbe169df6bed8d7fafda38ac5a792d800544b35d6b58"
+checksum = "3ef9cb90a69d9c7dc99ba10685a856f1054807fbb78744ffcc36151cfcc92b63"
 dependencies = [
  "bitflags",
  "fastly-shared",
@@ -219,6 +225,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-pemfile"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d3987094b1d07b653b7dfdc3f70ce9a1da9c51ac18c1b06b662e4f9a0e9f4b2"
+dependencies = [
+ "base64",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -226,18 +241,18 @@ checksum = "1ad4cc8da4ef723ed60bced201181d83791ad433213d8c24efffda1eec85d741"
 
 [[package]]
 name = "serde"
-version = "1.0.180"
+version = "1.0.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea67f183f058fe88a4e3ec6e2788e003840893b91bac4559cabedd00863b3ed"
+checksum = "32ac8da02677876d532745a130fc9d8e6edfa81a269b107c5b00829b91d8eb3c"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.180"
+version = "1.0.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e744d7782b686ab3b73267ef05697159cc0e5abbed3f47f9933165e5219036"
+checksum = "aafe972d60b0b9bee71a91b92fee2d4fb3c9d7e8f6b179aa99f27203d99a4816"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -306,11 +321,13 @@ dependencies = [
 name = "test-fixtures"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "fastly",
  "fastly-shared",
  "fastly-sys",
  "http",
+ "rustls-pemfile",
  "serde",
 ]
 
