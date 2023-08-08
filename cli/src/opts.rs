@@ -46,6 +46,11 @@ pub struct ServeArgs {
     #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
 
+    /// Whether to profile the wasm guest. Takes an optional directory to save
+    /// per-request profiles to
+    #[arg(long, default_missing_value = "guest-profiles", num_args=0..=1, require_equals=true)]
+    profile_guest: Option<PathBuf>,
+
     #[command(flatten)]
     shared: SharedArgs,
 }
@@ -97,6 +102,11 @@ impl ServeArgs {
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
             .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676))
+    }
+
+    /// The path to write guest profiles to
+    pub fn profile_guest(&self) -> Option<&PathBuf> {
+        self.profile_guest.as_ref()
     }
 
     pub fn shared(&self) -> &SharedArgs {

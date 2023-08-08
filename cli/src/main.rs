@@ -13,6 +13,7 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use wasi_common::I32Exit;
@@ -39,7 +40,16 @@ use {
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(serve_args.shared(), true).await?;
+    let ctx = create_execution_context(
+        serve_args.shared(),
+        true,
+        serve_args.profile_guest().cloned(),
+    )
+    .await?;
+
+    if let Some(guest_profile_path) = serve_args.profile_guest() {
+        std::fs::create_dir_all(guest_profile_path)?;
+    }
 
     let addr = serve_args.addr();
     ViceroyService::new(ctx).serve(addr).await?;
@@ -93,18 +103,14 @@ pub async fn main() -> ExitCode {
 /// Execute a Wasm program in the Viceroy environment.
 pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(run_args.shared(), false).await?;
+    let ctx = create_execution_context(run_args.shared(), false, run_args.profile_guest().cloned())
+        .await?;
     let input = run_args.shared().input();
     let program_name = match input.file_stem() {
         Some(stem) => stem.to_string_lossy(),
         None => panic!("program cannot be a directory"),
     };
-    ctx.run_main(
-        &program_name,
-        run_args.wasm_args(),
-        run_args.profile_guest(),
-    )
-    .await
+    ctx.run_main(&program_name, run_args.wasm_args()).await
 }
 
 fn install_tracing_subscriber(verbosity: u8) {
@@ -233,11 +239,17 @@ impl<'a> MakeWriter<'a> for StdWriter {
 async fn create_execution_context(
     args: &SharedArgs,
     check_backends: bool,
+    guest_profile_path: Option<PathBuf>,
 ) -> Result<ExecuteCtx, anyhow::Error> {
     let input = args.input();
-    let mut ctx = ExecuteCtx::new(input, args.profiling_strategy(), args.wasi_modules())?
-        .with_log_stderr(args.log_stderr())
-        .with_log_stdout(args.log_stdout());
+    let mut ctx = ExecuteCtx::new(
+        input,
+        args.profiling_strategy(),
+        args.wasi_modules(),
+        guest_profile_path,
+    )?
+    .with_log_stderr(args.log_stderr())
+    .with_log_stdout(args.log_stdout());
 
     if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
