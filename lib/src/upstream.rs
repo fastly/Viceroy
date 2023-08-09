@@ -56,21 +56,6 @@ impl TlsConfig {
             warn!("no CA certificates available");
         }
 
-        static TEST_CA_PEM: &[u8] = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../test-fixtures/data/ca.pem"
-        ));
-        let mut test_ca_cursor = std::io::Cursor::new(TEST_CA_PEM);
-        // we're OK with all of the rest of this failing, because it could just be an odd build
-        // and this is only used in testing. obviously, if this doesn't work during a testing
-        // run, then the test will fail (with an invalid peer certificate), so we're covered on
-        // that side.
-        if let Ok(certs) = rustls_pemfile::certs(&mut test_ca_cursor) {
-            for cert in certs {
-                let _ = roots.add(&rustls::Certificate(cert));
-            }
-        }
-
         let partial_config = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_root_certificates(roots);
