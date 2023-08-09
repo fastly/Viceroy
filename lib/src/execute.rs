@@ -1,5 +1,7 @@
 //! Guest code execution.
 
+use std::time::SystemTime;
+
 use wasmtime::GuestProfiler;
 
 use {
@@ -68,6 +70,10 @@ pub struct ExecuteCtx {
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
+    /// Path to write profiling results from the guest. In serve mode,
+    /// this must refer to a directory, while in run mode it names
+    /// a file.
+    guest_profile_path: Arc<Option<PathBuf>>,
 }
 
 impl ExecuteCtx {
@@ -76,6 +82,7 @@ impl ExecuteCtx {
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
+        guest_profile_path: Option<PathBuf>,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
@@ -112,6 +119,7 @@ impl ExecuteCtx {
             secret_stores: Arc::new(SecretStores::new()),
             epoch_increment_thread,
             epoch_increment_stop,
+            guest_profile_path: Arc::new(guest_profile_path),
         })
     }
 
@@ -217,7 +225,7 @@ impl ExecuteCtx {
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new())?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None)?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }
@@ -310,11 +318,28 @@ impl ExecuteCtx {
             self.object_store.clone(),
             self.secret_stores.clone(),
         );
+
+        let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            path.join(format!("{}-{}.json", now, req_id))
+        });
+        let profiler = guest_profile_path.is_some().then(|| {
+            let program_name = "main";
+            GuestProfiler::new(
+                program_name,
+                EPOCH_INTERRUPTION_PERIOD,
+                vec![(program_name.to_string(), self.module.clone())],
+            )
+        });
+
         // We currently have to postpone linking and instantiation to the guest task
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
         // However, the fact that the module itself is created within `ExecuteCtx::new`
         // means that the heavy lifting happens only once.
-        let mut store = create_store(&self, session, None).map_err(ExecutionError::Context)?;
+        let mut store = create_store(&self, session, profiler).map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre
@@ -346,6 +371,9 @@ impl ExecuteCtx {
             }
         };
 
+        // If we collected a profile, write it to the file
+        write_profile(&mut store, guest_profile_path.as_ref());
+
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
         store.data_mut().close_downstream_response_sender();
@@ -364,12 +392,7 @@ impl ExecuteCtx {
         outcome
     }
 
-    pub async fn run_main(
-        self,
-        program_name: &str,
-        args: &[String],
-        guest_profile_path: Option<&PathBuf>,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
@@ -390,7 +413,7 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
         );
 
-        let profiler = guest_profile_path.map(|_| {
+        let profiler = self.guest_profile_path.is_some().then(|| {
             GuestProfiler::new(
                 program_name,
                 EPOCH_INTERRUPTION_PERIOD,
@@ -419,26 +442,7 @@ impl ExecuteCtx {
         let result = main_func.call_async(&mut store, ()).await;
 
         // If we collected a profile, write it to the file
-        if let (Some(profile), Some(path)) =
-            (store.data_mut().take_guest_profiler(), guest_profile_path)
-        {
-            if let Err(e) = std::fs::File::create(&path)
-                .map_err(anyhow::Error::new)
-                .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
-            {
-                event!(
-                    Level::ERROR,
-                    "failed writing profile at {}: {e:#}",
-                    path.display()
-                );
-            } else {
-                event!(
-                    Level::INFO,
-                    "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
-                    path.display()
-                );
-            }
-        }
+        write_profile(&mut store, self.guest_profile_path.as_ref().as_ref());
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
@@ -450,6 +454,29 @@ impl ExecuteCtx {
         drop(receiver);
 
         result
+    }
+}
+
+fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Option<&PathBuf>) {
+    if let (Some(profile), Some(path)) =
+        (store.data_mut().take_guest_profiler(), guest_profile_path)
+    {
+        if let Err(e) = std::fs::File::create(&path)
+            .map_err(anyhow::Error::new)
+            .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
+        {
+            event!(
+                Level::ERROR,
+                "failed writing profile at {}: {e:#}",
+                path.display()
+            );
+        } else {
+            event!(
+                Level::INFO,
+                "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
+                path.display()
+            );
+        }
     }
 }
 
