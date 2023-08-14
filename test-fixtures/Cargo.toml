@@ -9,9 +9,9 @@ publish = false
 
 [dependencies]
 base64 = "0.21.2"
-fastly = "^0.9.6"
-fastly-shared = "^0.9.6"
-fastly-sys = "^0.9.6"
+fastly = "^0.9.7"
+fastly-shared = "^0.9.7"
+fastly-sys = "^0.9.7"
 bytes = "1.0.0"
 http = "0.2.9"
 rustls-pemfile = "1.0.3"
