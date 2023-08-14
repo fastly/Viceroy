@@ -51,15 +51,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deranged"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7684a49fb1af197853ef7b2ee694bc1f5b4179556f1e5710e1760c5db6f5e929"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -70,9 +61,9 @@ dependencies = [
 
 [[package]]
 name = "fastly"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c29ec9a24274e7fe2782be8590b188de464b03e04af850676f3295a5abcd6ae"
+checksum = "8f721b6a61ba6c2246ff9e54eede3b86fb0b0da3d24d7f4dc23b2005eb53630a"
 dependencies = [
  "anyhow",
  "bytes",
@@ -94,9 +85,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-macros"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b7dee579ae7c714595ee6cc4224006cb2aec430ef27fc3778f14c4f5541df01"
+checksum = "fcfcbc6b0669c9a72316c39cd23416408f199305e0aa0e694d539affa99b8f66"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -105,9 +96,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-shared"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0aab3b493a65563fc700c3dac7d26be3f5cb1c095b4ff9485e141a29ae88fe6"
+checksum = "ad640ef413e9ed1481d17997ba5bd9a40ba06b28c665455d3e9995da35aff4b6"
 dependencies = [
  "bitflags",
  "http",
@@ -116,9 +107,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-sys"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ef9cb90a69d9c7dc99ba10685a856f1054807fbb78744ffcc36151cfcc92b63"
+checksum = "bdb77f931268da068847cad13270a416fa0f64786f2e802840792f2051bdb816"
 dependencies = [
  "bitflags",
  "fastly-shared",
@@ -353,11 +344,10 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.25"
+version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0fdd63d58b18d663fbdf70e049f00a22c8e42be082203be7f26589213cd75ea"
+checksum = "59e399c068f43a5d116fedaf73b203fa4f9c519f17e2b34f63221d3792f81446"
 dependencies = [
- "deranged",
  "serde",
  "time-core",
  "time-macros",
@@ -371,9 +361,9 @@ checksum = "7300fbefb4dadc1af235a9cef3737cea692a9d97e1b9cbcd4ebdae6f8868e6fb"
 
 [[package]]
 name = "time-macros"
-version = "0.2.11"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb71511c991639bb078fd5bf97757e03914361c48100d52878b8e52b46fb92cd"
+checksum = "96ba15a897f3c86766b757e5ac7221554c6750054d74d5b28844fce5fb36a6c4"
 dependencies = [
  "time-core",
 ]
