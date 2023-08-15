@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.7.0
 
 - Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
