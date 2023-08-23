@@ -59,16 +59,21 @@ impl ObjectStores {
         obj_store_key: ObjectStoreKey,
         destination: impl ToString,
     ) -> Result<(), ObjectStoreError> {
-        let dir = Dir::open_ambient_dir(destination.to_string(), ambient_authority()).or_else(|_|{
-            Err(ObjectStoreError::PoisonedLock)
-        })?;
+        let dir =
+            Dir::open_ambient_dir(destination.to_string(), ambient_authority()).or_else(|_e| {
+                // TODO: Error if not a directory or not found
+                // match e.kind() {
+                //     std::io::ErrorKind::NotFound => todo!(),
+                //     std::io::ErrorKind::NotADirectory => todo!(),
+                //     _ => todo!(),
+                // }
+                Err(ObjectStoreError::PoisonedLock)
+            })?;
         self.stores
             .write()
             .map_err(|_| ObjectStoreError::PoisonedLock)?
             .entry(obj_store_key)
             .or_insert_with(|| {
-                println!("cwd: {:#?}", std::env::current_dir().unwrap());
-                println!("destination: {:#?}", destination.to_string());
                 dir
             });
         Ok(())
