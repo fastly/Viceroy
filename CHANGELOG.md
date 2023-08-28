@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.7.0
+
+- Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
+- Use a ResourceLimiter for tracking allocations. ([#300](https://github.com/fastly/Viceroy/pull/300))
+- Support the new mTLS features for dynamic backends, allowing two-way authentication for backend connections. ([#297](https://github.com/fastly/Viceroy/pull/297))
+
 ## 0.6.1 (2023-08-03)
 
 - Support the new config store hostcalls. ([#296](https://github.com/fastly/Viceroy/pull/296))
