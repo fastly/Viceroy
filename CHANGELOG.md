@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Bug fix: Honor CA certificates when they are supplied, either as part of a dynamic backend
+  definition or as part of a backend defined in fastly.toml. (In the latter case, CA certificates
+  can be added using the "ca_certificate" key.)
+
 ## 0.7.0
 
 - Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
