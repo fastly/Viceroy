@@ -269,6 +269,14 @@ impl FastlyHttpReq for Session {
 
         let ca_certs =
             if (scheme == "https") && backend_info_mask.contains(BackendConfigOptions::CA_CERT) {
+                if config.ca_cert_len == 0 {
+                    return Err(Error::InvalidArgument);
+                }
+
+                if config.ca_cert_len > (64 * 1024) {
+                    return Err(Error::InvalidArgument);
+                }
+
                 let byte_slice = config
                     .ca_cert
                     .as_array(config.ca_cert_len)
