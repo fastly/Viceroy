@@ -15,6 +15,7 @@ pub struct Backend {
     pub cert_host: Option<String>,
     pub use_sni: bool,
     pub client_cert: Option<ClientCertInfo>,
+    pub ca_cert: Option<String>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -126,6 +127,15 @@ mod deserialization {
                 .transpose()?
                 .unwrap_or(true);
 
+            let ca_cert = toml
+                .remove("ca_certificate")
+                .map(|ca_cert| match ca_cert {
+                    Value::String(ca_cert) if !ca_cert.trim().is_empty() => Ok(ca_cert),
+                    Value::String(_) => Err(BackendConfigError::EmptyCACert),
+                    _ => Err(BackendConfigError::InvalidCACertEntry),
+                })
+                .transpose()?;
+
             check_for_unrecognized_keys(&toml)?;
 
             Ok(Self {
@@ -135,6 +145,7 @@ mod deserialization {
                 use_sni,
                 // NOTE: Update when we support client certs in static backends
                 client_cert: None,
+                ca_cert,
             })
         }
     }
