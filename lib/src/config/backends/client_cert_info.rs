@@ -1,8 +1,8 @@
 use rustls::{Certificate, PrivateKey};
 use std::fmt;
-use std::io::Cursor;
+use std::io::{BufReader, Cursor};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct ClientCertInfo {
     certificates: Vec<Certificate>,
     key: PrivateKey,
@@ -22,6 +22,12 @@ pub enum ClientCertError {
     NoKeysFound,
     #[error("Too many keys found for client certificate (found {0})")]
     TooManyKeys(usize),
+    #[error("Expected a TOML table, found something else")]
+    InvalidToml,
+    #[error("No certificates found in client cert definition")]
+    NoCertsFound,
+    #[error("Expected a string value for key {0}, got something else")]
+    InvalidTomlData(&'static str),
 }
 
 impl ClientCertInfo {
@@ -61,5 +67,94 @@ impl ClientCertInfo {
 
     pub fn key(&self) -> PrivateKey {
         self.key.clone()
+    }
+}
+
+fn inline_reader_for_field<'a>(
+    table: &'a toml::value::Table,
+    key: &'static str,
+) -> Result<Option<Cursor<&'a [u8]>>, ClientCertError> {
+    if let Some(base_field) = table.get(key) {
+        match base_field {
+            toml::Value::String(s) => {
+                Ok(Some(Cursor::new(s.as_bytes())))
+            }
+            _ => Err(ClientCertError::InvalidTomlData(key)),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+fn file_reader_for_field(
+    table: &toml::value::Table,
+    key: &'static str,
+) -> Result<Option<BufReader<std::fs::File>>, ClientCertError> {
+    if let Some(base_field) = table.get(key) {
+        match base_field {
+            toml::Value::String(s) => {
+                let file = std::fs::File::open(s)?;
+                Ok(Some(BufReader::new(file)))
+            }
+            _ => Err(ClientCertError::InvalidTomlData(key)),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+fn read_certificates<R: std::io::BufRead>(
+    reader: &mut R,
+) -> Result<Vec<Certificate>, ClientCertError> {
+    rustls_pemfile::certs(reader)
+        .map(|mut x| x.drain(..).map(Certificate).collect::<Vec<Certificate>>())
+        .map_err(Into::into)
+}
+
+fn read_key<R: std::io::BufRead>(reader: &mut R) -> Result<PrivateKey, ClientCertError> {
+    for item in rustls_pemfile::read_all(reader)? {
+        match item {
+            rustls_pemfile::Item::RSAKey(x) => return Ok(PrivateKey(x)),
+            rustls_pemfile::Item::PKCS8Key(x) => return Ok(PrivateKey(x)),
+            rustls_pemfile::Item::ECKey(x) => return Ok(PrivateKey(x)),
+            _ => {}
+        }
+    }
+    Err(ClientCertError::NoKeysFound)
+}
+
+impl TryFrom<toml::Value> for ClientCertInfo {
+    type Error = ClientCertError;
+
+    fn try_from(value: toml::Value) -> Result<Self, Self::Error> {
+        match value {
+            toml::Value::Table(t) => {
+                let mut found_cert = None;
+                let mut found_key = None;
+
+                if let Some(mut reader) = inline_reader_for_field(&t, "certificate")? {
+                    found_cert = Some(read_certificates(&mut reader)?);
+                }
+
+                if let Some(mut reader) = file_reader_for_field(&t, "certificate_file")? {
+                    found_cert = Some(read_certificates(&mut reader)?);
+                }
+
+                if let Some(mut reader) = inline_reader_for_field(&t, "key")? {
+                    found_key = Some(read_key(&mut reader)?);
+                }
+
+                if let Some(mut reader) = file_reader_for_field(&t, "key_file")? {
+                    found_key = Some(read_key(&mut reader)?);
+                }
+
+                match (found_cert, found_key) {
+                    (None, _) => Err(ClientCertError::NoCertsFound),
+                    (_, None) => Err(ClientCertError::NoKeysFound),
+                    (Some(certificates), Some(key)) => Ok(ClientCertInfo { certificates, key }),
+                }
+            }
+            _ => Err(ClientCertError::InvalidToml),
+        }
     }
 }

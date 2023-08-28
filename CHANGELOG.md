@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Add support for supplying client certificates in fastly.toml, through the use of the
+  `client_cert_info` table, which must have one of a "certificate" or "certificate_file"
+  key, as well as one of a "key" and "key_file" key. The "_file" variants can be used to
+  point to certificate/key files on disk, whereas the non-"_file" variants should be
+  multi-line string constants in the toml. In all cases, they should be in PEM format.
+
 ## 0.7.0
 
 - Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
