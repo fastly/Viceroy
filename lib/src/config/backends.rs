@@ -15,7 +15,7 @@ pub struct Backend {
     pub cert_host: Option<String>,
     pub use_sni: bool,
     pub client_cert: Option<ClientCertInfo>,
-    pub ca_cert: Option<String>,
+    pub ca_certs: Vec<rustls::Certificate>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -127,14 +127,23 @@ mod deserialization {
                 .transpose()?
                 .unwrap_or(true);
 
-            let ca_cert = toml
+            let ca_certs = toml
                 .remove("ca_certificate")
                 .map(|ca_cert| match ca_cert {
-                    Value::String(ca_cert) if !ca_cert.trim().is_empty() => Ok(ca_cert),
+                    Value::String(ca_cert) if !ca_cert.trim().is_empty() => {
+                        let mut cursor = std::io::Cursor::new(ca_cert);
+                        rustls_pemfile::certs(&mut cursor)
+                            .map_err(|_| BackendConfigError::InvalidCACertEntry)
+                            .map(|mut x| {
+                                x.drain(..)
+                                    .map(|c| rustls::Certificate(c))
+                                    .collect::<Vec<rustls::Certificate>>()
+                            })
+                    }
                     Value::String(_) => Err(BackendConfigError::EmptyCACert),
                     _ => Err(BackendConfigError::InvalidCACertEntry),
                 })
-                .transpose()?;
+                .unwrap_or_else(|| Ok(vec![]))?;
 
             check_for_unrecognized_keys(&toml)?;
 
@@ -145,7 +154,7 @@ mod deserialization {
                 use_sni,
                 // NOTE: Update when we support client certs in static backends
                 client_cert: None,
-                ca_cert,
+                ca_certs,
             })
         }
     }

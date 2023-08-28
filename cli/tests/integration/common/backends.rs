@@ -74,7 +74,7 @@ impl TestBackends {
                 cert_host: backend.cert_host.clone(),
                 use_sni: backend.use_sni,
                 client_cert: None,
-                ca_cert: None,
+                ca_certs: vec![],
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
         }

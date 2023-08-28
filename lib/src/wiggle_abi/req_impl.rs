@@ -267,16 +267,20 @@ impl FastlyHttpReq for Session {
             "http"
         };
 
-        let ca_cert =
+        let ca_certs =
             if (scheme == "https") && backend_info_mask.contains(BackendConfigOptions::CA_CERT) {
                 let byte_slice = config
                     .ca_cert
                     .as_array(config.ca_cert_len)
                     .as_slice()?
                     .ok_or(Error::SharedMemory)?;
-                Some(std::str::from_utf8(&byte_slice)?.to_owned())
+                let mut byte_cursor = std::io::Cursor::new(&byte_slice[..]);
+                rustls_pemfile::certs(&mut byte_cursor)?
+                    .drain(..)
+                    .map(rustls::Certificate)
+                    .collect()
             } else {
-                None
+                vec![]
             };
 
         let mut cert_host = if backend_info_mask.contains(BackendConfigOptions::CERT_HOSTNAME) {
@@ -371,7 +375,7 @@ impl FastlyHttpReq for Session {
             cert_host,
             use_sni,
             client_cert,
-            ca_cert,
+            ca_certs,
         };
 
         if !self.add_backend(name, new_backend) {
