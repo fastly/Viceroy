@@ -254,6 +254,6 @@ async fn client_certs_work() -> TestResult {
     );
 
     std::env::remove_var("SSL_CERT_FILE");
- 
+
     Ok(())
 }
