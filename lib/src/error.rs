@@ -393,6 +393,9 @@ pub enum BackendConfigError {
     #[error("'use_sni' field was not a boolean")]
     InvalidUseSniEntry,
 
+    #[error("'grpc' field was not a boolean")]
+    InvalidGrpcEntry,
+
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
 

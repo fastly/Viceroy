@@ -73,6 +73,7 @@ impl TestBackends {
                 override_host: backend.override_host.clone(),
                 cert_host: backend.cert_host.clone(),
                 use_sni: backend.use_sni,
+                grpc: false,
                 client_cert: None,
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
