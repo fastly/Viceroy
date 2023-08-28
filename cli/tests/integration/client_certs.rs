@@ -128,6 +128,75 @@ fn build_server_tls_config() -> ServerConfig {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
+async fn custom_ca_works() -> TestResult {
+    let test = Test::using_fixture("mutual-tls.wasm");
+    let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
+    let incoming = AddrIncoming::bind(&server_addr).expect("bind");
+    let bound_port = incoming.local_addr().port();
+
+    let acceptor = TlsAcceptor::from(Arc::new(build_server_tls_config()));
+    let listener = TlsListener::new_hyper(acceptor, incoming);
+
+    let service = make_service_fn(|stream: &TlsStream<_>| {
+        let (_, server_connection) = stream.get_ref();
+        let peer_certs = server_connection.peer_certificates().map(|x| x.to_vec());
+        async move {
+            Ok::<_, std::io::Error>(service_fn(move |_req| {
+                let peer_certs = peer_certs.clone();
+
+                async {
+                    match peer_certs {
+                        None => response::Builder::new()
+                            .status(401)
+                            .body("could not identify client certificate".to_string()),
+                        Some(vec) if vec.len() != 1 => response::Builder::new()
+                            .status(406)
+                            .body(format!("can only handle 1 cert, got {}", vec.len())),
+                        Some(mut cert_vec) => {
+                            let Certificate(cert) = cert_vec.remove(0);
+                            let base64_cert = general_purpose::STANDARD.encode(cert);
+                            response::Builder::new().status(200).body(base64_cert)
+                        }
+                    }
+                }
+            }))
+        }
+    });
+    let server = Server::builder(listener).serve(service);
+    tokio::spawn(server);
+
+    // positive test: setting the CA should allow this
+    let resp = test
+        .against(
+            Request::post("/")
+                .header("port", bound_port)
+                .header("set-ca", "please")
+                .body("Hello, Viceroy!")
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.into_body().read_into_string().await?,
+        "Hello, Viceroy!"
+    );
+
+    // negative test: if we don't set the CA, we should get a failure
+    let resp = test
+        .against(
+            Request::post("/")
+                .header("port", bound_port)
+                .body("Hello, Viceroy!")
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn client_certs_work() -> TestResult {
     // Set up the test harness
     std::env::set_var(
@@ -184,5 +253,7 @@ async fn client_certs_work() -> TestResult {
         "Hello, Viceroy!"
     );
 
+    std::env::remove_var("SSL_CERT_FILE");
+ 
     Ok(())
 }
