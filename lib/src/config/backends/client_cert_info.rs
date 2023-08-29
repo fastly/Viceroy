@@ -76,9 +76,7 @@ fn inline_reader_for_field<'a>(
 ) -> Result<Option<Cursor<&'a [u8]>>, ClientCertError> {
     if let Some(base_field) = table.get(key) {
         match base_field {
-            toml::Value::String(s) => {
-                Ok(Some(Cursor::new(s.as_bytes())))
-            }
+            toml::Value::String(s) => Ok(Some(Cursor::new(s.as_bytes()))),
             _ => Err(ClientCertError::InvalidTomlData(key)),
         }
     } else {

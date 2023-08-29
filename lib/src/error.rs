@@ -409,7 +409,7 @@ pub enum BackendConfigError {
     UnrecognizedKey(String),
 
     #[error(transparent)]
-    ClientCertError(#[from] crate::config::ClientCertError)
+    ClientCertError(#[from] crate::config::ClientCertError),
 }
 
 /// Errors that may occur while validating dictionary configurations.
