@@ -263,9 +263,11 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
+    let h2only = backend.grpc;
     async move {
         let basic_response = Client::builder()
             .set_host(false)
+            .http2_only(h2only)
             .build(connector)
             .request(req)
             .await
