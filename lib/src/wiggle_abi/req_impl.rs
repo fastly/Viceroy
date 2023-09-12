@@ -1,5 +1,6 @@
 //! fastly_req` hostcall implementations.
 
+use super::types::SendErrorDetail;
 use super::SecretStoreError;
 use crate::config::ClientCertInfo;
 use crate::secret_store::SecretLookup;
@@ -133,6 +134,15 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
+    fn downstream_client_oh_fingerprint<'a>(
+        &mut self,
+        _ohfp_out: &GuestPtr<'a, u8>,
+        _ohfp_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client original header fingerprint"))
+    }
+
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_cipher_openssl_name<'a>(
         &mut self,
@@ -155,6 +165,22 @@ impl FastlyHttpReq for Session {
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
     fn redirect_to_grip_proxy(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
+    }
+
+    fn redirect_to_websocket_proxy_v2<'a>(
+        &mut self,
+        _req_handle: RequestHandle,
+        _backend: &GuestPtr<'a, str>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
+    }
+
+    fn redirect_to_grip_proxy_v2<'a>(
+        &mut self,
+        _req_handle: RequestHandle,
+        _backend: &GuestPtr<'a, str>,
+    ) -> Result<(), Error> {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
@@ -614,6 +640,17 @@ impl FastlyHttpReq for Session {
         Ok(self.insert_response(resp))
     }
 
+    async fn send_v2<'a>(
+        &mut self,
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend_bytes: &GuestPtr<'a, str>,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.send(req_handle, body_handle, backend_bytes).await
+    }
+
     async fn send_async<'a>(
         &mut self,
         req_handle: RequestHandle,
@@ -688,6 +725,15 @@ impl FastlyHttpReq for Session {
         }
     }
 
+    async fn pending_req_poll_v2<'a>(
+        &mut self,
+        pending_req_handle: PendingRequestHandle,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.pending_req_poll(pending_req_handle).await
+    }
+
     async fn pending_req_wait(
         &mut self,
         pending_req_handle: PendingRequestHandle,
@@ -697,6 +743,15 @@ impl FastlyHttpReq for Session {
             .recv()
             .await?;
         Ok(self.insert_response(pending_req))
+    }
+
+    async fn pending_req_wait_v2<'a>(
+        &mut self,
+        pending_req_handle: PendingRequestHandle,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.pending_req_wait(pending_req_handle).await
     }
 
     // First element of return tuple is the "done index"
@@ -744,6 +799,19 @@ impl FastlyHttpReq for Session {
         };
 
         Ok(outcome)
+    }
+
+    async fn pending_req_select_v2<'a>(
+        &mut self,
+        pending_req_handles: &GuestPtr<'a, [PendingRequestHandle]>,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.pending_req_select(pending_req_handles).await
+    }
+
+    fn fastly_key_is_valid(&mut self) -> Result<u32, Error> {
+        Err(Error::NotAvailable("FASTLY_KEY is valid"))
     }
 
     fn close(&mut self, req_handle: RequestHandle) -> Result<(), Error> {

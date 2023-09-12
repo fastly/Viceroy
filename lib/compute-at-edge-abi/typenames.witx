@@ -53,11 +53,9 @@
         $httpinvalidstatus
         ;;; Limit exceeded
         ;;;
-        ;;; This is returned when an attempt to allocate a resource has exceeded the maximum number of 
+        ;;; This is returned when an attempt to allocate a resource has exceeded the maximum number of
         ;;; resources permitted. For example, creating too many response handles.
-        $limitexceeded
-    )
-)
+        $limitexceeded))
 
 ;;; A tag indicating HTTP protocol versions.
 (typename $http_version
@@ -66,9 +64,7 @@
         $http_10
         $http_11
         $h2
-        $h3
-    )
-)
+        $h3))
 
 ;;; HTTP status codes.
 (typename $http_status u16)
@@ -76,9 +72,7 @@
 (typename $body_write_end
     (enum (@witx tag u32)
         $back
-        $front
-    )
-)
+        $front))
 
 ;;; A handle to an HTTP request or response body.
 (typename $body_handle (handle))
@@ -126,13 +120,12 @@
         $pass
         $ttl
         $stale_while_revalidate
-        $pci
-    )
-)
+        $pci))
 (typename $num_bytes (@witx usize))
 (typename $header_count u32)
 (typename $is_done u32)
 (typename $done_idx u32)
+(typename $is_valid u32)
 (typename $inserted u32)
 (typename $ready_idx u32)
 
@@ -184,6 +177,7 @@
        $sni_hostname
        $dont_pool
        $client_cert
+       $grpc
        ))
 
 (typename $dynamic_backend_config
@@ -260,3 +254,91 @@
         (field $ret_buf_nwritten_out (@witx pointer (@witx usize)))
     )
 )
+
+(typename $send_error_detail_tag
+    (enum (@witx tag u32)
+        ;;; The $send_error_detail struct has not been populated.
+        $uninitialized
+        ;;; There was no send error.
+        $ok
+        ;;; The system encountered a timeout when trying to find an IP address for the backend
+        ;;; hostname.
+        $dns_timeout
+        ;;; The system encountered a DNS error when trying to find an IP address for the backend
+        ;;; hostname. The fields $dns_error_rcode and $dns_error_info_code may be set in the
+        ;;; $send_error_detail.
+        $dns_error
+        ;;; The system cannot determine which backend to use, or the specified backend was invalid.
+        $destination_not_found
+        ;;; The system considers the backend to be unavailable; e.g., recent attempts to communicate
+        ;;; with it may have failed, or a health check may indicate that it is down.
+        $destination_unavailable
+        ;;; The system cannot find a route to the next-hop IP address.
+        $destination_ip_unroutable
+        ;;; The system's connection to the backend was refused.
+        $connection_refused
+        ;;; The system's connection to the backend was closed before a complete response was
+        ;;; received.
+        $connection_terminated
+        ;;; The system's attempt to open a connection to the backend timed out.
+        $connection_timeout
+        ;;; The system is configured to limit the number of connections it has to the backend, and
+        ;;; that limit has been exceeded.
+        $connection_limit_reached
+        ;;; The system encountered an error when verifying the certificate presented by the backend.
+        $tls_certificate_error
+        ;;; The system encountered an error with the backend TLS configuration.
+        $tls_configuration_error
+        ;;; The system received an incomplete response to the request from the backend.
+        $http_incomplete_response
+        ;;; The system received a response to the request whose header section was considered too
+        ;;; large.
+        $http_response_header_section_too_large
+        ;;; The system received a response to the request whose body was considered too large.
+        $http_response_body_too_large
+        ;;; The system reached a configured time limit waiting for the complete response.
+        $http_response_timeout
+        ;;; The system received a response to the request whose status code or reason phrase was
+        ;;; invalid.
+        $http_response_status_invalid
+        ;;; The process of negotiating an upgrade of the HTTP version between the system and the
+        ;;; backend failed.
+        $http_upgrade_failed
+        ;;; The system encountered an HTTP protocol error when communicating with the backend. This
+        ;;; error will only be used when a more specific one is not defined.
+        $http_protocol_error
+        ;;; An invalid cache key was provided for the request.
+        $http_request_cache_key_invalid
+        ;;; An invalid URI was provided for the request.
+        $http_request_uri_invalid
+        ;;; The system encountered an unexpected internal error.
+        $internal_error
+        ;;; The system received a TLS alert from the backend. The field $tls_alert_id may be set in
+        ;;; the $send_error_detail.
+        $tls_alert_received
+        ;;; The system encountered a TLS error when communicating with the backend, either during
+        ;;; the handshake or afterwards.
+        $tls_protocol_error
+        ))
+
+;;; Mask representing which fields are understood by the guest, and which have been set by the host.
+;;;
+;;; When the guest calls hostcalls with a mask, it should set every bit in the mask that corresponds
+;;; to a defined flag. This signals the host to write only to fields with a set bit, allowing
+;;; forward compatibility for existing guest programs even after new fields are added to the struct.
+(typename $send_error_detail_mask
+    (flags (@witx repr u32)
+       $reserved
+       $dns_error_rcode
+       $dns_error_info_code
+       $tls_alert_id
+       ))
+
+(typename $send_error_detail
+  (record
+    (field $tag $send_error_detail_tag)
+    (field $mask $send_error_detail_mask)
+    (field $dns_error_rcode u16)
+    (field $dns_error_info_code u16)
+    (field $tls_alert_id u8)
+    ))
