@@ -74,7 +74,10 @@ wiggle::from_witx!({
         fastly_async_io::{select},
         fastly_object_store::{insert, lookup_async, pending_lookup_wait},
         fastly_http_body::{append, read, write},
-        fastly_http_req::{pending_req_select, pending_req_poll, pending_req_wait, send, send_async, send_async_streaming},
+        fastly_http_req::{
+            pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
+            pending_req_wait, pending_req_wait_v2, send, send_v2, send_async, send_async_streaming
+        },
     }
 });
 
