@@ -5,6 +5,7 @@ use std::io;
 use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Thrown by hostcalls when a buffer is larger than its `*_len` limit.
     #[error("Buffer length error: {buf} too long to fit in {len}")]
