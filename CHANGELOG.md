@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.8.0 (2023-09-15)
 
 - Make `viceroy_lib::Error` non-exhaustive
