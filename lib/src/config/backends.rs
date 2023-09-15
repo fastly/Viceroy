@@ -126,6 +126,11 @@ mod deserialization {
                 .transpose()?
                 .unwrap_or(true);
 
+            let client_cert = toml
+                .remove("client_certificate")
+                .map(TryFrom::try_from)
+                .transpose()?;
+
             check_for_unrecognized_keys(&toml)?;
 
             Ok(Self {
@@ -133,8 +138,7 @@ mod deserialization {
                 override_host,
                 cert_host,
                 use_sni,
-                // NOTE: Update when we support client certs in static backends
-                client_cert: None,
+                client_cert,
             })
         }
     }
