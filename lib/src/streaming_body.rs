@@ -98,13 +98,4 @@ impl StreamingBody {
             }
         }
     }
-
-    /// Mark this streaming body as finished and send a complete set of trailers.
-    ///
-    /// This is important primarily for `Transfer-Encoding: chunked` bodies where a premature close
-    /// is only noticed if the chunked encoding is not properly terminated.
-    pub fn finish_with_trailers(mut self, trailers: HeaderMap) -> Result<(), Error> {
-        let _ = std::mem::replace(&mut self.trailers, trailers);
-        self.finish()
-    }
 }

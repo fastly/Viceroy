@@ -127,6 +127,7 @@ impl FastlyHttpBody for Session {
         name: &GuestPtr<[u8]>,
         value: &GuestPtr<[u8]>,
     ) -> Result<(), Error> {
+        // Appending trailers is always allowed for bodies and streaming bodies.
         if self.is_streaming_body(body_handle) {
             let body = self.streaming_body_mut(body_handle)?;
             let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
@@ -149,6 +150,11 @@ impl FastlyHttpBody for Session {
         ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
+        // Read operations are not allowed on streaming bodies.
+        if self.is_streaming_body(body_handle) {
+            return Err(Error::InvalidArgument);
+        }
+
         let body = self.body_mut(body_handle)?;
         if body.trailers_ready {
             let trailers = &body.trailers;
@@ -168,6 +174,11 @@ impl FastlyHttpBody for Session {
         value_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
+        // Read operations are not allowed on streaming bodies.
+        if self.is_streaming_body(body_handle) {
+            return Err(Error::InvalidArgument);
+        }
+
         let body = &mut self.body_mut(body_handle)?;
         if body.trailers_ready {
             let trailers = &mut body.trailers;
@@ -186,6 +197,11 @@ impl FastlyHttpBody for Session {
         ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
+        // Read operations are not allowed on streaming bodies.
+        if self.is_streaming_body(body_handle) {
+            return Err(Error::InvalidArgument);
+        }
+
         let body = &mut self.body_mut(body_handle)?;
         if body.trailers_ready {
             let trailers = &mut body.trailers;
