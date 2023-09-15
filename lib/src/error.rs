@@ -138,6 +138,9 @@ pub enum Error {
 
     #[error("invalid client certificate")]
     InvalidClientCert(#[from] crate::config::ClientCertError),
+
+    #[error("Invalid response to ALPN request; wanted '{0}', got '{1}'")]
+    InvalidAlpnRepsonse(&'static str, String),
 }
 
 impl Error {
@@ -202,7 +205,8 @@ impl Error {
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
-            | Error::ToStr(_) => FastlyStatus::Error,
+            | Error::ToStr(_)
+            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
         }
     }
 
@@ -392,6 +396,9 @@ pub enum BackendConfigError {
 
     #[error("'use_sni' field was not a boolean")]
     InvalidUseSniEntry,
+
+    #[error("'grpc' field was not a boolean")]
+    InvalidGrpcEntry,
 
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),

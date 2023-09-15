@@ -6,6 +6,7 @@ mod dictionary_lookup;
 mod downstream_req;
 mod env_vars;
 mod geolocation_lookup;
+mod grpc;
 mod http_semantics;
 mod kv_store;
 mod logging;

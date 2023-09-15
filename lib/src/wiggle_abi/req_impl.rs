@@ -375,6 +375,8 @@ impl FastlyHttpReq for Session {
             None
         };
 
+        let grpc = backend_info_mask.contains(BackendConfigOptions::GRPC);
+
         let new_backend = Backend {
             uri: Uri::builder()
                 .scheme(scheme)
@@ -384,6 +386,7 @@ impl FastlyHttpReq for Session {
             override_host,
             cert_host,
             use_sni,
+            grpc,
             client_cert,
         };
 

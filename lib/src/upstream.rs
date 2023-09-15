@@ -128,6 +128,9 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     config.partial_config.with_no_client_auth()
                 };
                 config.enable_sni = backend.use_sni;
+                if backend.grpc {
+                    config.alpn_protocols = vec![b"h2".to_vec()];
+                }
                 let connector = TlsConnector::from(Arc::new(config));
 
                 let cert_host = backend
@@ -138,6 +141,29 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
 
                 let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+
+                if backend.grpc {
+                    let (_, tls_state) = tls.get_ref();
+
+                    match tls_state.alpn_protocol() {
+                        None => {
+                            tracing::warn!(
+                                "Unexpected; request h2 for grpc, but got nothing back from ALPN"
+                            );
+                        }
+
+                        Some(b"h2") => {}
+
+                        Some(other_value) => {
+                            return Err(Error::InvalidAlpnRepsonse(
+                                "h2",
+                                String::from_utf8_lossy(other_value).to_string(),
+                            )
+                            .into())
+                        }
+                    }
+                }
+
                 Ok(Connection::Https(Box::new(tls)))
             } else {
                 Ok(Connection::Http(tcp))
@@ -237,9 +263,11 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
+    let h2only = backend.grpc;
     async move {
         let basic_response = Client::builder()
             .set_host(false)
+            .http2_only(h2only)
             .build(connector)
             .request(req)
             .await
