@@ -137,7 +137,7 @@ mod deserialization {
                     }
                 })
                 .transpose()?
-                .unwrap_or(true);
+                .unwrap_or(false);
 
             check_for_unrecognized_keys(&toml)?;
 
