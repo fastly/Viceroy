@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.1 (2023-09-18)
 
 - Fix a bug in which static backends were marked as GRPC by default ([#311](https://github.com/fastly/Viceroy/pull/311))
 
