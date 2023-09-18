@@ -1,6 +1,12 @@
 ## Unreleased
 
-## 0.7.0
+## 0.8.0 (2023-09-15)
+
+- Make `viceroy_lib::Error` non-exhaustive
+- Support the gRPC flag for dynamic backends ([#308](https://github.com/fastly/Viceroy/pull/308))
+- Update ABI definitions and stub out some hostcalls ([#307](https://github.com/fastly/Viceroy/pull/307))
+
+## 0.7.0 (2023-08-14)
 
 - Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
 - Use a ResourceLimiter for tracking allocations. ([#300](https://github.com/fastly/Viceroy/pull/300))
