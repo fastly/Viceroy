@@ -1,8 +1,11 @@
 //! Error types.
 
+use std::error::Error as StdError;
+use std::io;
 use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Thrown by hostcalls when a buffer is larger than its `*_len` limit.
     #[error("Buffer length error: {buf} too long to fit in {len}")]
@@ -133,6 +136,12 @@ pub enum Error {
 
     #[error("String conversion error")]
     ToStr(#[from] http::header::ToStrError),
+
+    #[error("invalid client certificate")]
+    InvalidClientCert(#[from] crate::config::ClientCertError),
+
+    #[error("Invalid response to ALPN request; wanted '{0}', got '{1}'")]
+    InvalidAlpnRepsonse(&'static str, String),
 }
 
 impl Error {
@@ -145,14 +154,24 @@ impl Error {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         match self {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
-            Error::InvalidArgument | Error::ValueAbsent => FastlyStatus::Inval,
+            Error::InvalidArgument => FastlyStatus::Inval,
+            Error::ValueAbsent => FastlyStatus::None,
             Error::Unsupported { .. } => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
+            Error::UnknownBackend(_) | Error::InvalidClientCert(_) => FastlyStatus::Inval,
             // Map specific kinds of `hyper::Error` into their respective error codes.
             Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
             Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,
             Error::HyperError(e) if e.is_incomplete_message() => FastlyStatus::Httpincomplete,
+            Error::HyperError(e)
+                if e.source()
+                    .and_then(|e| e.downcast_ref::<io::Error>())
+                    .map(|ioe| ioe.kind())
+                    == Some(io::ErrorKind::UnexpectedEof) =>
+            {
+                FastlyStatus::Httpincomplete
+            }
             Error::HyperError(_) => FastlyStatus::Error,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
@@ -180,7 +199,6 @@ impl Error {
             | Error::Other(_)
             | Error::ProfilingStrategy
             | Error::StreamingChunkSend
-            | Error::UnknownBackend(_)
             | Error::Utf8Expected(_)
             | Error::BackendNameRegistryError(_)
             | Error::HttpError(_)
@@ -188,7 +206,8 @@ impl Error {
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
-            | Error::ToStr(_) => FastlyStatus::Error,
+            | Error::ToStr(_)
+            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
         }
     }
 
@@ -378,6 +397,9 @@ pub enum BackendConfigError {
 
     #[error("'use_sni' field was not a boolean")]
     InvalidUseSniEntry,
+
+    #[error("'grpc' field was not a boolean")]
+    InvalidGrpcEntry,
 
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),

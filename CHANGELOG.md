@@ -1,5 +1,47 @@
 ## Unreleased
 
+- Fix a bug in which static backends were marked as GRPC by default ([#311](https://github.com/fastly/Viceroy/pull/311))
+
+## 0.8.0 (2023-09-15)
+
+- Make `viceroy_lib::Error` non-exhaustive
+- Support the gRPC flag for dynamic backends ([#308](https://github.com/fastly/Viceroy/pull/308))
+- Update ABI definitions and stub out some hostcalls ([#307](https://github.com/fastly/Viceroy/pull/307))
+
+## 0.7.0 (2023-08-14)
+
+- Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
+- Use a ResourceLimiter for tracking allocations. ([#300](https://github.com/fastly/Viceroy/pull/300))
+- Support the new mTLS features for dynamic backends, allowing two-way authentication for backend connections. ([#297](https://github.com/fastly/Viceroy/pull/297))
+
+## 0.6.1 (2023-08-03)
+
+- Support the new config store hostcalls. ([#296](https://github.com/fastly/Viceroy/pull/296))
+- Bump to wasmtime-11.0.1 ([#295](https://github.com/fastly/Viceroy/pull/295))
+- Unblock Secret::from_bytes test by upgrading the fastly crate dependency. ([#294](https://github.com/fastly/Viceroy/pull/294))
+- Map Error::UnknownBackend to FastlyStatus::Inval ([#293](https://github.com/fastly/Viceroy/pull/293))
+- When an upstream body is unexpectedly closed, return Httpincomplete ([#290](https://github.com/fastly/Viceroy/pull/290))
+- Error::ValueAbsent should map to FastlyStatus::None, not Inval ([#291](https://github.com/fastly/Viceroy/pull/280))
+- Switch default log level to "error", add -v to run ([#288](https://github.com/fastly/Viceroy/pull/288))
+- Update rustls and various dependencies ([#278](https://github.com/fastly/Viceroy/pull/278))
+- Change default port from 7878 to 7676, which is what the Fastly CLI defaults to ([#287](https://github.com/fastly/Viceroy/pull/287))
+
+## 0.6.0 (2023-07-12)
+
+- ⏱️ Add cross-platform ability to profile guest code in run mode ([#280](https://github.com/fastly/Viceroy/pull/280))
+- pin to hyper 0.14.26 for the time being ([#285](https://github.com/fastly/Viceroy/pull/285))
+- 😯 Add support for the new secret from_bytes extension. ([#283](https://github.com/fastly/Viceroy/pull/283))
+- feat: Add a stub for downstream_client_h2_fingerprint ([#277](https://github.com/fastly/Viceroy/pull/277))
+- Fill downstream_client_request_id in ([#282](https://github.com/fastly/Viceroy/pull/282))
+- Bump to wasmtime-10.0.0 ([#279](https://github.com/fastly/Viceroy/pull/279))
+- Add a stub for downstream_client_request_id ([#276](https://github.com/fastly/Viceroy/pull/276))
+-  Fix various warnings ([#271](https://github.com/fastly/Viceroy/pull/271))
+- ⛽ -> ⏲️ Switch from fuel to epoch interruptions. ([#273](https://github.com/fastly/Viceroy/pull/273))
+- Bump wasmtime dependencies to 9.0.1 ([#272](https://github.com/fastly/Viceroy/pull/272))
+- ⏩ none should not be defined in cache_override_tag witx ([#269](https://github.com/fastly/Viceroy/pull/269))
+- in single run mode, keep the response receiver alive during execution ([#270](https://github.com/fastly/Viceroy/pull/270))
+- Return appropriate exit code in run-mode, rather than just 0 or 1 ([#224](https://github.com/fastly/Viceroy/pull/224))
+
 ## 0.5.1 (2023-05-17)
 
 -  Update crates and add http_keepalive_mode_set ([#266](https://github.com/fastly/Viceroy/pull/266))

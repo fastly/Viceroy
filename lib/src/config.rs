@@ -29,7 +29,7 @@ pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
 /// Types and deserializers for backend configuration settings.
 mod backends;
 
-pub use self::backends::Backend;
+pub use self::backends::{Backend, ClientCertError, ClientCertInfo};
 
 pub type Backends = HashMap<String, Arc<Backend>>;
 

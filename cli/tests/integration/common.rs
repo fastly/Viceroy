@@ -257,15 +257,20 @@ impl Test {
             self.backends.start_servers().await;
         }
 
-        let ctx = ExecuteCtx::new(&self.module_path, ProfilingStrategy::None, HashSet::new())
-            .expect("failed to set up execution context")
-            .with_backends(self.backends.backend_configs().await)
-            .with_dictionaries(self.dictionaries.clone())
-            .with_geolocation(self.geolocation.clone())
-            .with_object_stores(self.object_stores.clone())
-            .with_secret_stores(self.secret_stores.clone())
-            .with_log_stderr(self.log_stderr)
-            .with_log_stdout(self.log_stdout);
+        let ctx = ExecuteCtx::new(
+            &self.module_path,
+            ProfilingStrategy::None,
+            HashSet::new(),
+            None,
+        )
+        .expect("failed to set up execution context")
+        .with_backends(self.backends.backend_configs().await)
+        .with_dictionaries(self.dictionaries.clone())
+        .with_geolocation(self.geolocation.clone())
+        .with_object_stores(self.object_stores.clone())
+        .with_secret_stores(self.secret_stores.clone())
+        .with_log_stderr(self.log_stderr)
+        .with_log_stdout(self.log_stdout);
 
         if self.via_hyper {
             let svc = ViceroyService::new(ctx);

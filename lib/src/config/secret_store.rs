@@ -78,7 +78,7 @@ impl TryFrom<Table> for SecretStoreConfig {
                                 err: SecretStoreConfigError::FileNotAString(key.to_string()),
                             }
                         })?;
-                        fs::read(&path)
+                        fs::read(path)
                             .map_err(|e| FastlyConfigError::InvalidSecretStoreDefinition {
                                 name: store_name.to_string(),
                                 err: SecretStoreConfigError::IoError(e),

@@ -9,6 +9,7 @@ use crate::{
 use futures::Future;
 use http::{uri, HeaderValue};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
+use rustls::client::{ServerName, WantsTransparencyPolicyOrClientCert};
 use std::{
     io,
     pin::Pin,
@@ -22,7 +23,6 @@ use tokio::{
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
 use tracing::warn;
-use webpki::DNSNameRef;
 
 static GZIP_VALUES: [HeaderValue; 2] = [
     HeaderValue::from_static("gzip"),
@@ -31,39 +31,36 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 
 /// Viceroy's preloaded TLS configuration.
 ///
-/// Setting up client configuration is meant to be done once per process. However, we need
-/// two distinct configurations, because backends may choose whether to employ SNI, and that
-/// setting is baked into the configuration data.
+/// We now have too many options to fully precompute this value, so what this actually
+/// holds is a partially-complete TLS config builder, waiting for the point at which
+/// we decide whether or not to provide a client certificate and whether or not to use
+/// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    with_sni: Arc<rustls::ClientConfig>,
-    without_sni: Arc<rustls::ClientConfig>,
-}
-
-fn setup_rustls(with_sni: bool) -> Result<rustls::ClientConfig, Error> {
-    let mut config = rustls::ClientConfig::new();
-    config.root_store = match rustls_native_certs::load_native_certs() {
-        Ok(store) => store,
-        Err((Some(store), err)) => {
-            warn!(%err, "some certificates could not be loaded");
-            store
-        }
-        Err((None, err)) => return Err(Error::BadCerts(err)),
-    };
-    if config.root_store.is_empty() {
-        warn!("no CA certificates available");
-    }
-    config.alpn_protocols.clear();
-    config.enable_sni = with_sni;
-    Ok(config)
+    partial_config:
+        rustls::ConfigBuilder<rustls::ClientConfig, WantsTransparencyPolicyOrClientCert>,
 }
 
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
-        Ok(TlsConfig {
-            with_sni: Arc::new(setup_rustls(true)?),
-            without_sni: Arc::new(setup_rustls(false)?),
-        })
+        let mut roots = rustls::RootCertStore::empty();
+        match rustls_native_certs::load_native_certs() {
+            Ok(certs) => {
+                for cert in certs {
+                    roots.add(&rustls::Certificate(cert.0)).unwrap();
+                }
+            }
+            Err(err) => return Err(Error::BadCerts(err)),
+        }
+        if roots.is_empty() {
+            warn!("no CA certificates available");
+        }
+
+        let partial_config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots);
+
+        Ok(TlsConfig { partial_config })
     }
 }
 
@@ -123,20 +120,50 @@ impl hyper::service::Service<Uri> for BackendConnector {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
             if backend.uri.scheme_str() == Some("https") {
-                let connector = if backend.use_sni {
-                    TlsConnector::from(config.with_sni.clone())
+                let mut config = if let Some(certed_key) = &backend.client_cert {
+                    config
+                        .partial_config
+                        .with_client_auth_cert(certed_key.certs(), certed_key.key())?
                 } else {
-                    TlsConnector::from(config.without_sni.clone())
+                    config.partial_config.with_no_client_auth()
                 };
+                config.enable_sni = backend.use_sni;
+                if backend.grpc {
+                    config.alpn_protocols = vec![b"h2".to_vec()];
+                }
+                let connector = TlsConnector::from(Arc::new(config));
 
                 let cert_host = backend
                     .cert_host
                     .as_deref()
                     .or_else(|| backend.uri.host())
                     .unwrap_or_default();
-                let dnsname = DNSNameRef::try_from_ascii_str(cert_host).map_err(Box::new)?;
+                let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
 
                 let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+
+                if backend.grpc {
+                    let (_, tls_state) = tls.get_ref();
+
+                    match tls_state.alpn_protocol() {
+                        None => {
+                            tracing::warn!(
+                                "Unexpected; request h2 for grpc, but got nothing back from ALPN"
+                            );
+                        }
+
+                        Some(b"h2") => {}
+
+                        Some(other_value) => {
+                            return Err(Error::InvalidAlpnRepsonse(
+                                "h2",
+                                String::from_utf8_lossy(other_value).to_string(),
+                            )
+                            .into())
+                        }
+                    }
+                }
+
                 Ok(Connection::Https(Box::new(tls)))
             } else {
                 Ok(Connection::Http(tcp))
@@ -236,9 +263,11 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
+    let h2only = backend.grpc;
     async move {
         let basic_response = Client::builder()
             .set_host(false)
+            .http2_only(h2only)
             .build(connector)
             .request(req)
             .await

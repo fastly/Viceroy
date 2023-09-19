@@ -208,7 +208,7 @@ impl GeolocationMapping {
     pub fn read_json_contents(
         file: &Path,
     ) -> Result<HashMap<IpAddr, GeolocationData>, GeolocationConfigError> {
-        let data = fs::read_to_string(&file).map_err(GeolocationConfigError::IoError)?;
+        let data = fs::read_to_string(file).map_err(GeolocationConfigError::IoError)?;
 
         // Deserialize the contents of the given JSON file.
         let json = match serde_json::from_str(&data)

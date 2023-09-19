@@ -1,5 +1,10 @@
 //! fastly_req` hostcall implementations.
 
+use super::types::SendErrorDetail;
+use super::SecretStoreError;
+use crate::config::ClientCertInfo;
+use crate::secret_store::SecretLookup;
+
 use {
     crate::{
         config::Backend,
@@ -89,6 +94,55 @@ impl FastlyHttpReq for Session {
         }
     }
 
+    #[allow(unused_variables)] // FIXME JDC 2023-06-18: Remove this directive once implemented.
+    fn downstream_client_h2_fingerprint<'a>(
+        &mut self,
+        h2fp_out: &GuestPtr<'a, u8>,
+        h2fp_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client H2 fingerprint"))
+    }
+
+    fn downstream_client_request_id(
+        &mut self,
+        reqid_out: &GuestPtr<u8>,
+        reqid_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let reqid_bytes = format!("{:032x}", self.req_id()).into_bytes();
+
+        if reqid_bytes.len() > reqid_max_len as usize {
+            // Write out the number of bytes necessary to fit the value, or zero on overflow to
+            // signal an error condition.
+            nwritten_out.write(reqid_bytes.len().try_into().unwrap_or(0))?;
+            return Err(Error::BufferLengthError {
+                buf: "reqid_out",
+                len: "reqid_max_len",
+            });
+        }
+
+        let reqid_len =
+            u32::try_from(reqid_bytes.len()).expect("smaller u32::MAX means it must fit");
+
+        let mut reqid_slice = reqid_out
+            .as_array(reqid_len)
+            .as_slice_mut()?
+            .ok_or(Error::SharedMemory)?;
+        reqid_slice.copy_from_slice(&reqid_bytes);
+        nwritten_out.write(reqid_len)?;
+        Ok(())
+    }
+
+    fn downstream_client_oh_fingerprint<'a>(
+        &mut self,
+        _ohfp_out: &GuestPtr<'a, u8>,
+        _ohfp_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client original header fingerprint"))
+    }
+
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_cipher_openssl_name<'a>(
         &mut self,
@@ -111,6 +165,22 @@ impl FastlyHttpReq for Session {
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
     fn redirect_to_grip_proxy(&mut self, backend_name: &GuestPtr<str>) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
+    }
+
+    fn redirect_to_websocket_proxy_v2<'a>(
+        &mut self,
+        _req_handle: RequestHandle,
+        _backend: &GuestPtr<'a, str>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
+    }
+
+    fn redirect_to_grip_proxy_v2<'a>(
+        &mut self,
+        _req_handle: RequestHandle,
+        _backend: &GuestPtr<'a, str>,
+    ) -> Result<(), Error> {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
@@ -270,6 +340,43 @@ impl FastlyHttpReq for Session {
             true
         };
 
+        let client_cert = if backend_info_mask.contains(BackendConfigOptions::CLIENT_CERT) {
+            let cert_slice = config
+                .client_certificate
+                .as_array(config.client_certificate_len)
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
+            let key_lookup =
+                self.secret_lookup(config.client_key)
+                    .ok_or(Error::SecretStoreError(
+                        SecretStoreError::InvalidSecretHandle(config.client_key),
+                    ))?;
+            let key = match &key_lookup {
+                SecretLookup::Standard {
+                    store_name,
+                    secret_name,
+                } => self
+                    .secret_stores()
+                    .get_store(store_name)
+                    .ok_or(Error::SecretStoreError(
+                        SecretStoreError::InvalidSecretHandle(config.client_key),
+                    ))?
+                    .get_secret(secret_name)
+                    .ok_or(Error::SecretStoreError(
+                        SecretStoreError::InvalidSecretHandle(config.client_key),
+                    ))?
+                    .plaintext(),
+
+                SecretLookup::Injected { plaintext } => plaintext,
+            };
+
+            Some(ClientCertInfo::new(&cert_slice, key)?)
+        } else {
+            None
+        };
+
+        let grpc = backend_info_mask.contains(BackendConfigOptions::GRPC);
+
         let new_backend = Backend {
             uri: Uri::builder()
                 .scheme(scheme)
@@ -279,6 +386,8 @@ impl FastlyHttpReq for Session {
             override_host,
             cert_host,
             use_sni,
+            grpc,
+            client_cert,
         };
 
         if !self.add_backend(name, new_backend) {
@@ -534,6 +643,17 @@ impl FastlyHttpReq for Session {
         Ok(self.insert_response(resp))
     }
 
+    async fn send_v2<'a>(
+        &mut self,
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend_bytes: &GuestPtr<'a, str>,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.send(req_handle, body_handle, backend_bytes).await
+    }
+
     async fn send_async<'a>(
         &mut self,
         req_handle: RequestHandle,
@@ -596,9 +716,7 @@ impl FastlyHttpReq for Session {
         &mut self,
         pending_req_handle: PendingRequestHandle,
     ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
-        let handle: PendingRequestHandle = pending_req_handle.into();
-
-        if self.async_item_mut(handle.into())?.is_ready() {
+        if self.async_item_mut(pending_req_handle.into())?.is_ready() {
             let resp = self
                 .take_pending_request(pending_req_handle)?
                 .recv()
@@ -610,6 +728,15 @@ impl FastlyHttpReq for Session {
         }
     }
 
+    async fn pending_req_poll_v2<'a>(
+        &mut self,
+        pending_req_handle: PendingRequestHandle,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.pending_req_poll(pending_req_handle).await
+    }
+
     async fn pending_req_wait(
         &mut self,
         pending_req_handle: PendingRequestHandle,
@@ -619,6 +746,15 @@ impl FastlyHttpReq for Session {
             .recv()
             .await?;
         Ok(self.insert_response(pending_req))
+    }
+
+    async fn pending_req_wait_v2<'a>(
+        &mut self,
+        pending_req_handle: PendingRequestHandle,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.pending_req_wait(pending_req_handle).await
     }
 
     // First element of return tuple is the "done index"
@@ -666,6 +802,19 @@ impl FastlyHttpReq for Session {
         };
 
         Ok(outcome)
+    }
+
+    async fn pending_req_select_v2<'a>(
+        &mut self,
+        pending_req_handles: &GuestPtr<'a, [PendingRequestHandle]>,
+        _error_detail: &GuestPtr<'a, SendErrorDetail>,
+    ) -> Result<(u32, ResponseHandle, BodyHandle), Error> {
+        // This initial implementation ignores the error detail field
+        self.pending_req_select(pending_req_handles).await
+    }
+
+    fn fastly_key_is_valid(&mut self) -> Result<u32, Error> {
+        Err(Error::NotAvailable("FASTLY_KEY is valid"))
     }
 
     fn close(&mut self, req_handle: RequestHandle) -> Result<(), Error> {

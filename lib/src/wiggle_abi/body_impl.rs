@@ -111,4 +111,9 @@ impl FastlyHttpBody for Session {
             Ok(self.drop_body(body_handle)?)
         }
     }
+
+    fn abandon(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
+        // Drop the body without a `finish` message
+        Ok(self.drop_body(body_handle)?)
+    }
 }

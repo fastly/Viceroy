@@ -1,6 +1,7 @@
 //! A guest program to test that secret store works properly.
 
 use fastly::SecretStore;
+use fastly::secret_store::Secret;
 
 fn main() {
     // Check we can't get a store that does not exist
@@ -20,4 +21,8 @@ fn main() {
         None => {}
         _ => panic!(),
     }
+
+    let hello_bytes = "hello, wasm_world!".as_bytes().to_vec();
+    let secret = Secret::from_bytes(hello_bytes).unwrap();
+    assert_eq!("hello, wasm_world!", secret.plaintext());
 }

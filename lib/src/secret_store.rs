@@ -53,8 +53,13 @@ impl Secret {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct SecretLookup {
-    pub store_name: String,
-    pub secret_name: String,
+#[derive(Clone, Debug)]
+pub enum SecretLookup {
+    Standard {
+        store_name: String,
+        secret_name: String,
+    },
+    Injected {
+        plaintext: Vec<u8>,
+    },
 }
