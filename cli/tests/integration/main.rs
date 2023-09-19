@@ -16,6 +16,7 @@ mod response;
 mod secret_store;
 mod sending_response;
 mod sleep;
+mod unknown_import_behavior;
 mod upstream;
 mod upstream_async;
 mod upstream_dynamic;

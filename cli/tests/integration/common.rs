@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 use tracing_subscriber::filter::EnvFilter;
+use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
     body::Body,
     config::{Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores},
@@ -55,6 +56,7 @@ pub struct Test {
     log_stdout: bool,
     log_stderr: bool,
     via_hyper: bool,
+    unknown_import_behavior: UnknownImportBehavior,
 }
 
 impl Test {
@@ -73,6 +75,7 @@ impl Test {
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
+            unknown_import_behavior: Default::default(),
         }
     }
 
@@ -91,6 +94,7 @@ impl Test {
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
+            unknown_import_behavior: Default::default(),
         }
     }
 
@@ -111,6 +115,15 @@ impl Test {
     #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
     pub fn using_test_backends(mut self, test_backends: &TestBackends) -> Self {
         self.backends = test_backends.clone();
+        self
+    }
+
+    /// Use the specified [`UnknownImportBehavior`] for this test.
+    pub fn using_unknown_import_behavior(
+        mut self,
+        unknown_import_behavior: UnknownImportBehavior,
+    ) -> Self {
+        self.unknown_import_behavior = unknown_import_behavior;
         self
     }
 
@@ -232,7 +245,7 @@ impl Test {
     pub async fn against_many(
         &self,
         mut reqs: Vec<Request<impl Into<HyperBody>>>,
-    ) -> Vec<Response<Body>> {
+    ) -> Result<Vec<Response<Body>>, Error> {
         let mut responses = Vec::with_capacity(reqs.len());
 
         // Install a tracing subscriber. We use a human-readable event formatter in tests, using a
@@ -262,8 +275,8 @@ impl Test {
             ProfilingStrategy::None,
             HashSet::new(),
             None,
-        )
-        .expect("failed to set up execution context")
+            self.unknown_import_behavior,
+        )?
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())
         .with_geolocation(self.geolocation.clone())
@@ -307,10 +320,7 @@ impl Test {
                 *req.uri_mut() = new_uri;
 
                 // Pass the request to the server via a Hyper client on the _current_ task:
-                let resp = hyper::Client::new()
-                    .request(req.map(Into::into))
-                    .await
-                    .expect("hyper client error making test request");
+                let resp = hyper::Client::new().request(req.map(Into::into)).await?;
                 responses.push(resp.map(Into::into));
             }
 
@@ -318,7 +328,7 @@ impl Test {
             tx.send(())
                 .expect("sender error while shutting down hyper server");
             // Reap the task handle to ensure that the server did indeed shut down.
-            let _ = server_handle.await.expect("hyper server yielded an error");
+            let _ = server_handle.await?;
         } else {
             for mut req in reqs.drain(..) {
                 // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
@@ -339,13 +349,26 @@ impl Test {
                     .clone()
                     .handle_request(req.map(Into::into), Ipv4Addr::LOCALHOST.into())
                     .await
-                    .map(|result| result.0)
-                    .expect("failed to handle the request");
+                    .map(|result| {
+                        match result {
+                            (resp, None) => resp,
+                            (_, Some(err)) => {
+                                // Splat the string representation of the runtime error into a synthetic
+                                // 500. This is a bit of a hack, but good enough to check for expected error
+                                // strings.
+                                let body = err.to_string();
+                                Response::builder()
+                                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::from(body.as_bytes()))
+                                    .unwrap()
+                            }
+                        }
+                    })?;
                 responses.push(resp);
             }
         }
 
-        responses
+        Ok(responses)
     }
 
     /// Pass the given request to a Viceroy execution context defined by this test.
@@ -355,15 +378,19 @@ impl Test {
     ///
     /// A `Test` can be used repeatedly against different requests. Note, however, that
     /// a fresh execution context is set up each time.
-    pub async fn against(&self, req: Request<impl Into<HyperBody>>) -> Response<Body> {
-        self.against_many(vec![req])
-            .await
+    pub async fn against(
+        &self,
+        req: Request<impl Into<HyperBody>>,
+    ) -> Result<Response<Body>, Error> {
+        Ok(self
+            .against_many(vec![req])
+            .await?
             .pop()
-            .expect("singleton back from against_many")
+            .expect("singleton back from against_many"))
     }
 
     /// Pass an empty `GET /` request through this test.
-    pub async fn against_empty(&self) -> Response<Body> {
+    pub async fn against_empty(&self) -> Result<Response<Body>, Error> {
         self.against(Request::get("/").body("").unwrap()).await
     }
 

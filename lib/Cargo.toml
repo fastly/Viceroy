@@ -27,6 +27,7 @@ anyhow = { workspace = true }
 bytes = "^1.2.1"
 bytesize = "^1.1.0"
 cfg-if = "^1.0"
+clap = { workspace = true }
 cranelift-entity = "^0.88.1"
 fastly-shared = "^0.9.3"
 flate2 = "^1.0.24"

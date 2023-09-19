@@ -43,7 +43,7 @@ async fn upstream_async_methods() -> TestResult {
         .await;
 
     // The meat of the test is on the guest side; we just check that we made it through successfully
-    let resp = test.against_empty().await;
+    let resp = test.against_empty().await?;
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
 }

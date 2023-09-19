@@ -4,6 +4,8 @@ use std::time::SystemTime;
 
 use wasmtime::GuestProfiler;
 
+use crate::config::UnknownImportBehavior;
+
 use {
     crate::{
         body::Body,
@@ -83,12 +85,20 @@ impl ExecuteCtx {
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_path: Option<PathBuf>,
+        unknown_import_behavior: UnknownImportBehavior,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
         let mut linker = Linker::new(&engine);
         link_host_functions(&mut linker, &wasi_modules)?;
         let module = Module::from_file(&engine, module_path)?;
+        match unknown_import_behavior {
+            UnknownImportBehavior::LinkError => (),
+            UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
+            UnknownImportBehavior::ZeroOrNull => {
+                linker.define_unknown_imports_as_default_values(&module)?
+            }
+        }
         let instance_pre = linker.instantiate_pre(&module)?;
 
         // Create the epoch-increment thread.
@@ -225,7 +235,7 @@ impl ExecuteCtx {
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default())?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }

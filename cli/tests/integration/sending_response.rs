@@ -19,7 +19,7 @@ use {
 async fn responses_can_be_sent_downstream() -> TestResult {
     let resp = Test::using_fixture("teapot-status.wasm")
         .against_empty()
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
     Ok(())
 }
@@ -32,7 +32,7 @@ async fn responses_can_be_sent_downstream() -> TestResult {
 /// [ok]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/200
 #[tokio::test(flavor = "multi_thread")]
 async fn empty_ok_response_by_default() -> TestResult {
-    let resp = Test::using_fixture("noop.wasm").against_empty().await;
+    let resp = Test::using_fixture("noop.wasm").against_empty().await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())
@@ -50,7 +50,7 @@ async fn empty_ok_response_by_default() -> TestResult {
 /// [err]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
 #[tokio::test(flavor = "multi_thread")]
 async fn five_hundred_when_guest_panics() -> TestResult {
-    let resp = Test::using_fixture("panic.wasm").against_empty().await;
+    let resp = Test::using_fixture("panic.wasm").against_empty().await?;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }
@@ -61,7 +61,7 @@ async fn responses_can_be_streamed_downstream() -> TestResult {
     let mut resp = Test::using_fixture("streaming-response.wasm")
         .via_hyper()
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(resp
