@@ -46,11 +46,10 @@ pub struct ServeArgs {
     #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
 
-    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
-    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
-    /// to a value before starting Viceroy
-    #[arg(short = 'v', action = clap::ArgAction::Count)]
-    verbosity: u8,
+    /// Whether to profile the wasm guest. Takes an optional directory to save
+    /// per-request profiles to
+    #[arg(long, default_missing_value = "guest-profiles", num_args=0..=1, require_equals=true)]
+    profile_guest: Option<PathBuf>,
 
     #[command(flatten)]
     shared: SharedArgs,
@@ -60,6 +59,11 @@ pub struct ServeArgs {
 pub struct RunArgs {
     #[command(flatten)]
     shared: SharedArgs,
+
+    /// Whether to profile the wasm guest. Takes an optional filename to save
+    /// the profile to
+    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
+    profile_guest: Option<PathBuf>,
 
     /// Args to pass along to the binary being executed.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -80,26 +84,29 @@ pub struct SharedArgs {
     /// Whether to treat stderr as a logging endpoint
     #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
-    // Whether to enable wasmtime's builtin profiler.
+    /// Whether to enable wasmtime's builtin profiler.
     #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
     profiler: Option<ProfilingStrategy>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
+    /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
+    /// effect if you set RUST_LOG to a value before starting Viceroy
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    verbosity: u8,
 }
 
 impl ServeArgs {
     /// The address that the service should be bound to.
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
-            .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878))
+            .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676))
     }
 
-    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
-    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
-    /// to a value before starting Viceroy
-    pub fn verbosity(&self) -> u8 {
-        self.verbosity
+    /// The path to write guest profiles to
+    pub fn profile_guest(&self) -> Option<&PathBuf> {
+        self.profile_guest.as_ref()
     }
 
     pub fn shared(&self) -> &SharedArgs {
@@ -115,6 +122,11 @@ impl RunArgs {
 
     pub fn shared(&self) -> &SharedArgs {
         &self.shared
+    }
+
+    /// The path to write a guest profile to
+    pub fn profile_guest(&self) -> Option<&PathBuf> {
+        self.profile_guest.as_ref()
     }
 }
 
@@ -147,6 +159,13 @@ impl SharedArgs {
     // Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
         self.experimental_modules.iter().map(|x| x.into()).collect()
+    }
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
+    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
+    /// to a value before starting Viceroy
+    pub fn verbosity(&self) -> u8 {
+        self.verbosity
     }
 }
 
@@ -194,7 +213,7 @@ impl From<&ExperimentalModule> for ExperimentalModuleArg {
 /// [opts]: struct.Opts.html
 fn check_module(s: &str) -> Result<String, Error> {
     let path = PathBuf::from(s);
-    let contents = std::fs::read(&path)?;
+    let contents = std::fs::read(path)?;
     match wat::parse_bytes(&contents) {
         Ok(_) => Ok(s.to_string()),
         _ => Err(Error::FileFormat),
@@ -246,7 +265,7 @@ mod opts_tests {
         let empty_args = &["dummy-program-name", &test_file("minimal.wat")];
         let opts = Opts::try_parse_from(empty_args)?;
         let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
-        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878);
+        let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676);
         if let Commands::Serve(serve_args) = cmd {
             assert_eq!(serve_args.addr(), expected);
         }
@@ -259,7 +278,7 @@ mod opts_tests {
         let args_with_bad_addr = &[
             "dummy-program-name",
             "--addr",
-            "999.0.0.1:7878",
+            "999.0.0.1:7676",
             &test_file("minimal.wat"),
         ];
         match Opts::try_parse_from(args_with_bad_addr) {
@@ -280,13 +299,13 @@ mod opts_tests {
         let args_with_ipv6_addr = &[
             "dummy-program-name",
             "--addr",
-            "[::1]:7878",
+            "[::1]:7676",
             &test_file("minimal.wat"),
         ];
         let opts = Opts::try_parse_from(args_with_ipv6_addr)?;
         let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
         let addr_v6 = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1));
-        let expected = SocketAddr::new(addr_v6, 7878);
+        let expected = SocketAddr::new(addr_v6, 7676);
         if let Commands::Serve(serve_args) = cmd {
             assert_eq!(serve_args.addr(), expected);
         }

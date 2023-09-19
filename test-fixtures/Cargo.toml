@@ -8,9 +8,11 @@ license = "Apache-2.0 WITH LLVM-exception"
 publish = false
 
 [dependencies]
-fastly = "^0.9.3"
-fastly-shared = "^0.9.3"
-fastly-sys = "^0.9.3"
+base64 = "0.21.2"
+fastly = "^0.9.7"
+fastly-shared = "^0.9.7"
+fastly-sys = "^0.9.7"
 bytes = "1.0.0"
-http = "0.2.1"
+http = "0.2.9"
+rustls-pemfile = "1.0.3"
 serde = "1.0.114"

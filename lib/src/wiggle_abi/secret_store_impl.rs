@@ -1,6 +1,7 @@
 use {
     crate::{
         error::Error,
+        secret_store::SecretLookup,
         session::Session,
         wiggle_abi::{
             fastly_secret_store::FastlySecretStore,
@@ -81,17 +82,25 @@ impl FastlySecretStore for Session {
             .ok_or(Error::SecretStoreError(
                 SecretStoreError::InvalidSecretHandle(secret_handle),
             ))?;
-        let plaintext = self
-            .secret_stores()
-            .get_store(lookup.store_name.as_str())
-            .ok_or(Error::SecretStoreError(
-                SecretStoreError::InvalidSecretHandle(secret_handle),
-            ))?
-            .get_secret(lookup.secret_name.as_str())
-            .ok_or(Error::SecretStoreError(
-                SecretStoreError::InvalidSecretHandle(secret_handle),
-            ))?
-            .plaintext();
+
+        let plaintext = match &lookup {
+            SecretLookup::Standard {
+                store_name,
+                secret_name,
+            } => self
+                .secret_stores()
+                .get_store(store_name)
+                .ok_or(Error::SecretStoreError(
+                    SecretStoreError::InvalidSecretHandle(secret_handle),
+                ))?
+                .get_secret(secret_name)
+                .ok_or(Error::SecretStoreError(
+                    SecretStoreError::InvalidSecretHandle(secret_handle),
+                ))?
+                .plaintext(),
+
+            SecretLookup::Injected { plaintext } => plaintext,
+        };
 
         if plaintext.len() > plaintext_max_len as usize {
             // Write out the number of bytes necessary to fit the
@@ -110,9 +119,22 @@ impl FastlySecretStore for Session {
             .as_array(plaintext_len)
             .as_slice_mut()?
             .ok_or(Error::SharedMemory)?;
-        plaintext_out.copy_from_slice(&plaintext);
+        plaintext_out.copy_from_slice(plaintext);
         nwritten_out.write(plaintext_len)?;
 
         Ok(())
+    }
+
+    fn from_bytes(
+        &mut self,
+        plaintext_buf: &GuestPtr<'_, u8>,
+        plaintext_len: u32,
+    ) -> Result<SecretHandle, Error> {
+        let plaintext = plaintext_buf
+            .as_array(plaintext_len)
+            .as_slice()?
+            .ok_or(Error::SharedMemory)?
+            .to_vec();
+        Ok(self.add_secret(plaintext))
     }
 }

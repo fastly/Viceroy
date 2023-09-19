@@ -69,10 +69,10 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
             [local_server]
               [local_server.backends]
                 [local_server.backends.dog]
-                url = "http://localhost:7878/dog-mocks"
+                url = "http://localhost:7676/dog-mocks"
 
                 [local_server.backends."shark.server"]
-                url = "http://localhost:7878/shark-mocks"
+                url = "http://localhost:7676/shark-mocks"
                 override_host = "somehost.com"
 
                 [local_server.backends.detective]
@@ -85,14 +85,14 @@ fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
         .backends()
         .get("dog")
         .expect("backend configurations can be accessed");
-    assert_eq!(backend.uri, "http://localhost:7878/dog-mocks");
+    assert_eq!(backend.uri, "http://localhost:7676/dog-mocks");
     assert_eq!(backend.override_host, None);
 
     let backend = config
         .backends()
         .get("shark.server")
         .expect("backend configurations can be accessed");
-    assert_eq!(backend.uri, "http://localhost:7878/shark-mocks");
+    assert_eq!(backend.uri, "http://localhost:7676/shark-mocks");
     assert_eq!(
         backend.override_host,
         Some("somehost.com".parse().expect("can parse override_host"))
@@ -191,7 +191,7 @@ fn local_server_configs_can_be_deserialized() {
         r#"
         [backends]
           [backends.dog]
-          url = "http://localhost:7878/dog-mocks"
+          url = "http://localhost:7676/dog-mocks"
         [dictionaries]
           [dictionaries.secrets]
           file = '{}'

@@ -8,6 +8,7 @@ use std::str::FromStr;
 use fastly::handle::{BodyHandle, RequestHandle, ResponseHandle};
 use fastly::http::{HeaderName, HeaderValue, Method, StatusCode, Url};
 use fastly::Error;
+use fastly::Request;
 use fastly_shared::{CacheOverride, FastlyStatus};
 
 fn is_ready(handle: u32) -> bool {
@@ -45,6 +46,12 @@ fn test_select() -> Result<(), Error> {
     let (_read_body_resp, read_body) = read_body_req.send(BodyHandle::new(), "ReadBody")?;
     let read_body_handle = unsafe { read_body.as_u32() };
 
+    // This request is used as a synchronization mechanism for the purposes of
+    // this test
+    let write_body_sync_req = Request::get("http://writebody.org/")
+        .send_async("Semaphore")
+        .expect("request begins sending");
+
     // The "write body" case involves a `send_async_streaming` call, where the streaming body is the
     // async item of interest. To test readiness, we need to ensure the body is large enough that Hyper
     // won't try to buffer it, and hence we can see backpressure on streaming. We do this by including
@@ -74,13 +81,12 @@ fn test_select() -> Result<(), Error> {
         assert!(nwritten > 0);
     }
 
-    // Give the servers a chance to do their thing. This is needed to resolve a race between the servers
-    // initiating responses / reading buffers and the guest snapshotting readiness or performing `select`
-    //
-    // If this ever becomes flaky, an alternative would be to introduce an additional backend that
-    // responds only when the other backends have reached their steady state, via a VTC semaphore, and
-    // block on THAT backend here.
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // We wait on this request here to give the servers a chance to do their
+    // thing. This is needed to resolve a race between the servers initiating
+    // responses / reading buffers and the guest snapshotting readiness or
+    // performing `select`. This request should return when the other backends
+    // have reached their steady state
+    write_body_sync_req.wait()?;
 
     append_header(
         &mut ds_resp,

@@ -1,0 +1,19 @@
+;; Config Store ABI
+
+;;; A handle to an Config Store.
+(typename $config_store_handle (handle))
+
+(module $fastly_config_store
+    (@interface func (export "open")
+        (param $name string)
+        (result $err (expected $config_store_handle (error $fastly_status)))
+    )
+
+    (@interface func (export "get")
+        (param $h $config_store_handle)
+        (param $key string)
+        (param $value (@witx pointer (@witx char8)))
+        (param $value_max_len (@witx usize))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+)

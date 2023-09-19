@@ -8,7 +8,7 @@ Below are the steps needed to do a Viceroy release:
    release just to be sure.
 1. Update the `Cargo.lock` files by running `make generate-lockfile`.
 1. Update `CHANGELOG.md` so that it contains all of the updates since the
-   previous version as its own commit.
+   previous version as its own commit. Remove the "## Unreleased" header.
 1. Create a local branch in the form `release-x.y.z` where `x`, `y`, and `z` are
    the major, minor, and patch versions of Viceroy and have the tip of the
    branch contain the Changelog commit.
