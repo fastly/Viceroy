@@ -24,15 +24,18 @@ impl FastlyHttpBody for Session {
     async fn append(&mut self, dest: BodyHandle, src: BodyHandle) -> Result<(), Error> {
         // Take the `src` body out of the session, and get a mutable reference
         // to the `dest` body we will append to.
-        let src = self.take_body(src)?;
+        let mut src = self.take_body(src)?;
+        let trailers = std::mem::take(&mut src.trailers);
 
         if self.is_streaming_body(dest) {
             let dest = self.streaming_body_mut(dest)?;
             for chunk in src {
                 dest.send_chunk(chunk).await?;
             }
+            dest.trailers.extend(trailers);
         } else {
             let dest = self.body_mut(dest)?;
+            dest.trailers.extend(trailers);
             dest.append(src);
         }
         Ok(())

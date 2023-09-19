@@ -15,7 +15,7 @@ const STREAMING_CHANNEL_SIZE: usize = 8;
 #[derive(Debug)]
 pub struct StreamingBody {
     sender: mpsc::Sender<StreamingBodyItem>,
-    trailers: HeaderMap,
+    pub(crate) trailers: HeaderMap,
 }
 
 /// The items sent over the `StreamingBody` channel.
