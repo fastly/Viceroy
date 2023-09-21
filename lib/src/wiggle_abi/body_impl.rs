@@ -166,7 +166,7 @@ impl FastlyHttpBody for Session {
                 ending_cursor_out
             );
         }
-        Err(Error::TrailersNotReady)
+        Err(Error::Again)
     }
 
     fn trailer_value_get<'a>(
@@ -187,7 +187,7 @@ impl FastlyHttpBody for Session {
             let trailers = &mut body.trailers;
             return trailers.value_get(name, value, value_max_len, nwritten_out);
         }
-        Err(Error::TrailersNotReady)
+        Err(Error::Again)
     }
 
     fn trailer_values_get<'a>(
@@ -213,6 +213,6 @@ impl FastlyHttpBody for Session {
                 ending_cursor_out
             );
         }
-        Err(Error::TrailersNotReady)
+        Err(Error::Again)
     }
 }
