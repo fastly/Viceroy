@@ -124,7 +124,7 @@ impl FastlyHttpBody for Session {
         Ok(self.drop_body(body_handle)?)
     }
 
-    async fn trailer_append<'a>(
+    fn trailer_append(
         &mut self,
         body_handle: BodyHandle,
         name: &GuestPtr<[u8]>,
@@ -138,7 +138,7 @@ impl FastlyHttpBody for Session {
             body.append_trailer(name, value);
             Ok(())
         } else {
-            let body = &mut self.body_mut(body_handle)?;
+            let body = self.body_mut(body_handle)?;
             let trailers = &mut body.trailers;
             HttpHeaders::append(trailers, name, value)
         }
