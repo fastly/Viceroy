@@ -18,7 +18,7 @@ async fn json_config_store_lookup_works() -> TestResult {
     let resp = Test::using_fixture("config_store-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())
@@ -49,7 +49,7 @@ async fn inline_toml_config_store_lookup_works() -> TestResult {
     let resp = Test::using_fixture("config_store-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())
@@ -72,7 +72,7 @@ async fn missing_config_store_works() -> TestResult {
     let resp = Test::using_fixture("config_store-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 

@@ -143,7 +143,7 @@ async fn async_io_methods() -> TestResult {
         .await;
 
     // request_count is 0 here
-    let resp = test.against_empty().await;
+    let resp = test.against_empty().await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "false");
@@ -154,7 +154,7 @@ async fn async_io_methods() -> TestResult {
     barrier.wait().await;
 
     request_count.store(1, Ordering::Relaxed);
-    let resp = test.against_empty().await;
+    let resp = test.against_empty().await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "true");
     assert_eq!(resp.headers()["Read-Ready"], "false");
@@ -165,7 +165,7 @@ async fn async_io_methods() -> TestResult {
     barrier.wait().await;
 
     request_count.store(2, Ordering::Relaxed);
-    let resp = test.against_empty().await;
+    let resp = test.against_empty().await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "false");
     assert_eq!(resp.headers()["Read-Ready"], "true");
@@ -174,7 +174,7 @@ async fn async_io_methods() -> TestResult {
     barrier.wait().await;
 
     request_count.store(3, Ordering::Relaxed);
-    let resp = test.against_empty().await;
+    let resp = test.against_empty().await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Simple-Ready"], "false");
     assert_eq!(resp.headers()["Read-Ready"], "false");
@@ -191,7 +191,7 @@ async fn async_io_methods() -> TestResult {
                 .body(Body::empty())
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
     let resp = test
@@ -201,7 +201,7 @@ async fn async_io_methods() -> TestResult {
                 .body(Body::empty())
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers()["Ready-Index"], "timeout");
 

@@ -13,7 +13,7 @@ async fn upstream_streaming() -> TestResult {
         .await;
 
     // Test with an empty request
-    let mut resp = test.against_empty().await;
+    let mut resp = test.against_empty().await?;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // accumulate the entire body to a vector

@@ -35,7 +35,7 @@ base64 = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 serde_json = { workspace = true }
-clap = { version = "^4.0.18", features = ["derive"] }
+clap = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 tls-listener = { version = "^0.7.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }

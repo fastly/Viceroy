@@ -177,7 +177,7 @@ async fn client_certs_work() -> TestResult {
                 .body("Hello, Viceroy!")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.into_body().read_into_string().await?,

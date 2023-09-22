@@ -1,5 +1,7 @@
 //! Command line arguments.
 
+use viceroy_lib::config::UnknownImportBehavior;
+
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
     std::net::{IpAddr, Ipv4Addr},
@@ -90,6 +92,12 @@ pub struct SharedArgs {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    /// Set the behavior for unknown imports.
+    ///
+    /// Note that if a program only works with a non-default setting for this flag, it is unlikely
+    /// to be publishable to Fastly.
+    #[arg(long = "unknown-import-behavior", value_enum, default_value_t = UnknownImportBehavior::LinkError)]
+    unknown_import_behavior: UnknownImportBehavior,
     /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
     /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
     /// effect if you set RUST_LOG to a value before starting Viceroy
@@ -151,14 +159,19 @@ impl SharedArgs {
         self.log_stderr
     }
 
-    // Whether to enable wasmtime's builtin profiler.
+    /// Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
         self.profiler.unwrap_or(ProfilingStrategy::None)
     }
 
-    // Set of experimental wasi modules to link against.
+    /// Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
         self.experimental_modules.iter().map(|x| x.into()).collect()
+    }
+
+    /// Unknown import behavior
+    pub fn unknown_import_behavior(&self) -> UnknownImportBehavior {
+        self.unknown_import_behavior
     }
 
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and

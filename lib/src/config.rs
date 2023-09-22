@@ -254,3 +254,14 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         })
     }
 }
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum, Hash)]
+pub enum UnknownImportBehavior {
+    /// Unknown imports are rejected at link time (default behavior)
+    #[default]
+    LinkError,
+    /// Unknown imports trap when called
+    Trap,
+    /// Unknown imports return zero or a null pointer, depending on the type
+    ZeroOrNull,
+}

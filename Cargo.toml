@@ -23,6 +23,7 @@ opt-level = 1
 [workspace.dependencies]
 anyhow = "1.0.31"
 base64 = "0.21.2"
+clap = { version = "^4.0.18", features = ["derive"] }
 hyper = { version = "=0.14.26", features = ["full"] }
 itertools = "0.10.5"
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
