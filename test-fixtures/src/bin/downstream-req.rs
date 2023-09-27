@@ -24,4 +24,13 @@ fn main() {
 
     let localhost: IpAddr = "127.0.0.1".parse().unwrap();
     assert_eq!(client_req.get_client_ip_addr().unwrap(), localhost);
+
+    assert_eq!(client_req.get_tls_cipher_openssl_name(), None);
+    assert_eq!(client_req.get_tls_cipher_openssl_name_bytes(), None);
+    assert_eq!(client_req.get_tls_client_hello(), None);
+    assert_eq!(client_req.get_tls_ja3_md5(), None);
+    assert_eq!(client_req.get_tls_protocol(), None);
+    assert_eq!(client_req.get_tls_protocol_bytes(), None);
+    assert_eq!(client_req.get_tls_raw_client_certificate(), None);
+    assert_eq!(client_req.get_tls_raw_client_certificate_bytes(), None);
 }

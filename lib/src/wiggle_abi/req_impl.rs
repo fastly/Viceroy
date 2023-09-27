@@ -143,14 +143,14 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Client original header fingerprint"))
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
-    fn downstream_tls_cipher_openssl_name(
+    fn downstream_tls_cipher_openssl_name<'a>(
         &mut self,
-        cipher_out: &GuestPtr<'_, u8>,
-        cipher_max_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        _cipher_out: &GuestPtr<'a, u8>,
+        _cipher_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
@@ -184,14 +184,14 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
-    fn downstream_tls_protocol(
+    fn downstream_tls_protocol<'a>(
         &mut self,
-        protocol_out: &GuestPtr<'_, u8>,
-        protocol_max_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        _protocol_out: &GuestPtr<'a, u8>,
+        _protocol_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
@@ -201,29 +201,30 @@ impl FastlyHttpReq for Session {
         chello_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
-    #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
-    fn downstream_tls_raw_client_certificate(
+    fn downstream_tls_raw_client_certificate<'a>(
         &mut self,
-        _raw_client_cert_out: &GuestPtr<'_, u8>,
+        _tokio_rustlsraw_client_cert_out: &GuestPtr<'a, u8>,
         _raw_client_cert_max_len: u32,
         _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
-    #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
     fn downstream_tls_client_cert_verify_result(
         &mut self,
     ) -> Result<ClientCertVerifyResult, Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
-    #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
-    fn downstream_tls_ja3_md5(&mut self, ja3_md5_out: &GuestPtr<u8>) -> Result<u32, Error> {
-        Err(Error::NotAvailable("Client TLS JA3 hash"))
+    fn downstream_tls_ja3_md5(&mut self, _ja3_md5_out: &GuestPtr<u8>) -> Result<u32, Error> {
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
     #[allow(unused_variables)] // FIXME UFSM 2024-02-19: Remove this directive once implemented.
