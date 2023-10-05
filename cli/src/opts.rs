@@ -88,7 +88,7 @@ pub struct SharedArgs {
     log_stderr: bool,
     /// Whether to enable wasmtime's builtin profiler.
     #[arg(long = "profile", value_parser = check_wasmtime_profiler_mode)]
-    profile: Option<ProfilingStrategy>,
+    profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -103,6 +103,12 @@ pub struct SharedArgs {
     /// effect if you set RUST_LOG to a value before starting Viceroy
     #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbosity: u8,
+}
+
+#[derive(Debug, Clone)]
+enum Profile {
+    Native(ProfilingStrategy),
+    Guest { path: Option<String> },
 }
 
 impl ServeArgs {
@@ -161,7 +167,10 @@ impl SharedArgs {
 
     /// Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
-        self.profile.unwrap_or(ProfilingStrategy::None)
+        match self.profile {
+            Some(Profile::Native(s)) => s,
+            _ => ProfilingStrategy::None,
+        }
     }
 
     /// Set of experimental wasi modules to link against.
@@ -236,11 +245,16 @@ fn check_module(s: &str) -> Result<String, Error> {
 /// A parsing function used by [`Opts`][opts] to check that the input is valid wasmtime's profiling strategy.
 ///
 /// [opts]: struct.Opts.html
-fn check_wasmtime_profiler_mode(s: &str) -> Result<ProfilingStrategy, Error> {
-    match s {
-        "jitdump" => Ok(ProfilingStrategy::JitDump),
-        "perfmap" => Ok(ProfilingStrategy::PerfMap),
-        "vtune" => Ok(ProfilingStrategy::VTune),
+fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
+    let parts = s.split(',').collect::<Vec<_>>();
+    match &parts[..] {
+        ["jitdump"] => Ok(Profile::Native(ProfilingStrategy::JitDump)),
+        ["perfmap"] => Ok(Profile::Native(ProfilingStrategy::PerfMap)),
+        ["vtune"] => Ok(Profile::Native(ProfilingStrategy::VTune)),
+        ["guest"] => Ok(Profile::Guest { path: None }),
+        ["guest", path] => Ok(Profile::Guest {
+            path: Some(path.to_string()),
+        }),
         _ => Err(Error::ProfilingStrategy),
     }
 }
