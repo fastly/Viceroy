@@ -239,6 +239,7 @@ fn check_module(s: &str) -> Result<String, Error> {
 fn check_wasmtime_profiler_mode(s: &str) -> Result<ProfilingStrategy, Error> {
     match s {
         "jitdump" => Ok(ProfilingStrategy::JitDump),
+        "perfmap" => Ok(ProfilingStrategy::PerfMap),
         "vtune" => Ok(ProfilingStrategy::VTune),
         _ => Err(Error::ProfilingStrategy),
     }
@@ -399,6 +400,21 @@ mod opts_tests {
             "dummy-program-name",
             "--profiler",
             "vtune",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's PerfMap profiling strategy is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_perfmap_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profiler",
+            "perfmap",
             &test_file("minimal.wat"),
         ];
         match Opts::try_parse_from(args) {
