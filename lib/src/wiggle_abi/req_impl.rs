@@ -95,9 +95,9 @@ impl FastlyHttpReq for Session {
     }
 
     #[allow(unused_variables)] // FIXME JDC 2023-06-18: Remove this directive once implemented.
-    fn downstream_client_h2_fingerprint<'a>(
+    fn downstream_client_h2_fingerprint(
         &mut self,
-        h2fp_out: &GuestPtr<'a, u8>,
+        h2fp_out: &GuestPtr<'_, u8>,
         h2fp_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -134,9 +134,9 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
-    fn downstream_client_oh_fingerprint<'a>(
+    fn downstream_client_oh_fingerprint(
         &mut self,
-        _ohfp_out: &GuestPtr<'a, u8>,
+        _ohfp_out: &GuestPtr<'_, u8>,
         _ohfp_max_len: u32,
         _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -144,9 +144,9 @@ impl FastlyHttpReq for Session {
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
-    fn downstream_tls_cipher_openssl_name<'a>(
+    fn downstream_tls_cipher_openssl_name(
         &mut self,
-        cipher_out: &GuestPtr<'a, u8>,
+        cipher_out: &GuestPtr<'_, u8>,
         cipher_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -168,26 +168,26 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
-    fn redirect_to_websocket_proxy_v2<'a>(
+    fn redirect_to_websocket_proxy_v2(
         &mut self,
         _req_handle: RequestHandle,
-        _backend: &GuestPtr<'a, str>,
+        _backend: &GuestPtr<'_, str>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Redirect to WebSocket proxy"))
     }
 
-    fn redirect_to_grip_proxy_v2<'a>(
+    fn redirect_to_grip_proxy_v2(
         &mut self,
         _req_handle: RequestHandle,
-        _backend: &GuestPtr<'a, str>,
+        _backend: &GuestPtr<'_, str>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
-    fn downstream_tls_protocol<'a>(
+    fn downstream_tls_protocol(
         &mut self,
-        protocol_out: &GuestPtr<'a, u8>,
+        protocol_out: &GuestPtr<'_, u8>,
         protocol_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -195,9 +195,9 @@ impl FastlyHttpReq for Session {
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
-    fn downstream_tls_client_hello<'a>(
+    fn downstream_tls_client_hello(
         &mut self,
-        chello_out: &GuestPtr<'a, u8>,
+        chello_out: &GuestPtr<'_, u8>,
         chello_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -205,9 +205,9 @@ impl FastlyHttpReq for Session {
     }
 
     #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
-    fn downstream_tls_raw_client_certificate<'a>(
+    fn downstream_tls_raw_client_certificate(
         &mut self,
-        _raw_client_cert_out: &GuestPtr<'a, u8>,
+        _raw_client_cert_out: &GuestPtr<'_, u8>,
         _raw_client_cert_max_len: u32,
         _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -402,10 +402,10 @@ impl FastlyHttpReq for Session {
         Ok(self.insert_request_parts(parts))
     }
 
-    fn header_names_get<'a>(
+    fn header_names_get(
         &mut self,
         req_handle: RequestHandle,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         cursor: MultiValueCursor,
         ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
@@ -418,9 +418,9 @@ impl FastlyHttpReq for Session {
         )
     }
 
-    fn original_header_names_get<'a>(
+    fn original_header_names_get(
         &mut self,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         cursor: MultiValueCursor,
         ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
@@ -509,10 +509,10 @@ impl FastlyHttpReq for Session {
         HttpHeaders::remove(headers, name)
     }
 
-    fn method_get<'a>(
+    fn method_get(
         &mut self,
         req_handle: RequestHandle,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -543,10 +543,10 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
-    fn method_set<'a>(
+    fn method_set(
         &mut self,
         req_handle: RequestHandle,
-        method: &GuestPtr<'a, str>,
+        method: &GuestPtr<'_, str>,
     ) -> Result<(), Error> {
         let method_ref = &mut self.request_parts_mut(req_handle)?.method;
         let method_slice = method.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
@@ -555,10 +555,10 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
-    fn uri_get<'a>(
+    fn uri_get(
         &mut self,
         req_handle: RequestHandle,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -588,11 +588,7 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
-    fn uri_set<'a>(
-        &mut self,
-        req_handle: RequestHandle,
-        uri: &GuestPtr<'a, str>,
-    ) -> Result<(), Error> {
+    fn uri_set(&mut self, req_handle: RequestHandle, uri: &GuestPtr<'_, str>) -> Result<(), Error> {
         let uri_ref = &mut self.request_parts_mut(req_handle)?.uri;
         let req_uri_str = uri.as_str()?.ok_or(Error::SharedMemory)?;
         let req_uri_bytes = req_uri_str.as_bytes();
