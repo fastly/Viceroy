@@ -87,8 +87,8 @@ pub struct SharedArgs {
     #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
     /// Whether to enable wasmtime's builtin profiler.
-    #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
-    profiler: Option<ProfilingStrategy>,
+    #[arg(long = "profile", value_parser = check_wasmtime_profiler_mode)]
+    profile: Option<ProfilingStrategy>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -161,7 +161,7 @@ impl SharedArgs {
 
     /// Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
-        self.profiler.unwrap_or(ProfilingStrategy::None)
+        self.profile.unwrap_or(ProfilingStrategy::None)
     }
 
     /// Set of experimental wasi modules to link against.
@@ -383,7 +383,7 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_jitdump_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "jitdump",
             &test_file("minimal.wat"),
         ];
@@ -398,7 +398,7 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_vtune_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "vtune",
             &test_file("minimal.wat"),
         ];
@@ -413,7 +413,7 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_perfmap_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "perfmap",
             &test_file("minimal.wat"),
         ];
@@ -428,7 +428,7 @@ mod opts_tests {
     fn invalid_wasmtime_profiling_strategy_is_rejected() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "invalid_profiling_strategy",
             &test_file("minimal.wat"),
         ];
