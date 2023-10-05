@@ -107,7 +107,7 @@ async fn async_io_methods() -> TestResult {
                             .body(Body::empty())
                             .unwrap()
                     }
-                    0 | 1 | 2 => {
+                    0..=2 => {
                         barrier_2.wait().await;
                         Response::builder()
                             .status(StatusCode::OK)
@@ -132,7 +132,7 @@ async fn async_io_methods() -> TestResult {
                             .body(Body::empty())
                             .unwrap()
                     }
-                    0 | 1 | 2 => Response::builder()
+                    0..=2 => Response::builder()
                         .status(StatusCode::OK)
                         .body(Body::empty())
                         .unwrap(),
