@@ -89,7 +89,8 @@ pub(crate) fn create_store(
     guest_profiler: Option<GuestProfiler>,
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
     let wasi = make_wasi_ctx(ctx, &session).context("creating Wasi context")?;
-    let wasi_nn = WasiNnCtx::new().unwrap();
+    let (backends, registry) = wasmtime_wasi_nn::preload(&[])?;
+    let wasi_nn = WasiNnCtx::new(backends, registry);
     let wasm_ctx = WasmCtx {
         wasi,
         wasi_nn,
@@ -117,22 +118,22 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
     // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
     // Compute@Edge platform provides:
 
-    wasi_ctx = wasi_ctx
+    wasi_ctx
         // signal that we're in a local testing environment
         .env("FASTLY_HOSTNAME", "localhost")?
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()))?;
 
     if ctx.log_stdout() {
-        wasi_ctx = wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
+        wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
     } else {
-        wasi_ctx = wasi_ctx.inherit_stdout();
+        wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        wasi_ctx = wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
+        wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
     } else {
-        wasi_ctx = wasi_ctx.inherit_stderr();
+        wasi_ctx.inherit_stderr();
     }
     Ok(wasi_ctx.build())
 }
@@ -144,7 +145,9 @@ pub fn link_host_functions(
     experimental_modules
         .iter()
         .try_for_each(|experimental_module| match experimental_module {
-            ExperimentalModule::WasiNn => wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn),
+            ExperimentalModule::WasiNn => {
+                wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
+            }
         })?;
     wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
