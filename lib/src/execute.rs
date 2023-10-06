@@ -471,7 +471,7 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
     {
-        if let Err(e) = std::fs::File::create(&path)
+        if let Err(e) = std::fs::File::create(path)
             .map_err(anyhow::Error::new)
             .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
         {
