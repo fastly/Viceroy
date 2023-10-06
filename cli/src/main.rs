@@ -13,6 +13,7 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use wasi_common::I32Exit;
@@ -233,7 +234,7 @@ impl<'a> MakeWriter<'a> for StdWriter {
 async fn create_execution_context(
     args: &SharedArgs,
     check_backends: bool,
-    guest_profile_path: Option<String>,
+    guest_profile_path: Option<PathBuf>,
 ) -> Result<ExecuteCtx, anyhow::Error> {
     let input = args.input();
     let mut ctx = ExecuteCtx::new(

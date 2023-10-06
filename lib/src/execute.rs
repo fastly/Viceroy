@@ -84,7 +84,7 @@ impl ExecuteCtx {
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
-        guest_profile_path: Option<String>,
+        guest_profile_path: Option<PathBuf>,
         unknown_import_behavior: UnknownImportBehavior,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
@@ -112,7 +112,6 @@ impl ExecuteCtx {
                 engine_clone.increment_epoch();
             }
         })));
-        let guest_profile_path = guest_profile_path.map(PathBuf::from);
 
         Ok(Self {
             engine,

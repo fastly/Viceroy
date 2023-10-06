@@ -124,9 +124,13 @@ impl ServeArgs {
     }
 
     /// The path to write guest profiles to
-    pub fn profile_guest(&self) -> Option<String> {
+    pub fn profile_guest(&self) -> Option<PathBuf> {
         if let Some(Profile::Guest { path }) = &self.shared.profile {
-            Some(path.clone().unwrap_or_else(|| "guest-profiles".to_string()))
+            Some(
+                path.clone()
+                    .unwrap_or_else(|| "guest-profiles".to_string())
+                    .into(),
+            )
         } else {
             None
         }
@@ -148,11 +152,12 @@ impl RunArgs {
     }
 
     /// The path to write a guest profile to
-    pub fn profile_guest(&self) -> Option<String> {
+    pub fn profile_guest(&self) -> Option<PathBuf> {
         if let Some(Profile::Guest { path }) = &self.shared.profile {
             Some(
                 path.clone()
-                    .unwrap_or_else(|| "guest-profile.json".to_string()),
+                    .unwrap_or_else(|| "guest-profile.json".to_string())
+                    .into(),
             )
         } else {
             None
