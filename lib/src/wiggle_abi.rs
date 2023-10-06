@@ -158,7 +158,7 @@ impl UserErrorConversion for Session {
                     event!(Level::DEBUG, "Hostcall yielded an error: {}", err);
                 }
             },
-            _ => event!(Level::ERROR, "Hostcall yielded an error: {}", e),
+            _ => event!(Level::DEBUG, "Hostcall yielded an error: {}", e),
         }
 
         match e {
