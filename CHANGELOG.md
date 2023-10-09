@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.9.0 (2023-10-09)
 
 - Add options to customize behavior of unknown Wasm imports ([#313](https://github.com/fastly/Viceroy/pull/313))
