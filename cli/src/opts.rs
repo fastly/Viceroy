@@ -48,11 +48,6 @@ pub struct ServeArgs {
     #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
 
-    /// Whether to profile the wasm guest. Takes an optional directory to save
-    /// per-request profiles to
-    #[arg(long, default_missing_value = "guest-profiles", num_args=0..=1, require_equals=true)]
-    profile_guest: Option<PathBuf>,
-
     #[command(flatten)]
     shared: SharedArgs,
 }
@@ -61,11 +56,6 @@ pub struct ServeArgs {
 pub struct RunArgs {
     #[command(flatten)]
     shared: SharedArgs,
-
-    /// Whether to profile the wasm guest. Takes an optional filename to save
-    /// the profile to
-    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
-    profile_guest: Option<PathBuf>,
 
     /// Args to pass along to the binary being executed.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -86,9 +76,24 @@ pub struct SharedArgs {
     /// Whether to treat stderr as a logging endpoint
     #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
-    /// Whether to enable wasmtime's builtin profiler.
-    #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
-    profiler: Option<ProfilingStrategy>,
+    /// Profiling strategy (valid options are: perfmap, jitdump, vtune, guest)
+    ///
+    /// The perfmap, jitdump, and vtune profiling strategies integrate Viceroy
+    /// with external profilers such as `perf`.
+    ///
+    /// The guest profiling strategy enables in-process sampling. By default,
+    /// when Viceroy is running as a server it will write the captured
+    /// per-request profiles to the `guest-profiles` directory, and as a test
+    /// runner it will write the captured profile to the `guest-profile.json`
+    /// file. These profiles can be viewed at https://profiler.firefox.com/.
+    ///
+    /// The `guest` option can be additionally configured as:
+    ///
+    ///     --profile=guest[,path]
+    ///
+    /// where `path` is the directory or filename to write the profile(s) to.
+    #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
+    profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -105,6 +110,12 @@ pub struct SharedArgs {
     verbosity: u8,
 }
 
+#[derive(Debug, Clone)]
+enum Profile {
+    Native(ProfilingStrategy),
+    Guest { path: Option<String> },
+}
+
 impl ServeArgs {
     /// The address that the service should be bound to.
     pub fn addr(&self) -> SocketAddr {
@@ -113,8 +124,16 @@ impl ServeArgs {
     }
 
     /// The path to write guest profiles to
-    pub fn profile_guest(&self) -> Option<&PathBuf> {
-        self.profile_guest.as_ref()
+    pub fn profile_guest(&self) -> Option<PathBuf> {
+        if let Some(Profile::Guest { path }) = &self.shared.profile {
+            Some(
+                path.clone()
+                    .unwrap_or_else(|| "guest-profiles".to_string())
+                    .into(),
+            )
+        } else {
+            None
+        }
     }
 
     pub fn shared(&self) -> &SharedArgs {
@@ -133,8 +152,16 @@ impl RunArgs {
     }
 
     /// The path to write a guest profile to
-    pub fn profile_guest(&self) -> Option<&PathBuf> {
-        self.profile_guest.as_ref()
+    pub fn profile_guest(&self) -> Option<PathBuf> {
+        if let Some(Profile::Guest { path }) = &self.shared.profile {
+            Some(
+                path.clone()
+                    .unwrap_or_else(|| "guest-profile.json".to_string())
+                    .into(),
+            )
+        } else {
+            None
+        }
     }
 }
 
@@ -161,7 +188,10 @@ impl SharedArgs {
 
     /// Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
-        self.profiler.unwrap_or(ProfilingStrategy::None)
+        match self.profile {
+            Some(Profile::Native(s)) => s,
+            _ => ProfilingStrategy::None,
+        }
     }
 
     /// Set of experimental wasi modules to link against.
@@ -236,11 +266,16 @@ fn check_module(s: &str) -> Result<String, Error> {
 /// A parsing function used by [`Opts`][opts] to check that the input is valid wasmtime's profiling strategy.
 ///
 /// [opts]: struct.Opts.html
-fn check_wasmtime_profiler_mode(s: &str) -> Result<ProfilingStrategy, Error> {
-    match s {
-        "jitdump" => Ok(ProfilingStrategy::JitDump),
-        "perfmap" => Ok(ProfilingStrategy::PerfMap),
-        "vtune" => Ok(ProfilingStrategy::VTune),
+fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
+    let parts = s.split(',').collect::<Vec<_>>();
+    match &parts[..] {
+        ["jitdump"] => Ok(Profile::Native(ProfilingStrategy::JitDump)),
+        ["perfmap"] => Ok(Profile::Native(ProfilingStrategy::PerfMap)),
+        ["vtune"] => Ok(Profile::Native(ProfilingStrategy::VTune)),
+        ["guest"] => Ok(Profile::Guest { path: None }),
+        ["guest", path] => Ok(Profile::Guest {
+            path: Some(path.to_string()),
+        }),
         _ => Err(Error::ProfilingStrategy),
     }
 }
@@ -383,7 +418,7 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_jitdump_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "jitdump",
             &test_file("minimal.wat"),
         ];
@@ -398,7 +433,7 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_vtune_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "vtune",
             &test_file("minimal.wat"),
         ];
@@ -413,8 +448,38 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_perfmap_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "perfmap",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's guest profiling strategy without path is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_guest_without_path_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profile",
+            "guest",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's guest profiling strategy with path is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_guest_with_path_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profile",
+            "guest,/some/path",
             &test_file("minimal.wat"),
         ];
         match Opts::try_parse_from(args) {
@@ -428,7 +493,7 @@ mod opts_tests {
     fn invalid_wasmtime_profiling_strategy_is_rejected() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "invalid_profiling_strategy",
             &test_file("minimal.wat"),
         ];
