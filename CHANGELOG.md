@@ -1,5 +1,13 @@
 ## Unreleased
 
+## 0.9.0 (2023-10-09)
+
+- Add options to customize behavior of unknown Wasm imports ([#313](https://github.com/fastly/Viceroy/pull/313))
+- Lower Hostcall error log level to DEBUG ([#314](https://github.com/fastly/Viceroy/pull/314))
+- Add perfmap profiling strategy ([#316](https://github.com/fastly/Viceroy/pull/316))
+- Update to wasmtime-13.0.0 ([#317](https://github.com/fastly/Viceroy/pull/317))
+- Revamp profile handling CLI flags ([#318](https://github.com/fastly/Viceroy/pull/318))
+
 ## 0.8.1 (2023-09-18)
 
 - Fix a bug in which static backends were marked as GRPC by default ([#311](https://github.com/fastly/Viceroy/pull/311))
