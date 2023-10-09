@@ -1,4 +1,6 @@
-## Unreleased
+## 0.9.1 (2023-10-09)
+
+- Match the number of memories to the number of core instances ([#322](https://github.com/fastly/Viceroy/pull/322))
 
 ## 0.9.0 (2023-10-09)
 
