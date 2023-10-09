@@ -520,7 +520,7 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     pooling_allocation_config.max_core_instance_size(MB);
 
     // Core wasm programs have 1 memory
-    pooling_allocation_config.total_memories(1);
+    pooling_allocation_config.total_memories(100);
     pooling_allocation_config.max_memories_per_module(1);
 
     // allow for up to 128MiB of linear memory. Wasm pages are 64k
