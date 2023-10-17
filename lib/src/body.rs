@@ -210,7 +210,6 @@ impl HttpBody for Body {
                                     for (k, v) in header_map.iter() {
                                         self.trailers.append(k, v.clone());
                                     }
-                                    self.trailers_ready = true;
                                     continue;
                                 }
                             }
@@ -246,7 +245,6 @@ impl HttpBody for Body {
                         }
                         Poll::Ready(Some(StreamingBodyItem::Finished(trailers))) => {
                             self.trailers.extend(trailers);
-                            self.trailers_ready = true;
                             // it shouldn't be possible for any more chunks to arrive on this
                             // channel, but just in case we won't try to read them; dropping the
                             // receiver means we won't hit the `Ready(None)` case above that
@@ -291,6 +289,8 @@ impl HttpBody for Body {
             }
         }
 
+        // With no more chunks arriving we can mark trailres as being ready.
+        self.trailers_ready = true;
         Poll::Ready(None) // The queue of chunks is now empty!
     }
 
