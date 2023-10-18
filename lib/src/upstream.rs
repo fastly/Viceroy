@@ -47,7 +47,9 @@ impl TlsConfig {
         match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
                 for cert in certs {
-                    roots.add(&rustls::Certificate(cert.0)).unwrap();
+                    if let Err(e) = roots.add(&rustls::Certificate(cert.0)) {
+                        warn!("failed to load certificate: {e}");
+                    }
                 }
             }
             Err(err) => return Err(Error::BadCerts(err)),
