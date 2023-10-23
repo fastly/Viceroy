@@ -1,5 +1,5 @@
 use fastly::{Backend, Error, Request};
-//use fastly::experimental::GrpcBackend;
+use fastly::experimental::GrpcBackend;
 use std::str::FromStr;
 
 /// Pass everything from the downstream request through to the backend, then pass everything back
@@ -12,7 +12,7 @@ fn main() -> Result<(), Error> {
     let port = u16::from_str(port_str).unwrap();
 
     let backend = Backend::builder("grpc-backend", format!("localhost:{}", port))
-//        .for_grpc(true)
+        .for_grpc(true)
         .finish()
         .expect("can build backend");
 
