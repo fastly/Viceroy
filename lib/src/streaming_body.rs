@@ -89,7 +89,10 @@ impl StreamingBody {
                 // the bytes. Spawn a task that will send a `finish` message as soon as there's room
                 // in the channel.
                 tokio::task::spawn(async move {
-                    let _ = self.sender.send(StreamingBodyItem::Finished(trailers)).await;
+                    let _ = self
+                        .sender
+                        .send(StreamingBodyItem::Finished(trailers))
+                        .await;
                 });
                 Ok(())
             }

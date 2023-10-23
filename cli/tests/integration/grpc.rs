@@ -36,4 +36,3 @@ async fn grpc_creates_h2_connection() -> TestResult {
 
     Ok(())
 }
-
