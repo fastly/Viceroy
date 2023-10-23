@@ -192,8 +192,6 @@ impl HttpBody for Body {
                         Poll::Ready(None) => {
                             // no more bytes from this body, so continue the loop now that it's been
                             // popped
-                            //
-                            // TODO ACF 2020-06-01: do something with the body's trailers at this point
                             match body_mut.trailers().poll_unpin(cx) {
                                 Poll::Pending => {
                                     self.chunks.push_front(body.into());
@@ -289,7 +287,7 @@ impl HttpBody for Body {
             }
         }
 
-        // With no more chunks arriving we can mark trailres as being ready.
+        // With no more chunks arriving we can mark trailers as being ready.
         self.trailers_ready = true;
         Poll::Ready(None) // The queue of chunks is now empty!
     }

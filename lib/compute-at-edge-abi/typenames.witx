@@ -60,9 +60,7 @@
         ;;;
         ;;; This is returned when an attempting to retrieve a resource that is not yet available.
         ;;; For example when attempting to read trailers from a Body that has not yet been consumed.
-        $again
-    )
-)
+        $again))
 
 ;;; A tag indicating HTTP protocol versions.
 (typename $http_version
