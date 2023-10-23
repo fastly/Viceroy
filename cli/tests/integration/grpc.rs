@@ -32,7 +32,7 @@ async fn grpc_creates_h2_connection() -> TestResult {
         )
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
-    //assert_eq!(resp.into_body().read_into_string().await?, "Hello!");
+    assert_eq!(resp.into_body().read_into_string().await?, "Hello!");
 
     Ok(())
 }
