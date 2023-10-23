@@ -1,5 +1,7 @@
 //! Body type, for request and response bodies.
 
+use futures::FutureExt;
+
 use {
     crate::{error, streaming_body::StreamingBodyItem, Error},
     bytes::{BufMut, BytesMut},
@@ -89,6 +91,8 @@ impl From<mpsc::Receiver<StreamingBodyItem>> for Chunk {
 #[derive(Default, Debug)]
 pub struct Body {
     chunks: VecDeque<Chunk>,
+    pub(crate) trailers: HeaderMap,
+    pub(crate) trailers_ready: bool,
 }
 
 impl Body {
@@ -179,7 +183,7 @@ impl HttpBody for Body {
                     let body_mut = &mut body;
                     pin_mut!(body_mut);
 
-                    match body_mut.poll_data(cx) {
+                    match body_mut.as_mut().poll_data(cx) {
                         Poll::Pending => {
                             // put the body back, so we can poll it again next time
                             self.chunks.push_front(body.into());
@@ -188,9 +192,25 @@ impl HttpBody for Body {
                         Poll::Ready(None) => {
                             // no more bytes from this body, so continue the loop now that it's been
                             // popped
-                            //
-                            // TODO ACF 2020-06-01: do something with the body's trailers at this point
-                            continue;
+                            match body_mut.trailers().poll_unpin(cx) {
+                                Poll::Pending => {
+                                    self.chunks.push_front(body.into());
+                                    return Poll::Pending;
+                                }
+
+                                Poll::Ready(Err(e)) => {
+                                    return Poll::Ready(Some(Err(e.into())));
+                                }
+
+                                Poll::Ready(Ok(None)) => continue,
+
+                                Poll::Ready(Ok(Some(header_map))) => {
+                                    for (k, v) in header_map.iter() {
+                                        self.trailers.append(k, v.clone());
+                                    }
+                                    continue;
+                                }
+                            }
                         }
                         Poll::Ready(Some(item)) => {
                             // put the body back, so we can poll it again next time
@@ -221,7 +241,8 @@ impl HttpBody for Body {
                             self.chunks.push_front(chunk);
                             continue;
                         }
-                        Poll::Ready(Some(StreamingBodyItem::Finished)) => {
+                        Poll::Ready(Some(StreamingBodyItem::Finished(trailers))) => {
+                            self.trailers.extend(trailers);
                             // it shouldn't be possible for any more chunks to arrive on this
                             // channel, but just in case we won't try to read them; dropping the
                             // receiver means we won't hit the `Ready(None)` case above that
@@ -266,6 +287,8 @@ impl HttpBody for Body {
             }
         }
 
+        // With no more chunks arriving we can mark trailers as being ready.
+        self.trailers_ready = true;
         Poll::Ready(None) // The queue of chunks is now empty!
     }
 
@@ -273,7 +296,14 @@ impl HttpBody for Body {
         self: Pin<&mut Self>,
         _cx: &mut Context,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        Poll::Ready(Ok(None)) // `Body` does not currently have trailers.
+        if !self.chunks.is_empty() {
+            return Poll::Pending;
+        }
+        if self.trailers.is_empty() {
+            Poll::Ready(Ok(None))
+        } else {
+            Poll::Ready(Ok(Some(self.trailers.clone())))
+        }
     }
 
     /// This is an optional method, but implementing it correctly allows us to reduce the number of

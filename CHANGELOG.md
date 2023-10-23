@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Add support for trailers. Trailer modification calls should be considered experimental,
+  as we finalize interfaces ([#327](https://github.com/fastly/Viceroy/pull/327))
+
 ## 0.9.1 (2023-10-09)
 
 - Match the number of memories to the number of core instances ([#322](https://github.com/fastly/Viceroy/pull/322))
