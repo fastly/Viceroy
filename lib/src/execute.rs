@@ -516,7 +516,7 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     const MB: usize = 1 << 20;
     let mut pooling_allocation_config = PoolingAllocationConfig::default();
 
-    // This number matches C@E production
+    // This number matches Compute production
     pooling_allocation_config.max_core_instance_size(MB);
 
     // Core wasm programs have 1 memory

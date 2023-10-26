@@ -19,7 +19,7 @@ use {
 // [clap](https://docs.rs/clap/latest/clap/) documentation for more information.
 //
 // Note that the doc comment below is used as descriptive text in the `--help` output.
-/// Viceroy is a local testing daemon for Compute@Edge.
+/// Viceroy is a local testing daemon for Compute.
 #[derive(Parser, Debug)]
 #[command(name = "viceroy", author, version, about)]
 #[command(propagate_version = true)]

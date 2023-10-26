@@ -49,7 +49,7 @@ pub use crate::secret_store::SecretStores;
 
 /// Fastly-specific configuration information.
 ///
-/// This `struct` represents the fields and values in a Compute@Edge package's `fastly.toml`.
+/// This `struct` represents the fields and values in a Compute package's `fastly.toml`.
 #[derive(Debug, Clone)]
 pub struct FastlyConfig {
     name: String,

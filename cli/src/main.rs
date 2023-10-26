@@ -1,4 +1,4 @@
-//! Fastly's local testing daemon for Compute@Edge.
+//! Fastly's local testing daemon for Compute.
 
 // When building the project in release mode:
 //   (1): Promote warnings into errors.
