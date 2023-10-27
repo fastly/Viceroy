@@ -1,6 +1,6 @@
 # Viceroy
 
-Viceroy provides local testing for developers working with Compute. It
+Viceroy provides local testing for developers working with Fastly Compute. It
 allows you to run services written against the Compute APIs on your local
 development machine, and allows you to configure testing backends for your
 service to communicate with.
