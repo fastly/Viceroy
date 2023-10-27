@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.9.2 (2023-10-23)
+
+-  Warn instead of fail when certificates can't be loaded ([#325](https://github.com/fastly/Viceroy/pull/325))
+
 - Add support for trailers. Trailer modification calls should be considered experimental,
   as we finalize interfaces ([#327](https://github.com/fastly/Viceroy/pull/327))
 
