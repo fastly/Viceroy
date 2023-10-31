@@ -1,6 +1,6 @@
 [package]
 name = "viceroy"
-description = "Viceroy is a local testing daemon for Compute@Edge."
+description = "Viceroy is a local testing daemon for Fastly Compute."
 version = "0.9.3"
 authors = ["Fastly"]
 readme = "../README.md"

@@ -116,7 +116,7 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
     let mut wasi_ctx = WasiCtxBuilder::new();
 
     // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
-    // Compute@Edge platform provides:
+    // Compute platform provides:
 
     wasi_ctx
         // signal that we're in a local testing environment

@@ -160,7 +160,7 @@
 
 ## 0.2.12 (2022-03-08)
 
-- Add stubs for framing header controls, now available on C@E ([#139](https://github.com/fastly/Viceroy/pull/139))
+- Add stubs for framing header controls, now available on Compute ([#139](https://github.com/fastly/Viceroy/pull/139))
 
 ## 0.2.11 (2022-02-15)
 
@@ -189,7 +189,7 @@
 
 - Catch interrupt signals ([#85](https://github.com/fastly/Viceroy/pull/85))
 - Include aarch64 tarballs for Linux and macOS ([#88](https://github.com/fastly/Viceroy/pull/88))
-- Align URI and Host header semantics with production C@E ([#90](https://github.com/fastly/Viceroy/pull/90))
+- Align URI and Host header semantics with production Compute ([#90](https://github.com/fastly/Viceroy/pull/90))
 
 ## 0.2.5 (2021-10-21)
 
@@ -206,9 +206,9 @@
 
 ### Additions
 - Added the close functionality for `RequestHandle`, `ResponseHandle`,
-  `BodyHandle`, and `StreamingBodyHandle` in the upcoming Rust C@E `0.8.0` SDK
+  `BodyHandle`, and `StreamingBodyHandle` in the upcoming Rust Compute `0.8.0` SDK
   release ([#65](https://github.com/fastly/Viceroy/pull/65))
-- Added local dictionary support so that C@E programs that need dictionaries can work in Viceroy ([#61](https://github.com/fastly/Viceroy/pull/61))
+- Added local dictionary support so that Compute programs that need dictionaries can work in Viceroy ([#61](https://github.com/fastly/Viceroy/pull/61))
 - Added the ability to do host overrides from the TOML configuration ([#48](https://github.com/fastly/Viceroy/pull/48))
 
 ### Changes
