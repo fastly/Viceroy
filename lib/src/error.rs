@@ -265,6 +265,10 @@ pub enum HandleError {
     #[error("Invalid pending KV lookup handle: {0}")]
     InvalidPendingKvLookupHandle(crate::wiggle_abi::types::PendingKvLookupHandle),
 
+    /// A insert handle was not valid.
+    #[error("Invalid pending KV insert handle: {0}")]
+    InvalidPendingKvInsertHandle(crate::wiggle_abi::types::PendingKvInsertHandle),
+
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),

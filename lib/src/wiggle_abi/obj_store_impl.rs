@@ -1,6 +1,6 @@
 //! fastly_obj_store` hostcall implementations.
 
-use super::types::PendingKvLookupHandle;
+use super::types::{PendingKvInsertHandle, PendingKvLookupHandle};
 use crate::session::PeekableTask;
 
 use {
@@ -100,5 +100,31 @@ impl FastlyObjectStore for Session {
         self.obj_insert(store, key, bytes)?;
 
         Ok(())
+    }
+
+    async fn insert_async<'a>(
+        &mut self,
+        store: ObjectStoreHandle,
+        key: &GuestPtr<str>,
+        body_handle: BodyHandle,
+        opt_pending_body_handle_out: &GuestPtr<PendingKvInsertHandle>,
+    ) -> Result<(), Error> {
+        let store = self.get_obj_store_key(store).unwrap().clone();
+        let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
+        let bytes = self.take_body(body_handle)?.read_into_vec().await?;
+        let fut = futures::future::ok(self.obj_insert(store, key, bytes));
+        let task = PeekableTask::spawn(fut).await;
+        opt_pending_body_handle_out.write(self.insert_pending_kv_insert(task))?;
+        Ok(())
+    }
+
+    async fn pending_insert_wait(
+        &mut self,
+        pending_insert_handle: PendingKvInsertHandle,
+    ) -> Result<(), Error> {
+        Ok((self
+            .take_pending_kv_insert(pending_insert_handle)?
+            .recv()
+            .await?)?)
     }
 }

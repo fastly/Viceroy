@@ -3,7 +3,7 @@
 mod async_item;
 mod downstream;
 
-pub use async_item::{AsyncItem, PeekableTask, PendingKvTask};
+pub use async_item::{AsyncItem, PeekableTask, PendingKvInsertTask, PendingKvLookupTask};
 
 use {
     self::downstream::DownstreamResponse,
@@ -18,8 +18,8 @@ use {
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
-            ResponseHandle, SecretHandle, SecretStoreHandle,
+            ObjectStoreHandle, PendingKvInsertHandle, PendingKvLookupHandle, PendingRequestHandle,
+            RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -631,6 +631,53 @@ impl Session {
     ) -> Result<(), ObjectStoreError> {
         self.object_store.insert(obj_store_key, obj_key, obj)
     }
+
+    /// Insert a [`PendingKvInsert`] into the session.
+    ///
+    /// This method returns a new [`PendingKvInsertHandle`], which can then be used to access
+    /// and mutate the pending insert.
+    pub fn insert_pending_kv_insert(
+        &mut self,
+        pending: PendingKvInsertTask,
+    ) -> PendingKvInsertHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingKvInsert(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingKvInsert`], given its [`PendingKvInsertHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending insert in the
+    /// session.
+    pub fn take_pending_kv_insert(
+        &mut self,
+        handle: PendingKvInsertHandle,
+    ) -> Result<PendingKvInsertTask, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_kv_insert(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_kv_insert)
+            .ok_or(HandleError::InvalidPendingKvInsertHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingInsert`], given its [`PendingKvInsertHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a insert in the
+    /// session.
+    pub fn pending_kv_insert(
+        &self,
+        handle: PendingKvInsertHandle,
+    ) -> Result<&PendingKvInsertTask, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_kv_insert)
+            .ok_or(HandleError::InvalidPendingKvInsertHandle(handle))
+    }
+
     pub fn obj_lookup(
         &self,
         obj_store_key: &ObjectStoreKey,
@@ -643,7 +690,10 @@ impl Session {
     ///
     /// This method returns a new [`PendingKvLookupHandle`], which can then be used to access
     /// and mutate the pending lookup.
-    pub fn insert_pending_kv_lookup(&mut self, pending: PendingKvTask) -> PendingKvLookupHandle {
+    pub fn insert_pending_kv_lookup(
+        &mut self,
+        pending: PendingKvLookupTask,
+    ) -> PendingKvLookupHandle {
         self.async_items
             .push(Some(AsyncItem::PendingKvLookup(pending)))
             .into()
@@ -656,7 +706,7 @@ impl Session {
     pub fn take_pending_kv_lookup(
         &mut self,
         handle: PendingKvLookupHandle,
-    ) -> Result<PendingKvTask, HandleError> {
+    ) -> Result<PendingKvLookupTask, HandleError> {
         // check that this is a pending request before removing it
         let _ = self.pending_kv_lookup(handle)?;
 
@@ -674,7 +724,7 @@ impl Session {
     pub fn pending_kv_lookup(
         &self,
         handle: PendingKvLookupHandle,
-    ) -> Result<&PendingKvTask, HandleError> {
+    ) -> Result<&PendingKvLookupTask, HandleError> {
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
@@ -970,5 +1020,17 @@ impl From<PendingKvLookupHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvLookupHandle {
     fn from(h: AsyncItemHandle) -> PendingKvLookupHandle {
         PendingKvLookupHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingKvInsertHandle> for AsyncItemHandle {
+    fn from(h: PendingKvInsertHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingKvInsertHandle {
+    fn from(h: AsyncItemHandle) -> PendingKvInsertHandle {
+        PendingKvInsertHandle::from(h.as_u32())
     }
 }

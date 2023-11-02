@@ -6,7 +6,8 @@ use futures::FutureExt;
 use http::Response;
 use tokio::sync::oneshot;
 
-pub type PendingKvTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
+pub type PendingKvLookupTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
+pub type PendingKvInsertTask = PeekableTask<Result<(), ObjectStoreError>>;
 
 /// Represents either a full body, or the write end of a streaming body.
 ///
@@ -17,7 +18,8 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
-    PendingKvLookup(PendingKvTask),
+    PendingKvLookup(PendingKvLookupTask),
+    PendingKvInsert(PendingKvInsertTask),
 }
 
 impl AsyncItem {
@@ -74,16 +76,30 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvTask> {
+    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvLookupTask> {
         match self {
             Self::PendingKvLookup(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn into_pending_kv_lookup(self) -> Option<PendingKvTask> {
+    pub fn into_pending_kv_lookup(self) -> Option<PendingKvLookupTask> {
         match self {
             Self::PendingKvLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_kv_insert(&self) -> Option<&PendingKvInsertTask> {
+        match self {
+            Self::PendingKvInsert(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_insert(self) -> Option<PendingKvInsertTask> {
+        match self {
+            Self::PendingKvInsert(req) => Some(req),
             _ => None,
         }
     }
@@ -115,6 +131,7 @@ impl AsyncItem {
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
             Self::PendingKvLookup(obj) => obj.await_ready().await,
+            Self::PendingKvInsert(obj) => obj.await_ready().await,
         }
     }
 
@@ -129,9 +146,15 @@ impl From<PeekableTask<Response<Body>>> for AsyncItem {
     }
 }
 
-impl From<PendingKvTask> for AsyncItem {
-    fn from(task: PendingKvTask) -> Self {
+impl From<PendingKvLookupTask> for AsyncItem {
+    fn from(task: PendingKvLookupTask) -> Self {
         Self::PendingKvLookup(task)
+    }
+}
+
+impl From<PendingKvInsertTask> for AsyncItem {
+    fn from(task: PendingKvInsertTask) -> Self {
+        Self::PendingKvInsert(task)
     }
 }
 
