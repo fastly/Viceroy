@@ -1,5 +1,5 @@
-use fastly::{Backend, Error, Request};
 use fastly::experimental::GrpcBackend;
+use fastly::{Backend, Error, Request};
 use std::str::FromStr;
 
 /// Pass everything from the downstream request through to the backend, then pass everything back
@@ -7,7 +7,7 @@ use std::str::FromStr;
 fn main() -> Result<(), Error> {
     let client_req = Request::from_client();
     let Some(port_str) = client_req.get_header_str("Port") else {
-            panic!("Couldn't find out what port to use!");
+        panic!("Couldn't find out what port to use!");
     };
     let port = u16::from_str(port_str).unwrap();
 
