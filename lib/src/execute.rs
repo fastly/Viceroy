@@ -9,7 +9,7 @@ use crate::config::UnknownImportBehavior;
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, ExperimentalModule, Geolocation},
+        config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, link_host_functions, WasmCtx},
@@ -51,6 +51,8 @@ pub struct ExecuteCtx {
     module: Module,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// The device detection mappings for this execution.
+    device_detection: Arc<DeviceDetection>,
     /// The geolocation mappings for this execution.
     geolocation: Arc<Geolocation>,
     /// Preloaded TLS certificates and configuration
@@ -118,6 +120,7 @@ impl ExecuteCtx {
             instance_pre: Arc::new(instance_pre),
             module,
             backends: Arc::new(Backends::default()),
+            device_detection: Arc::new(DeviceDetection::default()),
             geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
@@ -146,6 +149,17 @@ impl ExecuteCtx {
     /// Set the backends for this execution context.
     pub fn with_backends(mut self, backends: Backends) -> Self {
         self.backends = Arc::new(backends);
+        self
+    }
+
+    /// Get the device detection mappings for this execution context.
+    pub fn device_detection(&self) -> &DeviceDetection {
+        &self.device_detection
+    }
+
+    /// Set the device detection mappings for this execution context.
+    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
+        self.device_detection = Arc::new(device_detection);
         self
     }
 
@@ -321,6 +335,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.device_detection.clone(),
             self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
@@ -415,6 +430,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.device_detection.clone(),
             self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),

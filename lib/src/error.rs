@@ -90,6 +90,9 @@ pub enum Error {
     DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
     #[error(transparent)]
+    DeviceDetectionError(#[from] crate::wiggle_abi::DeviceDetectionError),
+
+    #[error(transparent)]
     GeolocationError(#[from] crate::wiggle_abi::GeolocationError),
 
     #[error(transparent)]
@@ -180,6 +183,7 @@ impl Error {
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
+            Error::DeviceDetectionError(e) => e.to_fastly_status(),
             Error::GeolocationError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
@@ -329,6 +333,13 @@ pub enum FastlyConfigError {
         path: String,
         #[source]
         err: std::io::Error,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidDeviceDetectionDefinition {
+        name: String,
+        #[source]
+        err: DeviceDetectionConfigError,
     },
 
     #[error("invalid configuration for '{name}': {err}")]
@@ -493,6 +504,58 @@ pub enum DictionaryConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
     DictionaryFileWrongFormat,
+}
+
+/// Errors that may occur while validating device detection configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceDetectionConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("definition was not provided as a TOML table")]
+    InvalidEntryType,
+
+    #[error("missing 'file' field")]
+    MissingFile,
+
+    #[error("'file' field is empty")]
+    EmptyFileEntry,
+
+    #[error("missing 'user_agents' field")]
+    MissingUserAgents,
+
+    #[error("inline device detection value was not a string")]
+    InvalidInlineEntryType,
+
+    #[error("'file' field was not a string")]
+    InvalidFileEntry,
+
+    #[error("'user_agents' was not provided as a TOML table")]
+    InvalidUserAgentsType,
+
+    #[error("unrecognized key '{0}'")]
+    UnrecognizedKey(String),
+
+    #[error("missing 'format' field")]
+    MissingFormat,
+
+    #[error("'format' field was not a string")]
+    InvalidFormatEntry,
+
+    #[error("'{0}' is not a valid format for the device detection mapping. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidDeviceDetectionMappingFormat(String),
+
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
+    )]
+    DeviceDetectionFileWrongFormat,
+
+    #[error("'format' field is empty")]
+    EmptyFormatEntry,
+
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    DeviceDetectionItemValueWrongFormat { key: String },
 }
 
 /// Errors that may occur while validating geolocation configurations.
