@@ -11,7 +11,9 @@ use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
     body::Body,
-    config::{DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores},
+    config::{
+        DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
+    },
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
