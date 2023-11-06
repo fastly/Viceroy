@@ -93,8 +93,10 @@
 (typename $dictionary_handle (handle))
 ;;; A handle to an Object Store.
 (typename $object_store_handle (handle))
-;;; A handle to a pending KV request.
+;;; A handle to a pending KV lookup request.
 (typename $pending_kv_lookup_handle (handle))
+;;; A handle to a pending KV insert request.
+(typename $pending_kv_insert_handle (handle))
 ;;; A handle to a Secret Store.
 (typename $secret_store_handle (handle))
 ;;; A handle to an individual secret.

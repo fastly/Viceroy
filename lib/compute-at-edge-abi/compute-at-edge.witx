@@ -661,6 +661,19 @@
         (param $body_handle $body_handle)
         (result $err (expected (error $fastly_status)))
     )
+
+    (@interface func (export "insert_async")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $body_handle $body_handle)
+        (param $pending_handle_out (@witx pointer $pending_kv_insert_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "pending_insert_wait")
+        (param $pending_objstr_handle $pending_kv_insert_handle)
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_secret_store
