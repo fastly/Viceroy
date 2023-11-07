@@ -861,7 +861,7 @@ mod device_detection_config_tests {
 
     /// Check that Device Detection definitions have a valid `format`.
     #[test]
-    fn geolocation_has_a_valid_format() {
+    fn device_detection_has_a_valid_format() {
         use DeviceDetectionConfigError::InvalidDeviceDetectionMappingFormat;
         let invalid_format_field = r#"
             [device_detection]
