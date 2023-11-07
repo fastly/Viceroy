@@ -250,6 +250,7 @@ async fn create_execution_context(
     if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
+        let device_detection = config.device_detection();
         let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
         let object_stores = config.object_stores();
@@ -258,6 +259,7 @@ async fn create_execution_context(
 
         ctx = ctx
             .with_backends(backends.clone())
+            .with_device_detection(device_detection.clone())
             .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
             .with_object_stores(object_stores.clone())

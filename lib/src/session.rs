@@ -9,7 +9,10 @@ use {
     self::downstream::DownstreamResponse,
     crate::{
         body::Body,
-        config::{Backend, Backends, Dictionaries, Dictionary, DictionaryName, Geolocation},
+        config::{
+            Backend, Backends, DeviceDetection, Dictionaries, Dictionary, DictionaryName,
+            Geolocation,
+        },
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
@@ -71,6 +74,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     backends: Arc<Backends>,
+    /// The Device Detection configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    device_detection: Arc<DeviceDetection>,
     /// The Geolocations configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -128,6 +135,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
         backends: Arc<Backends>,
+        device_detection: Arc<DeviceDetection>,
         geolocation: Arc<Geolocation>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
@@ -156,6 +164,7 @@ impl Session {
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
+            device_detection,
             geolocation,
             dynamic_backends: Backends::default(),
             tls_config,
@@ -578,6 +587,14 @@ impl Session {
     /// Access the TLS configuration.
     pub fn tls_config(&self) -> &TlsConfig {
         &self.tls_config
+    }
+
+    // ----- Device Detection API -----
+
+    pub fn device_detection_lookup(&self, user_agent: &str) -> Option<String> {
+        self.device_detection
+            .lookup(user_agent)
+            .map(|data| data.to_string())
     }
 
     // ----- Dictionaries API -----

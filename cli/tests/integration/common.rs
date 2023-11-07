@@ -11,7 +11,9 @@ use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
     body::Body,
-    config::{Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores},
+    config::{
+        DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
+    },
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
@@ -49,6 +51,7 @@ pub type TestResult = Result<(), Error>;
 pub struct Test {
     module_path: PathBuf,
     backends: TestBackends,
+    device_detection: DeviceDetection,
     dictionaries: Dictionaries,
     geolocation: Geolocation,
     object_stores: ObjectStores,
@@ -68,6 +71,7 @@ impl Test {
         Self {
             module_path,
             backends: TestBackends::new(),
+            device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
@@ -87,6 +91,7 @@ impl Test {
         Self {
             module_path,
             backends: TestBackends::new(),
+            device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
@@ -103,6 +108,7 @@ impl Test {
         let config = fastly_toml.parse::<FastlyConfig>()?;
         Ok(Self {
             backends: TestBackends::from_backend_configs(config.backends()),
+            device_detection: config.device_detection().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
             geolocation: config.geolocation().to_owned(),
             object_stores: config.object_stores().to_owned(),
@@ -279,6 +285,7 @@ impl Test {
         )?
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())
+        .with_device_detection(self.device_detection.clone())
         .with_geolocation(self.geolocation.clone())
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())

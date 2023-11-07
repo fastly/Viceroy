@@ -847,6 +847,38 @@ mod inline_toml_dictionary_config_tests {
     }
 }
 
+/// Unit tests for Device Detection mapping in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the Device Detection mappings section of
+/// the TOML data properly regardless of the format.
+mod device_detection_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{
+            DeviceDetectionConfigError, FastlyConfigError::InvalidDeviceDetectionDefinition,
+        },
+    };
+
+    /// Check that Device Detection definitions have a valid `format`.
+    #[test]
+    fn device_detection_has_a_valid_format() {
+        use DeviceDetectionConfigError::InvalidDeviceDetectionMappingFormat;
+        let invalid_format_field = r#"
+            [device_detection]
+            format = "foo"
+            [device_detection.user_agent."Test User-Agent"]
+            hwtype = "Test"
+        "#;
+        match read_local_server_config(invalid_format_field) {
+            Err(InvalidDeviceDetectionDefinition {
+                err: InvalidDeviceDetectionMappingFormat(format),
+                ..
+            }) if format == "foo" => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+}
+
 /// Unit tests for Geolocation mapping in the `local_server` section of a `fastly.toml` package manifest.
 ///
 /// These tests check that we deserialize and validate the Geolocation mappings section of

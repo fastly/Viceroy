@@ -629,6 +629,17 @@
     )
 )
 
+(module $fastly_device_detection
+    (@interface func (export "lookup")
+        (param $user_agent string)
+
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+)
+
 (module $fastly_object_store
     (@interface func (export "open")
         (param $name string)
