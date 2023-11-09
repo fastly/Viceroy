@@ -1,8 +1,14 @@
 ## Unreleased
 
+## 0.9.3 (2023-11-09)
+
+- Renamed Compute@Edge to Compute. ([#328](https://github.com/fastly/Viceroy/pull/328))
+- Added asynchronous versions of the KV store `lookup` and `insert` operations. ([#329](https://github.com/fastly/Viceroy/pull/329))
+- Added support for device detection. ([#330](https://github.com/fastly/Viceroy/pull/330))
+
 ## 0.9.2 (2023-10-23)
 
--  Warn instead of fail when certificates can't be loaded ([#325](https://github.com/fastly/Viceroy/pull/325))
+- Warn instead of fail when certificates can't be loaded ([#325](https://github.com/fastly/Viceroy/pull/325))
 
 - Add support for trailers. Trailer modification calls should be considered experimental,
   as we finalize interfaces ([#327](https://github.com/fastly/Viceroy/pull/327))
