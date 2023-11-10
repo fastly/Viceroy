@@ -3,7 +3,9 @@
 mod async_item;
 mod downstream;
 
-pub use async_item::{AsyncItem, PeekableTask, PendingKvInsertTask, PendingKvLookupTask};
+pub use async_item::{
+    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
+};
 
 use {
     self::downstream::DownstreamResponse,
@@ -21,8 +23,8 @@ use {
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingKvInsertHandle, PendingKvLookupHandle, PendingRequestHandle,
-            RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
+            ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle,
+            PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
         },
     },
     cranelift_entity::{entity_impl, PrimaryMap},
@@ -695,6 +697,60 @@ impl Session {
             .ok_or(HandleError::InvalidPendingKvInsertHandle(handle))
     }
 
+    pub fn obj_delete(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+    ) -> Result<(), ObjectStoreError> {
+        self.object_store.delete(obj_store_key, obj_key)
+    }
+
+    /// Insert a [`PendingKvDelete`] into the session.
+    ///
+    /// This method returns a new [`PendingKvDeleteHandle`], which can then be used to access
+    /// and mutate the pending delete.
+    pub fn insert_pending_kv_delete(
+        &mut self,
+        pending: PendingKvDeleteTask,
+    ) -> PendingKvDeleteHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingKvDelete(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingKvDelete`], given its [`PendingKvDeleteHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending delete in the
+    /// session.
+    pub fn take_pending_kv_delete(
+        &mut self,
+        handle: PendingKvDeleteHandle,
+    ) -> Result<PendingKvDeleteTask, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_kv_delete(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_kv_delete)
+            .ok_or(HandleError::InvalidPendingKvDeleteHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingDelete`], given its [`PendingKvDeleteHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a delete in the
+    /// session.
+    pub fn pending_kv_delete(
+        &self,
+        handle: PendingKvDeleteHandle,
+    ) -> Result<&PendingKvDeleteTask, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_kv_delete)
+            .ok_or(HandleError::InvalidPendingKvDeleteHandle(handle))
+    }
+
     pub fn obj_lookup(
         &self,
         obj_store_key: &ObjectStoreKey,
@@ -1049,5 +1105,17 @@ impl From<PendingKvInsertHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvInsertHandle {
     fn from(h: AsyncItemHandle) -> PendingKvInsertHandle {
         PendingKvInsertHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingKvDeleteHandle> for AsyncItemHandle {
+    fn from(h: PendingKvDeleteHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingKvDeleteHandle {
+    fn from(h: AsyncItemHandle) -> PendingKvDeleteHandle {
+        PendingKvDeleteHandle::from(h.as_u32())
     }
 }
