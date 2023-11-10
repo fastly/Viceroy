@@ -155,6 +155,7 @@ pub fn link_host_functions(
     wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_device_detection::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_erl::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_body::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_req::add_to_linker(linker, WasmCtx::session)?;

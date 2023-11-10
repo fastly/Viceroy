@@ -56,6 +56,7 @@ mod config_store;
 mod device_detection_impl;
 mod dictionary_impl;
 mod entity;
+mod erl_impl;
 mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
