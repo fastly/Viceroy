@@ -640,6 +640,59 @@
     )
 )
 
+(module $fastly_erl
+    (@interface func (export "check_rate")
+        (param $rc string)
+        (param $entry string)
+        (param $delta u32)
+        (param $window u32)
+        (param $limit u32)
+        (param $pb string)
+        (param $ttl u32)
+
+        (result $err (expected $blocked (error $fastly_status)))
+    )
+
+    (@interface func (export "ratecounter_increment")
+        (param $rc string)
+        (param $entry string)
+        (param $delta u32)
+
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "ratecounter_lookup_rate")
+        (param $rc string)
+        (param $entry string)
+        (param $window u32)
+
+        (result $err (expected $rate (error $fastly_status)))
+    )
+
+    (@interface func (export "ratecounter_lookup_count")
+        (param $rc string)
+        (param $entry string)
+        (param $duration u32)
+
+        (result $err (expected $count (error $fastly_status)))
+    )
+
+    (@interface func (export "penaltybox_add")
+        (param $pb string)
+        (param $entry string)
+        (param $ttl u32)
+
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "penaltybox_has")
+        (param $pb string)
+        (param $entry string)
+
+        (result $err (expected $has (error $fastly_status)))
+    )
+)
+
 (module $fastly_object_store
     (@interface func (export "open")
         (param $name string)

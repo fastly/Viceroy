@@ -349,3 +349,8 @@
     (field $dns_error_info_code u16)
     (field $tls_alert_id u8)
     ))
+
+(typename $blocked u32)
+(typename $rate u32)
+(typename $count u32)
+(typename $has u32)
