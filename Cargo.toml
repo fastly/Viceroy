@@ -3,6 +3,7 @@ members = [
     "cli",
     "lib",
 ]
+resolver = "2"
 
 # Exclude our integration test fixtures, which need to be compiled to wasm
 # (managed by the Makefile)
