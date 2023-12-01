@@ -6,8 +6,38 @@ use futures::FutureExt;
 use http::Response;
 use tokio::sync::oneshot;
 
-pub type PendingKvLookupTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
-pub type PendingKvInsertTask = PeekableTask<Result<(), ObjectStoreError>>;
+#[derive(Debug)]
+pub struct PendingKvLookupTask(PeekableTask<Result<Vec<u8>, ObjectStoreError>>);
+impl PendingKvLookupTask {
+    pub fn new(t: PeekableTask<Result<Vec<u8>, ObjectStoreError>>) -> PendingKvLookupTask {
+        PendingKvLookupTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<Vec<u8>, ObjectStoreError>> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct PendingKvInsertTask(PeekableTask<Result<(), ObjectStoreError>>);
+impl PendingKvInsertTask {
+    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvInsertTask {
+        PendingKvInsertTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct PendingKvDeleteTask(PeekableTask<Result<(), ObjectStoreError>>);
+impl PendingKvDeleteTask {
+    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvDeleteTask {
+        PendingKvDeleteTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+        self.0
+    }
+}
 
 /// Represents either a full body, or the write end of a streaming body.
 ///
@@ -20,6 +50,7 @@ pub enum AsyncItem {
     PendingReq(PeekableTask<Response<Body>>),
     PendingKvLookup(PendingKvLookupTask),
     PendingKvInsert(PendingKvInsertTask),
+    PendingKvDelete(PendingKvDeleteTask),
 }
 
 impl AsyncItem {
@@ -104,6 +135,20 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_pending_kv_delete(&self) -> Option<&PendingKvDeleteTask> {
+        match self {
+            Self::PendingKvDelete(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_delete(self) -> Option<PendingKvDeleteTask> {
+        match self {
+            Self::PendingKvDelete(req) => Some(req),
+            _ => None,
+        }
+    }
+
     pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
@@ -130,8 +175,9 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
-            Self::PendingKvLookup(obj) => obj.await_ready().await,
-            Self::PendingKvInsert(obj) => obj.await_ready().await,
+            Self::PendingKvLookup(req) => req.0.await_ready().await,
+            Self::PendingKvInsert(req) => req.0.await_ready().await,
+            Self::PendingKvDelete(req) => req.0.await_ready().await,
         }
     }
 
@@ -155,6 +201,12 @@ impl From<PendingKvLookupTask> for AsyncItem {
 impl From<PendingKvInsertTask> for AsyncItem {
     fn from(task: PendingKvInsertTask) -> Self {
         Self::PendingKvInsert(task)
+    }
+}
+
+impl From<PendingKvDeleteTask> for AsyncItem {
+    fn from(task: PendingKvDeleteTask) -> Self {
+        Self::PendingKvDelete(task)
     }
 }
 

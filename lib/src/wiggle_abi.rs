@@ -75,7 +75,7 @@ wiggle::from_witx!({
     errors: { fastly_status => Error },
     async: {
         fastly_async_io::{select},
-        fastly_object_store::{insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait},
+        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait},
         fastly_http_body::{append, read, write},
         fastly_http_req::{
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,

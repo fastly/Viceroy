@@ -738,6 +738,18 @@
         (param $pending_objstr_handle $pending_kv_insert_handle)
         (result $err (expected (error $fastly_status)))
     )
+
+    (@interface func (export "delete_async")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $pending_handle_out (@witx pointer $pending_kv_delete_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "pending_delete_wait")
+        (param $pending_handle $pending_kv_delete_handle)
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_secret_store

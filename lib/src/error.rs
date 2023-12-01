@@ -273,6 +273,10 @@ pub enum HandleError {
     #[error("Invalid pending KV insert handle: {0}")]
     InvalidPendingKvInsertHandle(crate::wiggle_abi::types::PendingKvInsertHandle),
 
+    /// A delete handle was not valid.
+    #[error("Invalid pending KV delete handle: {0}")]
+    InvalidPendingKvDeleteHandle(crate::wiggle_abi::types::PendingKvDeleteHandle),
+
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),

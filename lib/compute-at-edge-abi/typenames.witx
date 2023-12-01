@@ -97,6 +97,8 @@
 (typename $pending_kv_lookup_handle (handle))
 ;;; A handle to a pending KV insert request.
 (typename $pending_kv_insert_handle (handle))
+;;; A handle to a pending KV delete request.
+(typename $pending_kv_delete_handle (handle))
 ;;; A handle to a Secret Store.
 (typename $secret_store_handle (handle))
 ;;; A handle to an individual secret.
