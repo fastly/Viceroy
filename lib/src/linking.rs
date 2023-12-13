@@ -115,10 +115,17 @@ pub(crate) fn create_store(
 fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow::Error> {
     let mut wasi_ctx = WasiCtxBuilder::new();
 
-    // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
+    // Viceroy provides the same `FASTLY_*` environment variables that the production
     // Compute platform provides:
 
     wasi_ctx
+        // These variables are stubbed out for compatibility
+        .env("FASTLY_CACHE_GENERATION", "0")?
+        .env("FASTLY_CUSTOMER_ID", "0000000000000000000000")?
+        .env("FASTLY_POP", "XXX")?
+        .env("FASTLY_REGION", "Somewhere")?
+        .env("FASTLY_SERVICE_ID", "0000000000000000000000")?
+        .env("FASTLY_SERVICE_VERSION", "0")?
         // signal that we're in a local testing environment
         .env("FASTLY_HOSTNAME", "localhost")?
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
