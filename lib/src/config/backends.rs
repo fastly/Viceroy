@@ -5,7 +5,22 @@ use {
     std::{collections::HashMap, sync::Arc},
 };
 
+use std::pin::Pin;
+
+use futures::Future;
+use http::{Request, Response};
+use hyper::Body;
+
 pub use self::client_cert_info::{ClientCertError, ClientCertInfo};
+use crate::ExecuteCtx;
+
+pub enum BackendExperiment {
+    /// Simulate sending an HTTP request to this endpoint but never actually reach out.
+    InMemory(InMemoryBackend),
+
+    /// Use the backend to send and actual HTTP request.
+    Live(Backend),
+}
 
 /// A single backend definition.
 #[derive(Clone, Debug)]
@@ -16,6 +31,53 @@ pub struct Backend {
     pub use_sni: bool,
     pub grpc: bool,
     pub client_cert: Option<ClientCertInfo>,
+    // Instead of sending an HTTP request for this backend,
+    // use the following handler to produce a response.
+    // pub handler: Option<BackendHandler>,
+}
+
+// #[derive(Clone, Debug)]
+pub struct InMemoryBackend {
+    backend: Backend,
+    handler: BackendHandler,
+}
+
+// #[derive(Clone)]
+pub struct Handler {
+    handler: BackendHandler,
+}
+
+impl Clone for Handler {
+    fn clone(&self) -> Self {
+        Self {
+            handler: self.handler.clone(),
+        }
+    }
+}
+
+pub type BackendHandler =
+    Arc<Box<dyn Fn(Request<Body>) -> Pin<Box<dyn Future<Output = Response<Body>>>>>>; //Pin<Box<dyn Future<Output = Response<Body>>>>;
+
+// fn make_handler(
+//     ctx: ExecuteCtx,
+// ) -> impl Fn(Request<Body>) -> Pin<Box<dyn Future<Output = Response<Body>>>> {
+//     // move |y: i32| Box::pin(async_add(x, y))
+
+//     // move |req| ctx.handle_request(req, "127.0.0.1".parse().unwrap())
+//     todo!()
+// }
+
+// async fn async_add(x: i32, y: i32) -> i32 {
+//     x + y
+// }
+
+// #[derive(Clone, Debug)]
+pub enum Wat {
+    /// Just an opaque handler
+    Handler(),
+
+    /// A loaded fastly service backend.
+    Chained(ExecuteCtx),
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.

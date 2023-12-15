@@ -1,11 +1,10 @@
 //! Guest code execution.
 
-use std::time::SystemTime;
-
+use crate::{config::UnknownImportBehavior, logging::LogEndpoint};
+use std::{collections::BTreeMap, sync::RwLock, time::SystemTime};
+use tokio::sync::mpsc::{Receiver, Sender as MspcSender};
+use tracing::field::Iter;
 use wasmtime::GuestProfiler;
-
-use crate::config::UnknownImportBehavior;
-
 use {
     crate::{
         body::Body,
@@ -78,6 +77,48 @@ pub struct ExecuteCtx {
     /// this must refer to a directory, while in run mode it names
     /// a file.
     guest_profile_path: Arc<Option<PathBuf>>,
+    /// Endpoints that should be monitored. Allows reading logged message lines to that endpoint.
+    endpoints: Arc<Endpoints>,
+}
+
+#[derive(Clone)]
+pub struct Endpoints {
+    // #[allow(clippy::type_complexity)]
+    // todo iterator
+    pub endpoints: Arc<RwLock<BTreeMap<Vec<u8>, MspcSender<Vec<u8>>>>>,
+}
+
+impl Endpoints {
+    pub fn new() -> Self {
+        Self {
+            endpoints: Arc::new(RwLock::new(BTreeMap::new())),
+        }
+    }
+
+    /// Registers a listener for the given endpoint name.
+    /// Any messages the invocation sends to this endpoint will be captured by this listener.
+    pub fn register_listener<T: Into<Vec<u8>>>(&self, name: T) -> EndpointListener {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1000); // todo arbitrary limit right now.
+        self.endpoints.write().unwrap().insert(name.into(), sender);
+
+        EndpointListener { receiver }
+    }
+}
+
+pub struct EndpointListener {
+    receiver: Receiver<Vec<u8>>,
+}
+
+impl EndpointListener {
+    // Todo blocking for now.
+    pub fn messages(&mut self) -> Vec<Vec<u8>> {
+        let mut messages = vec![];
+        while let Some(msg) = self.receiver.blocking_recv() {
+            messages.push(msg);
+        }
+
+        messages
+    }
 }
 
 impl ExecuteCtx {
@@ -133,6 +174,7 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_path: Arc::new(guest_profile_path),
+            endpoints: Arc::new(Endpoints::new()),
         })
     }
 
@@ -230,6 +272,12 @@ impl ExecuteCtx {
         &self.tls_config
     }
 
+    /// Set the endpoints for this execution context.
+    pub fn with_endpoints(mut self, endpoints: Endpoints) -> Self {
+        self.endpoints = Arc::new(endpoints);
+        self
+    }
+
     /// Asynchronously handle a request.
     ///
     /// This method fully instantiates the wasm module housed within the `ExecuteCtx`,
@@ -314,6 +362,7 @@ impl ExecuteCtx {
                     .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from(body.as_bytes()))
                     .unwrap()
+                    .into()
             }
         };
 
@@ -342,6 +391,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.endpoints.clone(),
         );
 
         let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
@@ -437,6 +487,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.endpoints.clone(),
         );
 
         let profiler = self.guest_profile_path.is_some().then(|| {
@@ -482,6 +533,20 @@ impl ExecuteCtx {
         result
     }
 }
+
+// pub struct ExecutionResult {
+//     pub response: Response<Body>,
+//     pub logs: Vec<LogEndpoint>,
+// }
+
+// impl From<Response<Body>> for ExecutionResult {
+//     fn from(response: Response<Body>) -> Self {
+//         Self {
+//             response,
+//             logs: vec![],
+//         }
+//     }
+// }
 
 fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Option<&PathBuf>) {
     if let (Some(profile), Some(path)) =

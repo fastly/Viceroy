@@ -1,3 +1,4 @@
+use tokio::sync::mpsc::Sender;
 use {
     lazy_static::lazy_static,
     std::{
@@ -6,8 +7,11 @@ use {
     },
 };
 
-/// A logging endpoint, which for Viceroy is just a name.
-pub struct LogEndpoint(Vec<u8>);
+/// A logging endpoint.
+pub struct LogEndpoint {
+    name: Vec<u8>,
+    sender: Option<Sender<Vec<u8>>>,
+}
 
 lazy_static! {
     /// The underlying writer to use for all log messages. It defaults to `stdout`,
@@ -18,9 +22,12 @@ lazy_static! {
 }
 
 impl LogEndpoint {
-    /// Allocate a new `LogEndpoint` with the given name.
-    pub fn new(name: &[u8]) -> LogEndpoint {
-        LogEndpoint(name.to_owned())
+    /// Allocate a new `LogEndpoint` with the given name and optional sender.
+    pub fn new(name: &[u8], sender: Option<Sender<Vec<u8>>>) -> LogEndpoint {
+        LogEndpoint {
+            name: name.to_owned(),
+            sender,
+        }
     }
 
     /// Write a log entry to this endpoint.
@@ -43,11 +50,18 @@ impl LogEndpoint {
         }
 
         // Accumulate log entry into a buffer before writing, while escaping newlines
-        let mut to_write =
-            Vec::with_capacity(msg.len() + self.0.len() + LOG_ENDPOINT_DELIM.len() + 1);
+        // A listener just takes the messages line by line, while the stdout format is with delimiters.
+        let mut to_write = if self.sender.is_some() {
+            Vec::with_capacity(msg.len())
+        } else {
+            let buf_len = msg.len() + self.name.len() + LOG_ENDPOINT_DELIM.len() + 1;
+            let mut buf = Vec::with_capacity(buf_len);
 
-        to_write.extend_from_slice(&self.0);
-        to_write.extend_from_slice(LOG_ENDPOINT_DELIM);
+            buf.extend_from_slice(&self.name);
+            buf.extend_from_slice(LOG_ENDPOINT_DELIM);
+            buf
+        };
+
         for &byte in msg {
             if byte == b'\n' {
                 to_write.extend_from_slice(br"\n");
@@ -57,7 +71,13 @@ impl LogEndpoint {
         }
         to_write.push(b'\n');
 
-        LOG_WRITER.lock().unwrap().write_all(&to_write)
+        if let Some(ref sender) = self.sender {
+            sender.try_send(to_write).expect("todo");
+            // sender.blocking_send(to_write).expect("todo");
+            Ok(())
+        } else {
+            LOG_WRITER.lock().unwrap().write_all(&to_write)
+        }
     }
 }
 

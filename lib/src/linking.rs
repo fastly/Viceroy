@@ -132,13 +132,13 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()))?;
 
     if ctx.log_stdout() {
-        wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
+        wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout", None))));
     } else {
         wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
+        wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr", None))));
     } else {
         wasi_ctx.inherit_stderr();
     }

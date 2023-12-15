@@ -7,6 +7,7 @@ pub use async_item::{
     AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
 };
 
+use crate::execute::Endpoints;
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -144,6 +145,7 @@ impl Session {
         config_path: Arc<Option<PathBuf>>,
         object_store: Arc<ObjectStores>,
         secret_stores: Arc<SecretStores>,
+        endpoints: Arc<Endpoints>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -180,6 +182,18 @@ impl Session {
             config_path,
             req_id,
         }
+        .write_endpoints(endpoints)
+    }
+
+    // Todo: Haxx, it's better to run this code in the constructor and initialize `log_endpoints_by_name` and `log_endpoints`.
+    fn write_endpoints(mut self, endpoints: Arc<Endpoints>) -> Self {
+        for (name, sender) in endpoints.endpoints.read().unwrap().iter() {
+            let endpoint = LogEndpoint::new(name, Some(sender.clone()));
+            let handle = self.log_endpoints.push(endpoint);
+            self.log_endpoints_by_name.insert(name.to_owned(), handle);
+        }
+
+        self
     }
 
     // ----- Downstream Request API -----
@@ -528,7 +542,7 @@ impl Session {
         if let Some(handle) = self.log_endpoints_by_name.get(name).copied() {
             return handle;
         }
-        let endpoint = LogEndpoint::new(name);
+        let endpoint = LogEndpoint::new(name, None);
         let handle = self.log_endpoints.push(endpoint);
         self.log_endpoints_by_name.insert(name.to_owned(), handle);
         handle
