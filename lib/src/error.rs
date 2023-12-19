@@ -93,9 +93,6 @@ pub enum Error {
     DeviceDetectionError(#[from] crate::wiggle_abi::DeviceDetectionError),
 
     #[error(transparent)]
-    GeolocationError(#[from] crate::wiggle_abi::GeolocationError),
-
-    #[error(transparent)]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 
     #[error(transparent)]
@@ -184,7 +181,6 @@ impl Error {
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
             Error::DeviceDetectionError(e) => e.to_fastly_status(),
-            Error::GeolocationError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
