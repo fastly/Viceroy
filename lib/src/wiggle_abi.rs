@@ -14,7 +14,6 @@ pub use self::dictionary_impl::DictionaryError;
 pub use self::secret_store_impl::SecretStoreError;
 
 pub use self::device_detection_impl::DeviceDetectionError;
-pub use self::geo_impl::GeolocationError;
 
 use {
     self::{
