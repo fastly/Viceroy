@@ -1,26 +1,14 @@
 mod client_cert_info;
 
+use async_trait::async_trait;
+use http::{Request, Response};
+use hyper::Body;
 use {
     hyper::{header::HeaderValue, Uri},
     std::{collections::HashMap, sync::Arc},
 };
 
-use std::pin::Pin;
-
-use futures::Future;
-use http::{Request, Response};
-use hyper::Body;
-
 pub use self::client_cert_info::{ClientCertError, ClientCertInfo};
-use crate::ExecuteCtx;
-
-pub enum BackendExperiment {
-    /// Simulate sending an HTTP request to this endpoint but never actually reach out.
-    InMemory(InMemoryBackend),
-
-    /// Use the backend to send and actual HTTP request.
-    Live(Backend),
-}
 
 /// A single backend definition.
 #[derive(Clone, Debug)]
@@ -31,53 +19,43 @@ pub struct Backend {
     pub use_sni: bool,
     pub grpc: bool,
     pub client_cert: Option<ClientCertInfo>,
-    // Instead of sending an HTTP request for this backend,
-    // use the following handler to produce a response.
-    // pub handler: Option<BackendHandler>,
+
+    /// Handler that will be called instead of making an HTTP call.
+    pub handler: Option<Handler>,
 }
 
-// #[derive(Clone, Debug)]
-pub struct InMemoryBackend {
-    backend: Backend,
-    handler: BackendHandler,
-}
-
-// #[derive(Clone)]
+#[derive(Clone)]
 pub struct Handler {
-    handler: BackendHandler,
+    handler: Arc<Box<dyn InMemoryBackendHandler>>,
 }
 
-impl Clone for Handler {
-    fn clone(&self) -> Self {
+impl Handler {
+    pub fn new(handler: Box<dyn InMemoryBackendHandler>) -> Self {
         Self {
-            handler: self.handler.clone(),
+            handler: Arc::new(handler),
         }
     }
 }
 
-pub type BackendHandler =
-    Arc<Box<dyn Fn(Request<Body>) -> Pin<Box<dyn Future<Output = Response<Body>>>>>>; //Pin<Box<dyn Future<Output = Response<Body>>>>;
+impl std::ops::Deref for Handler {
+    type Target = dyn InMemoryBackendHandler;
 
-// fn make_handler(
-//     ctx: ExecuteCtx,
-// ) -> impl Fn(Request<Body>) -> Pin<Box<dyn Future<Output = Response<Body>>>> {
-//     // move |y: i32| Box::pin(async_add(x, y))
+    fn deref(&self) -> &Self::Target {
+        &**self.handler
+    }
+}
 
-//     // move |req| ctx.handle_request(req, "127.0.0.1".parse().unwrap())
-//     todo!()
-// }
+impl std::fmt::Debug for Handler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handler")
+            .field("handler", &"opaque handler function".to_string())
+            .finish()
+    }
+}
 
-// async fn async_add(x: i32, y: i32) -> i32 {
-//     x + y
-// }
-
-// #[derive(Clone, Debug)]
-pub enum Wat {
-    /// Just an opaque handler
-    Handler(),
-
-    /// A loaded fastly service backend.
-    Chained(ExecuteCtx),
+#[async_trait]
+pub trait InMemoryBackendHandler: Send + Sync + 'static {
+    async fn handle(&self, req: Request<crate::body::Body>) -> Response<Body>;
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -211,6 +189,7 @@ mod deserialization {
                 grpc,
                 // NOTE: Update when we support client certs in static backends
                 client_cert: None,
+                handler: None,
             })
         }
     }

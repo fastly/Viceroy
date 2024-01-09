@@ -86,7 +86,7 @@ pub struct Session {
     /// Populated prior to guest execution, and never modified.
     geolocation: Arc<Geolocation>,
     /// The backends dynamically added by the program. This is separated from
-    /// `backends` because we do not want one session to effect the backends
+    /// `backends` because we do not want one session to affect the backends
     /// available to any other session.
     dynamic_backends: Backends,
     /// The TLS configuration for this execution.

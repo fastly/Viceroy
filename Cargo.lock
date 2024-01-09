@@ -2263,6 +2263,7 @@ name = "viceroy-lib"
 version = "0.9.4"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bytes",
  "bytesize",
  "cfg-if",

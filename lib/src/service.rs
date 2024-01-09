@@ -63,9 +63,9 @@ impl ViceroyService {
     /// each time a new request is sent. This function will only return if an error occurs.
     // FIXME KTM 2020-06-22: Once `!` is stabilized, this should be `Result<!, hyper::Error>`.
     pub async fn serve(self, addr: SocketAddr) -> Result<(), hyper::Error> {
-        // let server = hyper::Server::bind(&addr).serve(self);
-        // event!(Level::INFO, "Listening on http://{}", server.local_addr());
-        // server.await?;
+        let server = hyper::Server::bind(&addr).serve(self);
+        event!(Level::INFO, "Listening on http://{}", server.local_addr());
+        server.await?;
         Ok(())
     }
 }

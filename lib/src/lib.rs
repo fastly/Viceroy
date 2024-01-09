@@ -32,6 +32,7 @@ mod upstream;
 mod wiggle_abi;
 
 pub use {
+    async_trait,
     error::Error,
     execute::{EndpointListener, Endpoints, ExecuteCtx},
     http, hyper,

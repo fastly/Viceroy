@@ -75,6 +75,7 @@ impl TestBackends {
                 use_sni: backend.use_sni,
                 grpc: false,
                 client_cert: None,
+                handler: None,
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
         }

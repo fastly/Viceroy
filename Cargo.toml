@@ -1,20 +1,15 @@
 [workspace]
-members = [
-    "cli",
-    "lib",
-]
+members = ["cli", "lib"]
 resolver = "2"
 
 # Exclude our integration test fixtures, which need to be compiled to wasm
 # (managed by the Makefile)
-exclude = [
-    "test-fixtures",
-]
+exclude = ["test-fixtures"]
 
 # Specify `cli` as the default workspace member to operate on. This means that
 # commands like `cargo run` will run the CLI binary by default.
 # See: https://doc.rust-lang.org/cargo/reference/workspaces.html#package-selection
-default-members = [ "cli" ]
+default-members = ["cli"]
 
 [profile.dev]
 # Since some of the integration tests involve compiling Wasm, a little optimization goes a long way
@@ -36,6 +31,7 @@ tracing = "0.1.37"
 tracing-futures = "0.2.5"
 futures = "0.3.24"
 url = "2.3.1"
+async-trait = "0.1.74"
 
 # Wasmtime dependencies
 wasi-common = "13.0.0"

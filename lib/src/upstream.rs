@@ -265,24 +265,30 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
+    let handler = backend.handler.clone(); // Haxx
     let h2only = backend.grpc;
+
     async move {
-        let mut builder = Client::builder();
+        let basic_response = if let Some(handler) = handler {
+            handler.handle(req).await
+        } else {
+            let mut builder = Client::builder();
 
-        if req.version() == Version::HTTP_2 {
-            builder.http2_only(true);
-        }
+            if req.version() == Version::HTTP_2 {
+                builder.http2_only(true);
+            }
 
-        let basic_response = builder
-            .set_host(false)
-            .http2_only(h2only)
-            .build(connector)
-            .request(req)
-            .await
-            .map_err(|e| {
-                eprintln!("Error: {:?}", e);
-                e
-            })?;
+            builder
+                .set_host(false)
+                .http2_only(h2only)
+                .build(connector)
+                .request(req)
+                .await
+                .map_err(|e| {
+                    eprintln!("Error: {:?}", e);
+                    e
+                })?
+        };
 
         if try_decompression
             && basic_response

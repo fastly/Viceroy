@@ -1,9 +1,8 @@
 //! Guest code execution.
 
-use crate::{config::UnknownImportBehavior, logging::LogEndpoint};
+use crate::config::UnknownImportBehavior;
 use std::{collections::BTreeMap, sync::RwLock, time::SystemTime};
 use tokio::sync::mpsc::{Receiver, Sender as MspcSender};
-use tracing::field::Iter;
 use wasmtime::GuestProfiler;
 use {
     crate::{

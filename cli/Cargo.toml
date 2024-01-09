@@ -15,14 +15,14 @@ categories = [
   "development-tools",
   "network-programming",
   "simulation",
-  "wasm"
+  "wasm",
 ]
 include = [
-    "../README.md",
-    "../CHANGELOG.md",
-    "../SECURITY.md",
-    "../doc/logo.png",
-    "src/**/*"
+  "../README.md",
+  "../CHANGELOG.md",
+  "../SECURITY.md",
+  "../doc/logo.png",
+  "src/**/*",
 ]
 
 [[bin]]
@@ -38,7 +38,12 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
-tls-listener = { version = "^0.7.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
+tls-listener = { version = "^0.7.0", features = [
+  "rustls",
+  "hyper-h1",
+  "tokio-net",
+  "rt",
+] }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tracing = { workspace = true }

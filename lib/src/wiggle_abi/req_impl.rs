@@ -2,12 +2,11 @@
 
 use super::types::SendErrorDetail;
 use super::SecretStoreError;
-use crate::config::ClientCertInfo;
+use crate::config::{Backend, ClientCertInfo};
 use crate::secret_store::SecretLookup;
 
 use {
     crate::{
-        config::Backend,
         error::Error,
         session::{AsyncItem, PeekableTask, Session, ViceroyRequestMetadata},
         upstream,
@@ -389,6 +388,7 @@ impl FastlyHttpReq for Session {
             use_sni,
             grpc,
             client_cert,
+            handler: None,
         };
 
         if !self.add_backend(name, new_backend) {

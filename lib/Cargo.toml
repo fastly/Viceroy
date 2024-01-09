@@ -9,12 +9,7 @@ documentation = "https://docs.rs/viceroy-lib"
 homepage = "https://github.com/fastly/Viceroy"
 repository = "https://github.com/fastly/Viceroy"
 keywords = ["wasm", "fastly"]
-categories = [
-    "development-tools",
-    "network-programming",
-    "simulation",
-    "wasm"
-]
+categories = ["development-tools", "network-programming", "simulation", "wasm"]
 include = [
     "../CHANGELOG.md",
     "../SECURITY.md",
@@ -57,6 +52,7 @@ wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-nn = { workspace = true }
 wiggle = { workspace = true }
+async-trait.workspace = true
 
 [dev-dependencies]
 tempfile = "3.6.0"
