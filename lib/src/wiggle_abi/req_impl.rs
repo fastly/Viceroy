@@ -391,6 +391,11 @@ impl FastlyHttpReq for Session {
             handler: None,
         };
 
+        let new_backend = match self.dynamic_backend_registrar {
+            Some(ref registrar) => registrar.register(new_backend),
+            None => new_backend,
+        };
+
         if !self.add_backend(name, new_backend) {
             return Err(Error::BackendNameRegistryError(name.to_string()));
         }

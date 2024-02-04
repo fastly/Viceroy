@@ -7,7 +7,7 @@ pub use async_item::{
     AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
 };
 
-use crate::execute::Endpoints;
+use crate::{config::DynamicBackendRegistrar, execute::Endpoints};
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -89,6 +89,8 @@ pub struct Session {
     /// `backends` because we do not want one session to affect the backends
     /// available to any other session.
     dynamic_backends: Backends,
+    /// If set, the registrar is used to register dynamic backends.
+    pub(crate) dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -146,6 +148,7 @@ impl Session {
         object_store: Arc<ObjectStores>,
         secret_stores: Arc<SecretStores>,
         endpoints: Arc<Endpoints>,
+        dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -181,6 +184,7 @@ impl Session {
             secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
+            dynamic_backend_registrar,
         }
         .write_endpoints(endpoints)
     }

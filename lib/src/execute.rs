@@ -1,6 +1,6 @@
 //! Guest code execution.
 
-use crate::config::UnknownImportBehavior;
+use crate::config::{DynamicBackendRegistrar, UnknownImportBehavior};
 use std::{collections::BTreeMap, sync::RwLock, time::SystemTime};
 use tokio::sync::mpsc::{Receiver, Sender as MspcSender};
 use wasmtime::GuestProfiler;
@@ -34,6 +34,7 @@ use {
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
 ///
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
@@ -49,6 +50,8 @@ pub struct ExecuteCtx {
     module: Module,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// If set, intercepts dynamic backend registrations.
+    dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
     /// The device detection mappings for this execution.
     device_detection: Arc<DeviceDetection>,
     /// The geolocation mappings for this execution.
@@ -174,6 +177,7 @@ impl ExecuteCtx {
             epoch_increment_stop,
             guest_profile_path: Arc::new(guest_profile_path),
             endpoints: Arc::new(Endpoints::new()),
+            dynamic_backend_registrar: None,
         })
     }
 
@@ -274,6 +278,14 @@ impl ExecuteCtx {
     /// Set the endpoints for this execution context.
     pub fn with_endpoints(mut self, endpoints: Endpoints) -> Self {
         self.endpoints = Arc::new(endpoints);
+        self
+    }
+
+    pub fn with_dynamic_backend_registrar(
+        mut self,
+        registrar: Box<dyn DynamicBackendRegistrar>,
+    ) -> Self {
+        self.dynamic_backend_registrar = Some(Arc::new(registrar));
         self
     }
 
@@ -391,6 +403,7 @@ impl ExecuteCtx {
             self.object_store.clone(),
             self.secret_stores.clone(),
             self.endpoints.clone(),
+            self.dynamic_backend_registrar.clone(),
         );
 
         let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
@@ -487,6 +500,7 @@ impl ExecuteCtx {
             self.object_store.clone(),
             self.secret_stores.clone(),
             self.endpoints.clone(),
+            self.dynamic_backend_registrar.clone(),
         );
 
         let profiler = self.guest_profile_path.is_some().then(|| {
