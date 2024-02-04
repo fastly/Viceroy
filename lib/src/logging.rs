@@ -73,7 +73,6 @@ impl LogEndpoint {
 
         if let Some(ref sender) = self.sender {
             sender.try_send(to_write).expect("todo");
-            // sender.blocking_send(to_write).expect("todo");
             Ok(())
         } else {
             LOG_WRITER.lock().unwrap().write_all(&to_write)

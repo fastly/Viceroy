@@ -547,20 +547,6 @@ impl ExecuteCtx {
     }
 }
 
-// pub struct ExecutionResult {
-//     pub response: Response<Body>,
-//     pub logs: Vec<LogEndpoint>,
-// }
-
-// impl From<Response<Body>> for ExecutionResult {
-//     fn from(response: Response<Body>) -> Self {
-//         Self {
-//             response,
-//             logs: vec![],
-//         }
-//     }
-// }
-
 fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Option<&PathBuf>) {
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
