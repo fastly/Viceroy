@@ -145,6 +145,20 @@ impl Body {
             self.chunks.push_front(chunk.into())
         }
     }
+
+    pub fn len(&self) -> Option<u64> {
+        let mut len = 0u64;
+
+        for chunk in &self.chunks {
+            if let Chunk::HttpBody(body) = chunk {
+                len = len.checked_add(body.size_hint().exact()?)?;
+            } else {
+                return None;
+            }
+        }
+
+        Some(len)
+    }
 }
 
 impl<T: Into<Chunk>> From<T> for Body {

@@ -226,6 +226,16 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Client TLS JA3 hash"))
     }
 
+    #[allow(unused_variables)] // FIXME UFSM 2024-02-19: Remove this directive once implemented.
+    fn downstream_tls_ja4(
+        &mut self,
+        ja4_out: &GuestPtr<u8>,
+        ja4_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client TLS JA4 hash"))
+    }
+
     fn framing_headers_mode_set(
         &mut self,
         _h: RequestHandle,
