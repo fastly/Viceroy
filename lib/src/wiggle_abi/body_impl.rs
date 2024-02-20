@@ -11,7 +11,9 @@ use {
         session::Session,
         wiggle_abi::{
             fastly_http_body::FastlyHttpBody,
-            types::{BodyHandle, BodyWriteEnd, MultiValueCursor, MultiValueCursorResult},
+            types::{
+                BodyHandle, BodyLength, BodyWriteEnd, MultiValueCursor, MultiValueCursorResult,
+            },
         },
     },
     http_body::Body as HttpBody,
@@ -214,5 +216,15 @@ impl FastlyHttpBody for Session {
             );
         }
         Err(Error::Again)
+    }
+
+    fn known_length(&mut self, body_handle: BodyHandle) -> Result<BodyLength, Error> {
+        if self.is_streaming_body(body_handle) {
+            Err(Error::ValueAbsent)
+        } else if let Some(len) = self.body_mut(body_handle)?.len() {
+            Ok(len)
+        } else {
+            Err(Error::ValueAbsent)
+        }
     }
 }

@@ -110,6 +110,23 @@
         (param $nwritten_out (@witx pointer (@witx usize)))
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Returns a u64 body length if the length of a body is known, or `FastlyStatus::None`
+    ;;; otherwise.
+    ;;;
+    ;;; If the length is unknown, it is likely due to the body arising from an HTTP/1.1 message with
+    ;;; chunked encoding, an HTTP/2 or later message with no `content-length`, or being a streaming
+    ;;; body.
+    ;;;
+    ;;; Note that receiving a length from this function does not guarantee that the full number of
+    ;;; bytes can actually be read from the body. For example, when proxying a response from a
+    ;;; backend, this length may reflect the `content-length` promised in the response, but if the
+    ;;; backend connection is closed prematurely, fewer bytes may be delivered before this body
+    ;;; handle can no longer be read.
+    (@interface func (export "known_length")
+        (param $h $body_handle)
+        (result $err (expected $body_length (error $fastly_status)))
+    )
 )
 
 (module $fastly_log
@@ -213,6 +230,13 @@
         (param $cja3_md5_out (@witx pointer (@witx char8)))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
+
+    (@interface func (export "downstream_tls_ja4")
+         (param $ja4_out (@witx pointer (@witx char8)))
+         (param $ja4_max_len (@witx usize))
+         (param $nwritten_out (@witx pointer (@witx usize)))
+         (result $err (expected (error $fastly_status)))
+     )
 
     (@interface func (export "new")
         (result $err (expected $request_handle (error $fastly_status)))

@@ -356,3 +356,5 @@
 (typename $rate u32)
 (typename $count u32)
 (typename $has u32)
+
+(typename $body_length u64)
