@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.9.4 (2024-02-22)
 
 - Added `delete_async` hostcall for KV stores ([#332](https://github.com/fastly/Viceroy/pull/332))
