@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 0.9.4 (2024-02-22)
+
+- Added `delete_async` hostcall for KV stores ([#332](https://github.com/fastly/Viceroy/pull/332))
+- Added `known_length` hostcall for body handles ([#344](https://github.com/fastly/Viceroy/pull/344))
+- Added stubs for new functionality available in production Compute ([#333](https://github.com/fastly/Viceroy/pull/333), [#337](https://github.com/fastly/Viceroy/pull/337), [#344](https://github.com/fastly/Viceroy/pull/344))
+- Fixed inconsistent behavior for not-found geolocation lookups compared to production Compute ([#341](https://github.com/fastly/Viceroy/pull/341))
+
 ## 0.9.3 (2023-11-09)
 
 - Renamed Compute@Edge to Compute. ([#328](https://github.com/fastly/Viceroy/pull/328))
