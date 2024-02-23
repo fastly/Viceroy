@@ -29,7 +29,7 @@ bytesize = "^1.1.0"
 cfg-if = "^1.0"
 clap = { workspace = true }
 cranelift-entity = "^0.88.1"
-fastly-shared = "^0.9.3"
+fastly-shared = "^0.9.11"
 flate2 = "^1.0.24"
 futures = { workspace = true }
 http = "^0.2.8"
