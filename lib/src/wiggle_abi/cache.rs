@@ -1,7 +1,10 @@
 use crate::session::Session;
 
 use super::fastly_cache::FastlyCache;
-use super::{types, Error};
+use super::{
+    types::{self, CacheHandle},
+    Error,
+};
 
 #[allow(unused_variables)]
 impl FastlyCache for Session {
@@ -11,9 +14,8 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        // self.cache_state.get(cache_key.)
+        Ok(CacheHandle::from(123))
     }
 
     fn insert<'a>(
@@ -22,9 +24,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        Ok(types::BodyHandle::from(123))
     }
 
     fn transaction_lookup<'a>(
@@ -33,9 +33,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        Ok(types::CacheHandle::from(123))
     }
 
     fn transaction_insert<'a>(
@@ -44,9 +42,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        Ok(types::BodyHandle::from(123))
     }
 
     fn transaction_insert_and_stream_back<'a>(
@@ -78,15 +74,11 @@ impl FastlyCache for Session {
     }
 
     fn close(&mut self, handle: types::CacheHandle) -> Result<(), Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        Ok(())
     }
 
     fn get_state(&mut self, handle: types::CacheHandle) -> Result<types::CacheLookupState, Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        Ok(types::CacheLookupState::MUST_INSERT_OR_UPDATE)
     }
 
     fn get_user_metadata<'a>(

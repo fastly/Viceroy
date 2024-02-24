@@ -7,7 +7,7 @@ pub use async_item::{
     AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
 };
 
-use crate::{config::DynamicBackendRegistrar, execute::Endpoints};
+use crate::{cache_state::CacheState, config::DynamicBackendRegistrar, execute::Endpoints};
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -129,6 +129,8 @@ pub struct Session {
     config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
+    /// The cache state to use.
+    pub(crate) cache_state: Arc<CacheState>,
 }
 
 impl Session {
@@ -149,6 +151,7 @@ impl Session {
         secret_stores: Arc<SecretStores>,
         endpoints: Arc<Endpoints>,
         dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
+        cache_state: Arc<CacheState>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -185,6 +188,7 @@ impl Session {
             config_path,
             req_id,
             dynamic_backend_registrar,
+            cache_state,
         }
         .write_endpoints(endpoints)
     }

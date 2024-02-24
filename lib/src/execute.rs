@@ -1,6 +1,9 @@
 //! Guest code execution.
 
-use crate::config::{DynamicBackendRegistrar, UnknownImportBehavior};
+use crate::{
+    cache_state::CacheState,
+    config::{DynamicBackendRegistrar, UnknownImportBehavior},
+};
 use std::{collections::BTreeMap, sync::RwLock, time::SystemTime};
 use tokio::sync::mpsc::{Receiver, Sender as MspcSender};
 use wasmtime::GuestProfiler;
@@ -81,6 +84,8 @@ pub struct ExecuteCtx {
     guest_profile_path: Arc<Option<PathBuf>>,
     /// Endpoints that should be monitored. Allows reading logged message lines to that endpoint.
     endpoints: Arc<Endpoints>,
+    /// Cache state to use.
+    cache_state: Arc<CacheState>,
 }
 
 #[derive(Clone)]
@@ -178,6 +183,7 @@ impl ExecuteCtx {
             guest_profile_path: Arc::new(guest_profile_path),
             endpoints: Arc::new(Endpoints::new()),
             dynamic_backend_registrar: None,
+            cache_state: Arc::new(CacheState::new()),
         })
     }
 
@@ -404,6 +410,7 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
             self.endpoints.clone(),
             self.dynamic_backend_registrar.clone(),
+            self.cache_state.clone(),
         );
 
         let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
@@ -501,6 +508,7 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
             self.endpoints.clone(),
             self.dynamic_backend_registrar.clone(),
+            self.cache_state.clone(),
         );
 
         let profiler = self.guest_profile_path.is_some().then(|| {
