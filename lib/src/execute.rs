@@ -295,6 +295,11 @@ impl ExecuteCtx {
         self
     }
 
+    pub fn with_caches(mut self, cache_state: Arc<CacheState>) -> Self {
+        self.cache_state = cache_state;
+        self
+    }
+
     /// Asynchronously handle a request.
     ///
     /// This method fully instantiates the wasm module housed within the `ExecuteCtx`,
