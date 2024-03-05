@@ -110,6 +110,8 @@ impl FastlyHttpBody for Session {
     }
 
     fn close(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
+        dbg!("CLOSING", body_handle);
+
         // Drop the body and pass up an error if the handle does not exist
         if self.is_streaming_body(body_handle) {
             // Make sure a streaming body gets a `finish` message
@@ -120,6 +122,7 @@ impl FastlyHttpBody for Session {
     }
 
     fn abandon(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
+        dbg!("ABANDONING", body_handle);
         // Drop the body without a `finish` message
         Ok(self.drop_body(body_handle)?)
     }

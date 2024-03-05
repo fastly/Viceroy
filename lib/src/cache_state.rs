@@ -1,13 +1,10 @@
+use crate::{body::Body, wiggle_abi::types};
 use cranelift_entity::PrimaryMap;
 use http::HeaderMap;
-
-use crate::{body::Body, session::Session, wiggle_abi::types};
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::{
-        atomic::{AtomicI32, AtomicU32, Ordering},
-        Arc, RwLock,
-    },
+    fmt::Display,
+    sync::{Arc, RwLock},
     time::Instant,
 };
 
@@ -19,22 +16,12 @@ pub fn not_found_handle() -> types::CacheHandle {
 type PrimaryCacheKey = Vec<u8>;
 
 #[derive(Debug)]
-pub struct CacheKey {
-    /// The primary bytes of the cache key.
-    primary: Vec<u8>,
-
-    /// A list of secondary keys (based on vary).
-    /// Note that, right now, this list must be ordered in order to map the same entry.
-    secondary: Vec<String>,
-}
-
-#[derive(Debug)]
 pub struct CacheEntry {
     /// The cached bytes.
-    pub body: types::BodyHandle,
+    pub body_handle: types::BodyHandle,
 
     /// Vary used to create this entry.
-    pub vary: BTreeMap<String, String>,
+    pub vary: BTreeMap<String, Option<String>>,
 
     /// Max-age this entry has been created with.
     pub max_age: Option<u64>,
@@ -52,10 +39,7 @@ pub struct CacheEntry {
 impl CacheEntry {
     pub fn vary_matches(&self, headers: &HeaderMap) -> bool {
         self.vary.iter().all(|(vary_key, vary_value)| {
-            headers
-                .get(vary_key)
-                .map(|v| v == vary_value)
-                .unwrap_or(false)
+            headers.get(vary_key).and_then(|h| h.to_str().ok()) == vary_value.as_deref()
         })
     }
 }
@@ -67,9 +51,15 @@ pub struct CacheState {
 
     /// Primary cache key to a list of variants.
     pub key_candidates: Arc<RwLock<BTreeMap<PrimaryCacheKey, Vec<types::CacheHandle>>>>,
-    // cache_entries: Arc<RwLock<HashMap<types::CacheHandle, CacheEntry>>>,
-    // /// Sequence
-    // handle_sequence: Arc<AtomicU32>,
+
+    pub surrogates_to_handles: Arc<RwLock<BTreeMap<String, Vec<types::CacheHandle>>>>,
+
+    /// The way cache bodies are handled makes it super hard to move cache state between
+    /// executions. We can't fork the SDK, so we need to abide by the interface.
+    ///
+    /// We change the session to be aware of `CacheState`, which will write a copy of the body when
+    /// execution ends. On load, these bodies will be written back into the next session.
+    pub bodies: Arc<RwLock<HashMap<types::BodyHandle, Option<Body>>>>,
 }
 
 // Requires:
@@ -80,13 +70,101 @@ pub struct CacheState {
 
 impl CacheState {
     pub fn new() -> Self {
-        // 0 is reserved for missing cache entries.
-        // let handle_sequence = Arc::new(AtomicU32::new(1));
+        Default::default()
+    }
 
-        Self {
-            // handle_sequence,
-            ..Default::default()
+    // This handling is necessary due to incredibly painful body handling.
+    pub async fn format_pretty(&self) -> String {
+        let formatted_bodies = self.format_bodies().await;
+        let formatter = CacheStateFormatter {
+            state: self,
+            formatted_bodies,
+        };
+
+        formatter.to_string()
+    }
+
+    async fn format_bodies(&self) -> HashMap<types::BodyHandle, String> {
+        let mut formatted_bodies = HashMap::new();
+        let mut new_bodies = HashMap::new();
+
+        // We need to remove all bodies once, read them into byte vectors in order to format them,
+        // then recreate the bodies and write them back into the map. Excellent.
+        let bodies = self.bodies.write().unwrap().drain().collect::<Vec<_>>();
+        for (key, body) in bodies {
+            if let Some(body) = body {
+                let formatted = match body.read_into_vec().await {
+                    Ok(bytes) => {
+                        dbg!(&bytes);
+                        new_bodies.insert(key, Some(Body::from(bytes.clone())));
+                        String::from_utf8(bytes).unwrap_or("Invalid UTF-8".to_owned())
+                    }
+                    Err(err) => format!("Invalid body: {err}"),
+                };
+
+                formatted_bodies.insert(key, formatted);
+            } else {
+                new_bodies.insert(key, None);
+            }
         }
+
+        // Write back the bodies.
+        self.bodies.write().unwrap().extend(new_bodies);
+        formatted_bodies
+    }
+}
+
+struct CacheStateFormatter<'state> {
+    state: &'state CacheState,
+    formatted_bodies: HashMap<types::BodyHandle, String>,
+}
+
+impl<'state> Display for CacheStateFormatter<'state> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn indent(level: usize) -> String {
+            "  ".repeat(level)
+        }
+
+        dbg!(&self.formatted_bodies);
+
+        writeln!(f, "Cache State:")?;
+        writeln!(f, "{}Entries:", indent(1))?;
+
+        for (handle, entry) in self.state.cache_entries.read().unwrap().iter() {
+            writeln!(
+                f,
+                "{}[{}]: {:?} | {:?}",
+                indent(2),
+                handle,
+                entry.max_age,
+                entry.swr
+            )?;
+            writeln!(f, "{}Vary:", indent(3))?;
+
+            for (key, value) in entry.vary.iter() {
+                writeln!(f, "{}{key}: {:?}", indent(4), value)?;
+            }
+
+            writeln!(f, "{}User Metadata:", indent(3))?;
+            writeln!(
+                f,
+                "{}{}",
+                indent(4),
+                std::str::from_utf8(&entry.user_metadata).unwrap_or("Invalid UITF-8")
+            )?;
+
+            writeln!(f, "{}Body:", indent(3))?;
+
+            let body = self
+                .formatted_bodies
+                .get(&entry.body_handle)
+                .map(|s| s.as_str())
+                .unwrap_or("<Unset>");
+
+            writeln!(f, "{}{}", indent(4), body)?;
+        }
+
+        Ok(())
     }
 }
 

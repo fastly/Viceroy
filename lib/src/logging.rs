@@ -71,8 +71,6 @@ impl LogEndpoint {
         }
         to_write.push(b'\n');
 
-        dbg!(std::str::from_utf8(&to_write));
-
         if let Some(ref sender) = self.sender {
             sender.try_send(to_write).expect("todo");
             Ok(())
