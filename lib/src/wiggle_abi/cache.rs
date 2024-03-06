@@ -1,18 +1,18 @@
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-use std::time::Instant;
-
-use tracing::{event, Level};
-
-use crate::body::Body;
-use crate::cache_state::{not_found_handle, CacheEntry};
-use crate::session::Session;
-
-use super::fastly_cache::FastlyCache;
 use super::{
+    fastly_cache::FastlyCache,
     types::{self},
     Error,
 };
+use crate::{
+    body::Body,
+    cache_state::{not_found_handle, CacheEntry},
+    session::Session,
+};
+use std::{
+    collections::{btree_map::Entry, BTreeMap},
+    time::Instant,
+};
+use tracing::{event, Level};
 
 // pub struct CacheWriteOptions<'a> {
 //     pub max_age_ns: CacheDurationNs,
@@ -83,7 +83,6 @@ use super::{
 //     #[allow(deprecated, non_upper_case_globals)]
 //     pub const TO: Self = Self::from_bits_retain(4);
 // }
-
 #[allow(unused_variables)]
 impl FastlyCache for Session {
     fn lookup<'a>(
@@ -103,7 +102,6 @@ impl FastlyCache for Session {
         let candidates = candidates_lock.get(&primary_key);
 
         if let Some(candidates) = candidates {
-            dbg!("CHECKING CANDIDATE");
             // Eh, maybe a lock on the entire thing?
             // We don't need perf anyways, contenting locks doesn't matter.
             let entry_lock = self.cache_state.cache_entries.read().unwrap();
@@ -111,10 +109,9 @@ impl FastlyCache for Session {
             for candidate_handle in candidates {
                 if let Some(candidate_entry) = entry_lock.get(*candidate_handle) {
                     if candidate_entry.vary_matches(&req_parts.headers) {
-                        dbg!("WOULD_MATCH");
-                        dbg!(candidate_entry);
-                        // return Ok(*candidate_handle);
-                        return Ok(not_found_handle());
+                        dbg!("MATCHED");
+                        return Ok(dbg!(*candidate_handle));
+                        // return Ok(not_found_handle());
                     }
                 }
             }
@@ -263,7 +260,8 @@ impl FastlyCache for Session {
         // TODO: Check cache entry overwrite - variants must be unique.
 
         let body_handle = dbg!(self.insert_body(Body::empty()));
-        let entry = CacheEntry {
+        // let body_handle = types::BodyHandle::from(123);
+        let mut entry = CacheEntry {
             body_handle,
             vary,
             max_age: Some(max_age_s),
@@ -272,22 +270,54 @@ impl FastlyCache for Session {
             user_metadata,
         };
 
-        dbg!("BASE ENTRY");
+        // begin almost-copy-paste from lookup
+        let req_parts = self.request_parts(options.request_headers)?;
+        dbg!("candidates read");
+        let mut candidates_lock = self.cache_state.key_candidates.write().unwrap();
+        let candidates = candidates_lock.get_mut(&key);
 
-        // Write entry.
-        let entry_handle = self.cache_state.cache_entries.write().unwrap().push(entry);
+        let (entry_handle, overwrite) = candidates
+            .and_then(|candidates| {
+                dbg!("cache entries write");
+                let entry_lock = self.cache_state.cache_entries.write().unwrap();
+
+                candidates.iter_mut().find_map(|candidate_handle| {
+                    entry_lock
+                        .get(*candidate_handle)
+                        .and_then(|mut candidate_entry| {
+                            candidate_entry.vary_matches(&req_parts.headers).then(|| {
+                                dbg!("OVERWRITE ENTRY");
+
+                                let _ = std::mem::replace(&mut candidate_entry, &mut entry);
+                                (*candidate_handle, true)
+                            })
+                        })
+                })
+            })
+            .unwrap_or_else(|| {
+                dbg!("cache entries write");
+                // Write new entry.
+                let entry_handle = self.cache_state.cache_entries.write().unwrap().push(entry);
+                (entry_handle, false)
+            });
+
+        drop(candidates_lock);
 
         // Write handle key candidate mapping.
-        match self.cache_state.key_candidates.write().unwrap().entry(key) {
-            Entry::Vacant(vacant) => {
-                vacant.insert(vec![entry_handle]);
-            }
-            Entry::Occupied(mut occupied) => {
-                occupied.get_mut().push(entry_handle);
+        if !overwrite {
+            dbg!("candidates write");
+            match self.cache_state.key_candidates.write().unwrap().entry(key) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(vec![entry_handle]);
+                }
+                Entry::Occupied(mut occupied) => {
+                    occupied.get_mut().push(entry_handle);
+                }
             }
         }
 
-        // Write surrogates.
+        // Write surrogates (we don't really need to care about the overwrite case here for now).
+        dbg!("surrogates write");
         let mut surrogates_write_lock = self.cache_state.surrogates_to_handles.write().unwrap();
         for surrogate_key in surrogate_keys {
             match surrogates_write_lock.entry(surrogate_key) {
@@ -300,6 +330,11 @@ impl FastlyCache for Session {
             };
         }
 
+        dbg!(format!(
+            "Wrote cache entry {} with body handle {}",
+            entry_handle, body_handle
+        ));
+
         Ok(body_handle)
     }
 
@@ -310,6 +345,8 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
+        event!(Level::ERROR, "TX lookup");
+        dbg!("TX lookup");
         self.lookup(cache_key, options_mask, options)
     }
 
@@ -320,9 +357,10 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
-        // self.insert(handle, options_mask, options)
+        event!(Level::ERROR, "INSERT tx {handle}");
+        dbg!("INSERT tx {handle}");
 
-        Ok(self.insert_body(Body::empty()))
+        Ok(dbg!(self.insert_body(Body::empty())))
     }
 
     fn transaction_insert_and_stream_back<'a>(
@@ -331,6 +369,8 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
+        event!(Level::ERROR, "GET tx insert stream {handle}");
+        dbg!("GET tx insert stream {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
@@ -342,19 +382,22 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<(), Error> {
+        event!(Level::ERROR, "GET tx update {handle}");
+        dbg!("GET tx update {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
     }
 
     fn transaction_cancel(&mut self, handle: types::CacheHandle) -> Result<(), Error> {
+        event!(Level::ERROR, "GET tx cancel {handle}");
+        dbg!("GET tx cancel {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
     }
 
     fn close(&mut self, handle: types::CacheHandle) -> Result<(), Error> {
-        dbg!("CLOSING");
         Ok(())
     }
 
@@ -364,7 +407,9 @@ impl FastlyCache for Session {
         //     None => Ok(types::CacheLookupState::MUST_INSERT_OR_UPDATE),
         // }
 
-        Ok(types::CacheLookupState::MUST_INSERT_OR_UPDATE)
+        event!(Level::ERROR, "GET STATE {handle}");
+        dbg!("GET STATE {handle}");
+        Ok(dbg!(types::CacheLookupState::MUST_INSERT_OR_UPDATE))
     }
 
     fn get_user_metadata<'a>(
@@ -374,7 +419,8 @@ impl FastlyCache for Session {
         user_metadata_out_len: u32,
         nwritten_out: &wiggle::GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
-        dbg!("USER META DEAD");
+        event!(Level::ERROR, "GET meta {handle}");
+        dbg!("GET meta {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
@@ -386,7 +432,8 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        dbg!("BODY DEAD");
+        event!(Level::ERROR, "GET BODY handling {handle}");
+        dbg!("GET BODY handling {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
@@ -396,7 +443,8 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheObjectLength, Error> {
-        dbg!("LEN DEAD");
+        event!(Level::ERROR, "GET KEN {handle}");
+        dbg!("GET KEN {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
@@ -406,7 +454,8 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        dbg!("MAX AGE DEAD");
+        event!(Level::ERROR, "GET maxage {handle}");
+        dbg!("GET maxage {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
@@ -416,19 +465,24 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        dbg!("SWR DEAD");
+        event!(Level::ERROR, "GET swr {handle}");
+        dbg!("GET swr {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })
     }
 
     fn get_age_ns(&mut self, handle: types::CacheHandle) -> Result<types::CacheDurationNs, Error> {
-        dbg!("AGE NS DEAD");
-        todo!()
+        event!(Level::ERROR, "GET age ns {handle}");
+        dbg!("GET age ns {handle}");
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        })
     }
 
     fn get_hits(&mut self, handle: types::CacheHandle) -> Result<types::CacheHitCount, Error> {
-        dbg!("HITS DEAD");
+        event!(Level::ERROR, "GET hits {handle}");
+        dbg!("GET hits {handle}");
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         })

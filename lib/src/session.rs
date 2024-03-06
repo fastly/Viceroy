@@ -135,9 +135,8 @@ pub struct Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        // let mut bodies = self.cache_state.bodies.write().unwrap();
-
-        let get_bodies = self
+        // All body handles needed by cache entries.
+        let body_handles = self
             .cache_state
             .cache_entries
             .write()
@@ -146,17 +145,32 @@ impl Drop for Session {
             .map(|e| e.1.body_handle)
             .collect::<Vec<_>>();
 
-        let mut handles_to_bodies = HashMap::new();
+        dbg!("Body handles required by entries", &body_handles);
 
-        for handle in get_bodies {
-            handles_to_bodies.insert(handle, dbg!(self.take_body(handle).ok()));
+        // Handles already preserved (intercepted via .close()).
+        let existing_body_handles = self
+            .cache_state
+            .bodies
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(k, _)| *k)
+            .collect::<Vec<types::BodyHandle>>();
+
+        let mut body_handles_to_bodies = HashMap::new();
+
+        for handle in body_handles {
+            if !existing_body_handles.contains(&handle) {
+                dbg!("[Session Drop] Preserving handle", handle);
+                body_handles_to_bodies.insert(handle, dbg!(self.take_body(handle).ok()));
+            }
         }
 
         self.cache_state
             .bodies
             .write()
             .unwrap()
-            .extend(handles_to_bodies);
+            .extend(body_handles_to_bodies);
     }
 }
 
@@ -247,10 +261,17 @@ impl Session {
         for (handle, body) in bodies {
             let body = body.unwrap_or_default();
             let new_handle = self.insert_body(body);
+            dbg!(format!("Reloading handle {} as {}", handle, new_handle));
 
-            for (_, entry) in self.cache_state.cache_entries.write().unwrap().iter_mut() {
+            for (entry_handle, entry) in self.cache_state.cache_entries.write().unwrap().iter_mut()
+            {
                 if entry.body_handle == handle {
+                    dbg!(format!(
+                        "Entry {} now points to {}",
+                        entry_handle, new_handle
+                    ));
                     entry.body_handle = new_handle;
+                    dbg!(entry.body_handle);
                     break;
                 }
             }
@@ -329,6 +350,7 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn body(&self, handle: BodyHandle) -> Result<&Body, HandleError> {
+        dbg!("Getting body", handle);
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
@@ -344,6 +366,7 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn body_mut(&mut self, handle: BodyHandle) -> Result<&mut Body, HandleError> {
+        dbg!("Getting body mut", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -387,6 +410,7 @@ impl Session {
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
     pub fn begin_streaming(&mut self, handle: BodyHandle) -> Result<Body, HandleError> {
+        dbg!("Begin streaming", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -419,6 +443,7 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<&mut StreamingBody, HandleError> {
+        dbg!("Streaming mut", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -439,6 +464,7 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<StreamingBody, HandleError> {
+        dbg!("take streaming", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::take)

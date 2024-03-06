@@ -22,6 +22,8 @@ use {
 #[wiggle::async_trait]
 impl FastlyHttpBody for Session {
     async fn append(&mut self, dest: BodyHandle, src: BodyHandle) -> Result<(), Error> {
+        dbg!("Appending to body from other body", dest, src);
+
         // Take the `src` body out of the session, and get a mutable reference
         // to the `dest` body we will append to.
         let mut src = self.take_body(src)?;
@@ -83,6 +85,8 @@ impl FastlyHttpBody for Session {
         buf: &GuestPtr<'a, [u8]>,
         end: BodyWriteEnd,
     ) -> Result<u32, Error> {
+        dbg!("Writing to body", body_handle);
+
         // Validate the body handle and the buffer.
         let buf = &buf.as_slice()?.ok_or(Error::SharedMemory)?[..];
 
@@ -110,19 +114,58 @@ impl FastlyHttpBody for Session {
     }
 
     fn close(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
-        dbg!("CLOSING", body_handle);
+        dbg!("Closing", body_handle);
+
+        // TODO Giga haxx ahead
+        let cache_body_handle = self
+            .cache_state
+            .cache_entries
+            .read()
+            .unwrap()
+            .iter()
+            .find_map(|(_, e)| (dbg!(e.body_handle) == body_handle).then(|| body_handle.clone()));
 
         // Drop the body and pass up an error if the handle does not exist
         if self.is_streaming_body(body_handle) {
+            if cache_body_handle.is_some() {
+                return Err(Error::Unsupported {
+                    msg: "Streaming cache body not supported",
+                });
+            }
+
             // Make sure a streaming body gets a `finish` message
             self.take_streaming_body(body_handle)?.finish()
         } else {
-            Ok(self.drop_body(body_handle)?)
+            if let Some(cache_body_handle) = dbg!(cache_body_handle) {
+                dbg!("Preserving cache body for", cache_body_handle);
+
+                let body = self.take_body(body_handle).ok();
+                self.cache_state
+                    .bodies
+                    .write()
+                    .unwrap()
+                    .insert(cache_body_handle, body);
+
+                Ok(())
+            } else {
+                Ok(self.drop_body(body_handle)?)
+            }
         }
     }
 
     fn abandon(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
-        dbg!("ABANDONING", body_handle);
+        let entry_handle = self
+            .cache_state
+            .cache_entries
+            .read()
+            .unwrap()
+            .iter()
+            .find_map(|(_, e)| (e.body_handle == body_handle).then(|| body_handle.clone()));
+
+        if entry_handle.is_some() {
+            panic!("Abandoning cache body handle not... handled (handle {body_handle}).")
+        }
+
         // Drop the body without a `finish` message
         Ok(self.drop_body(body_handle)?)
     }
