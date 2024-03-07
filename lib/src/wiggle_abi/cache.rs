@@ -6,6 +6,7 @@ use super::{
 use crate::{
     body::Body,
     cache_state::{not_found_handle, CacheEntry},
+    error::HandleError,
     session::Session,
 };
 use std::{
@@ -402,28 +403,76 @@ impl FastlyCache for Session {
     }
 
     fn get_state(&mut self, handle: types::CacheHandle) -> Result<types::CacheLookupState, Error> {
-        // match self.cache_state.get(handle) {
-        //     Some(_entry) => Ok(types::CacheLookupState::FOUND),
-        //     None => Ok(types::CacheLookupState::MUST_INSERT_OR_UPDATE),
-        // }
-
-        event!(Level::ERROR, "GET STATE {handle}");
         dbg!("GET STATE {handle}");
-        Ok(dbg!(types::CacheLookupState::MUST_INSERT_OR_UPDATE))
+        event!(Level::ERROR, "GET STATE {handle}");
+        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+            // Entry found.
+            let mut state = types::CacheLookupState::FOUND;
+            let mut ttl = 0;
+            let age = entry.created_at.elapsed().as_secs();
+
+            // Compute total ttl
+            if let Some(max_age) = entry.max_age {
+                ttl += max_age;
+            };
+
+            if let Some(swr) = entry.swr {
+                ttl += swr;
+            };
+
+            // Compute staleness
+            match (entry.max_age, entry.swr) {
+                (Some(max_age), Some(swr)) if age > max_age && age < ttl => {
+                    state |= types::CacheLookupState::STALE
+                }
+                _ => (),
+            };
+
+            // TODO initial age etc not respected.
+            // Compute if usable.
+            if age < ttl {
+                // Entry is usable as max-age + swr define the period an entry is usable.
+                state |= types::CacheLookupState::USABLE;
+            }
+
+            Ok(dbg!(state))
+        } else {
+            Ok(dbg!(types::CacheLookupState::MUST_INSERT_OR_UPDATE))
+        }
     }
 
     fn get_user_metadata<'a>(
         &mut self,
         handle: types::CacheHandle,
         user_metadata_out_ptr: &wiggle::GuestPtr<'a, u8>,
-        user_metadata_out_len: u32,
+        user_metadata_out_len: u32, // TODO: Is this the maximum allowed length?
         nwritten_out: &wiggle::GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
         event!(Level::ERROR, "GET meta {handle}");
         dbg!("GET meta {handle}");
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+            if entry.user_metadata.len() > user_metadata_out_len as usize {
+                nwritten_out.write(entry.user_metadata.len().try_into().unwrap_or(0))?;
+                return Err(Error::BufferLengthError {
+                    buf: "user_metadata_out",
+                    len: "user_metadata_out_len",
+                });
+            }
+
+            let user_metadata_len = u32::try_from(entry.user_metadata.len())
+                .expect("smaller than user_metadata_out_len means it must fit");
+
+            let mut metadata_out = user_metadata_out_ptr
+                .as_array(user_metadata_len)
+                .as_slice_mut()?
+                .ok_or(Error::SharedMemory)?;
+
+            metadata_out.copy_from_slice(&entry.user_metadata);
+            nwritten_out.write(user_metadata_len)?;
+            Ok(())
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn get_body(
@@ -432,11 +481,16 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        event!(Level::ERROR, "GET BODY handling {handle}");
-        dbg!("GET BODY handling {handle}");
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        dbg!("Cache GET BODY handle {handle}");
+        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+            // We know that the body will be read and consumed, so we make a safety backup
+            // let body_ref = self.body(entry.body_handle)?;
+            // body_ref.into_iter()
+
+            Ok(entry.body_handle)
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn get_length(
@@ -456,9 +510,16 @@ impl FastlyCache for Session {
     ) -> Result<types::CacheDurationNs, Error> {
         event!(Level::ERROR, "GET maxage {handle}");
         dbg!("GET maxage {handle}");
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+            Ok(types::CacheDurationNs::from(
+                entry
+                    .max_age
+                    .map(|max_age| max_age * 1_000_000_000)
+                    .unwrap_or(0),
+            ))
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn get_stale_while_revalidate_ns(
@@ -467,17 +528,32 @@ impl FastlyCache for Session {
     ) -> Result<types::CacheDurationNs, Error> {
         event!(Level::ERROR, "GET swr {handle}");
         dbg!("GET swr {handle}");
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+
+        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+            Ok(types::CacheDurationNs::from(
+                entry.swr.map(|swr| swr * 1_000_000_000).unwrap_or(0),
+            ))
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn get_age_ns(&mut self, handle: types::CacheHandle) -> Result<types::CacheDurationNs, Error> {
         event!(Level::ERROR, "GET age ns {handle}");
         dbg!("GET age ns {handle}");
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        })
+
+        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+            Ok(types::CacheDurationNs::from(
+                entry
+                    .created_at
+                    .elapsed()
+                    .as_nanos()
+                    .try_into()
+                    .unwrap_or(u64::MAX),
+            ))
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn get_hits(&mut self, handle: types::CacheHandle) -> Result<types::CacheHitCount, Error> {

@@ -253,6 +253,10 @@ pub enum HandleError {
     #[error("Invalid body handle: {0}")]
     InvalidBodyHandle(crate::wiggle_abi::types::BodyHandle),
 
+    /// A cache handle was not valid.
+    #[error("Invalid cache handle: {0}")]
+    InvalidCacheHandle(crate::wiggle_abi::types::CacheHandle),
+
     /// A logging endpoint handle was not valid.
     #[error("Invalid endpoint handle: {0}")]
     InvalidEndpointHandle(crate::wiggle_abi::types::EndpointHandle),

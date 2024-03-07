@@ -95,7 +95,6 @@ impl CacheState {
             if let Some(body) = body {
                 let formatted = match body.read_into_vec().await {
                     Ok(bytes) => {
-                        dbg!(&bytes);
                         new_bodies.insert(key, Some(Body::from(bytes.clone())));
                         String::from_utf8(bytes).unwrap_or("Invalid UTF-8".to_owned())
                     }

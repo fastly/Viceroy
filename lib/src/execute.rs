@@ -117,10 +117,10 @@ pub struct EndpointListener {
 }
 
 impl EndpointListener {
-    // Todo blocking for now.
     pub fn messages(&mut self) -> Vec<Vec<u8>> {
         let mut messages = vec![];
-        while let Some(msg) = self.receiver.blocking_recv() {
+
+        while let Ok(msg) = self.receiver.try_recv() {
             messages.push(msg);
         }
 
@@ -282,8 +282,8 @@ impl ExecuteCtx {
     }
 
     /// Set the endpoints for this execution context.
-    pub fn with_endpoints(mut self, endpoints: Endpoints) -> Self {
-        self.endpoints = Arc::new(endpoints);
+    pub fn with_endpoints(mut self, endpoints: Arc<Endpoints>) -> Self {
+        self.endpoints = endpoints;
         self
     }
 
