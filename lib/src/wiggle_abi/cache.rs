@@ -108,39 +108,6 @@ impl FastlyCache for Session {
         Ok(not_found_handle())
     }
 
-    // pub struct CacheWriteOptions<'a> {
-    //     pub max_age_ns: CacheDurationNs,
-    //     pub request_headers: RequestHandle,
-    //     pub vary_rule_ptr: wiggle::GuestPtr<'a, u8>,
-    //     pub vary_rule_len: u32,
-    //     pub initial_age_ns: CacheDurationNs,
-    //     pub stale_while_revalidate_ns: CacheDurationNs,
-    //     pub surrogate_keys_ptr: wiggle::GuestPtr<'a, u8>,
-    //     pub surrogate_keys_len: u32,
-    //     pub length: CacheObjectLength,
-    //     pub user_metadata_ptr: wiggle::GuestPtr<'a, u8>,
-    //     pub user_metadata_len: u32,
-    // }
-    // impl CacheWriteOptionsMask {
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const RESERVED: Self = Self::from_bits_retain(1);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const REQUEST_HEADERS: Self = Self::from_bits_retain(2);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const VARY_RULE: Self = Self::from_bits_retain(4);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const INITIAL_AGE_NS: Self = Self::from_bits_retain(8);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const STALE_WHILE_REVALIDATE_NS: Self = Self::from_bits_retain(16);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const SURROGATE_KEYS: Self = Self::from_bits_retain(32);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const LENGTH: Self = Self::from_bits_retain(64);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const USER_METADATA: Self = Self::from_bits_retain(128);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const SENSITIVE_DATA: Self = Self::from_bits_retain(256);
-    // }
     fn insert<'a>(
         &mut self,
         cache_key: &wiggle::GuestPtr<'a, [u8]>,
@@ -150,17 +117,14 @@ impl FastlyCache for Session {
         // TODO: Skipped over all the sanity checks usually done by similar code (see `req_impl`).
         let options: types::CacheWriteOptions = options.read().unwrap();
         let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-        let body_to_use = self.insert_body(Body::empty());
         let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
             Some(self.request_parts(options.request_headers)?)
         } else {
             None
         };
 
-        self.cache_state
-            .insert(key, options_mask, options, parts, body_to_use)?;
-
-        Ok(body_to_use)
+        let cache_handle = self.cache_state.insert(key, options_mask, options, parts)?;
+        Ok(self.insert_cache_body(cache_handle))
     }
 
     /// Stub delegating to regular lookup.
@@ -193,22 +157,17 @@ impl FastlyCache for Session {
 
         if let Some(pending_tx_key) = key {
             let options: types::CacheWriteOptions = options.read().unwrap();
-            let body_to_use = self.insert_body(Body::empty());
             let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
                 Some(self.request_parts(options.request_headers)?)
             } else {
                 None
             };
 
-            self.cache_state.insert(
-                pending_tx_key.to_owned(),
-                options_mask,
-                options,
-                parts,
-                body_to_use,
-            )?;
+            let cache_handle =
+                self.cache_state
+                    .insert(pending_tx_key.to_owned(), options_mask, options, parts)?;
 
-            Ok(body_to_use)
+            Ok(self.insert_cache_body(cache_handle))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
         }
@@ -314,8 +273,18 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
-            Ok(entry.body_handle)
+        let body = self
+            .cache_state
+            .cache_entries
+            .read()
+            .unwrap()
+            .get(handle)
+            .map(|entry| entry.body_bytes.clone());
+
+        if let Some(body) = body {
+            // Re-insert a body into the session to allow subsequent reads.
+            let body_handle = self.insert_body(Body::from(body));
+            Ok(body_handle)
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
         }

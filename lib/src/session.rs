@@ -133,47 +133,6 @@ pub struct Session {
     pub(crate) cache_state: Arc<CacheState>,
 }
 
-impl Drop for Session {
-    fn drop(&mut self) {
-        // All body handles needed by cache entries.
-        let body_handles = self
-            .cache_state
-            .cache_entries
-            .write()
-            .unwrap()
-            .iter()
-            .map(|e| e.1.body_handle)
-            .collect::<Vec<_>>();
-
-        dbg!("Body handles required by entries", &body_handles);
-
-        // Handles already preserved (intercepted via .close()).
-        let existing_body_handles = self
-            .cache_state
-            .bodies
-            .read()
-            .unwrap()
-            .iter()
-            .map(|(k, _)| *k)
-            .collect::<Vec<types::BodyHandle>>();
-
-        let mut body_handles_to_bodies = HashMap::new();
-
-        for handle in body_handles {
-            if !existing_body_handles.contains(&handle) {
-                dbg!("[Session Drop] Preserving handle", handle);
-                body_handles_to_bodies.insert(handle, dbg!(self.take_body(handle).ok()));
-            }
-        }
-
-        self.cache_state
-            .bodies
-            .write()
-            .unwrap()
-            .extend(body_handles_to_bodies);
-    }
-}
-
 impl Session {
     /// Create an empty session.
     #[allow(clippy::too_many_arguments)]
@@ -231,7 +190,6 @@ impl Session {
             dynamic_backend_registrar,
             cache_state,
         }
-        .load_caches()
         .write_endpoints(endpoints)
     }
 
@@ -241,40 +199,6 @@ impl Session {
             let endpoint = LogEndpoint::new(name, Some(sender.clone()));
             let handle = self.log_endpoints.push(endpoint);
             self.log_endpoints_by_name.insert(name.to_owned(), handle);
-        }
-
-        self
-    }
-
-    // Restores cache state from the given cache state. The only thing required right now is to re-process the bodies.
-    fn load_caches(mut self) -> Self {
-        // First, extract the handle to body mapping.
-        let bodies = self
-            .cache_state
-            .bodies
-            .write()
-            .unwrap()
-            .drain()
-            .collect::<Vec<_>>();
-
-        // Re-insert the bodies into the session. This requires replacing the handles used in the cache entries, unfortunately.
-        for (handle, body) in bodies {
-            let body = body.unwrap_or_default();
-            let new_handle = self.insert_body(body);
-            dbg!(format!("Reloading handle {} as {}", handle, new_handle));
-
-            for (entry_handle, entry) in self.cache_state.cache_entries.write().unwrap().iter_mut()
-            {
-                if entry.body_handle == handle {
-                    dbg!(format!(
-                        "Entry {} now points to {}",
-                        entry_handle, new_handle
-                    ));
-                    entry.body_handle = new_handle;
-                    dbg!(entry.body_handle);
-                    break;
-                }
-            }
         }
 
         self
@@ -340,6 +264,13 @@ impl Session {
     /// [body]: ../body/struct.Body.html
     pub fn insert_body(&mut self, body: Body) -> BodyHandle {
         dbg!(self.async_items.push(Some(AsyncItem::Body(body))).into())
+    }
+
+    pub fn insert_cache_body(&mut self, cache_handle: types::CacheHandle) -> BodyHandle {
+        dbg!(self
+            .async_items
+            .push(Some(AsyncItem::CachingBody(cache_handle)))
+            .into())
     }
 
     /// Get a reference to a [`Body`][body], given its [`BodyHandle`][handle].
@@ -428,6 +359,26 @@ impl Session {
         } else {
             false
         }
+    }
+
+    pub fn is_caching_body(&self, handle: BodyHandle) -> bool {
+        if let Some(Some(body)) = self.async_items.get(handle.into()) {
+            body.is_caching()
+        } else {
+            false
+        }
+    }
+
+    pub fn caching_body_handle(
+        &mut self,
+        handle: BodyHandle,
+    ) -> Result<types::CacheHandle, HandleError> {
+        dbg!("Getting body mut", handle);
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(|item| item.as_ref().map(|item| item.resolve_cache_handle()))
+            .flatten()
+            .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
     /// Get a mutable reference to the streaming body `Sender`, if and only if the provided

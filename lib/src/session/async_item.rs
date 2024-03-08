@@ -1,8 +1,9 @@
-use crate::object_store::ObjectStoreError;
-use crate::{body::Body, error::Error, streaming_body::StreamingBody};
+use crate::{
+    body::Body, error::Error, object_store::ObjectStoreError, streaming_body::StreamingBody,
+    wiggle_abi::types,
+};
 use anyhow::anyhow;
-use futures::Future;
-use futures::FutureExt;
+use futures::{Future, FutureExt};
 use http::Response;
 use tokio::sync::oneshot;
 
@@ -45,6 +46,7 @@ impl PendingKvDeleteTask {
 /// body (writeable only). It is used within the body handle map in `Session`.
 #[derive(Debug)]
 pub enum AsyncItem {
+    CachingBody(types::CacheHandle),
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
@@ -58,9 +60,21 @@ impl AsyncItem {
         matches!(self, Self::StreamingBody(_))
     }
 
+    pub fn is_caching(&self) -> bool {
+        matches!(self, Self::CachingBody(_))
+    }
+
+    pub fn resolve_cache_handle(&self) -> Option<types::CacheHandle> {
+        match self {
+            Self::CachingBody(handle) => Some(*handle),
+            _ => None,
+        }
+    }
+
     pub fn as_body(&self) -> Option<&Body> {
         match self {
             Self::Body(body) => Some(body),
+            Self::CachingBody(_) => panic!("as_body called"),
             _ => None,
         }
     }
@@ -68,6 +82,7 @@ impl AsyncItem {
     pub fn as_body_mut(&mut self) -> Option<&mut Body> {
         match self {
             Self::Body(body) => Some(body),
+            Self::CachingBody(_) => panic!("as_body_mut called"),
             _ => None,
         }
     }
@@ -75,6 +90,7 @@ impl AsyncItem {
     pub fn into_body(self) -> Option<Body> {
         match self {
             Self::Body(body) => Some(body),
+            Self::CachingBody(_) => panic!("into_body called"),
             _ => None,
         }
     }
@@ -174,6 +190,7 @@ impl AsyncItem {
         match self {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
+            Self::CachingBody(_) => (),
             Self::PendingReq(req) => req.await_ready().await,
             Self::PendingKvLookup(req) => req.0.await_ready().await,
             Self::PendingKvInsert(req) => req.0.await_ready().await,

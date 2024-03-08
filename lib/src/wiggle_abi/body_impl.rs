@@ -1,10 +1,8 @@
 //! fastly_body` hostcall implementations.
 
+use crate::wiggle_abi::headers::HttpHeaders;
 use http::{HeaderName, HeaderValue};
 use tracing::{event, Level};
-
-use crate::wiggle_abi::headers::HttpHeaders;
-
 use {
     crate::{
         body::Body,
@@ -23,8 +21,6 @@ use {
 #[wiggle::async_trait]
 impl FastlyHttpBody for Session {
     async fn append(&mut self, dest: BodyHandle, src: BodyHandle) -> Result<(), Error> {
-        dbg!("Appending to body from other body", dest, src);
-
         // Take the `src` body out of the session, and get a mutable reference
         // to the `dest` body we will append to.
         let mut src = self.take_body(src)?;
@@ -36,11 +32,23 @@ impl FastlyHttpBody for Session {
                 dest.send_chunk(chunk).await?;
             }
             dest.trailers.extend(trailers);
+        } else if self.is_caching_body(dest) {
+            // If we're writing to a caching body, we directly append to the buffer.
+            let cache_handle = self.caching_body_handle(dest).unwrap();
+            let source_bytes = src.read_into_vec().await?;
+
+            self.cache_state
+                .cache_entries
+                .write()
+                .unwrap()
+                .get_mut(cache_handle)
+                .map(|entry| entry.body_bytes.extend(source_bytes));
         } else {
             let dest = self.body_mut(dest)?;
             dest.trailers.extend(trailers);
             dest.append(src);
         }
+
         Ok(())
     }
 
@@ -54,6 +62,7 @@ impl FastlyHttpBody for Session {
         buf: &GuestPtr<'a, u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
+        dbg!("READING FROM BODY");
         let mut buf_slice = buf
             .as_array(buf_len)
             .as_slice_mut()?
@@ -93,6 +102,10 @@ impl FastlyHttpBody for Session {
         match end {
             BodyWriteEnd::Front => {
                 // Only normal bodies can be front-written
+                if self.is_caching_body(body_handle) {
+                    event!(Level::ERROR, "Attempted pushing front to a caching body");
+                }
+
                 self.body_mut(body_handle)?.push_front(buf);
             }
             BodyWriteEnd::Back => {
@@ -100,11 +113,20 @@ impl FastlyHttpBody for Session {
                     self.streaming_body_mut(body_handle)?
                         .send_chunk(buf)
                         .await?;
+                } else if self.is_caching_body(body_handle) {
+                    let cache_handle = self.caching_body_handle(body_handle).unwrap();
+                    self.cache_state
+                        .cache_entries
+                        .write()
+                        .unwrap()
+                        .get_mut(cache_handle)
+                        .map(|entry| entry.body_bytes.extend(buf));
                 } else {
                     self.body_mut(body_handle)?.push_back(buf);
                 }
             }
         }
+
         // Finally, return the number of bytes written, which is _always_ the full buffer
         Ok(buf
             .len()
@@ -113,63 +135,16 @@ impl FastlyHttpBody for Session {
     }
 
     fn close(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
-        // TODO Giga haxx ahead
-        let cache_body_handle = self
-            .cache_state
-            .cache_entries
-            .read()
-            .unwrap()
-            .iter()
-            .find_map(|(_, e)| (e.body_handle == body_handle).then(|| body_handle.clone()));
-
         // Drop the body and pass up an error if the handle does not exist
         if self.is_streaming_body(body_handle) {
-            if cache_body_handle.is_some() {
-                return Err(Error::Unsupported {
-                    msg: "Streaming cache body not supported",
-                });
-            }
-
             // Make sure a streaming body gets a `finish` message
             self.take_streaming_body(body_handle)?.finish()
         } else {
-            if let Some(cache_body_handle) = dbg!(cache_body_handle) {
-                event!(
-                    Level::TRACE,
-                    "Preserving cache body for {}",
-                    cache_body_handle
-                );
-
-                let body = self.take_body(body_handle).ok();
-                self.cache_state
-                    .bodies
-                    .write()
-                    .unwrap()
-                    .insert(cache_body_handle, body);
-
-                Ok(())
-            } else {
-                Ok(self.drop_body(body_handle)?)
-            }
+            Ok(self.drop_body(body_handle)?)
         }
     }
 
     fn abandon(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
-        let entry_handle = self
-            .cache_state
-            .cache_entries
-            .read()
-            .unwrap()
-            .iter()
-            .find_map(|(_, e)| (e.body_handle == body_handle).then(|| body_handle.clone()));
-
-        if entry_handle.is_some() {
-            event!(
-                Level::ERROR,
-                "Abandoning cache body handle is not yet handled. Handle: {body_handle}."
-            )
-        }
-
         // Drop the body without a `finish` message
         Ok(self.drop_body(body_handle)?)
     }

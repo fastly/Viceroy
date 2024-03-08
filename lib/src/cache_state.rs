@@ -17,35 +17,17 @@ pub fn not_found_handle() -> types::CacheHandle {
 
 type PrimaryCacheKey = Vec<u8>;
 
-// #[derive(Debug)]
-// pub enum CacheEntry {
-//     PendingTxInsert(PrimaryCacheKey),
-//     Entry(CacheEntry),
-// }
-
-// impl CacheEntry {
-//     pub fn as_entry_panicking(&self) -> &CacheEntry {
-//         match self {
-//             CacheEntry::Entry(e) => e,
-//             CacheEntry::PendingTxInsert(_) => panic!("Entry is not a cache entry, but pending tx"),
-//         }
-//     }
-// }
-
-// #[derive(Clone, Debug)]
-// pub enum PendingTxState {
-//     Insert(PrimaryCacheKey),
-//     Overwrite(types::CacheHandle),
-// }
-
 #[derive(Clone, Default, Debug)]
 pub struct CacheState {
     /// Cache entries, indexable by handle.
+    // TODO: Maybe an option for the entry to signify a deleted one, since the primarymap isn't
+    //       really doing that?
     pub cache_entries: Arc<RwLock<PrimaryMap<types::CacheHandle, CacheEntry>>>,
 
     /// Primary cache key to a list of variants.
     pub key_candidates: Arc<RwLock<BTreeMap<PrimaryCacheKey, Vec<types::CacheHandle>>>>,
 
+    /// Surrogates to cache entry mapping to support simplistic purging.
     pub surrogates_to_handles: Arc<RwLock<BTreeMap<String, Vec<types::CacheHandle>>>>,
 
     /// The way cache bodies are handled makes it super hard to move cache state between
@@ -70,6 +52,7 @@ impl CacheState {
 
     // TODO: Purge
 
+    // Todo: Use in insert / lookup.
     pub fn match_entry(&self, key: &Vec<u8>, headers: &HeaderMap) -> Option<types::CacheHandle> {
         let candidates_lock = self.key_candidates.read().unwrap();
 
@@ -94,8 +77,8 @@ impl CacheState {
         options_mask: types::CacheWriteOptionsMask,
         options: types::CacheWriteOptions,
         request_parts: Option<&Parts>,
-        body_to_use: types::BodyHandle,
-    ) -> Result<(), Error> {
+        // body_to_use: types::BodyHandle,
+    ) -> Result<types::CacheHandle, Error> {
         // Cache write must contain max-age.
         let max_age_ns = options.max_age_ns;
 
@@ -190,7 +173,7 @@ impl CacheState {
 
         let mut entry = CacheEntry {
             key: key.clone(),
-            body_handle: body_to_use,
+            body_bytes: vec![],
             vary,
             initial_age_ns,
             max_age_ns: Some(max_age_ns),
@@ -230,12 +213,7 @@ impl CacheState {
             .unwrap_or_else(|| {
                 // Write new entry.
                 let entry_handle = self.cache_entries.write().unwrap().push(entry);
-                event!(
-                    Level::TRACE,
-                    "Wrote new cache entry {} with body handle {}",
-                    entry_handle,
-                    body_to_use
-                );
+                event!(Level::TRACE, "Wrote new cache entry {}", entry_handle,);
                 (entry_handle, false)
             });
 
@@ -266,46 +244,13 @@ impl CacheState {
             };
         }
 
-        Ok(())
+        Ok(entry_handle)
     }
 
     // This handling is necessary due to incredibly painful body handling.
     pub async fn format_pretty(&self) -> String {
-        let formatted_bodies = self.format_bodies().await;
-        let formatter = CacheStateFormatter {
-            state: self,
-            formatted_bodies,
-        };
-
+        let formatter = CacheStateFormatter { state: self };
         formatter.to_string()
-    }
-
-    async fn format_bodies(&self) -> HashMap<types::BodyHandle, String> {
-        let mut formatted_bodies = HashMap::new();
-        let mut new_bodies = HashMap::new();
-
-        // We need to remove all bodies once, read them into byte vectors in order to format them,
-        // then recreate the bodies and write them back into the map. Excellent.
-        let bodies = self.bodies.write().unwrap().drain().collect::<Vec<_>>();
-        for (key, body) in bodies {
-            if let Some(body) = body {
-                let formatted = match body.read_into_vec().await {
-                    Ok(bytes) => {
-                        new_bodies.insert(key, Some(Body::from(bytes.clone())));
-                        String::from_utf8(bytes).unwrap_or("Invalid UTF-8".to_owned())
-                    }
-                    Err(err) => format!("Invalid body: {err}"),
-                };
-
-                formatted_bodies.insert(key, formatted);
-            } else {
-                new_bodies.insert(key, None);
-            }
-        }
-
-        // Write back the bodies.
-        self.bodies.write().unwrap().extend(new_bodies);
-        formatted_bodies
     }
 }
 
@@ -315,9 +260,11 @@ pub struct CacheEntry {
     /// Here for convenience.
     pub key: Vec<u8>,
 
-    /// The cached bytes.
-    pub body_handle: types::BodyHandle,
+    /// The raw bytes of the cached entry.
+    pub body_bytes: Vec<u8>,
 
+    // The cached bytes.
+    // pub body_handle: types::BodyHandle,
     /// Vary used to create this entry.
     pub vary: BTreeMap<String, Option<String>>,
 
@@ -360,14 +307,14 @@ impl CacheEntry {
         let total_ttl = self.total_ttl_ns();
 
         match (self.max_age_ns, self.swr_ns) {
-            (Some(max_age), Some(swr)) => age > max_age && age < total_ttl,
+            (Some(max_age), Some(_)) => age > max_age && age < total_ttl,
             _ => false,
         }
     }
 
     /// Usable: Age is smaller than max-age + swr.
     pub fn is_usable(&self) -> bool {
-        let mut total_ttl = self.total_ttl_ns();
+        let total_ttl = self.total_ttl_ns();
         let age = self.age_ns();
 
         age < total_ttl
@@ -390,7 +337,6 @@ impl CacheEntry {
 
 struct CacheStateFormatter<'state> {
     state: &'state CacheState,
-    formatted_bodies: HashMap<types::BodyHandle, String>,
 }
 
 impl<'state> Display for CacheStateFormatter<'state> {
@@ -472,13 +418,12 @@ impl<'state> CacheStateFormatter<'state> {
         )?;
 
         writeln!(f, "{}Body:", Self::indent(3))?;
+        writeln!(
+            f,
+            "{}",
+            std::str::from_utf8(&entry.body_bytes).unwrap_or("<Invalid UTF8 body>")
+        )?;
 
-        let body = self
-            .formatted_bodies
-            .get(&entry.body_handle)
-            .map(|s| s.as_str())
-            .unwrap_or("<Unset>");
-
-        writeln!(f, "{}{}", Self::indent(4), body)
+        Ok(())
     }
 }
