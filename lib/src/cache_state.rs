@@ -9,40 +9,12 @@ use std::{
 };
 
 /// Handle used for a non-existing cache entry.
+/// TODO: Is this needed? Seems to work without checking it.
 pub fn not_found_handle() -> types::CacheHandle {
     types::CacheHandle::from(u32::MAX)
 }
 
 type PrimaryCacheKey = Vec<u8>;
-
-#[derive(Debug)]
-pub struct CacheEntry {
-    /// The cached bytes.
-    pub body_handle: types::BodyHandle,
-
-    /// Vary used to create this entry.
-    pub vary: BTreeMap<String, Option<String>>,
-
-    /// Max-age this entry has been created with.
-    pub max_age: Option<u64>,
-
-    /// Stale-while-revalidate this entry has been created with.
-    pub swr: Option<u64>,
-
-    /// Instant this entry has been created.
-    pub created_at: Instant,
-
-    /// The user metadata stored alongside the cache.
-    pub user_metadata: Vec<u8>,
-}
-
-impl CacheEntry {
-    pub fn vary_matches(&self, headers: &HeaderMap) -> bool {
-        self.vary.iter().all(|(vary_key, vary_value)| {
-            headers.get(vary_key).and_then(|h| h.to_str().ok()) == vary_value.as_deref()
-        })
-    }
-}
 
 #[derive(Clone, Default, Debug)]
 pub struct CacheState {
@@ -61,12 +33,6 @@ pub struct CacheState {
     /// execution ends. On load, these bodies will be written back into the next session.
     pub bodies: Arc<RwLock<HashMap<types::BodyHandle, Option<Body>>>>,
 }
-
-// Requires:
-// - lookup: key to handle
-// - insert: key to bodyhandle
-// - state: handle to state
-// - body: handle to body handle
 
 impl CacheState {
     pub fn new() -> Self {
@@ -113,6 +79,78 @@ impl CacheState {
     }
 }
 
+#[derive(Debug)]
+pub struct CacheEntry {
+    /// Key the entry was created with.
+    /// Here for convenience.
+    pub key: Vec<u8>,
+
+    /// The cached bytes.
+    pub body_handle: types::BodyHandle,
+
+    /// Vary used to create this entry.
+    pub vary: BTreeMap<String, Option<String>>,
+
+    /// Initial age of the cache entry.
+    pub initial_age_ns: Option<u64>,
+
+    /// Max-age this entry has been created with.
+    pub max_age: Option<u64>,
+
+    /// Stale-while-revalidate this entry has been created with.
+    pub swr: Option<u64>,
+
+    /// Instant this entry has been created.
+    pub created_at: Instant,
+
+    /// The user metadata stored alongside the cache.
+    pub user_metadata: Vec<u8>,
+}
+
+impl CacheEntry {
+    pub fn vary_matches(&self, headers: &HeaderMap) -> bool {
+        self.vary.iter().all(|(vary_key, vary_value)| {
+            headers.get(vary_key).and_then(|h| h.to_str().ok()) == vary_value.as_deref()
+        })
+    }
+
+    pub fn age_ns(&self) -> u64 {
+        self.created_at
+            .elapsed()
+            .as_nanos()
+            .try_into()
+            .ok()
+            .and_then(|age_ns: u64| age_ns.checked_add(self.initial_age_ns.unwrap_or(0)).ok())
+            .unwrap_or(u64::MAX)
+    }
+
+    /// Stale: Is within
+    pub fn is_stale(&self) -> bool {
+        match (self.max_age, self.swr) {
+            (Some(max_age), Some(swr)) if age > max_age && age < ttl => {
+                state |= types::CacheLookupState::STALE
+            }
+            _ => (),
+        };
+    }
+
+    /// Usable: Age is smaller than max-age + swr.
+    pub fn is_usable(&self) -> bool {
+        let mut total_ttl = 0;
+        let age = self.age_ns() / NS_TO_S_FACTOR;
+
+        if let Some(max_age) = self.max_age {
+            total_ttl += max_age;
+        };
+
+        if let Some(swr) = self.swr {
+            total_ttl += swr;
+        };
+
+        age < total_ttl
+    }
+}
+
 struct CacheStateFormatter<'state> {
     state: &'state CacheState,
     formatted_bodies: HashMap<types::BodyHandle, String>,
@@ -124,22 +162,35 @@ impl<'state> Display for CacheStateFormatter<'state> {
             "  ".repeat(level)
         }
 
-        dbg!(&self.formatted_bodies);
-
         writeln!(f, "Cache State:")?;
         writeln!(f, "{}Entries:", indent(1))?;
 
         for (handle, entry) in self.state.cache_entries.read().unwrap().iter() {
             writeln!(
                 f,
-                "{}[{}]: {:?} | {:?}",
+                "{}[{}]: {}",
                 indent(2),
                 handle,
-                entry.max_age,
-                entry.swr
+                entry
+                    .key
+                    .iter()
+                    .map(|x| format!("{x:X}"))
+                    .collect::<Vec<_>>()
+                    .join("")
             )?;
-            writeln!(f, "{}Vary:", indent(3))?;
 
+            writeln!(f, "{}TTLs (sec):", indent(3),)?;
+            writeln!(f, "{}Age: {}", indent(4), entry.age_ns() / 1_000_000_000)?;
+            writeln!(
+                f,
+                "{}Inital age: {:?}",
+                indent(4),
+                entry.initial_age_ns.map(|ia| ia / 1_000_000_000)
+            )?;
+            writeln!(f, "{}Max-age: {:?}", indent(4), entry.max_age)?;
+            writeln!(f, "{}Swr: {:?}", indent(4), entry.swr)?;
+
+            writeln!(f, "{}Vary:", indent(3))?;
             for (key, value) in entry.vary.iter() {
                 writeln!(f, "{}{key}: {:?}", indent(4), value)?;
             }
@@ -166,70 +217,3 @@ impl<'state> Display for CacheStateFormatter<'state> {
         Ok(())
     }
 }
-
-//     /// Get handle for the given key.
-//     /// Will return the empty handle (0) if no entry is found.
-//     pub(crate) fn get_handle(&self, key: &Vec<u8>) -> types::CacheHandle {
-//         self.handles
-//             .read()
-//             .unwrap()
-//             .get(key)
-//             .map(ToOwned::to_owned)
-//             .unwrap_or(none_handle())
-//     }
-
-//     pub(crate) fn get_state(&self, key: &types::CacheHandle) -> CacheLookupState {
-//         self.cache_entries.read().unwrap().get(key).map(|entry| {
-//             // check:
-//             // - expired (STALE)
-//             // - Not found (MUST_INSERT_OR_UPDATE)
-//             // - Found and usable (USABLE)
-//             // - ??? (FOUND)
-//         })
-
-//         // handle: types::CacheHandle
-
-//         // self.handles
-//         //     .read()
-//         //     .expect("[Get] Handle lookup to succeed")
-//         //     .get(&handle.inner())
-//         //     .and_then(|key| {
-//         //         self.cache_entries
-//         //             .read()
-//         //             .expect("[Get] Entry lookup to succeed")
-//         //             .get(key)
-//         //     })
-//         // todo!()
-//     }
-
-//     pub(crate) fn insert(
-//         &self,
-//         key: Vec<u8>,
-//         max_age: u64,
-//         body_handle: types::BodyHandle,
-//     ) -> types::CacheHandle {
-//         let entry = CacheEntry {
-//             body: body_handle,
-//             vary: BTreeMap::new(),
-//             max_age: Some(max_age),
-//             swr: None,
-//             created_at: Instant::now(),
-//             user_metadata: vec![],
-//         };
-
-//         todo!()
-
-//         // let handle_index = self.handle_sequence.fetch_add(1, Ordering::Relaxed);
-//         // self.handles
-//         //     .write()
-//         //     .expect("[Insert] Handle lookup to succeed")
-//         //     .insert(handle_index, key.clone());
-
-//         // self.cache_entries
-//         //     .write()
-//         //     .expect("[Insert] Cache entry lock to succeed")
-//         //     .insert(key, entry);
-
-//         // types::CacheHandle::from(handle_index)
-//     }
-// }
