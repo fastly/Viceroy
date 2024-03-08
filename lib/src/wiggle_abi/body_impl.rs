@@ -1,6 +1,7 @@
 //! fastly_body` hostcall implementations.
 
 use http::{HeaderName, HeaderValue};
+use tracing::{event, Level};
 
 use crate::wiggle_abi::headers::HttpHeaders;
 
@@ -85,8 +86,6 @@ impl FastlyHttpBody for Session {
         buf: &GuestPtr<'a, [u8]>,
         end: BodyWriteEnd,
     ) -> Result<u32, Error> {
-        dbg!("Writing to body", body_handle);
-
         // Validate the body handle and the buffer.
         let buf = &buf.as_slice()?.ok_or(Error::SharedMemory)?[..];
 
@@ -114,8 +113,6 @@ impl FastlyHttpBody for Session {
     }
 
     fn close(&mut self, body_handle: BodyHandle) -> Result<(), Error> {
-        dbg!("Closing", body_handle);
-
         // TODO Giga haxx ahead
         let cache_body_handle = self
             .cache_state
@@ -123,7 +120,7 @@ impl FastlyHttpBody for Session {
             .read()
             .unwrap()
             .iter()
-            .find_map(|(_, e)| (dbg!(e.body_handle) == body_handle).then(|| body_handle.clone()));
+            .find_map(|(_, e)| (e.body_handle == body_handle).then(|| body_handle.clone()));
 
         // Drop the body and pass up an error if the handle does not exist
         if self.is_streaming_body(body_handle) {
@@ -137,7 +134,11 @@ impl FastlyHttpBody for Session {
             self.take_streaming_body(body_handle)?.finish()
         } else {
             if let Some(cache_body_handle) = dbg!(cache_body_handle) {
-                dbg!("Preserving cache body for", cache_body_handle);
+                event!(
+                    Level::TRACE,
+                    "Preserving cache body for {}",
+                    cache_body_handle
+                );
 
                 let body = self.take_body(body_handle).ok();
                 self.cache_state
@@ -163,7 +164,10 @@ impl FastlyHttpBody for Session {
             .find_map(|(_, e)| (e.body_handle == body_handle).then(|| body_handle.clone()));
 
         if entry_handle.is_some() {
-            panic!("Abandoning cache body handle not... handled (handle {body_handle}).")
+            event!(
+                Level::ERROR,
+                "Abandoning cache body handle is not yet handled. Handle: {body_handle}."
+            )
         }
 
         // Drop the body without a `finish` message

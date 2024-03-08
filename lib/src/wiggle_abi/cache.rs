@@ -3,19 +3,8 @@ use super::{
     types::{self},
     Error,
 };
-use crate::{
-    body::Body,
-    cache_state::{not_found_handle, CacheEntry},
-    error::HandleError,
-    session::Session,
-};
-use std::{
-    collections::{btree_map::Entry, BTreeMap},
-    time::Instant,
-};
+use crate::{body::Body, cache_state::not_found_handle, error::HandleError, session::Session};
 use tracing::{event, Level};
-
-// pub const NS_TO_S_FACTOR: u64 = 1_000_000_000;
 
 // pub struct CacheWriteOptions<'a> {
 //     pub max_age_ns: CacheDurationNs,
@@ -95,9 +84,6 @@ impl FastlyCache for Session {
         options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
         let primary_key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-
-        // Q: I guess the bitmask indicates if this is a safe operation?
-        // -> Doesn't matter for us anyways, we're just using headers all the time afaict.
         let options: types::CacheLookupOptions = options.read().unwrap();
         let req_parts = self.request_parts(options.request_headers)?;
 
@@ -162,196 +148,20 @@ impl FastlyCache for Session {
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
         // TODO: Skipped over all the sanity checks usually done by similar code (see `req_impl`).
-
         let options: types::CacheWriteOptions = options.read().unwrap();
         let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-
-        // Cache write must contain max-age.
-        let max_age_ns = options.max_age_ns;
-
-        // Swr might not be set, check bitmask for. Else we'd always get Some(0).
-        let swr_ns = options_mask
-            .contains(types::CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS)
-            .then(|| options.stale_while_revalidate_ns);
-
-        let surrogate_keys = if options_mask.contains(types::CacheWriteOptionsMask::SURROGATE_KEYS)
-        {
-            if options.surrogate_keys_len == 0 {
-                return Err(Error::InvalidArgument);
-            }
-
-            let byte_slice = options
-                .surrogate_keys_ptr
-                .as_array(options.surrogate_keys_len)
-                .to_vec()?;
-
-            match String::from_utf8(byte_slice) {
-                Ok(s) => s
-                    .split_whitespace()
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>(),
-
-                Err(_) => return Err(Error::InvalidArgument),
-            }
+        let body_to_use = self.insert_body(Body::empty());
+        let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
+            Some(self.request_parts(options.request_headers)?)
         } else {
-            vec![]
+            None
         };
 
-        let user_metadata = if options_mask.contains(types::CacheWriteOptionsMask::USER_METADATA) {
-            if options.user_metadata_len == 0 {
-                return Err(Error::InvalidArgument);
-            }
+        self.cache_state
+            .insert(key, options_mask, options, parts, body_to_use)?;
 
-            let byte_slice = options
-                .user_metadata_ptr
-                .as_array(options.user_metadata_len)
-                .to_vec()?;
-
-            byte_slice
-        } else {
-            vec![]
-        };
-
-        let vary = if options_mask.contains(types::CacheWriteOptionsMask::VARY_RULE) {
-            if options.vary_rule_len == 0 {
-                return Err(Error::InvalidArgument);
-            }
-
-            let byte_slice = options
-                .vary_rule_ptr
-                .as_array(options.vary_rule_len)
-                .to_vec()?;
-
-            let vary_rules = match String::from_utf8(byte_slice) {
-                Ok(s) => s
-                    .split_whitespace()
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>(),
-
-                Err(_) => return Err(Error::InvalidArgument),
-            };
-
-            if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
-                let req_parts = self.request_parts(options.request_headers)?;
-                let mut map = BTreeMap::new();
-
-                // Extract necessary vary headers.
-                for vary in vary_rules {
-                    // If you think this sucks... then you'd be right. Just supposed to work right now.
-                    let value = req_parts
-                        .headers
-                        .get(&vary)
-                        .map(|h| h.to_str().unwrap().to_string());
-
-                    map.insert(vary, value);
-                }
-
-                map
-            } else {
-                // Or invalid argument?
-                BTreeMap::new()
-            }
-        } else {
-            BTreeMap::new()
-        };
-
-        let initial_age_ns = options_mask
-            .contains(types::CacheWriteOptionsMask::INITIAL_AGE_NS)
-            .then(|| options.initial_age_ns);
-
-        let body_handle = self.insert_body(Body::empty());
-        let mut entry = CacheEntry {
-            key: key.clone(),
-            body_handle,
-            vary,
-            initial_age_ns,
-            max_age_ns: Some(max_age_ns),
-            swr_ns: swr_ns,
-            created_at: Instant::now(),
-            user_metadata,
-        };
-
-        // Check for overwrites
-        let req_parts = self.request_parts(options.request_headers)?;
-        let mut candidates_lock = self.cache_state.key_candidates.write().unwrap();
-        let candidates = candidates_lock.get_mut(&key);
-
-        let (entry_handle, overwrite) = candidates
-            .and_then(|candidates| {
-                let entry_lock = self.cache_state.cache_entries.write().unwrap();
-
-                candidates.iter_mut().find_map(|candidate_handle| {
-                    entry_lock
-                        .get(*candidate_handle)
-                        .and_then(|mut candidate_entry| {
-                            candidate_entry.vary_matches(&req_parts.headers).then(|| {
-                                event!(
-                                    Level::TRACE,
-                                    "Overwriting cache entry {}",
-                                    candidate_handle
-                                );
-
-                                let _ = std::mem::replace(&mut candidate_entry, &mut entry);
-                                (*candidate_handle, true)
-                            })
-                        })
-                })
-            })
-            .unwrap_or_else(|| {
-                // Write new entry.
-                let entry_handle = self.cache_state.cache_entries.write().unwrap().push(entry);
-                event!(
-                    Level::TRACE,
-                    "Wrote new cache entry {} with body handle {}",
-                    entry_handle,
-                    body_handle
-                );
-                (entry_handle, false)
-            });
-
-        drop(candidates_lock);
-
-        if !overwrite {
-            // Write handle key candidate mapping.
-            match self.cache_state.key_candidates.write().unwrap().entry(key) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(vec![entry_handle]);
-                }
-                Entry::Occupied(mut occupied) => {
-                    occupied.get_mut().push(entry_handle);
-                }
-            }
-        }
-
-        // Write surrogates (we don't really need to care about the overwrite case here for now).
-        let mut surrogates_write_lock = self.cache_state.surrogates_to_handles.write().unwrap();
-        for surrogate_key in surrogate_keys {
-            match surrogates_write_lock.entry(surrogate_key) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(vec![entry_handle]);
-                }
-                Entry::Occupied(mut occupied) => {
-                    occupied.get_mut().push(entry_handle);
-                }
-            };
-        }
-
-        Ok(body_handle)
+        Ok(body_to_use)
     }
-
-    // pub struct CacheLookupOptionsMask(
-    //     <CacheLookupOptionsMask as ::bitflags::__private::PublicFlags>::Internal,
-    // );
-    // impl CacheLookupOptionsMask {
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const RESERVED: Self = Self::from_bits_retain(1);
-    //     #[allow(deprecated, non_upper_case_globals)]
-    //     pub const REQUEST_HEADERS: Self = Self::from_bits_retain(2);
-    // }
-
-    // pub struct CacheLookupOptions {
-    //     pub request_headers: RequestHandle,
-    // }
 
     /// Stub delegating to regular lookup.
     fn transaction_lookup<'a>(
@@ -360,13 +170,10 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let cache_handle = if self.lookup(cache_key, options_mask, options)? != not_found_handle() {
-            todo!()
-        } else {
-            todo!()
-        };
-
-        todo!()
+        // TODO: This is a plain hack, not a working implementation: Parallel tx etc, are simply not required.
+        //       -> This will fall apart immediately if tx are used as actual transactions.
+        let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
+        Ok(self.cache_state.pending_tx.write().unwrap().push(key))
     }
 
     /// Stub delegating to regular insert.
@@ -376,15 +183,35 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
-        // Ok(dbg!(self.insert_body(Body::empty())))
+        let key = self
+            .cache_state
+            .pending_tx
+            .read()
+            .unwrap()
+            .get(handle)
+            .map(ToOwned::to_owned);
 
-        // &mut self,
-        // cache_key: &wiggle::GuestPtr<'a, [u8]>,
-        // options_mask: types::CacheWriteOptionsMask,
-        // options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        if let Some(pending_tx_key) = key {
+            let options: types::CacheWriteOptions = options.read().unwrap();
+            let body_to_use = self.insert_body(Body::empty());
+            let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
+                Some(self.request_parts(options.request_headers)?)
+            } else {
+                None
+            };
 
-        // self.insert();
-        todo!()
+            self.cache_state.insert(
+                pending_tx_key.to_owned(),
+                options_mask,
+                options,
+                parts,
+                body_to_use,
+            )?;
+
+            Ok(body_to_use)
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn transaction_insert_and_stream_back<'a>(
