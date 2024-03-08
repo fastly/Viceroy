@@ -95,10 +95,10 @@ pub struct CacheEntry {
     pub initial_age_ns: Option<u64>,
 
     /// Max-age this entry has been created with.
-    pub max_age: Option<u64>,
+    pub max_age_ns: Option<u64>,
 
     /// Stale-while-revalidate this entry has been created with.
-    pub swr: Option<u64>,
+    pub swr_ns: Option<u64>,
 
     /// Instant this entry has been created.
     pub created_at: Instant,
@@ -120,34 +120,41 @@ impl CacheEntry {
             .as_nanos()
             .try_into()
             .ok()
-            .and_then(|age_ns: u64| age_ns.checked_add(self.initial_age_ns.unwrap_or(0)).ok())
+            .and_then(|age_ns: u64| age_ns.checked_add(self.initial_age_ns.unwrap_or(0)))
             .unwrap_or(u64::MAX)
     }
 
-    /// Stale: Is within
+    /// Stale: Is within max-age + ttl, but only if there's an swr given.
     pub fn is_stale(&self) -> bool {
-        match (self.max_age, self.swr) {
-            (Some(max_age), Some(swr)) if age > max_age && age < ttl => {
-                state |= types::CacheLookupState::STALE
-            }
-            _ => (),
-        };
+        let age = self.age_ns();
+        let total_ttl = self.total_ttl_ns();
+
+        match (self.max_age_ns, self.swr_ns) {
+            (Some(max_age), Some(swr)) => age > max_age && age < total_ttl,
+            _ => false,
+        }
     }
 
     /// Usable: Age is smaller than max-age + swr.
     pub fn is_usable(&self) -> bool {
-        let mut total_ttl = 0;
-        let age = self.age_ns() / NS_TO_S_FACTOR;
+        let mut total_ttl = self.total_ttl_ns();
+        let age = self.age_ns();
 
-        if let Some(max_age) = self.max_age {
+        age < total_ttl
+    }
+
+    /// Max-age + swr of the cache entry.
+    fn total_ttl_ns(&self) -> u64 {
+        let mut total_ttl = 0;
+        if let Some(max_age) = self.max_age_ns {
             total_ttl += max_age;
         };
 
-        if let Some(swr) = self.swr {
+        if let Some(swr) = self.swr_ns {
             total_ttl += swr;
         };
 
-        age < total_ttl
+        total_ttl
     }
 }
 

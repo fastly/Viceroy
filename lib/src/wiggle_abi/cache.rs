@@ -15,7 +15,7 @@ use std::{
 };
 use tracing::{event, Level};
 
-const NS_TO_S_FACTOR: u64 = 1_000_000_000;
+// pub const NS_TO_S_FACTOR: u64 = 1_000_000_000;
 
 // pub struct CacheWriteOptions<'a> {
 //     pub max_age_ns: CacheDurationNs,
@@ -112,7 +112,8 @@ impl FastlyCache for Session {
             for candidate_handle in candidates {
                 if let Some(candidate_entry) = entry_lock.get(*candidate_handle) {
                     if candidate_entry.vary_matches(&req_parts.headers) {
-                        return Ok(dbg!(*candidate_handle));
+                        event!(Level::TRACE, "Found matching cache entry");
+                        return Ok(*candidate_handle);
                     }
                 }
             }
@@ -166,15 +167,12 @@ impl FastlyCache for Session {
         let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
 
         // Cache write must contain max-age.
-        let max_age_s = options.max_age_ns / NS_TO_S_FACTOR;
+        let max_age_ns = options.max_age_ns;
 
         // Swr might not be set, check bitmask for. Else we'd always get Some(0).
-        let swr_s =
-            if options_mask.contains(types::CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS) {
-                Some(options.stale_while_revalidate_ns / NS_TO_S_FACTOR)
-            } else {
-                None
-            };
+        let swr_ns = options_mask
+            .contains(types::CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS)
+            .then(|| options.stale_while_revalidate_ns);
 
         let surrogate_keys = if options_mask.contains(types::CacheWriteOptionsMask::SURROGATE_KEYS)
         {
@@ -267,8 +265,8 @@ impl FastlyCache for Session {
             body_handle,
             vary,
             initial_age_ns,
-            max_age: Some(max_age_s),
-            swr: swr_s,
+            max_age_ns: Some(max_age_ns),
+            swr_ns: swr_ns,
             created_at: Instant::now(),
             user_metadata,
         };
@@ -385,7 +383,7 @@ impl FastlyCache for Session {
         // options_mask: types::CacheWriteOptionsMask,
         // options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
 
-        self.insert();
+        // self.insert();
         todo!()
     }
 
@@ -428,35 +426,25 @@ impl FastlyCache for Session {
         if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             // Entry found.
             let mut state = types::CacheLookupState::FOUND;
-            let mut ttl = 0;
-            let age = entry.age_ns() / NS_TO_S_FACTOR;
 
-            // Compute total ttl
-            if let Some(max_age) = entry.max_age {
-                ttl += max_age;
-            };
-
-            if let Some(swr) = entry.swr {
-                ttl += swr;
-            };
-
-            // Compute staleness.
-            match (entry.max_age, entry.swr) {
-                (Some(max_age), Some(swr)) if age > max_age && age < ttl => {
-                    state |= types::CacheLookupState::STALE
-                }
-                _ => (),
-            };
-
-            // Compute if usable.
-            if age < ttl {
-                // Entry is usable as max-age + swr define the period an entry is usable.
-                state |= types::CacheLookupState::USABLE;
+            if entry.is_stale() {
+                state |= types::CacheLookupState::STALE
+            } else {
+                // If stale, entry must be updated.
+                state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
             }
 
-            Ok(dbg!(state))
+            if entry.is_usable() {
+                state |= types::CacheLookupState::USABLE;
+            } else {
+                // If not usable, caller must insert / refresh the cache entry.
+                state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
+            }
+
+            Ok(state)
         } else {
-            Ok(dbg!(types::CacheLookupState::MUST_INSERT_OR_UPDATE))
+            // Entry not found, entry must be inserted.
+            Ok(types::CacheLookupState::MUST_INSERT_OR_UPDATE)
         }
     }
 
@@ -467,8 +455,6 @@ impl FastlyCache for Session {
         user_metadata_out_len: u32, // TODO: Is this the maximum allowed length?
         nwritten_out: &wiggle::GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
-        event!(Level::ERROR, "GET meta {handle}");
-        dbg!("GET meta {handle}");
         if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             if entry.user_metadata.len() > user_metadata_out_len as usize {
                 nwritten_out.write(entry.user_metadata.len().try_into().unwrap_or(0))?;
@@ -488,6 +474,7 @@ impl FastlyCache for Session {
 
             metadata_out.copy_from_slice(&entry.user_metadata);
             nwritten_out.write(user_metadata_len)?;
+
             Ok(())
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
@@ -500,12 +487,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        dbg!("Cache GET BODY handle {handle}");
         if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
-            // We know that the body will be read and consumed, so we make a safety backup
-            // let body_ref = self.body(entry.body_handle)?;
-            // body_ref.read();
-
             Ok(entry.body_handle)
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
@@ -516,10 +498,9 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheObjectLength, Error> {
-        event!(Level::ERROR, "GET KEN {handle}");
-        dbg!("GET KEN {handle}");
+        event!(Level::ERROR, "Cache entry length get not implemented.");
         Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+            msg: "Cache entry length get not implemented.",
         })
     }
 
@@ -527,15 +508,8 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        event!(Level::ERROR, "GET maxage {handle}");
-        dbg!("GET maxage {handle}");
         if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
-            Ok(types::CacheDurationNs::from(
-                entry
-                    .max_age
-                    .map(|max_age| max_age * 1_000_000_000)
-                    .unwrap_or(0),
-            ))
+            Ok(types::CacheDurationNs::from(entry.max_age_ns.unwrap_or(0)))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
         }
@@ -546,9 +520,7 @@ impl FastlyCache for Session {
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
         if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
-            Ok(types::CacheDurationNs::from(
-                entry.swr.map(|swr| swr * 1_000_000_000).unwrap_or(0),
-            ))
+            Ok(types::CacheDurationNs::from(entry.swr_ns.unwrap_or(0)))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
         }
@@ -563,8 +535,9 @@ impl FastlyCache for Session {
     }
 
     fn get_hits(&mut self, handle: types::CacheHandle) -> Result<types::CacheHitCount, Error> {
+        event!(Level::ERROR, "Cache entry get_hits not implemented.");
         Err(Error::Unsupported {
-            msg: "get_hits is not implemented",
+            msg: "Cache entry get_hits not implemented.",
         })
     }
 }
