@@ -42,7 +42,11 @@ impl FastlyHttpBody for Session {
                 .write()
                 .unwrap()
                 .get_mut(cache_handle)
-                .map(|entry| entry.body_bytes.extend(source_bytes));
+                .map(|entry| {
+                    entry
+                        .as_mut()
+                        .map(|entry| entry.body_bytes.extend(source_bytes))
+                });
         } else {
             let dest = self.body_mut(dest)?;
             dest.trailers.extend(trailers);
@@ -120,7 +124,7 @@ impl FastlyHttpBody for Session {
                         .write()
                         .unwrap()
                         .get_mut(cache_handle)
-                        .map(|entry| entry.body_bytes.extend(buf));
+                        .map(|entry| entry.as_mut().map(|entry| entry.body_bytes.extend(buf)));
                 } else {
                     self.body_mut(body_handle)?.push_back(buf);
                 }

@@ -1,8 +1,8 @@
-use crate::{body::Body, wiggle_abi::types, Error};
+use crate::{wiggle_abi::types, Error};
 use cranelift_entity::PrimaryMap;
 use http::{request::Parts, HeaderMap};
 use std::{
-    collections::{btree_map::Entry, BTreeMap, HashMap},
+    collections::{btree_map::Entry, BTreeMap, HashSet},
     fmt::Display,
     sync::{Arc, RwLock},
     time::Instant,
@@ -20,23 +20,14 @@ type PrimaryCacheKey = Vec<u8>;
 #[derive(Clone, Default, Debug)]
 pub struct CacheState {
     /// Cache entries, indexable by handle.
-    // TODO: Maybe an option for the entry to signify a deleted one, since the primarymap isn't
-    //       really doing that?
-    pub cache_entries: Arc<RwLock<PrimaryMap<types::CacheHandle, CacheEntry>>>,
+    /// `None` indicates a deleted entry.
+    pub cache_entries: Arc<RwLock<PrimaryMap<types::CacheHandle, Option<CacheEntry>>>>,
 
     /// Primary cache key to a list of variants.
     pub key_candidates: Arc<RwLock<BTreeMap<PrimaryCacheKey, Vec<types::CacheHandle>>>>,
 
-    /// Surrogates to cache entry mapping to support simplistic purging.
-    pub surrogates_to_handles: Arc<RwLock<BTreeMap<String, Vec<types::CacheHandle>>>>,
-
-    /// The way cache bodies are handled makes it super hard to move cache state between
-    /// executions. We can't fork the SDK, so we need to abide by the interface.
-    ///
-    /// We change the session to be aware of `CacheState`, which will write a copy of the body when
-    /// execution ends. On load, these bodies will be written back into the next session.
-    pub bodies: Arc<RwLock<HashMap<types::BodyHandle, Option<Body>>>>,
-
+    // Surrogates to cache entry mapping to support simplistic purging.
+    // pub surrogates_to_handles: Arc<RwLock<BTreeMap<String, Vec<types::CacheHandle>>>>,
     /// CacheHandle markers for pending transactions. Handles received for TX operataions
     /// always point into this map instead of the entries.
     //
@@ -50,7 +41,25 @@ impl CacheState {
         Default::default()
     }
 
-    // TODO: Purge
+    pub fn purge(&self, surrogates: Vec<String>) {
+        let mut cache_entries = self.cache_entries.write().unwrap();
+        let surrogates_to_purge: HashSet<String> = surrogates.into_iter().collect();
+
+        // Simplistic implementation: Just go over all cache entries and kick out matching ones.
+        for (_handle, handle_entry) in cache_entries.iter_mut() {
+            if let Some(entry) = handle_entry {
+                if entry
+                    .surrogate_keys
+                    .intersection(&surrogates_to_purge)
+                    .count()
+                    != 0
+                {
+                    // Drop the content of the cache entry.
+                    handle_entry.take();
+                }
+            }
+        }
+    }
 
     // Todo: Use in insert / lookup.
     pub fn match_entry(&self, key: &Vec<u8>, headers: &HeaderMap) -> Option<types::CacheHandle> {
@@ -63,9 +72,9 @@ impl CacheState {
                 entry_lock
                     .get(*candidate_handle)
                     .and_then(|candidate_entry| {
-                        candidate_entry
-                            .vary_matches(headers)
-                            .then(|| *candidate_handle)
+                        candidate_entry.as_ref().and_then(|entry| {
+                            entry.vary_matches(headers).then(|| *candidate_handle)
+                        })
                     })
             })
         })
@@ -171,7 +180,7 @@ impl CacheState {
             .contains(types::CacheWriteOptionsMask::INITIAL_AGE_NS)
             .then(|| options.initial_age_ns);
 
-        let mut entry = CacheEntry {
+        let entry = CacheEntry {
             key: key.clone(),
             body_bytes: vec![],
             vary,
@@ -180,69 +189,49 @@ impl CacheState {
             swr_ns: swr_ns,
             created_at: Instant::now(),
             user_metadata,
+            surrogate_keys: surrogate_keys.into_iter().collect(),
         };
 
-        // Check for and perform overwrites.
-        let mut candidates_lock = self.key_candidates.write().unwrap();
-        let candidates = candidates_lock.get_mut(&key);
-        let headers = request_parts.map(|p| &p.headers);
+        // Check for and perform overwrites or write a new entry.
+        let existing_entry_handle = self.match_entry(
+            &key,
+            request_parts
+                .map(|p| &p.headers)
+                .unwrap_or(&HeaderMap::new()),
+        );
 
-        let (entry_handle, overwrite) = candidates
-            .and_then(|candidates| {
-                let entry_lock = self.cache_entries.write().unwrap();
+        let entry_handle = match existing_entry_handle {
+            Some(handle) => {
+                // Overwrite entry.
+                event!(Level::TRACE, "Overwriting cache entry {}", handle);
 
-                candidates.iter_mut().find_map(|candidate_handle| {
-                    entry_lock
-                        .get(*candidate_handle)
-                        .and_then(|mut candidate_entry| {
-                            candidate_entry
-                                .vary_matches(&headers.unwrap_or(&HeaderMap::new()))
-                                .then(|| {
-                                    event!(
-                                        Level::TRACE,
-                                        "Overwriting cache entry {}",
-                                        candidate_handle
-                                    );
+                self.cache_entries
+                    .write()
+                    .unwrap()
+                    .get_mut(handle)
+                    .map(|old_entry| old_entry.replace(entry));
 
-                                    let _ = std::mem::replace(&mut candidate_entry, &mut entry);
-                                    (*candidate_handle, true)
-                                })
-                        })
-                })
-            })
-            .unwrap_or_else(|| {
-                // Write new entry.
-                let entry_handle = self.cache_entries.write().unwrap().push(entry);
-                event!(Level::TRACE, "Wrote new cache entry {}", entry_handle,);
-                (entry_handle, false)
-            });
-
-        drop(candidates_lock);
-
-        if !overwrite {
-            // Write handle key candidate mapping.
-            match self.key_candidates.write().unwrap().entry(key) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(vec![entry_handle]);
-                }
-                Entry::Occupied(mut occupied) => {
-                    occupied.get_mut().push(entry_handle);
-                }
+                handle
             }
-        }
 
-        // Write surrogates (we don't really need to care about the overwrite case here for now).
-        let mut surrogates_write_lock = self.surrogates_to_handles.write().unwrap();
-        for surrogate_key in surrogate_keys {
-            match surrogates_write_lock.entry(surrogate_key) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(vec![entry_handle]);
+            None => {
+                // Write new entry.
+                let new_entry_handle = self.cache_entries.write().unwrap().push(Some(entry));
+                event!(Level::TRACE, "Wrote new cache entry {}", new_entry_handle);
+
+                // Write handle key candidate mapping.
+                match self.key_candidates.write().unwrap().entry(key) {
+                    Entry::Vacant(vacant) => {
+                        vacant.insert(vec![new_entry_handle]);
+                    }
+                    Entry::Occupied(mut occupied) => {
+                        occupied.get_mut().push(new_entry_handle);
+                    }
                 }
-                Entry::Occupied(mut occupied) => {
-                    occupied.get_mut().push(entry_handle);
-                }
-            };
-        }
+
+                new_entry_handle
+            }
+        };
 
         Ok(entry_handle)
     }
@@ -267,6 +256,9 @@ pub struct CacheEntry {
     // pub body_handle: types::BodyHandle,
     /// Vary used to create this entry.
     pub vary: BTreeMap<String, Option<String>>,
+
+    /// Surrogates attached to this cache entry.
+    pub surrogate_keys: HashSet<String>,
 
     /// Initial age of the cache entry.
     pub initial_age_ns: Option<u64>,
@@ -345,7 +337,10 @@ impl<'state> Display for CacheStateFormatter<'state> {
         writeln!(f, "{}Entries:", Self::indent(1))?;
 
         for (handle, entry) in self.state.cache_entries.read().unwrap().iter() {
-            self.fmt_entry(f, handle, entry)?;
+            match entry {
+                Some(entry) => self.fmt_entry(f, handle, entry)?,
+                None => writeln!(f, "{}[{}]: Purged", Self::indent(2), handle,)?,
+            }
         }
 
         Ok(())
@@ -409,6 +404,14 @@ impl<'state> CacheStateFormatter<'state> {
             writeln!(f, "{}{key}: {:?}", Self::indent(4), value)?;
         }
 
+        writeln!(f, "{}Surrogate keys:", Self::indent(3))?;
+        let mut surrogates: Vec<&String> = entry.surrogate_keys.iter().collect();
+        surrogates.sort();
+
+        for surrogate in surrogates {
+            writeln!(f, "{}{surrogate}", Self::indent(4))?;
+        }
+
         writeln!(f, "{}User Metadata:", Self::indent(3))?;
         writeln!(
             f,
@@ -420,7 +423,8 @@ impl<'state> CacheStateFormatter<'state> {
         writeln!(f, "{}Body:", Self::indent(3))?;
         writeln!(
             f,
-            "{}",
+            "{}{}",
+            Self::indent(4),
             std::str::from_utf8(&entry.body_bytes).unwrap_or("<Invalid UTF8 body>")
         )?;
 

@@ -87,25 +87,10 @@ impl FastlyCache for Session {
         let options: types::CacheLookupOptions = options.read().unwrap();
         let req_parts = self.request_parts(options.request_headers)?;
 
-        let candidates_lock = self.cache_state.key_candidates.read().unwrap();
-        let candidates = candidates_lock.get(&primary_key);
-
-        if let Some(candidates) = candidates {
-            // Eh, maybe a lock on the entire thing?
-            // We don't need perf anyways, contenting locks doesn't matter.
-            let entry_lock = self.cache_state.cache_entries.read().unwrap();
-
-            for candidate_handle in candidates {
-                if let Some(candidate_entry) = entry_lock.get(*candidate_handle) {
-                    if candidate_entry.vary_matches(&req_parts.headers) {
-                        event!(Level::TRACE, "Found matching cache entry");
-                        return Ok(*candidate_handle);
-                    }
-                }
-            }
-        }
-
-        Ok(not_found_handle())
+        Ok(self
+            .cache_state
+            .match_entry(&primary_key, &req_parts.headers)
+            .unwrap_or(not_found_handle()))
     }
 
     fn insert<'a>(
@@ -209,7 +194,7 @@ impl FastlyCache for Session {
     }
 
     fn get_state(&mut self, handle: types::CacheHandle) -> Result<types::CacheLookupState, Error> {
-        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             // Entry found.
             let mut state = types::CacheLookupState::FOUND;
 
@@ -241,7 +226,7 @@ impl FastlyCache for Session {
         user_metadata_out_len: u32, // TODO: Is this the maximum allowed length?
         nwritten_out: &wiggle::GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
-        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             if entry.user_metadata.len() > user_metadata_out_len as usize {
                 nwritten_out.write(entry.user_metadata.len().try_into().unwrap_or(0))?;
                 return Err(Error::BufferLengthError {
@@ -279,7 +264,7 @@ impl FastlyCache for Session {
             .read()
             .unwrap()
             .get(handle)
-            .map(|entry| entry.body_bytes.clone());
+            .and_then(|entry| entry.as_ref().map(|entry| entry.body_bytes.clone()));
 
         if let Some(body) = body {
             // Re-insert a body into the session to allow subsequent reads.
@@ -304,7 +289,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             Ok(types::CacheDurationNs::from(entry.max_age_ns.unwrap_or(0)))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
@@ -315,7 +300,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             Ok(types::CacheDurationNs::from(entry.swr_ns.unwrap_or(0)))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
@@ -323,7 +308,7 @@ impl FastlyCache for Session {
     }
 
     fn get_age_ns(&mut self, handle: types::CacheHandle) -> Result<types::CacheDurationNs, Error> {
-        if let Some(entry) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
             Ok(types::CacheDurationNs::from(entry.age_ns()))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
