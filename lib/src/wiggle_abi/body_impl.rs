@@ -66,7 +66,6 @@ impl FastlyHttpBody for Session {
         buf: &GuestPtr<'a, u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        dbg!("READING FROM BODY");
         let mut buf_slice = buf
             .as_array(buf_len)
             .as_slice_mut()?

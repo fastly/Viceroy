@@ -83,12 +83,12 @@ pub struct ExecuteCtx {
     /// a file.
     guest_profile_path: Arc<Option<PathBuf>>,
     /// Endpoints that should be monitored. Allows reading logged message lines to that endpoint.
-    endpoints: Arc<Endpoints>,
+    endpoints: Endpoints,
     /// Cache state to use.
     cache_state: Arc<CacheState>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Endpoints {
     // #[allow(clippy::type_complexity)]
     // todo iterator
@@ -117,6 +117,7 @@ pub struct EndpointListener {
 }
 
 impl EndpointListener {
+    /// Drains and returns all (raw) messages from this listener.
     pub fn messages(&mut self) -> Vec<Vec<u8>> {
         let mut messages = vec![];
 
@@ -181,7 +182,7 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_path: Arc::new(guest_profile_path),
-            endpoints: Arc::new(Endpoints::new()),
+            endpoints: Endpoints::new(),
             dynamic_backend_registrar: None,
             cache_state: Arc::new(CacheState::new()),
         })
@@ -282,7 +283,7 @@ impl ExecuteCtx {
     }
 
     /// Set the endpoints for this execution context.
-    pub fn with_endpoints(mut self, endpoints: Arc<Endpoints>) -> Self {
+    pub fn with_endpoints(mut self, endpoints: Endpoints) -> Self {
         self.endpoints = endpoints;
         self
     }

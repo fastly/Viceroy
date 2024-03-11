@@ -820,8 +820,6 @@ impl FastlyHttpReq for Session {
     }
 
     fn close(&mut self, req_handle: RequestHandle) -> Result<(), Error> {
-        dbg!("Closing request", req_handle);
-
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
         self.take_request_parts(req_handle)?;

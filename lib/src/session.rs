@@ -149,7 +149,7 @@ impl Session {
         config_path: Arc<Option<PathBuf>>,
         object_store: Arc<ObjectStores>,
         secret_stores: Arc<SecretStores>,
-        endpoints: Arc<Endpoints>,
+        endpoints: Endpoints,
         dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
         cache_state: Arc<CacheState>,
     ) -> Session {
@@ -194,7 +194,7 @@ impl Session {
     }
 
     // Todo: Haxx, it's better to run this code in the constructor and initialize `log_endpoints_by_name` and `log_endpoints`.
-    fn write_endpoints(mut self, endpoints: Arc<Endpoints>) -> Self {
+    fn write_endpoints(mut self, endpoints: Endpoints) -> Self {
         for (name, sender) in endpoints.endpoints.read().unwrap().iter() {
             let endpoint = LogEndpoint::new(name, Some(sender.clone()));
             let handle = self.log_endpoints.push(endpoint);
@@ -263,14 +263,13 @@ impl Session {
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     /// [body]: ../body/struct.Body.html
     pub fn insert_body(&mut self, body: Body) -> BodyHandle {
-        dbg!(self.async_items.push(Some(AsyncItem::Body(body))).into())
+        self.async_items.push(Some(AsyncItem::Body(body))).into()
     }
 
     pub fn insert_cache_body(&mut self, cache_handle: types::CacheHandle) -> BodyHandle {
-        dbg!(self
-            .async_items
+        self.async_items
             .push(Some(AsyncItem::CachingBody(cache_handle)))
-            .into())
+            .into()
     }
 
     /// Get a reference to a [`Body`][body], given its [`BodyHandle`][handle].
@@ -281,7 +280,6 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn body(&self, handle: BodyHandle) -> Result<&Body, HandleError> {
-        dbg!("Getting body", handle);
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
@@ -297,7 +295,6 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn body_mut(&mut self, handle: BodyHandle) -> Result<&mut Body, HandleError> {
-        dbg!("Getting body mut", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -313,7 +310,6 @@ impl Session {
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.BodyHandle.html
     pub fn take_body(&mut self, handle: BodyHandle) -> Result<Body, HandleError> {
-        dbg!("Taking body", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::take)
@@ -325,7 +321,6 @@ impl Session {
     ///
     /// Returns a [`HandleError`][crate::error::HandleError] if the handle is not associated with a body in the session.
     pub fn drop_body(&mut self, handle: BodyHandle) -> Result<(), HandleError> {
-        dbg!("Dropping body", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::take)
@@ -341,7 +336,6 @@ impl Session {
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
     pub fn begin_streaming(&mut self, handle: BodyHandle) -> Result<Body, HandleError> {
-        dbg!("Begin streaming", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -373,7 +367,6 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<types::CacheHandle, HandleError> {
-        dbg!("Getting body mut", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(|item| item.as_ref().map(|item| item.resolve_cache_handle()))
@@ -394,7 +387,6 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<&mut StreamingBody, HandleError> {
-        dbg!("Streaming mut", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -415,7 +407,6 @@ impl Session {
         &mut self,
         handle: BodyHandle,
     ) -> Result<StreamingBody, HandleError> {
-        dbg!("take streaming", handle);
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::take)

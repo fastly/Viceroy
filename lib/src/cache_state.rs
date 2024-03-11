@@ -237,7 +237,7 @@ impl CacheState {
     }
 
     // This handling is necessary due to incredibly painful body handling.
-    pub async fn format_pretty(&self) -> String {
+    pub fn format_pretty(&self) -> String {
         let formatter = CacheStateFormatter { state: self };
         formatter.to_string()
     }
@@ -246,8 +246,8 @@ impl CacheState {
 #[derive(Debug)]
 pub struct CacheEntry {
     /// Key the entry was created with.
-    /// Here for convenience.
-    pub key: Vec<u8>,
+    /// Here for convenience, entries are retrieved via handles.
+    pub key: PrimaryCacheKey,
 
     /// The raw bytes of the cached entry.
     pub body_bytes: Vec<u8>,
