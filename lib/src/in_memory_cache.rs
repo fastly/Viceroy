@@ -10,7 +10,6 @@ use std::{
 use tracing::{event, Level};
 
 /// Handle used for a non-existing cache entry.
-/// TODO: Is this needed? Seems to work without checking it.
 pub fn not_found_handle() -> types::CacheHandle {
     types::CacheHandle::from(u32::MAX)
 }
@@ -18,7 +17,7 @@ pub fn not_found_handle() -> types::CacheHandle {
 type PrimaryCacheKey = Vec<u8>;
 
 #[derive(Clone, Default, Debug)]
-pub struct CacheState {
+pub struct InMemoryCache {
     /// Cache entries, indexable by handle.
     /// `None` indicates a deleted entry.
     pub cache_entries: Arc<RwLock<PrimaryMap<types::CacheHandle, Option<CacheEntry>>>>,
@@ -36,7 +35,7 @@ pub struct CacheState {
     pub pending_tx: Arc<RwLock<PrimaryMap<types::CacheHandle, PrimaryCacheKey>>>,
 }
 
-impl CacheState {
+impl InMemoryCache {
     pub fn new() -> Self {
         Default::default()
     }
@@ -61,8 +60,13 @@ impl CacheState {
         }
     }
 
-    // Todo: Use in insert / lookup.
-    pub fn match_entry(&self, key: &Vec<u8>, headers: &HeaderMap) -> Option<types::CacheHandle> {
+    /// Attempts to retrieve a cache entry by primary key.
+    /// Matches vary rules against the given headers to retrieve the correct variant.
+    pub fn get_entry(
+        &self,
+        key: &PrimaryCacheKey,
+        headers: &HeaderMap,
+    ) -> Option<types::CacheHandle> {
         let candidates_lock = self.key_candidates.read().unwrap();
 
         candidates_lock.get(key).and_then(|candidates| {
@@ -82,16 +86,17 @@ impl CacheState {
 
     pub fn insert<'a>(
         &self,
-        key: Vec<u8>,
+        key: PrimaryCacheKey,
         options_mask: types::CacheWriteOptionsMask,
         options: types::CacheWriteOptions,
         request_parts: Option<&Parts>,
-        // body_to_use: types::BodyHandle,
     ) -> Result<types::CacheHandle, Error> {
-        // Cache write must contain max-age.
+        // Cache writes must contain max-age.
         let max_age_ns = options.max_age_ns;
 
-        // Swr might not be set, check bitmask for. Else we'd always get Some(0).
+        // Example on how the bitmask works: The data the guest gives us via the ABI (here, `CacheWriteOptions`)
+        // doesn't have option semantics, so we can't distinguish between unset and zero values,
+        // We check the bitmask for if it's set, else we'd always get `Some(0)` here.
         let swr_ns = options_mask
             .contains(types::CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS)
             .then(|| options.stale_while_revalidate_ns);
@@ -158,7 +163,8 @@ impl CacheState {
 
                 // Extract necessary vary headers.
                 for vary in vary_rules {
-                    // If you think this sucks... then you'd be right. Just supposed to work right now.
+                    // Dear reader, if you think this sucks... then you'd be right.
+                    // (Just supposed to work right now)
                     let value = req_parts
                         .headers
                         .get(&vary)
@@ -193,7 +199,7 @@ impl CacheState {
         };
 
         // Check for and perform overwrites or write a new entry.
-        let existing_entry_handle = self.match_entry(
+        let existing_entry_handle = self.get_entry(
             &key,
             request_parts
                 .map(|p| &p.headers)
@@ -234,12 +240,6 @@ impl CacheState {
         };
 
         Ok(entry_handle)
-    }
-
-    // This handling is necessary due to incredibly painful body handling.
-    pub fn format_pretty(&self) -> String {
-        let formatter = CacheStateFormatter { state: self };
-        formatter.to_string()
     }
 }
 
@@ -327,16 +327,14 @@ impl CacheEntry {
     }
 }
 
-struct CacheStateFormatter<'state> {
-    state: &'state CacheState,
-}
+pub const NS_TO_S_FACTOR: u64 = 1_000_000_000;
 
-impl<'state> Display for CacheStateFormatter<'state> {
+impl Display for InMemoryCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Cache State:")?;
         writeln!(f, "{}Entries:", Self::indent(1))?;
 
-        for (handle, entry) in self.state.cache_entries.read().unwrap().iter() {
+        for (handle, entry) in self.cache_entries.read().unwrap().iter() {
             match entry {
                 Some(entry) => self.fmt_entry(f, handle, entry)?,
                 None => writeln!(f, "{}[{}]: Purged", Self::indent(2), handle,)?,
@@ -347,9 +345,7 @@ impl<'state> Display for CacheStateFormatter<'state> {
     }
 }
 
-pub const NS_TO_S_FACTOR: u64 = 1_000_000_000;
-
-impl<'state> CacheStateFormatter<'state> {
+impl InMemoryCache {
     fn indent(level: usize) -> String {
         "  ".repeat(level)
     }

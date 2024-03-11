@@ -3,78 +3,9 @@ use super::{
     types::{self},
     Error,
 };
-use crate::{body::Body, cache_state::not_found_handle, error::HandleError, session::Session};
+use crate::{body::Body, error::HandleError, in_memory_cache::not_found_handle, session::Session};
 use tracing::{event, Level};
 
-// pub struct CacheWriteOptions<'a> {
-//     pub max_age_ns: CacheDurationNs,
-//     pub request_headers: RequestHandle,
-//     pub vary_rule_ptr: wiggle::GuestPtr<'a, u8>,
-//     pub vary_rule_len: u32,
-//     pub initial_age_ns: CacheDurationNs,
-//     pub stale_while_revalidate_ns: CacheDurationNs,
-//     pub surrogate_keys_ptr: wiggle::GuestPtr<'a, u8>,
-//     pub surrogate_keys_len: u32,
-//     pub length: CacheObjectLength,
-//     pub user_metadata_ptr: wiggle::GuestPtr<'a, u8>,
-//     pub user_metadata_len: u32,
-// }
-
-// Q: What does this do? Indicate which fields are safe to read?
-// pub struct CacheWriteOptionsMask(
-//     <CacheWriteOptionsMask as ::bitflags::__private::PublicFlags>::Internal,
-// );
-// impl CacheWriteOptionsMask {
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const RESERVED: Self = Self::from_bits_retain(1);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const REQUEST_HEADERS: Self = Self::from_bits_retain(2);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const VARY_RULE: Self = Self::from_bits_retain(4);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const INITIAL_AGE_NS: Self = Self::from_bits_retain(8);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const STALE_WHILE_REVALIDATE_NS: Self = Self::from_bits_retain(16);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const SURROGATE_KEYS: Self = Self::from_bits_retain(32);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const LENGTH: Self = Self::from_bits_retain(64);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const USER_METADATA: Self = Self::from_bits_retain(128);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const SENSITIVE_DATA: Self = Self::from_bits_retain(256);
-// }
-
-// pub struct CacheLookupOptionsMask(
-//     <CacheLookupOptionsMask as ::bitflags::__private::PublicFlags>::Internal,
-// );
-// impl CacheLookupOptionsMask {
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const RESERVED: Self = Self::from_bits_retain(1);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const REQUEST_HEADERS: Self = Self::from_bits_retain(2);
-// }
-
-// pub struct CacheLookupOptions {
-//     pub request_headers: RequestHandle,
-// }
-
-// pub struct CacheGetBodyOptions {
-//     pub from: u64,
-//     pub to: u64,
-// }
-
-// pub struct CacheGetBodyOptionsMask(
-//     <CacheGetBodyOptionsMask as ::bitflags::__private::PublicFlags>::Internal,
-// );
-// impl CacheGetBodyOptionsMask {
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const RESERVED: Self = Self::from_bits_retain(1);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const FROM: Self = Self::from_bits_retain(2);
-//     #[allow(deprecated, non_upper_case_globals)]
-//     pub const TO: Self = Self::from_bits_retain(4);
-// }
 #[allow(unused_variables)]
 impl FastlyCache for Session {
     fn lookup<'a>(
@@ -88,8 +19,8 @@ impl FastlyCache for Session {
         let req_parts = self.request_parts(options.request_headers)?;
 
         Ok(self
-            .cache_state
-            .match_entry(&primary_key, &req_parts.headers)
+            .cache
+            .get_entry(&primary_key, &req_parts.headers)
             .unwrap_or(not_found_handle()))
     }
 
@@ -108,7 +39,7 @@ impl FastlyCache for Session {
             None
         };
 
-        let cache_handle = self.cache_state.insert(key, options_mask, options, parts)?;
+        let cache_handle = self.cache.insert(key, options_mask, options, parts)?;
         Ok(self.insert_cache_body(cache_handle))
     }
 
@@ -122,7 +53,7 @@ impl FastlyCache for Session {
         // TODO: This is a plain hack, not a working implementation: Parallel tx etc, are simply not required.
         //       -> This will fall apart immediately if tx are used as actual transactions.
         let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-        Ok(self.cache_state.pending_tx.write().unwrap().push(key))
+        Ok(self.cache.pending_tx.write().unwrap().push(key))
     }
 
     /// Stub delegating to regular insert.
@@ -133,7 +64,7 @@ impl FastlyCache for Session {
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<types::BodyHandle, Error> {
         let key = self
-            .cache_state
+            .cache
             .pending_tx
             .read()
             .unwrap()
@@ -149,7 +80,7 @@ impl FastlyCache for Session {
             };
 
             let cache_handle =
-                self.cache_state
+                self.cache
                     .insert(pending_tx_key.to_owned(), options_mask, options, parts)?;
 
             Ok(self.insert_cache_body(cache_handle))
@@ -194,7 +125,7 @@ impl FastlyCache for Session {
     }
 
     fn get_state(&mut self, handle: types::CacheHandle) -> Result<types::CacheLookupState, Error> {
-        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
             // Entry found.
             let mut state = types::CacheLookupState::FOUND;
 
@@ -226,7 +157,7 @@ impl FastlyCache for Session {
         user_metadata_out_len: u32, // TODO: Is this the maximum allowed length?
         nwritten_out: &wiggle::GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
-        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
             if entry.user_metadata.len() > user_metadata_out_len as usize {
                 nwritten_out.write(entry.user_metadata.len().try_into().unwrap_or(0))?;
                 return Err(Error::BufferLengthError {
@@ -259,7 +190,7 @@ impl FastlyCache for Session {
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
         let body = self
-            .cache_state
+            .cache
             .cache_entries
             .read()
             .unwrap()
@@ -289,7 +220,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
             Ok(types::CacheDurationNs::from(entry.max_age_ns.unwrap_or(0)))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
@@ -300,7 +231,7 @@ impl FastlyCache for Session {
         &mut self,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
             Ok(types::CacheDurationNs::from(entry.swr_ns.unwrap_or(0)))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())
@@ -308,7 +239,7 @@ impl FastlyCache for Session {
     }
 
     fn get_age_ns(&mut self, handle: types::CacheHandle) -> Result<types::CacheDurationNs, Error> {
-        if let Some(Some(entry)) = self.cache_state.cache_entries.read().unwrap().get(handle) {
+        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
             Ok(types::CacheDurationNs::from(entry.age_ns()))
         } else {
             Err(HandleError::InvalidCacheHandle(handle).into())

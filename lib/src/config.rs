@@ -30,7 +30,7 @@ pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
 mod backends;
 
 pub use self::backends::{
-    Backend, ClientCertError, ClientCertInfo, DynamicBackendRegistrar, Handler,
+    Backend, ClientCertError, ClientCertInfo, DynamicBackendRegistrationInterceptor, Handler,
     InMemoryBackendHandler,
 };
 

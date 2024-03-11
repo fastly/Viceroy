@@ -391,8 +391,8 @@ impl FastlyHttpReq for Session {
             handler: None,
         };
 
-        let new_backend = match self.dynamic_backend_registrar {
-            Some(ref registrar) => registrar.register(new_backend),
+        let new_backend = match self.dynamic_backend_interceptor {
+            Some(ref interceptor) => interceptor.register(new_backend),
             None => new_backend,
         };
 

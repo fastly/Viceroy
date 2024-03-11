@@ -37,7 +37,7 @@ impl FastlyHttpBody for Session {
             let cache_handle = self.caching_body_handle(dest).unwrap();
             let source_bytes = src.read_into_vec().await?;
 
-            self.cache_state
+            self.cache
                 .cache_entries
                 .write()
                 .unwrap()
@@ -118,7 +118,7 @@ impl FastlyHttpBody for Session {
                         .await?;
                 } else if self.is_caching_body(body_handle) {
                     let cache_handle = self.caching_body_handle(body_handle).unwrap();
-                    self.cache_state
+                    self.cache
                         .cache_entries
                         .write()
                         .unwrap()

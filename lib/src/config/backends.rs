@@ -58,8 +58,7 @@ pub trait InMemoryBackendHandler: Send + Sync + 'static {
     async fn handle(&self, req: Request<crate::body::Body>) -> Response<Body>;
 }
 
-// TODO: Should probably be more like an interceptor, registrar conveys the wrong idea.
-pub trait DynamicBackendRegistrar: Send + Sync + 'static {
+pub trait DynamicBackendRegistrationInterceptor: Send + Sync + 'static {
     fn register(&self, backend: Backend) -> Backend;
 }
 

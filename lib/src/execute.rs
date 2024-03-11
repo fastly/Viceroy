@@ -1,8 +1,8 @@
 //! Guest code execution.
 
 use crate::{
-    cache_state::CacheState,
-    config::{DynamicBackendRegistrar, UnknownImportBehavior},
+    config::{DynamicBackendRegistrationInterceptor, UnknownImportBehavior},
+    in_memory_cache::InMemoryCache,
 };
 use std::{collections::BTreeMap, sync::RwLock, time::SystemTime};
 use tokio::sync::mpsc::{Receiver, Sender as MspcSender};
@@ -54,7 +54,7 @@ pub struct ExecuteCtx {
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// If set, intercepts dynamic backend registrations.
-    dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
+    dynamic_backend_interceptor: Option<Arc<Box<dyn DynamicBackendRegistrationInterceptor>>>,
     /// The device detection mappings for this execution.
     device_detection: Arc<DeviceDetection>,
     /// The geolocation mappings for this execution.
@@ -82,20 +82,20 @@ pub struct ExecuteCtx {
     /// this must refer to a directory, while in run mode it names
     /// a file.
     guest_profile_path: Arc<Option<PathBuf>>,
-    /// Endpoints that should be monitored. Allows reading logged message lines to that endpoint.
-    endpoints: Endpoints,
-    /// Cache state to use.
-    cache_state: Arc<CacheState>,
+    /// Endpoints to monitor for messages.
+    endpoints_monitor: EndpointsMonitor,
+    /// Cache to use for this execution.
+    cache: InMemoryCache,
 }
 
+/// A monitor for logging endpoints. Messages written to the contained endpoints will instead be
+/// directed at the wrapped channel, allowing to programmatically access the logs on the receiver side.
 #[derive(Clone, Default)]
-pub struct Endpoints {
-    // #[allow(clippy::type_complexity)]
-    // todo iterator
+pub struct EndpointsMonitor {
     pub endpoints: Arc<RwLock<BTreeMap<Vec<u8>, MspcSender<Vec<u8>>>>>,
 }
 
-impl Endpoints {
+impl EndpointsMonitor {
     pub fn new() -> Self {
         Self {
             endpoints: Arc::new(RwLock::new(BTreeMap::new())),
@@ -118,6 +118,7 @@ pub struct EndpointListener {
 
 impl EndpointListener {
     /// Drains and returns all (raw) messages from this listener.
+    /// Will _not_ block and wait for messages.
     pub fn messages(&mut self) -> Vec<Vec<u8>> {
         let mut messages = vec![];
 
@@ -182,9 +183,9 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_path: Arc::new(guest_profile_path),
-            endpoints: Endpoints::new(),
-            dynamic_backend_registrar: None,
-            cache_state: Arc::new(CacheState::new()),
+            endpoints_monitor: EndpointsMonitor::new(),
+            dynamic_backend_interceptor: None,
+            cache: InMemoryCache::new(),
         })
     }
 
@@ -283,21 +284,21 @@ impl ExecuteCtx {
     }
 
     /// Set the endpoints for this execution context.
-    pub fn with_endpoints(mut self, endpoints: Endpoints) -> Self {
-        self.endpoints = endpoints;
+    pub fn with_endpoints(mut self, endpoints: EndpointsMonitor) -> Self {
+        self.endpoints_monitor = endpoints;
         self
     }
 
-    pub fn with_dynamic_backend_registrar(
+    pub fn with_dynamic_backend_interceptor(
         mut self,
-        registrar: Box<dyn DynamicBackendRegistrar>,
+        interceptor: Box<dyn DynamicBackendRegistrationInterceptor>,
     ) -> Self {
-        self.dynamic_backend_registrar = Some(Arc::new(registrar));
+        self.dynamic_backend_interceptor = Some(Arc::new(interceptor));
         self
     }
 
-    pub fn with_caches(mut self, cache_state: Arc<CacheState>) -> Self {
-        self.cache_state = cache_state;
+    pub fn with_cache(mut self, cache: InMemoryCache) -> Self {
+        self.cache = cache;
         self
     }
 
@@ -414,9 +415,9 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
-            self.endpoints.clone(),
-            self.dynamic_backend_registrar.clone(),
-            self.cache_state.clone(),
+            self.endpoints_monitor.clone(),
+            self.dynamic_backend_interceptor.clone(),
+            self.cache.clone(),
         );
 
         let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
@@ -512,9 +513,9 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
-            self.endpoints.clone(),
-            self.dynamic_backend_registrar.clone(),
-            self.cache_state.clone(),
+            self.endpoints_monitor.clone(),
+            self.dynamic_backend_interceptor.clone(),
+            self.cache.clone(),
         );
 
         let profiler = self.guest_profile_path.is_some().then(|| {

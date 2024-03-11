@@ -7,7 +7,10 @@ pub use async_item::{
     AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
 };
 
-use crate::{cache_state::CacheState, config::DynamicBackendRegistrar, execute::Endpoints};
+use crate::{
+    config::DynamicBackendRegistrationInterceptor, execute::EndpointsMonitor,
+    in_memory_cache::InMemoryCache,
+};
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -89,8 +92,11 @@ pub struct Session {
     /// `backends` because we do not want one session to affect the backends
     /// available to any other session.
     dynamic_backends: Backends,
-    /// If set, the registrar is used to register dynamic backends.
-    pub(crate) dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
+    /// If set, intercepts dynamic backend registrations and allows to modify them on the fly.
+    /// Useful in combination with in-memory backend handlers to allow handling dynamic backends
+    /// in memory as well.
+    pub(crate) dynamic_backend_interceptor:
+        Option<Arc<Box<dyn DynamicBackendRegistrationInterceptor>>>,
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -130,7 +136,7 @@ pub struct Session {
     /// The ID for the client request being processed.
     req_id: u64,
     /// The cache state to use.
-    pub(crate) cache_state: Arc<CacheState>,
+    pub(crate) cache: InMemoryCache,
 }
 
 impl Session {
@@ -149,9 +155,9 @@ impl Session {
         config_path: Arc<Option<PathBuf>>,
         object_store: Arc<ObjectStores>,
         secret_stores: Arc<SecretStores>,
-        endpoints: Endpoints,
-        dynamic_backend_registrar: Option<Arc<Box<dyn DynamicBackendRegistrar>>>,
-        cache_state: Arc<CacheState>,
+        endpoints: EndpointsMonitor,
+        dynamic_backend_interceptor: Option<Arc<Box<dyn DynamicBackendRegistrationInterceptor>>>,
+        cache: InMemoryCache,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -187,14 +193,14 @@ impl Session {
             secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
-            dynamic_backend_registrar,
-            cache_state,
+            dynamic_backend_interceptor,
+            cache,
         }
         .write_endpoints(endpoints)
     }
 
     // Todo: Haxx, it's better to run this code in the constructor and initialize `log_endpoints_by_name` and `log_endpoints`.
-    fn write_endpoints(mut self, endpoints: Endpoints) -> Self {
+    fn write_endpoints(mut self, endpoints: EndpointsMonitor) -> Self {
         for (name, sender) in endpoints.endpoints.read().unwrap().iter() {
             let endpoint = LogEndpoint::new(name, Some(sender.clone()));
             let handle = self.log_endpoints.push(endpoint);

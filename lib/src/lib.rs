@@ -20,10 +20,10 @@ pub mod logging;
 pub mod session;
 
 mod async_io;
-mod cache_state;
 mod downstream;
 mod execute;
 mod headers;
+mod in_memory_cache;
 mod linking;
 mod object_store;
 mod secret_store;
@@ -34,10 +34,10 @@ mod wiggle_abi;
 
 pub use {
     async_trait,
-    cache_state::CacheState,
     error::Error,
-    execute::{EndpointListener, Endpoints, ExecuteCtx},
+    execute::{EndpointListener, EndpointsMonitor, ExecuteCtx},
     http, hyper,
+    in_memory_cache::InMemoryCache,
     service::ViceroyService,
     upstream::BackendConnector,
     wasmtime::ProfilingStrategy,
