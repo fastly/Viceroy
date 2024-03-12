@@ -159,7 +159,7 @@ impl Error {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
             Error::InvalidArgument => FastlyStatus::Inval,
             Error::ValueAbsent => FastlyStatus::None,
-            Error::Unsupported { .. } => FastlyStatus::Unsupported,
+            Error::Unsupported { .. } | Error::NotAvailable(_) => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
             Error::UnknownBackend(_) | Error::InvalidClientCert(_) => FastlyStatus::Inval,
@@ -199,7 +199,6 @@ impl Error {
             | Error::InvalidMethod(_)
             | Error::InvalidUri(_)
             | Error::IoError(_)
-            | Error::NotAvailable(_)
             | Error::Other(_)
             | Error::ProfilingStrategy
             | Error::StreamingChunkSend
