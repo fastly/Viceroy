@@ -118,7 +118,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
         // the future for establishing the TCP connection. we create this outside of the `async`
         // block to avoid capturing `http`
         let connect_fut = self.http.call(backend.uri.clone());
-        let mut custom_roots = self.tls_config.roots.clone();
+        let mut custom_roots = rustls::RootCertStore::empty();
         let (added, ignored) = custom_roots.add_parsable_certificates(&self.backend.ca_certs);
         if ignored > 0 {
             tracing::warn!(

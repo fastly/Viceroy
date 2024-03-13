@@ -244,6 +244,7 @@ async fn client_certs_work() -> TestResult {
         .against(
             Request::post("/")
                 .header("port", bound_port)
+                .header("set-ca", "please")
                 .body("Hello, Viceroy!")
                 .unwrap(),
         )
