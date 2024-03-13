@@ -127,7 +127,9 @@ impl hyper::service::Service<Uri> for BackendConnector {
             );
         }
         let config = if self.backend.ca_certs.is_empty() {
-            config.partial_config.with_root_certificates(config.default_roots)
+            config
+                .partial_config
+                .with_root_certificates(config.default_roots)
         } else {
             tracing::trace!("Using {} certificates from provided CA certificate.", added);
             config.partial_config.with_root_certificates(custom_roots)

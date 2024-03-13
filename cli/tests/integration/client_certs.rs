@@ -192,7 +192,10 @@ async fn custom_ca_works() -> TestResult {
                 .unwrap(),
         )
         .await;
-    assert_eq!(resp.expect("got response").status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        resp.expect("got response").status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
     Ok(())
 }
 
