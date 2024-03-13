@@ -22,7 +22,6 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
-use tracing::warn;
 
 static GZIP_VALUES: [HeaderValue; 2] = [
     HeaderValue::from_static("gzip"),
@@ -38,31 +37,14 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 #[derive(Clone)]
 pub struct TlsConfig {
     partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
-    roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
-        let mut roots = rustls::RootCertStore::empty();
-        match rustls_native_certs::load_native_certs() {
-            Ok(certs) => {
-                for cert in certs {
-                    if let Err(e) = roots.add(&rustls::Certificate(cert.0)) {
-                        warn!("failed to load certificate: {e}");
-                    }
-                }
-            }
-            Err(err) => return Err(Error::BadCerts(err)),
-        }
-        if roots.is_empty() {
-            warn!("no CA certificates available");
-        }
-
         let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
 
         Ok(TlsConfig {
             partial_config,
-            roots,
         })
     }
 }
