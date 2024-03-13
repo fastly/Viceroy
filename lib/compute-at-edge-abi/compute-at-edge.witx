@@ -58,9 +58,74 @@
         (result $err (expected $num_bytes (error $fastly_status)))
     )
 
+    ;;; Frees the body on the host.
+    ;;;
+    ;;; For streaming bodies, this is a _successful_ stream termination, which will signal
+    ;;; via framing that the body transfer is complete.
     (@interface func (export "close")
         (param $h $body_handle)
         (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Frees a streaming body on the host _unsuccessfully_, so that framing makes clear that
+    ;;; the body is incomplete.
+    (@interface func (export "abandon")
+        (param $h $body_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "trailer_append")
+        (param $h $body_handle)
+        (param $name (list u8))
+        (param $value (list u8))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "trailer_names_get")
+        (param $h $body_handle)
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (param $cursor $multi_value_cursor)
+        (param $ending_cursor_out (@witx pointer $multi_value_cursor_result))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "trailer_value_get")
+        (param $h $body_handle)
+        (param $name (list u8))
+        (param $value (@witx pointer (@witx char8)))
+        (param $value_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "trailer_values_get")
+        (param $h $body_handle)
+        (param $name (list u8))
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (param $cursor $multi_value_cursor)
+        (param $ending_cursor_out (@witx pointer $multi_value_cursor_result))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Returns a u64 body length if the length of a body is known, or `FastlyStatus::None`
+    ;;; otherwise.
+    ;;;
+    ;;; If the length is unknown, it is likely due to the body arising from an HTTP/1.1 message with
+    ;;; chunked encoding, an HTTP/2 or later message with no `content-length`, or being a streaming
+    ;;; body.
+    ;;;
+    ;;; Note that receiving a length from this function does not guarantee that the full number of
+    ;;; bytes can actually be read from the body. For example, when proxying a response from a
+    ;;; backend, this length may reflect the `content-length` promised in the response, but if the
+    ;;; backend connection is closed prematurely, fewer bytes may be delivered before this body
+    ;;; handle can no longer be read.
+    (@interface func (export "known_length")
+        (param $h $body_handle)
+        (result $err (expected $body_length (error $fastly_status)))
     )
 )
 
@@ -81,8 +146,7 @@
     (@interface func (export "body_downstream_get")
         (result $err (expected
                 (tuple $request_handle $body_handle)
-                (error $fastly_status))
-        )
+                (error $fastly_status)))
     )
 
     (@interface func (export "cache_override_set")
@@ -103,7 +167,7 @@
     )
 
     (@interface func (export "downstream_client_ip_addr")
-        ;;; must be a 16-byte array
+        ;; must be a 16-byte array
         (param $addr_octets_out (@witx pointer (@witx char8)))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
@@ -118,6 +182,13 @@
     (@interface func (export "downstream_client_request_id")
         (param $reqid_out (@witx pointer (@witx char8)))
         (param $reqid_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_oh_fingerprint")
+        (param $ohfp_out (@witx pointer (@witx char8)))
+        (param $ohfp_max_len (@witx usize))
         (param $nwritten_out (@witx pointer (@witx usize)))
         (result $err (expected (error $fastly_status)))
     )
@@ -159,6 +230,13 @@
         (param $cja3_md5_out (@witx pointer (@witx char8)))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
+
+    (@interface func (export "downstream_tls_ja4")
+         (param $ja4_out (@witx pointer (@witx char8)))
+         (param $ja4_max_len (@witx usize))
+         (param $nwritten_out (@witx pointer (@witx usize)))
+         (result $err (expected (error $fastly_status)))
+     )
 
     (@interface func (export "new")
         (result $err (expected $request_handle (error $fastly_status)))
@@ -280,8 +358,29 @@
         (param $backend string)
         (result $err (expected
                 (tuple $response_handle $body_handle)
-                (error $fastly_status))
-        )
+                (error $fastly_status)))
+    )
+
+    ;; The behavior of this method is identical to the original except for the `$error_detail`
+    ;; out-parameter.
+    ;;
+    ;; If the returned `$fastly_status` is OK, `$error_detail` will not be read. Otherwise,
+    ;; the status is returned identically to the original `send`, but `$error_detail` is populated.
+    ;; Since `$send_error_detail` provides much more granular information about failures, it should
+    ;; be used by SDKs as the primary source of error information in favor of `$fastly_status`.
+    ;;
+    ;; Make sure to initialize `$error_detail` with the full complement of mask values that the
+    ;; guest supports. If the corresponding bits in the mask are not set, the host will not populate
+    ;; fields in the `$error_detail` struct even if there are values available for those fields.
+    ;; This allows forward compatibility when new fields are added.
+    (@interface func (export "send_v2")
+        (param $h $request_handle)
+        (param $b $body_handle)
+        (param $backend string)
+        (param $error_detail (@witx pointer $send_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
     )
 
     (@interface func (export "send_async")
@@ -289,8 +388,7 @@
         (param $b $body_handle)
         (param $backend string)
         (result $err (expected $pending_request_handle
-                (error $fastly_status))
-        )
+                (error $fastly_status)))
     )
 
     (@interface func (export "send_async_streaming")
@@ -306,27 +404,60 @@
                 (tuple $is_done
                     $response_handle
                     $body_handle)
-                (error $fastly_status))
-        )
+                (error $fastly_status)))
+    )
+
+    ;; See `send_v2` for an explanation of the `$error_detail` out-parameter.
+    (@interface func (export "pending_req_poll_v2")
+        (param $h $pending_request_handle)
+        (param $error_detail (@witx pointer $send_error_detail))
+        (result $err (expected
+                (tuple $is_done
+                    $response_handle
+                    $body_handle)
+                (error $fastly_status)))
     )
 
     (@interface func (export "pending_req_wait")
         (param $h $pending_request_handle)
         (result $err (expected
                 (tuple $response_handle $body_handle)
-                (error $fastly_status))
-        )
+                (error $fastly_status)))
+    )
+
+    ;; See `send_v2` for an explanation of the `$error_detail` out-parameter.
+    (@interface func (export "pending_req_wait_v2")
+        (param $h $pending_request_handle)
+        (param $error_detail (@witx pointer $send_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
     )
 
     (@interface func (export "pending_req_select")
         (param $hs (list $pending_request_handle))
         (result $err (expected
                 (tuple $done_idx $response_handle $body_handle)
-                (error $fastly_status))
-        )
+                (error $fastly_status)))
     )
 
-    (@interface func(export "close")
+    ;; See `send_v2` for an explanation of the `$error_detail` out-parameter.
+    (@interface func (export "pending_req_select_v2")
+        (param $hs (list $pending_request_handle))
+        (param $error_detail (@witx pointer $send_error_detail))
+        (result $err (expected
+                (tuple $done_idx $response_handle $body_handle)
+                (error $fastly_status)))
+    )
+
+    ;;; Returns whether or not the original client request arrived with a
+    ;;; Fastly-Key belonging to a user with the rights to purge content on this
+    ;;; service.
+    (@interface func (export "fastly_key_is_valid")
+        (result $err (expected $is_valid (error $fastly_status)))
+    )
+
+    (@interface func (export "close")
         (param $h $request_handle)
         (result $err (expected (error $fastly_status)))
     )
@@ -348,6 +479,18 @@
     )
 
     (@interface func (export "redirect_to_grip_proxy")
+        (param $backend_name string)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "redirect_to_websocket_proxy_v2")
+        (param $h $request_handle)
+        (param $backend_name string)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "redirect_to_grip_proxy_v2")
+        (param $h $request_handle)
         (param $backend_name string)
         (result $err (expected (error $fastly_status)))
     )
@@ -464,7 +607,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
-    (@interface func(export "close")
+    (@interface func (export "close")
         (param $h $response_handle)
         (result $err (expected (error $fastly_status)))
     )
@@ -510,6 +653,70 @@
     )
 )
 
+(module $fastly_device_detection
+    (@interface func (export "lookup")
+        (param $user_agent string)
+
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_erl
+    (@interface func (export "check_rate")
+        (param $rc string)
+        (param $entry string)
+        (param $delta u32)
+        (param $window u32)
+        (param $limit u32)
+        (param $pb string)
+        (param $ttl u32)
+
+        (result $err (expected $blocked (error $fastly_status)))
+    )
+
+    (@interface func (export "ratecounter_increment")
+        (param $rc string)
+        (param $entry string)
+        (param $delta u32)
+
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "ratecounter_lookup_rate")
+        (param $rc string)
+        (param $entry string)
+        (param $window u32)
+
+        (result $err (expected $rate (error $fastly_status)))
+    )
+
+    (@interface func (export "ratecounter_lookup_count")
+        (param $rc string)
+        (param $entry string)
+        (param $duration u32)
+
+        (result $err (expected $count (error $fastly_status)))
+    )
+
+    (@interface func (export "penaltybox_add")
+        (param $pb string)
+        (param $entry string)
+        (param $ttl u32)
+
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "penaltybox_has")
+        (param $pb string)
+        (param $entry string)
+
+        (result $err (expected $has (error $fastly_status)))
+    )
+)
+
 (module $fastly_object_store
     (@interface func (export "open")
         (param $name string)
@@ -540,6 +747,31 @@
         (param $store $object_store_handle)
         (param $key string)
         (param $body_handle $body_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "insert_async")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $body_handle $body_handle)
+        (param $pending_handle_out (@witx pointer $pending_kv_insert_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "pending_insert_wait")
+        (param $pending_objstr_handle $pending_kv_insert_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "delete_async")
+        (param $store $object_store_handle)
+        (param $key string)
+        (param $pending_handle_out (@witx pointer $pending_kv_delete_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "pending_delete_wait")
+        (param $pending_handle $pending_kv_delete_handle)
         (result $err (expected (error $fastly_status)))
     )
 )

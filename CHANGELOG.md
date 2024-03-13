@@ -4,7 +4,49 @@
   definition or as part of a backend defined in fastly.toml. (In the latter case, CA certificates
   can be added using the "ca_certificate" key.)
 
-## 0.7.0
+## 0.9.4 (2024-02-22)
+
+- Added `delete_async` hostcall for KV stores ([#332](https://github.com/fastly/Viceroy/pull/332))
+- Added `known_length` hostcall for body handles ([#344](https://github.com/fastly/Viceroy/pull/344))
+- Added stubs for new functionality available in production Compute ([#333](https://github.com/fastly/Viceroy/pull/333), [#337](https://github.com/fastly/Viceroy/pull/337), [#344](https://github.com/fastly/Viceroy/pull/344))
+- Fixed inconsistent behavior for not-found geolocation lookups compared to production Compute ([#341](https://github.com/fastly/Viceroy/pull/341))
+
+## 0.9.3 (2023-11-09)
+
+- Renamed Compute@Edge to Compute. ([#328](https://github.com/fastly/Viceroy/pull/328))
+- Added asynchronous versions of the KV store `lookup` and `insert` operations. ([#329](https://github.com/fastly/Viceroy/pull/329))
+- Added support for device detection. ([#330](https://github.com/fastly/Viceroy/pull/330))
+
+## 0.9.2 (2023-10-23)
+
+- Warn instead of fail when certificates can't be loaded ([#325](https://github.com/fastly/Viceroy/pull/325))
+
+- Add support for trailers. Trailer modification calls should be considered experimental,
+  as we finalize interfaces ([#327](https://github.com/fastly/Viceroy/pull/327))
+
+## 0.9.1 (2023-10-09)
+
+- Match the number of memories to the number of core instances ([#322](https://github.com/fastly/Viceroy/pull/322))
+
+## 0.9.0 (2023-10-09)
+
+- Add options to customize behavior of unknown Wasm imports ([#313](https://github.com/fastly/Viceroy/pull/313))
+- Lower Hostcall error log level to DEBUG ([#314](https://github.com/fastly/Viceroy/pull/314))
+- Add perfmap profiling strategy ([#316](https://github.com/fastly/Viceroy/pull/316))
+- Update to wasmtime-13.0.0 ([#317](https://github.com/fastly/Viceroy/pull/317))
+- Revamp profile handling CLI flags ([#318](https://github.com/fastly/Viceroy/pull/318))
+
+## 0.8.1 (2023-09-18)
+
+- Fix a bug in which static backends were marked as GRPC by default ([#311](https://github.com/fastly/Viceroy/pull/311))
+
+## 0.8.0 (2023-09-15)
+
+- Make `viceroy_lib::Error` non-exhaustive
+- Support the gRPC flag for dynamic backends ([#308](https://github.com/fastly/Viceroy/pull/308))
+- Update ABI definitions and stub out some hostcalls ([#307](https://github.com/fastly/Viceroy/pull/307))
+
+## 0.7.0 (2023-08-14)
 
 - Add --profile-guest support to serve mode. ([#301](https://github.com/fastly/Viceroy/pull/301))
 - Use a ResourceLimiter for tracking allocations. ([#300](https://github.com/fastly/Viceroy/pull/300))
@@ -135,7 +177,7 @@
 
 ## 0.2.12 (2022-03-08)
 
-- Add stubs for framing header controls, now available on C@E ([#139](https://github.com/fastly/Viceroy/pull/139))
+- Add stubs for framing header controls, now available on Compute ([#139](https://github.com/fastly/Viceroy/pull/139))
 
 ## 0.2.11 (2022-02-15)
 
@@ -164,7 +206,7 @@
 
 - Catch interrupt signals ([#85](https://github.com/fastly/Viceroy/pull/85))
 - Include aarch64 tarballs for Linux and macOS ([#88](https://github.com/fastly/Viceroy/pull/88))
-- Align URI and Host header semantics with production C@E ([#90](https://github.com/fastly/Viceroy/pull/90))
+- Align URI and Host header semantics with production Compute ([#90](https://github.com/fastly/Viceroy/pull/90))
 
 ## 0.2.5 (2021-10-21)
 
@@ -181,9 +223,9 @@
 
 ### Additions
 - Added the close functionality for `RequestHandle`, `ResponseHandle`,
-  `BodyHandle`, and `StreamingBodyHandle` in the upcoming Rust C@E `0.8.0` SDK
+  `BodyHandle`, and `StreamingBodyHandle` in the upcoming Rust Compute `0.8.0` SDK
   release ([#65](https://github.com/fastly/Viceroy/pull/65))
-- Added local dictionary support so that C@E programs that need dictionaries can work in Viceroy ([#61](https://github.com/fastly/Viceroy/pull/61))
+- Added local dictionary support so that Compute programs that need dictionaries can work in Viceroy ([#61](https://github.com/fastly/Viceroy/pull/61))
 - Added the ability to do host overrides from the TOML configuration ([#48](https://github.com/fastly/Viceroy/pull/48))
 
 ### Changes

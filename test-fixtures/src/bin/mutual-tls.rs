@@ -13,7 +13,7 @@ fn main() -> Result<(), Error> {
     let key_secret = Secret::from_bytes(key_bytes.to_vec()).expect("can inject key");
 
     let Some(port_str) = client_req.get_header_str("Port") else {
-            panic!("Couldn't find out what port to use!");
+        panic!("Couldn't find out what port to use!");
     };
     let port = u16::from_str(port_str).unwrap();
 

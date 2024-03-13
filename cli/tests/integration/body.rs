@@ -7,7 +7,9 @@ use {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bodies_can_be_written_and_appended() -> TestResult {
-    let resp = Test::using_fixture("write-body.wasm").against_empty().await;
+    let resp = Test::using_fixture("write-body.wasm")
+        .against_empty()
+        .await?;
 
     let body = body::to_bytes(resp.into_body())
         .await
@@ -23,7 +25,7 @@ async fn bodies_can_be_written_and_appended() -> TestResult {
 async fn bodies_can_be_written_and_read() -> TestResult {
     let resp = Test::using_fixture("write-and-read-body.wasm")
         .against_empty()
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
 }

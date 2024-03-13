@@ -43,7 +43,7 @@ async fn upstream_sync() -> TestResult {
                 .body("Hello, Viceroy!")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.into_body().read_into_string().await?,
@@ -62,7 +62,7 @@ async fn upstream_sync() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.into_body().read_into_string().await?, "/hello/");
 
@@ -73,7 +73,7 @@ async fn upstream_sync() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.into_body().read_into_string().await?, "/hello/");
 
@@ -84,7 +84,7 @@ async fn upstream_sync() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.into_body().read_into_string().await?,
@@ -98,7 +98,7 @@ async fn upstream_sync() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.into_body().read_into_string().await?,
@@ -116,7 +116,7 @@ async fn upstream_sync() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert!(resp.status().is_server_error());
 
     Ok(())
@@ -143,7 +143,7 @@ async fn override_host_works() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -170,7 +170,7 @@ async fn transparent_gunzip() -> TestResult {
         })
         .await
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(

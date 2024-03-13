@@ -143,9 +143,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "connection timing is not actually supported in Viceroy",
-        })
+        Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_first_byte_timeout_ms(
@@ -155,9 +153,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "connection timing is not actually supported in Viceroy",
-        })
+        Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_between_bytes_timeout_ms(
@@ -167,9 +163,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "connection timing is not actually supported in Viceroy",
-        })
+        Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_ssl_min_version(
@@ -179,9 +173,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "ssl version flags are not supported in Viceroy",
-        })
+        Err(Error::NotAvailable("SSL version information"))
     }
 
     fn get_ssl_max_version(
@@ -191,9 +183,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "ssl version flags are not supported in Viceroy",
-        })
+        Err(Error::NotAvailable("SSL version information"))
     }
 
     fn is_ssl(&mut self, backend: &wiggle::GuestPtr<str>) -> Result<super::types::IsSsl, Error> {

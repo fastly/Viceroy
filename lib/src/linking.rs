@@ -89,7 +89,8 @@ pub(crate) fn create_store(
     guest_profiler: Option<GuestProfiler>,
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
     let wasi = make_wasi_ctx(ctx, &session).context("creating Wasi context")?;
-    let wasi_nn = WasiNnCtx::new().unwrap();
+    let (backends, registry) = wasmtime_wasi_nn::preload(&[])?;
+    let wasi_nn = WasiNnCtx::new(backends, registry);
     let wasm_ctx = WasmCtx {
         wasi,
         wasi_nn,
@@ -114,25 +115,32 @@ pub(crate) fn create_store(
 fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow::Error> {
     let mut wasi_ctx = WasiCtxBuilder::new();
 
-    // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
-    // Compute@Edge platform provides:
+    // Viceroy provides the same `FASTLY_*` environment variables that the production
+    // Compute platform provides:
 
-    wasi_ctx = wasi_ctx
+    wasi_ctx
+        // These variables are stubbed out for compatibility
+        .env("FASTLY_CACHE_GENERATION", "0")?
+        .env("FASTLY_CUSTOMER_ID", "0000000000000000000000")?
+        .env("FASTLY_POP", "XXX")?
+        .env("FASTLY_REGION", "Somewhere")?
+        .env("FASTLY_SERVICE_ID", "0000000000000000000000")?
+        .env("FASTLY_SERVICE_VERSION", "0")?
         // signal that we're in a local testing environment
         .env("FASTLY_HOSTNAME", "localhost")?
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()))?;
 
     if ctx.log_stdout() {
-        wasi_ctx = wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
+        wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
     } else {
-        wasi_ctx = wasi_ctx.inherit_stdout();
+        wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        wasi_ctx = wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
+        wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
     } else {
-        wasi_ctx = wasi_ctx.inherit_stderr();
+        wasi_ctx.inherit_stderr();
     }
     Ok(wasi_ctx.build())
 }
@@ -144,13 +152,17 @@ pub fn link_host_functions(
     experimental_modules
         .iter()
         .try_for_each(|experimental_module| match experimental_module {
-            ExperimentalModule::WasiNn => wasmtime_wasi_nn::add_to_linker(linker, WasmCtx::wasi_nn),
+            ExperimentalModule::WasiNn => {
+                wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
+            }
         })?;
     wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_device_detection::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_erl::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_body::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_req::add_to_linker(linker, WasmCtx::session)?;

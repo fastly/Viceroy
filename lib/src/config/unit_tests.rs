@@ -365,7 +365,7 @@ mod dictionary_config_tests {
             format = "foo"
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
-        match read_local_server_config(&invalid_format_field) {
+        match read_local_server_config(invalid_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidDictionaryFormat(format),
                 ..
@@ -383,7 +383,7 @@ mod dictionary_config_tests {
             format = "foo"
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
-        match read_local_server_config(&invalid_format_field) {
+        match read_local_server_config(invalid_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: InvalidDictionaryFormat(format),
                 ..
@@ -763,7 +763,7 @@ mod inline_toml_dictionary_config_tests {
             format = "inline-toml"
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
-        read_local_server_config(&dictionary).expect(
+        read_local_server_config(dictionary).expect(
             "can read toml data containing local dictionary configurations using json format",
         );
     }
@@ -775,7 +775,7 @@ mod inline_toml_dictionary_config_tests {
             format = "inline-toml"
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
-        read_local_server_config(&dictionary).expect(
+        read_local_server_config(dictionary).expect(
             "can read toml data containing local dictionary configurations using json format",
         );
     }
@@ -788,7 +788,7 @@ mod inline_toml_dictionary_config_tests {
             [dictionaries.missing_format]
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
-        match read_local_server_config(&no_format_field) {
+        match read_local_server_config(no_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFormat, ..
             }) => {}
@@ -804,7 +804,7 @@ mod inline_toml_dictionary_config_tests {
             [config_stores.missing_format]
             contents = { apple = "fruit", potato = "vegetable" }
         "#;
-        match read_local_server_config(&no_format_field) {
+        match read_local_server_config(no_format_field) {
             Err(InvalidDictionaryDefinition {
                 err: MissingFormat, ..
             }) => {}
@@ -820,7 +820,7 @@ mod inline_toml_dictionary_config_tests {
             [dictionaries.missing_contents]
             format = "inline-toml"
         "#;
-        match read_local_server_config(&missing_contents) {
+        match read_local_server_config(missing_contents) {
             Err(InvalidDictionaryDefinition {
                 err: MissingContents,
                 ..
@@ -837,11 +837,43 @@ mod inline_toml_dictionary_config_tests {
             [config_stores.missing_contents]
             format = "inline-toml"
         "#;
-        match read_local_server_config(&missing_contents) {
+        match read_local_server_config(missing_contents) {
             Err(InvalidDictionaryDefinition {
                 err: MissingContents,
                 ..
             }) => {}
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+}
+
+/// Unit tests for Device Detection mapping in the `local_server` section of a `fastly.toml` package manifest.
+///
+/// These tests check that we deserialize and validate the Device Detection mappings section of
+/// the TOML data properly regardless of the format.
+mod device_detection_config_tests {
+    use {
+        super::read_local_server_config,
+        crate::error::{
+            DeviceDetectionConfigError, FastlyConfigError::InvalidDeviceDetectionDefinition,
+        },
+    };
+
+    /// Check that Device Detection definitions have a valid `format`.
+    #[test]
+    fn device_detection_has_a_valid_format() {
+        use DeviceDetectionConfigError::InvalidDeviceDetectionMappingFormat;
+        let invalid_format_field = r#"
+            [device_detection]
+            format = "foo"
+            [device_detection.user_agent."Test User-Agent"]
+            hwtype = "Test"
+        "#;
+        match read_local_server_config(invalid_format_field) {
+            Err(InvalidDeviceDetectionDefinition {
+                err: InvalidDeviceDetectionMappingFormat(format),
+                ..
+            }) if format == "foo" => {}
             res => panic!("unexpected result: {:?}", res),
         }
     }
@@ -867,7 +899,7 @@ mod geolocation_config_tests {
             [geolocation.addresses."123.45.67.89"]
             as_name = "Test, Inc."
         "#;
-        match read_local_server_config(&invalid_format_field) {
+        match read_local_server_config(invalid_format_field) {
             Err(InvalidGeolocationDefinition {
                 err: InvalidGeolocationMappingFormat(format),
                 ..
@@ -1016,7 +1048,7 @@ mod inline_toml_geolocation_config_tests {
             [geolocation.addresses."127.0.0.1"]
             as_name = "Test, Inc."
         "#;
-        read_local_server_config(&geolocation)
+        read_local_server_config(geolocation)
             .expect("can read toml data containing local Geolocation mappings using toml format");
     }
 
@@ -1028,7 +1060,7 @@ mod inline_toml_geolocation_config_tests {
             [geolocation]
             format = "inline-toml"
         "#;
-        match read_local_server_config(&missing_contents) {
+        match read_local_server_config(missing_contents) {
             Err(InvalidGeolocationDefinition {
                 err: MissingAddresses,
                 ..

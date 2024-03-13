@@ -4,10 +4,12 @@ use std::time::SystemTime;
 
 use wasmtime::GuestProfiler;
 
+use crate::config::UnknownImportBehavior;
+
 use {
     crate::{
         body::Body,
-        config::{Backends, Dictionaries, ExperimentalModule, Geolocation},
+        config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, link_host_functions, WasmCtx},
@@ -49,6 +51,8 @@ pub struct ExecuteCtx {
     module: Module,
     /// The backends for this execution.
     backends: Arc<Backends>,
+    /// The device detection mappings for this execution.
+    device_detection: Arc<DeviceDetection>,
     /// The geolocation mappings for this execution.
     geolocation: Arc<Geolocation>,
     /// Preloaded TLS certificates and configuration
@@ -83,12 +87,20 @@ impl ExecuteCtx {
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_path: Option<PathBuf>,
+        unknown_import_behavior: UnknownImportBehavior,
     ) -> Result<Self, Error> {
         let config = &configure_wasmtime(profiling_strategy);
         let engine = Engine::new(config)?;
         let mut linker = Linker::new(&engine);
         link_host_functions(&mut linker, &wasi_modules)?;
         let module = Module::from_file(&engine, module_path)?;
+        match unknown_import_behavior {
+            UnknownImportBehavior::LinkError => (),
+            UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
+            UnknownImportBehavior::ZeroOrNull => {
+                linker.define_unknown_imports_as_default_values(&module)?
+            }
+        }
         let instance_pre = linker.instantiate_pre(&module)?;
 
         // Create the epoch-increment thread.
@@ -108,6 +120,7 @@ impl ExecuteCtx {
             instance_pre: Arc::new(instance_pre),
             module,
             backends: Arc::new(Backends::default()),
+            device_detection: Arc::new(DeviceDetection::default()),
             geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
@@ -136,6 +149,17 @@ impl ExecuteCtx {
     /// Set the backends for this execution context.
     pub fn with_backends(mut self, backends: Backends) -> Self {
         self.backends = Arc::new(backends);
+        self
+    }
+
+    /// Get the device detection mappings for this execution context.
+    pub fn device_detection(&self) -> &DeviceDetection {
+        &self.device_detection
+    }
+
+    /// Set the device detection mappings for this execution context.
+    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
+        self.device_detection = Arc::new(device_detection);
         self
     }
 
@@ -225,7 +249,7 @@ impl ExecuteCtx {
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default())?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }
@@ -311,6 +335,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.device_detection.clone(),
             self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
@@ -405,6 +430,7 @@ impl ExecuteCtx {
             sender,
             remote,
             self.backends.clone(),
+            self.device_detection.clone(),
             self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
@@ -461,7 +487,7 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
     {
-        if let Err(e) = std::fs::File::create(&path)
+        if let Err(e) = std::fs::File::create(path)
             .map_err(anyhow::Error::new)
             .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
         {
@@ -506,22 +532,23 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     const MB: usize = 1 << 20;
     let mut pooling_allocation_config = PoolingAllocationConfig::default();
 
-    // This number matches C@E production
-    pooling_allocation_config.instance_size(MB);
+    // This number matches Compute production
+    pooling_allocation_config.max_core_instance_size(MB);
 
     // Core wasm programs have 1 memory
-    pooling_allocation_config.instance_memories(1);
+    pooling_allocation_config.total_memories(100);
+    pooling_allocation_config.max_memories_per_module(1);
 
     // allow for up to 128MiB of linear memory. Wasm pages are 64k
-    pooling_allocation_config.instance_memory_pages(128 * (MB as u64) / (64 * 1024));
+    pooling_allocation_config.memory_pages(128 * (MB as u64) / (64 * 1024));
 
     // Core wasm programs have 1 table
-    pooling_allocation_config.instance_tables(1);
+    pooling_allocation_config.max_tables_per_module(1);
 
     // Some applications create a large number of functions, in particular
     // when compiled in debug mode or applications written in swift. Every
     // function can end up in the table
-    pooling_allocation_config.instance_table_elements(98765);
+    pooling_allocation_config.table_elements(98765);
 
     // Maximum number of slots in the pooling allocator to keep "warm", or those
     // to keep around to possibly satisfy an affine allocation request or an
@@ -532,7 +559,7 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     // memory space if multiple engines are spun up in a single process. We'll likely want to move
     // to the on-demand allocator eventually for most purposes; see
     // https://github.com/fastly/Viceroy/issues/255
-    pooling_allocation_config.instance_count(100);
+    pooling_allocation_config.total_core_instances(100);
 
     config.allocation_strategy(InstanceAllocationStrategy::Pooling(
         pooling_allocation_config,

@@ -1,7 +1,7 @@
 //! A guest program to test that secret store works properly.
 
-use fastly::SecretStore;
 use fastly::secret_store::Secret;
+use fastly::SecretStore;
 
 fn main() {
     // Check we can't get a store that does not exist

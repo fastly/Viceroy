@@ -14,6 +14,7 @@ pub struct Backend {
     pub override_host: Option<HeaderValue>,
     pub cert_host: Option<String>,
     pub use_sni: bool,
+    pub grpc: bool,
     pub client_cert: Option<ClientCertInfo>,
     pub ca_certs: Vec<rustls::Certificate>,
 }
@@ -145,6 +146,18 @@ mod deserialization {
                 })
                 .unwrap_or_else(|| Ok(vec![]))?;
 
+            let grpc = toml
+                .remove("grpc")
+                .map(|grpc| {
+                    if let Value::Boolean(grpc) = grpc {
+                        Ok(grpc)
+                    } else {
+                        Err(BackendConfigError::InvalidGrpcEntry)
+                    }
+                })
+                .transpose()?
+                .unwrap_or(false);
+
             check_for_unrecognized_keys(&toml)?;
 
             Ok(Self {
@@ -152,6 +165,7 @@ mod deserialization {
                 override_host,
                 cert_host,
                 use_sni,
+                grpc,
                 // NOTE: Update when we support client certs in static backends
                 client_cert: None,
                 ca_certs,

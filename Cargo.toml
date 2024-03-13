@@ -3,6 +3,7 @@ members = [
     "cli",
     "lib",
 ]
+resolver = "2"
 
 # Exclude our integration test fixtures, which need to be compiled to wasm
 # (managed by the Makefile)
@@ -23,6 +24,7 @@ opt-level = 1
 [workspace.dependencies]
 anyhow = "1.0.31"
 base64 = "0.21.2"
+clap = { version = "^4.0.18", features = ["derive"] }
 hyper = { version = "=0.14.26", features = ["full"] }
 itertools = "0.10.5"
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
@@ -36,8 +38,8 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasi-common = "11.0.1"
-wasmtime = "11.0.1"
-wasmtime-wasi = "11.0.1"
-wasmtime-wasi-nn = "11.0.1"
-wiggle = "11.0.1"
+wasi-common = "13.0.0"
+wasmtime = "13.0.0"
+wasmtime-wasi = "13.0.0"
+wasmtime-wasi-nn = "13.0.0"
+wiggle = "13.0.0"

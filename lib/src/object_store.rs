@@ -76,6 +76,22 @@ impl ObjectStores {
 
         Ok(())
     }
+
+    pub fn delete(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+    ) -> Result<(), ObjectStoreError> {
+        self.stores
+            .write()
+            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .entry(obj_store_key)
+            .and_modify(|store| {
+                store.remove(&obj_key);
+            });
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Default)]

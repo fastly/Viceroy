@@ -7,7 +7,7 @@ use crate::{
     wiggle_abi::types::ContentEncodings,
 };
 use futures::Future;
-use http::{uri, HeaderValue};
+use http::{uri, HeaderValue, Version};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
 use rustls::client::ServerName;
 use std::{
@@ -47,7 +47,9 @@ impl TlsConfig {
         match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
                 for cert in certs {
-                    roots.add(&rustls::Certificate(cert.0)).unwrap();
+                    if let Err(e) = roots.add(&rustls::Certificate(cert.0)) {
+                        warn!("failed to load certificate: {e}");
+                    }
                 }
             }
             Err(err) => return Err(Error::BadCerts(err)),
@@ -139,6 +141,9 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     config.with_no_client_auth()
                 };
                 config.enable_sni = backend.use_sni;
+                if backend.grpc {
+                    config.alpn_protocols = vec![b"h2".to_vec()];
+                }
                 let connector = TlsConnector::from(Arc::new(config));
 
                 let cert_host = backend
@@ -149,6 +154,29 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
 
                 let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+
+                if backend.grpc {
+                    let (_, tls_state) = tls.get_ref();
+
+                    match tls_state.alpn_protocol() {
+                        None => {
+                            tracing::warn!(
+                                "Unexpected; request h2 for grpc, but got nothing back from ALPN"
+                            );
+                        }
+
+                        Some(b"h2") => {}
+
+                        Some(other_value) => {
+                            return Err(Error::InvalidAlpnRepsonse(
+                                "h2",
+                                String::from_utf8_lossy(other_value).to_string(),
+                            )
+                            .into())
+                        }
+                    }
+                }
+
                 Ok(Connection::Https(Box::new(tls)))
             } else {
                 Ok(Connection::Http(tcp))
@@ -248,9 +276,17 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
+    let h2only = backend.grpc;
     async move {
-        let basic_response = Client::builder()
+        let mut builder = Client::builder();
+
+        if req.version() == Version::HTTP_2 {
+            builder.http2_only(true);
+        }
+
+        let basic_response = builder
             .set_host(false)
+            .http2_only(h2only)
             .build(connector)
             .request(req)
             .await
