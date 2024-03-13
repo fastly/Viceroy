@@ -38,7 +38,7 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 #[derive(Clone)]
 pub struct TlsConfig {
     partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
-    roots: rustls::RootCertStore,
+    default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
@@ -62,7 +62,7 @@ impl TlsConfig {
 
         Ok(TlsConfig {
             partial_config,
-            roots,
+            default_roots: roots,
         })
     }
 }
@@ -122,14 +122,16 @@ impl hyper::service::Service<Uri> for BackendConnector {
         let (added, ignored) = custom_roots.add_parsable_certificates(&self.backend.ca_certs);
         if ignored > 0 {
             tracing::warn!(
-                "Ignored {} certificates in provide CA certificate.",
+                "Ignored {} certificates in provided CA certificate.",
                 ignored
             );
         }
-        if added > 0 {
-            tracing::trace!("Added {} certificates from provided CA certificate.", added);
-        }
-        let config = config.partial_config.with_root_certificates(custom_roots);
+        let config = if self.backend.ca_certs.is_empty() {
+            config.partial_config.with_root_certificates(config.default_roots)
+        } else {
+            tracing::trace!("Using {} certificates from provided CA certificate.", added);
+            config.partial_config.with_root_certificates(custom_roots)
+        };
 
         Box::pin(async move {
             let tcp = connect_fut.await.map_err(Box::new)?;
