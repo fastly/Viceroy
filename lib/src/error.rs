@@ -416,8 +416,8 @@ pub enum BackendConfigError {
     #[error("'ca_certificate' field is empty")]
     EmptyCACert,
 
-    #[error("'ca_certificate' field was not a string")]
-    InvalidCACertEntry,
+    #[error("'ca_certificate' field was invalid: {0}")]
+    InvalidCACertEntry(String),
 
     #[error("'use_sni' field was not a boolean")]
     InvalidUseSniEntry,

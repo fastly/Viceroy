@@ -1132,4 +1132,87 @@ Qq7tJAMLnPnAdAUousI0RDcLpB8adGkhZH66lL4oV9U+aQ0dA0oiqSKZtMoHeWbr
             .expect("no blåhaj :(");
         assert!(!shark_backend.ca_certs.is_empty());
     }
+
+    #[test]
+    fn reads_file_path_ca_certs() {
+        let ca_backend = format!(
+            r#"
+[backends]
+[backends.dog]
+url = "http://localhost:7676/dog-mocks"
+
+[backends."shark.server"]
+url = "http://localhost:7676/shark-mocks"
+override_host = "somehost.com"
+ca_certificate.file = {:?}
+"#,
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem")
+        );
+
+        let with_ca = read_local_server_config(&ca_backend).expect("can parse backends with ca");
+        let dog_backend = with_ca.backends.0.get("dog").expect("fetch failed :(");
+        assert!(dog_backend.ca_certs.is_empty());
+        let shark_backend = with_ca
+            .backends
+            .0
+            .get("shark.server")
+            .expect("no blåhaj :(");
+        assert!(!shark_backend.ca_certs.is_empty());
+    }
+
+    #[test]
+    fn reads_multiple_ca_certs() {
+        let ca_backend = format!(
+            r#"
+[backends]
+[backends.dog]
+url = "http://localhost:7676/dog-mocks"
+
+[backends."shark.server"]
+url = "http://localhost:7676/shark-mocks"
+override_host = "somehost.com"
+[[backends."shark.server".ca_certificate]]
+file = {:?}
+[[backends."shark.server".ca_certificate]]
+file = {:?}
+[[backends."shark.server".ca_certificate]]
+value = '''
+-----BEGIN CERTIFICATE-----
+MIIDqTCCApGgAwIBAgIUDXDr/2fouphqlB8iJASenWOr/XwwDQYJKoZIhvcNAQEL
+BQAwZDELMAkGA1UEBhMCVVMxDzANBgNVBAgMBk9yZWdvbjERMA8GA1UEBwwIUG9y
+dGxhbmQxEDAOBgNVBAoMB1ZpY2Vyb3kxHzAdBgkqhkiG9w0BCQEWEGF3aWNrQGZh
+c3RseS5jb20wHhcNMjMwNzI3MDAwODU5WhcNMzMwNzI0MDAwODU5WjBkMQswCQYD
+VQQGEwJVUzEPMA0GA1UECAwGT3JlZ29uMREwDwYDVQQHDAhQb3J0bGFuZDEQMA4G
+A1UECgwHVmljZXJveTEfMB0GCSqGSIb3DQEJARYQYXdpY2tAZmFzdGx5LmNvbTCC
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKxXdG4C6yEeLTtFPOXWTv1N
+eEeJMLcAoupB9u3x0PYT+w+0ruAympviqGbEiyZL/qMKLYenLiQO+72VCISW5qfB
+ZoCpwDxBon5TDUZ98JU93nVRml7uOg25G+KTs3aeJt6+rFDPNaNyxVcKgCuURB4y
+mwgosLUvxoEffFnHlURETLN4aSGQ6TLp8YEJp4EudTVo/l+kdhm6sLZMBkmUxnnl
+muEc8ePAr1igYchz2tbcWRjzxoUOuEdoKaW2OCElNObt2WYPWzHs+6p1K8+KyTRY
+/pVOFtA43nuWmk++UHFthBAw9IqBuO0FMJr4SULnKfiTh5E9F+nZ0Q/1nfzzsAMC
+AwEAAaNTMFEwHQYDVR0OBBYEFGYM6HhP8yZ17eXw5nOfQ971u1l9MB8GA1UdIwQY
+MBaAFGYM6HhP8yZ17eXw5nOfQ971u1l9MA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
+hvcNAQELBQADggEBAFmFkUodKTXeT683GEj4SoiMbDL8d3x+Vc+kvLPC2Jloru4R
+Qo0USu3eJZjNxKjmPbLii8gzf5ZmZHdytWQ+5irYjXBHrE9tPgmpavhM+0otpnUd
+vYosnfwv/aQEIiqeMkpqzbSKvb2I+TVpAC1xb6qbYE95tnsX/KEdAoJ/SAcZLGYQ
+LKGTjz3eKlgUWy69uwzHXkie8hxDVRlyA7cFY4AAqsLhL2KQPWtMT7fRKrVKfLYd
+Qq7tJAMLnPnAdAUousI0RDcLpB8adGkhZH66lL4oV9U+aQ0dA0oiqSKZtMoHeWbr
+/L0ti7ZOfxOxRRCzt8KdLo/kGNTfAz+74P0MY80=
+-----END CERTIFICATE-----
+'''
+"#,
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem")
+        );
+
+        let with_ca = read_local_server_config(&ca_backend).expect("can parse backends with ca");
+        let dog_backend = with_ca.backends.0.get("dog").expect("fetch failed :(");
+        assert!(dog_backend.ca_certs.is_empty());
+        let shark_backend = with_ca
+            .backends
+            .0
+            .get("shark.server")
+            .expect("no blåhaj :(");
+        assert_eq!(3, shark_backend.ca_certs.len());
+    }
 }
