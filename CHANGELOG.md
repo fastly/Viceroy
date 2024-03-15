@@ -1,8 +1,10 @@
-## Unreleased
+## 0.9.5 (2024-03-15)
 
 - Bug fix: Honor CA certificates when they are supplied, either as part of a dynamic backend
   definition or as part of a backend defined in fastly.toml. (In the latter case, CA certificates
-  can be added using the "ca_certificate" key.)
+  can be added using the "ca_certificate" key.) ([#305](https://github.com/fastly/Viceroy/pull/305))
+
+- Consistently use Error::NotAvailable instead of Unsupported ([#349](https://github.com/fastly/Viceroy/pull/349))
 
 ## 0.9.4 (2024-02-22)
 
