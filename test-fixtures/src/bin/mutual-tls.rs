@@ -19,28 +19,45 @@ fn main() -> Result<(), Error> {
 
     let backend = Backend::builder("mtls-backend", format!("localhost:{}", port))
         .enable_ssl()
-        .provide_client_certificate(certificate, key_secret)
-        .finish()
-        .expect("can build backend");
+        .provide_client_certificate(certificate, key_secret);
+
+    let backend = if client_req.contains_header("set-ca") {
+        backend.ca_certificate(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/data/ca.pem"
+        )))
+    } else {
+        backend
+    };
+
+    let backend = backend.finish().expect("can build backend");
 
     let resp = Request::get("http://localhost/")
         .with_header("header", "is-a-thing")
         .with_body("hello")
-        .send(backend)
-        .unwrap();
+        .send(backend);
 
-    assert_eq!(resp.get_status(), StatusCode::OK);
-    let body = resp.into_body().into_string();
-    let mut cert_cursor = std::io::Cursor::new(certificate);
-    let mut info = rustls_pemfile::certs(&mut cert_cursor).expect("got certs");
-    assert_eq!(info.len(), 1);
-    let reflected_cert = info.remove(0);
-    let base64_cert = general_purpose::STANDARD.encode(reflected_cert);
-    assert_eq!(body, base64_cert);
+    match resp {
+        Ok(resp) => {
+            assert_eq!(resp.get_status(), StatusCode::OK);
+            let body = resp.into_body().into_string();
+            let mut cert_cursor = std::io::Cursor::new(certificate);
+            let mut info = rustls_pemfile::certs(&mut cert_cursor).expect("got certs");
+            assert_eq!(info.len(), 1);
+            let reflected_cert = info.remove(0);
+            let base64_cert = general_purpose::STANDARD.encode(reflected_cert);
+            assert_eq!(body, base64_cert);
 
-    Response::from_status(200)
-        .with_body("Hello, Viceroy!")
-        .send_to_client();
+            Response::from_status(200)
+                .with_body("Hello, Viceroy!")
+                .send_to_client();
+        }
+        Err(e) => {
+            Response::from_status(StatusCode::SERVICE_UNAVAILABLE)
+                .with_body(format!("much sadness: {}", e))
+                .send_to_client();
+        }
+    }
 
     Ok(())
 }

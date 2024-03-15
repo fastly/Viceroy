@@ -9,7 +9,7 @@ use crate::{
 use futures::Future;
 use http::{uri, HeaderValue, Version};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
-use rustls::client::{ServerName, WantsTransparencyPolicyOrClientCert};
+use rustls::client::ServerName;
 use std::{
     io,
     pin::Pin,
@@ -37,8 +37,8 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config:
-        rustls::ConfigBuilder<rustls::ClientConfig, WantsTransparencyPolicyOrClientCert>,
+    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
@@ -58,11 +58,12 @@ impl TlsConfig {
             warn!("no CA certificates available");
         }
 
-        let partial_config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(roots);
+        let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
 
-        Ok(TlsConfig { partial_config })
+        Ok(TlsConfig {
+            partial_config,
+            default_roots: roots,
+        })
     }
 }
 
@@ -117,17 +118,31 @@ impl hyper::service::Service<Uri> for BackendConnector {
         // the future for establishing the TCP connection. we create this outside of the `async`
         // block to avoid capturing `http`
         let connect_fut = self.http.call(backend.uri.clone());
+        let mut custom_roots = rustls::RootCertStore::empty();
+        let (added, ignored) = custom_roots.add_parsable_certificates(&self.backend.ca_certs);
+        if ignored > 0 {
+            tracing::warn!(
+                "Ignored {} certificates in provided CA certificate.",
+                ignored
+            );
+        }
+        let config = if self.backend.ca_certs.is_empty() {
+            config
+                .partial_config
+                .with_root_certificates(config.default_roots)
+        } else {
+            tracing::trace!("Using {} certificates from provided CA certificate.", added);
+            config.partial_config.with_root_certificates(custom_roots)
+        };
 
         Box::pin(async move {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
             if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
-                    config
-                        .partial_config
-                        .with_client_auth_cert(certed_key.certs(), certed_key.key())?
+                    config.with_client_auth_cert(certed_key.certs(), certed_key.key())?
                 } else {
-                    config.partial_config.with_no_client_auth()
+                    config.with_no_client_auth()
                 };
                 config.enable_sni = backend.use_sni;
                 if backend.grpc {

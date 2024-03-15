@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Bug fix: Honor CA certificates when they are supplied, either as part of a dynamic backend
+  definition or as part of a backend defined in fastly.toml. (In the latter case, CA certificates
+  can be added using the "ca_certificate" key.)
+
 ## 0.9.4 (2024-02-22)
 
 - Added `delete_async` hostcall for KV stores ([#332](https://github.com/fastly/Viceroy/pull/332))
