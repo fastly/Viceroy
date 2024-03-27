@@ -50,10 +50,16 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        // TODO: This is a plain hack, not a working implementation: Parallel tx etc, are simply not required.
-        //       -> This will fall apart immediately if tx are used as actual transactions.
-        let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-        Ok(self.cache.pending_tx.write().unwrap().push(key))
+        // Check if the entry already exists.
+        let handle = self.lookup(cache_key, options_mask, options)?;
+        if handle == not_found_handle() {
+            let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
+            let handle = self.cache.cache_entries.write().unwrap().push(None);
+            self.cache.pending_tx.write().unwrap().insert(handle, key);
+            Ok(handle)
+        } else {
+            Ok(handle)
+        }
     }
 
     /// Stub delegating to regular insert.
@@ -68,7 +74,7 @@ impl FastlyCache for Session {
             .pending_tx
             .read()
             .unwrap()
-            .get(handle)
+            .get(&handle)
             .map(ToOwned::to_owned);
 
         if let Some(pending_tx_key) = key {

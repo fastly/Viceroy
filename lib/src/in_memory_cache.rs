@@ -2,7 +2,7 @@ use crate::{wiggle_abi::types, Error};
 use cranelift_entity::PrimaryMap;
 use http::{request::Parts, HeaderMap};
 use std::{
-    collections::{btree_map::Entry, BTreeMap, HashSet},
+    collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
     sync::{Arc, RwLock},
     time::Instant,
@@ -19,20 +19,15 @@ type PrimaryCacheKey = Vec<u8>;
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryCache {
     /// Cache entries, indexable by handle.
-    /// `None` indicates a deleted entry.
+    /// `None` indicates a deleted entry OR a tx marker.
     pub cache_entries: Arc<RwLock<PrimaryMap<types::CacheHandle, Option<CacheEntry>>>>,
 
     /// Primary cache key to a list of variants.
     pub key_candidates: Arc<RwLock<BTreeMap<PrimaryCacheKey, Vec<types::CacheHandle>>>>,
 
-    // Surrogates to cache entry mapping to support simplistic purging.
-    // pub surrogates_to_handles: Arc<RwLock<BTreeMap<String, Vec<types::CacheHandle>>>>,
-    /// CacheHandle markers for pending transactions. Handles received for TX operataions
-    /// always point into this map instead of the entries.
-    //
-    // TODO this is probably a crime, since two cache handle primary maps may lead to
-    // fun bugs, but as we're not in need to really testing tx, we can just hack it.
-    pub pending_tx: Arc<RwLock<PrimaryMap<types::CacheHandle, PrimaryCacheKey>>>,
+    // CacheHandle markers for pending transactions. Since we need to retrieve the cache key for
+    // a tx insert, this map maps the pending handle the the key used to look it up.
+    pub pending_tx: Arc<RwLock<HashMap<types::CacheHandle, PrimaryCacheKey>>>,
 }
 
 impl InMemoryCache {
@@ -68,7 +63,6 @@ impl InMemoryCache {
         headers: &HeaderMap,
     ) -> Option<types::CacheHandle> {
         let candidates_lock = self.key_candidates.read().unwrap();
-
         candidates_lock.get(key).and_then(|candidates| {
             let entry_lock = self.cache_entries.write().unwrap();
 
