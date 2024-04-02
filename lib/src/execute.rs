@@ -5,7 +5,10 @@ use crate::{
     in_memory_cache::InMemoryCache,
 };
 use std::{collections::BTreeMap, sync::RwLock, time::SystemTime};
-use tokio::sync::mpsc::{Receiver, Sender as MspcSender};
+use tokio::{
+    sync::mpsc::{Receiver, Sender as MspcSender},
+    task::JoinHandle as TokioJoinHandle,
+};
 use wasmtime::GuestProfiler;
 use {
     crate::{
@@ -37,6 +40,10 @@ use {
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+
+pub struct GuestHandle {
+    pub(crate) handle: TokioJoinHandle<Result<(), ExecutionError>>,
+}
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
 ///
@@ -330,7 +337,14 @@ impl ExecuteCtx {
         self,
         incoming_req: Request<hyper::Body>,
         remote: IpAddr,
-    ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
+    ) -> Result<
+        (
+            Response<Body>,
+            Option<anyhow::Error>,
+            Option<GuestHandle>, // TODO: Just hiding the error for now, need this to work.
+        ),
+        Error,
+    > {
         let req = prepare_request(incoming_req)?;
         let (sender, receiver) = oneshot::channel();
 
@@ -346,12 +360,18 @@ impl ExecuteCtx {
         );
 
         let resp = match receiver.await {
-            Ok(resp) => (resp, None),
+            Ok(resp) => (
+                resp,
+                None,
+                Some(GuestHandle {
+                    handle: guest_handle,
+                }),
+            ),
             Err(_) => match guest_handle
                 .await
                 .expect("guest worker finished without panicking")
             {
-                Ok(_) => (Response::new(Body::empty()), None),
+                Ok(_) => (Response::new(Body::empty()), None, None),
                 Err(ExecutionError::WasmTrap(_e)) => {
                     event!(
                         Level::ERROR,
@@ -363,7 +383,7 @@ impl ExecuteCtx {
                         .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::empty())
                         .unwrap();
-                    (response, Some(_e))
+                    (response, Some(_e), None)
                 }
                 Err(e) => panic!("failed to run guest: {}", e),
             },
@@ -559,6 +579,29 @@ impl ExecuteCtx {
         drop(receiver);
 
         result
+    }
+
+    /// Runs a guest handle to completion and returns any error that might have occurred.
+    /// This is useful when a guest returns a response early, but later processing errors,
+    /// which should be surfaced to the calling code.
+    pub async fn run_to_completion(handle: GuestHandle) -> Option<anyhow::Error> {
+        match handle
+            .handle
+            .await
+            .expect("guest worker finished without panicking")
+        {
+            Ok(_) => None,
+            Err(ExecutionError::WasmTrap(e)) => {
+                event!(
+                    Level::ERROR,
+                    "There was an error running the guest to completion {}",
+                    e.to_string()
+                );
+
+                Some(e)
+            }
+            Err(e) => panic!("failed to run guest to completion: {}", e),
+        }
     }
 }
 
