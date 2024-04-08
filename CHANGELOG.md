@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.9.6 (2024-04-08)
+
+- Return a ValueAbsent for all the downstream-tls related functions instead of a NotAvailable ([#315](https://github.com/fastly/Viceroy/pull/315))
+
 ## 0.9.5 (2024-03-15)
 
 - Bug fix: Honor CA certificates when they are supplied, either as part of a dynamic backend
