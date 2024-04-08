@@ -857,9 +857,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.13"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06fddc2749e0528d2813f95e050e87e52c8cbbae56223b9babf73b3e53b0cc6"
+checksum = "94b22e06ecb0110981051723910cbf0b5f5e09a2062dd7663334ee79a9d1286c"
 dependencies = [
  "cfg-if",
  "libc",
@@ -2294,7 +2294,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "viceroy"
-version = "0.9.6"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "base64",
@@ -2322,7 +2322,7 @@ dependencies = [
 
 [[package]]
 name = "viceroy-lib"
-version = "0.9.6"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "bytes",
