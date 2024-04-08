@@ -1,4 +1,7 @@
-## Unreleased
+## 0.9.6 (2024-04-08)
+
+- eturn a ValueAbsent for all the downstream-tls rel
+ated functions instead of a NotAvailable ([#315](https://github.com/fastly/Viceroy/pull/315))
 
 ## 0.9.5 (2024-03-15)
 
