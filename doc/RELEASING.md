@@ -27,4 +27,4 @@ Below are the steps needed to do a Viceroy release:
      patch version.
   1. Update all the lockfiles by running `make generate-lockfile`.
   1. Restore the `## Unreleased` header at the top of `CHANGELOG.md`.
-1. Get another approval and merge when CI passes.
+1. Get another approval and do a merge commit (not a squash) when CI passes. We don't squash because we want the tagged commit to be contained within the `main` branch
