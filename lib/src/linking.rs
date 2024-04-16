@@ -6,10 +6,9 @@ use {
         wiggle_abi, Error,
     },
     anyhow::Context,
-    std::collections::HashSet,
-    wasi_common::{pipe::WritePipe, WasiCtx},
+    std::{collections::HashSet, time::Duration},
+    wasi_common::{pipe::WritePipe, sync::WasiCtxBuilder, WasiCtx},
     wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
-    wasmtime_wasi::WasiCtxBuilder,
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
@@ -102,7 +101,7 @@ pub(crate) fn create_store(
     store.set_epoch_deadline(1);
     store.epoch_deadline_callback(|mut store| {
         if let Some(mut prof) = store.data_mut().guest_profiler.take() {
-            prof.sample(&store);
+            prof.sample(&store, Duration::ZERO);
             store.data_mut().guest_profiler = Some(prof);
         }
         Ok(UpdateDeadline::Yield(1))
@@ -156,7 +155,7 @@ pub fn link_host_functions(
                 wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
             }
         })?;
-    wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
+    wasi_common::sync::add_to_linker(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::session)?;
