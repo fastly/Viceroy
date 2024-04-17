@@ -35,7 +35,7 @@ mod wiggle_abi;
 pub use {
     async_trait,
     error::Error,
-    execute::{EndpointListener, EndpointsMonitor, ExecuteCtx},
+    execute::{EndpointListener, EndpointsMonitor, ExecuteCtx, GuestHandle},
     http, hyper,
     in_memory_cache::InMemoryCache,
     service::ViceroyService,
