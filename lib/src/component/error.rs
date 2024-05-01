@@ -4,7 +4,7 @@ use {
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
-        kv_store::{KeyValidationError, ObjectStoreError},
+        object_store::{KeyValidationError, ObjectStoreError},
         wiggle_abi::{DictionaryError, SecretStoreError},
     },
     http::{

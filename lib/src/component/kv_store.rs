@@ -4,8 +4,10 @@ use {
     crate::{
         body::Body,
         error,
-        kv_store::{ObjectKey, ObjectStoreError},
-        session::{PeekableTask, PendingKvLookupTask, Session},
+        object_store::{ObjectKey, ObjectStoreError},
+        session::{
+            PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask, Session,
+        },
     },
 };
 
@@ -47,7 +49,7 @@ impl kv_store::Host for Session {
         &mut self,
         store: kv_store::Handle,
         key: String,
-    ) -> Result<kv_store::PendingHandle, FastlyError> {
+    ) -> Result<kv_store::PendingLookupHandle, FastlyError> {
         let store = self.get_obj_store_key(store.into()).unwrap();
         let key = ObjectKey::new(key)?;
         // just create a future that's already ready
@@ -58,7 +60,7 @@ impl kv_store::Host for Session {
 
     async fn pending_lookup_wait(
         &mut self,
-        pending: kv_store::PendingHandle,
+        pending: kv_store::PendingLookupHandle,
     ) -> Result<Option<kv_store::BodyHandle>, FastlyError> {
         let pending_obj = self
             .take_pending_kv_lookup(pending.into())?
@@ -86,4 +88,54 @@ impl kv_store::Host for Session {
 
         Ok(())
     }
+
+    async fn insert_async(
+        &mut self,
+        store: kv_store::Handle,
+        key: String,
+        body_handle: http_types::BodyHandle,
+    ) -> Result<kv_store::PendingInsertHandle, FastlyError> {
+        let store = self.get_obj_store_key(store.into()).unwrap().clone();
+        let key = ObjectKey::new(&key)?;
+        let bytes = self.take_body(body_handle.into())?.read_into_vec().await?;
+        let fut = futures::future::ok(self.obj_insert(store, key, bytes));
+        let task = PeekableTask::spawn(fut).await;
+
+        Ok(self.insert_pending_kv_insert(PendingKvInsertTask::new(task)))
+    }
+
+    async fn pending_insert_wait(
+        &mut self,
+        handle: kv_store::PendingInsertHandle,
+    ) -> Result<(), FastlyError> {
+        Ok((self
+            .take_pending_kv_insert(handle.into())?
+            .task()
+            .recv()
+            .await?)?)
+    }
+
+    async fn delete_async(
+        &mut self,
+        store: kv_store::Handle,
+        key: String,
+    ) -> Result<kv_store::PendingDeleteHandle, FastlyError> {
+        let store = self.get_obj_store_key(store.into()).unwrap().clone();
+        let key = ObjectKey::new(&key)?;
+        let fut = futures::future::ok(self.obj_delete(store, key));
+        let task = PeekableTask::spawn(fut).await;
+
+        Ok(self.insert_pending_kv_delete(PendingKvDeleteTask::new(task)))
+    }
+
+    async fn pending_delete_wait(
+        &mut self,
+        handle: kv_store::PendingDeleteHandle,
+    ) -> Result<(), FastlyError> {
+        Ok((self
+            .take_pending_kv_delete(handle.into())?
+            .task()
+            .await?)?)
+    }
+
 }
