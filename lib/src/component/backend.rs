@@ -1,24 +1,22 @@
 use {
-    super::fastly::compute_at_edge::{backend, http_types, types},
+    super::fastly::api::{backend, http_types},
+    super::FastlyError,
     crate::{error::Error, session::Session},
 };
 
 #[async_trait::async_trait]
 impl backend::Host for Session {
-    async fn exists(&mut self, backend: String) -> Result<bool, types::FastlyError> {
+    async fn exists(&mut self, backend: String) -> Result<bool, FastlyError> {
         Ok(self.backend(&backend).is_some())
     }
 
-    async fn is_healthy(
-        &mut self,
-        backend: String,
-    ) -> Result<backend::BackendHealth, types::FastlyError> {
+    async fn is_healthy(&mut self, backend: String) -> Result<backend::BackendHealth, FastlyError> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         Ok(backend::BackendHealth::Unknown)
     }
 
-    async fn is_dynamic(&mut self, backend: String) -> Result<bool, types::FastlyError> {
+    async fn is_dynamic(&mut self, backend: String) -> Result<bool, FastlyError> {
         if self.dynamic_backend(&backend).is_some() {
             Ok(true)
         } else if self.backend(&backend).is_some() {
@@ -28,17 +26,14 @@ impl backend::Host for Session {
         }
     }
 
-    async fn get_host(&mut self, backend: String) -> Result<String, types::FastlyError> {
+    async fn get_host(&mut self, backend: String) -> Result<String, FastlyError> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         Ok(String::from(
             backend.uri.host().expect("backend uri has host"),
         ))
     }
 
-    async fn get_override_host(
-        &mut self,
-        backend: String,
-    ) -> Result<Option<String>, types::FastlyError> {
+    async fn get_override_host(&mut self, backend: String) -> Result<Option<String>, FastlyError> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         if let Some(host) = backend.override_host.as_ref() {
             let host = host.to_str()?;
@@ -48,7 +43,7 @@ impl backend::Host for Session {
         }
     }
 
-    async fn get_port(&mut self, backend: String) -> Result<u16, types::FastlyError> {
+    async fn get_port(&mut self, backend: String) -> Result<u16, FastlyError> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         match backend.uri.port_u16() {
             Some(port) => Ok(port),
@@ -62,7 +57,7 @@ impl backend::Host for Session {
         }
     }
 
-    async fn get_connect_timeout_ms(&mut self, backend: String) -> Result<u32, types::FastlyError> {
+    async fn get_connect_timeout_ms(&mut self, backend: String) -> Result<u32, FastlyError> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         Err(Error::Unsupported {
@@ -71,10 +66,7 @@ impl backend::Host for Session {
         .into())
     }
 
-    async fn get_first_byte_timeout_ms(
-        &mut self,
-        backend: String,
-    ) -> Result<u32, types::FastlyError> {
+    async fn get_first_byte_timeout_ms(&mut self, backend: String) -> Result<u32, FastlyError> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         Err(Error::Unsupported {
@@ -83,10 +75,7 @@ impl backend::Host for Session {
         .into())
     }
 
-    async fn get_between_bytes_timeout_ms(
-        &mut self,
-        backend: String,
-    ) -> Result<u32, types::FastlyError> {
+    async fn get_between_bytes_timeout_ms(&mut self, backend: String) -> Result<u32, FastlyError> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         Err(Error::Unsupported {
@@ -95,7 +84,7 @@ impl backend::Host for Session {
         .into())
     }
 
-    async fn is_ssl(&mut self, backend: String) -> Result<bool, types::FastlyError> {
+    async fn is_ssl(&mut self, backend: String) -> Result<bool, FastlyError> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         Ok(backend.uri.scheme() == Some(&http::uri::Scheme::HTTPS))
     }
@@ -103,7 +92,7 @@ impl backend::Host for Session {
     async fn get_ssl_min_version(
         &mut self,
         backend: String,
-    ) -> Result<http_types::TlsVersion, types::FastlyError> {
+    ) -> Result<http_types::TlsVersion, FastlyError> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         // health checks are not enabled in Viceroy :(
@@ -116,7 +105,7 @@ impl backend::Host for Session {
     async fn get_ssl_max_version(
         &mut self,
         backend: String,
-    ) -> Result<http_types::TlsVersion, types::FastlyError> {
+    ) -> Result<http_types::TlsVersion, FastlyError> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         // health checks are not enabled in Viceroy :(

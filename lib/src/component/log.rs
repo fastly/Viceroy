@@ -1,5 +1,6 @@
 use {
-    super::fastly::compute_at_edge::{log, types},
+    super::fastly::api::{log, types},
+    super::FastlyError,
     crate::session::Session,
     lazy_static::lazy_static,
 };
@@ -18,7 +19,7 @@ fn is_reserved_endpoint(name: &[u8]) -> bool {
 
 #[async_trait::async_trait]
 impl log::Host for Session {
-    async fn endpoint_get(&mut self, name: String) -> Result<log::Handle, types::FastlyError> {
+    async fn endpoint_get(&mut self, name: String) -> Result<log::Handle, FastlyError> {
         let name = name.as_bytes();
 
         if is_reserved_endpoint(name) {
@@ -28,7 +29,7 @@ impl log::Host for Session {
         Ok(self.log_endpoint_handle(name).into())
     }
 
-    async fn write(&mut self, h: log::Handle, msg: String) -> Result<(), types::FastlyError> {
+    async fn write(&mut self, h: log::Handle, msg: String) -> Result<(), FastlyError> {
         let endpoint = self.log_endpoint(h.into())?;
         let msg = msg.as_bytes();
         endpoint.write_entry(&msg)?;

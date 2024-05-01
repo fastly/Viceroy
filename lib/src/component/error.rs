@@ -1,9 +1,10 @@
 use {
-    super::fastly::compute_at_edge::types,
+    super::fastly::api::types,
+    super::FastlyError,
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
-        object_store::{KeyValidationError, ObjectStoreError},
+        kv_store::{KeyValidationError, ObjectStoreError},
         wiggle_abi::{DictionaryError, SecretStoreError},
     },
     http::{
@@ -14,73 +15,73 @@ use {
     },
 };
 
-impl From<HandleError> for types::FastlyError {
+impl From<HandleError> for FastlyError {
     fn from(_: HandleError) -> Self {
         types::Error::BadHandle.into()
     }
 }
 
-impl From<ClientCertError> for types::FastlyError {
+impl From<ClientCertError> for FastlyError {
     fn from(_: ClientCertError) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<InvalidStatusCode> for types::FastlyError {
+impl From<InvalidStatusCode> for FastlyError {
     fn from(_: InvalidStatusCode) -> Self {
         types::Error::InvalidArgument.into()
     }
 }
 
-impl From<InvalidHeaderName> for types::FastlyError {
+impl From<InvalidHeaderName> for FastlyError {
     fn from(_: InvalidHeaderName) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<InvalidHeaderValue> for types::FastlyError {
+impl From<InvalidHeaderValue> for FastlyError {
     fn from(_: InvalidHeaderValue) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<std::str::Utf8Error> for types::FastlyError {
+impl From<std::str::Utf8Error> for FastlyError {
     fn from(_: std::str::Utf8Error) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<std::io::Error> for types::FastlyError {
+impl From<std::io::Error> for FastlyError {
     fn from(_: std::io::Error) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<ToStrError> for types::FastlyError {
+impl From<ToStrError> for FastlyError {
     fn from(_: ToStrError) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<InvalidMethod> for types::FastlyError {
+impl From<InvalidMethod> for FastlyError {
     fn from(_: InvalidMethod) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<InvalidUri> for types::FastlyError {
+impl From<InvalidUri> for FastlyError {
     fn from(_: InvalidUri) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<http::Error> for types::FastlyError {
+impl From<http::Error> for FastlyError {
     fn from(_: http::Error) -> Self {
         types::Error::GenericError.into()
     }
 }
 
-impl From<wiggle::GuestError> for types::FastlyError {
+impl From<wiggle::GuestError> for FastlyError {
     fn from(err: wiggle::GuestError) -> Self {
         use wiggle::GuestError::*;
         match err {
@@ -104,7 +105,7 @@ impl From<wiggle::GuestError> for types::FastlyError {
     }
 }
 
-impl From<ObjectStoreError> for types::FastlyError {
+impl From<ObjectStoreError> for FastlyError {
     fn from(err: ObjectStoreError) -> Self {
         use ObjectStoreError::*;
         match err {
@@ -115,13 +116,13 @@ impl From<ObjectStoreError> for types::FastlyError {
     }
 }
 
-impl From<KeyValidationError> for types::FastlyError {
-    fn from(_: KeyValidationError) -> types::FastlyError {
+impl From<KeyValidationError> for FastlyError {
+    fn from(_: KeyValidationError) -> FastlyError {
         types::Error::GenericError.into()
     }
 }
 
-impl From<SecretStoreError> for types::FastlyError {
+impl From<SecretStoreError> for FastlyError {
     fn from(err: SecretStoreError) -> Self {
         use SecretStoreError::*;
         match err {
@@ -133,7 +134,7 @@ impl From<SecretStoreError> for types::FastlyError {
     }
 }
 
-impl From<DictionaryError> for types::FastlyError {
+impl From<DictionaryError> for FastlyError {
     fn from(err: DictionaryError) -> Self {
         use DictionaryError::*;
         match err {
@@ -143,7 +144,7 @@ impl From<DictionaryError> for types::FastlyError {
     }
 }
 
-impl From<error::Error> for types::FastlyError {
+impl From<error::Error> for FastlyError {
     fn from(err: error::Error) -> Self {
         use error::Error;
         match err {

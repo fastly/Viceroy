@@ -1,5 +1,6 @@
 use {
-    super::fastly::compute_at_edge::{http_resp, http_types, types},
+    super::fastly::api::{http_resp, http_types, types},
+    super::FastlyError,
     crate::{error::Error, session::Session},
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
@@ -9,7 +10,7 @@ const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
 impl http_resp::Host for Session {
-    async fn new(&mut self) -> Result<http_types::ResponseHandle, types::FastlyError> {
+    async fn new(&mut self) -> Result<http_types::ResponseHandle, FastlyError> {
         let (parts, _) = Response::new(()).into_parts();
         Ok(self.insert_response_parts(parts).into())
     }
@@ -17,7 +18,7 @@ impl http_resp::Host for Session {
     async fn status_get(
         &mut self,
         h: http_types::ResponseHandle,
-    ) -> Result<http_types::HttpStatus, types::FastlyError> {
+    ) -> Result<http_types::HttpStatus, FastlyError> {
         let parts = self.response_parts(h.into())?;
         Ok(parts.status.as_u16())
     }
@@ -26,7 +27,7 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         status: http_types::HttpStatus,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let resp = self.response_parts_mut(h.into())?;
         let status = hyper::StatusCode::from_u16(status)?;
         resp.status = status;
@@ -38,7 +39,7 @@ impl http_resp::Host for Session {
         h: http_types::ResponseHandle,
         name: String,
         value: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             Err(types::Error::InvalidArgument)?;
         }
@@ -55,7 +56,7 @@ impl http_resp::Host for Session {
         h: http_types::ResponseHandle,
         b: http_types::BodyHandle,
         streaming: bool,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let resp = {
             // Take the response parts and body from the session, and use them to build a response.
             // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
@@ -74,7 +75,7 @@ impl http_resp::Host for Session {
     async fn header_names_get(
         &mut self,
         h: http_types::ResponseHandle,
-    ) -> Result<Vec<String>, types::FastlyError> {
+    ) -> Result<Vec<String>, FastlyError> {
         let headers = &self.response_parts(h.into())?.headers;
         Ok(headers
             .keys()
@@ -86,7 +87,7 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         name: String,
-    ) -> Result<Option<String>, types::FastlyError> {
+    ) -> Result<Option<String>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -103,7 +104,7 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         name: String,
-    ) -> Result<Option<Vec<String>>, types::FastlyError> {
+    ) -> Result<Option<Vec<String>>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -126,7 +127,7 @@ impl http_resp::Host for Session {
         h: http_types::ResponseHandle,
         name: String,
         values: Vec<String>,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -153,7 +154,7 @@ impl http_resp::Host for Session {
         h: http_types::ResponseHandle,
         name: String,
         value: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -170,7 +171,7 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         name: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -179,7 +180,7 @@ impl http_resp::Host for Session {
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers
             .remove(name)
-            .ok_or(types::FastlyError::from(types::Error::InvalidArgument))?;
+            .ok_or(FastlyError::from(types::Error::InvalidArgument))?;
 
         Ok(())
     }
@@ -187,7 +188,7 @@ impl http_resp::Host for Session {
     async fn version_get(
         &mut self,
         h: http_types::ResponseHandle,
-    ) -> Result<http_types::HttpVersion, types::FastlyError> {
+    ) -> Result<http_types::HttpVersion, FastlyError> {
         let req = self.response_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
@@ -197,13 +198,13 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         version: http_types::HttpVersion,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let req = self.response_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
     }
 
-    async fn close(&mut self, h: http_types::ResponseHandle) -> Result<(), types::FastlyError> {
+    async fn close(&mut self, h: http_types::ResponseHandle) -> Result<(), FastlyError> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
         self.take_response_parts(h.into())?;
@@ -214,7 +215,7 @@ impl http_resp::Host for Session {
         &mut self,
         _h: http_types::ResponseHandle,
         mode: http_types::FramingHeadersMode,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         match mode {
             http_types::FramingHeadersMode::ManuallyFromHeaders => {
                 Err(Error::NotAvailable("Manual framing headers").into())
@@ -227,7 +228,7 @@ impl http_resp::Host for Session {
         &mut self,
         _: http_types::ResponseHandle,
         mode: http_resp::KeepaliveMode,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         match mode {
             http_resp::KeepaliveMode::NoKeepalive => {
                 Err(Error::NotAvailable("No Keepalive").into())

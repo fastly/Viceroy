@@ -1,5 +1,10 @@
 use {crate::linking::ComponentCtx, wasmtime::component};
 
+pub(crate) enum FastlyError {
+    FastlyError(anyhow::Error),
+    Trap(anyhow::Error),
+}
+
 component::bindgen!({
     path: "wit",
     world: "fastly:api/compute",
@@ -23,21 +28,21 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::cli::stdout::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::stderr::add_to_linker(linker, |x| x)?;
 
-    fastly::compute_at_edge::async_io::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::backend::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::cache::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::dictionary::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::geo::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::http_body::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::http_req::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::http_resp::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::http_types::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::log::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::object_store::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::purge::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::secret_store::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::types::add_to_linker(linker, |x| x.session())?;
-    fastly::compute_at_edge::uap::add_to_linker(linker, |x| x.session())?;
+    fastly::api::async_io::add_to_linker(linker, |x| x.session())?;
+    fastly::api::backend::add_to_linker(linker, |x| x.session())?;
+    fastly::api::cache::add_to_linker(linker, |x| x.session())?;
+    fastly::api::dictionary::add_to_linker(linker, |x| x.session())?;
+    fastly::api::geo::add_to_linker(linker, |x| x.session())?;
+    fastly::api::http_body::add_to_linker(linker, |x| x.session())?;
+    fastly::api::http_req::add_to_linker(linker, |x| x.session())?;
+    fastly::api::http_resp::add_to_linker(linker, |x| x.session())?;
+    fastly::api::http_types::add_to_linker(linker, |x| x.session())?;
+    fastly::api::log::add_to_linker(linker, |x| x.session())?;
+    fastly::api::kv_store::add_to_linker(linker, |x| x.session())?;
+    fastly::api::purge::add_to_linker(linker, |x| x.session())?;
+    fastly::api::secret_store::add_to_linker(linker, |x| x.session())?;
+    fastly::api::types::add_to_linker(linker, |x| x.session())?;
+    fastly::api::uap::add_to_linker(linker, |x| x.session())?;
 
     Ok(())
 }
@@ -52,8 +57,8 @@ pub mod http_body;
 pub mod http_req;
 pub mod http_resp;
 pub mod http_types;
+pub mod kv_store;
 pub mod log;
-pub mod object_store;
 pub mod purge;
 pub mod secret_store;
 pub mod types;

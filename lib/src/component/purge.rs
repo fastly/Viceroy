@@ -1,5 +1,6 @@
 use {
-    super::fastly::compute_at_edge::{purge, types},
+    super::fastly::api::purge,
+    super::FastlyError,
     crate::{error::Error, session::Session},
 };
 
@@ -9,7 +10,7 @@ impl purge::Host for Session {
         &mut self,
         _surrogate_key: String,
         _options: purge::OptionsMask,
-    ) -> Result<Option<String>, types::FastlyError> {
+    ) -> Result<Option<String>, FastlyError> {
         Err(Error::NotAvailable("FastlyPurge").into())
     }
 }

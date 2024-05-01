@@ -43,15 +43,15 @@ impl wasmtime::ResourceLimiter for Limiter {
 
 #[allow(unused)]
 pub struct ComponentCtx {
-    table: preview2::Table,
-    wasi: preview2::WasiCtx,
+    table: wasmtime_wasi::ResourceTable,
+    wasi: wasmtime_wasi::WasiCtx,
     session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
     limiter: Limiter,
 }
 
 impl ComponentCtx {
-    pub fn wasi(&mut self) -> &mut preview2::WasiCtx {
+    pub fn wasi(&mut self) -> &mut wasmtime_wasi::WasiCtx {
         &mut self.wasi
     }
 
@@ -81,7 +81,7 @@ impl ComponentCtx {
         session: Session,
         guest_profiler: Option<GuestProfiler>,
     ) -> Result<Store<Self>, anyhow::Error> {
-        let mut table = preview2::Table::new();
+        let mut table = wasmtime_wasi::ResourceTable::new();
         let wasi = make_wasi_preview2_ctx(ctx, args, &session, &mut table)
             .context("creating Wasi context")?;
         let wasm_ctx = Self {
@@ -110,9 +110,9 @@ fn make_wasi_preview2_ctx(
     ctx: &ExecuteCtx,
     args: &[&str],
     session: &Session,
-    table: &mut preview2::Table,
-) -> Result<preview2::WasiCtx, anyhow::Error> {
-    let mut wasi_ctx = preview2::WasiCtxBuilder::new();
+    table: &mut wasmtime_wasi::ResourceTable,
+) -> wasmtime_wasi::WasiCtx {
+    let mut wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new();
 
     // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
     // Compute@Edge platform provides:
@@ -131,33 +131,29 @@ fn make_wasi_preview2_ctx(
     }
 
     if ctx.log_stdout() {
-        let pipe = preview2::pipe::AsyncWriteStream::new(usize::MAX, LogEndpoint::new(b"stdout"));
-        wasi_ctx.stdout(pipe, preview2::IsATTY::No);
+        let pipe =
+            wasmtime_wasi::pipe::AsyncWriteStream::new(usize::MAX, LogEndpoint::new(b"stdout"));
+        wasi_ctx.stdout(pipe);
     } else {
         wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        let pipe = preview2::pipe::AsyncWriteStream::new(usize::MAX, LogEndpoint::new(b"stderr"));
-        wasi_ctx.stderr(pipe, preview2::IsATTY::No);
+        let pipe =
+            wasmtime_wasi::pipe::AsyncWriteStream::new(usize::MAX, LogEndpoint::new(b"stderr"));
+        wasi_ctx.stderr(pipe);
     } else {
         wasi_ctx.inherit_stderr();
     }
 
-    wasi_ctx.build(table)
+    wasi_ctx.build()
 }
 
-impl preview2::WasiView for ComponentCtx {
-    fn table(&self) -> &preview2::Table {
-        &self.table
-    }
-    fn table_mut(&mut self) -> &mut preview2::Table {
+impl wasmtime_wasi::WasiView for ComponentCtx {
+    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
         &mut self.table
     }
-    fn ctx(&self) -> &preview2::WasiCtx {
-        &self.wasi
-    }
-    fn ctx_mut(&mut self) -> &mut preview2::WasiCtx {
+    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
         &mut self.wasi
     }
 }

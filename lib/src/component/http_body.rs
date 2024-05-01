@@ -1,12 +1,13 @@
 use {
-    super::fastly::compute_at_edge::{http_body, http_types, types},
+    super::fastly::api::{http_body, http_types},
+    super::FastlyError,
     crate::{body::Body, session::Session},
     ::http_body::Body as HttpBody,
 };
 
 #[async_trait::async_trait]
 impl http_body::Host for Session {
-    async fn new(&mut self) -> Result<http_types::BodyHandle, types::FastlyError> {
+    async fn new(&mut self) -> Result<http_types::BodyHandle, FastlyError> {
         Ok(self.insert_body(Body::empty()).into())
     }
 
@@ -15,7 +16,7 @@ impl http_body::Host for Session {
         h: http_types::BodyHandle,
         buf: Vec<u8>,
         end: http_body::WriteEnd,
-    ) -> Result<u32, types::FastlyError> {
+    ) -> Result<u32, FastlyError> {
         // Validate the body handle and the buffer.
         let buf = buf.as_slice();
 
@@ -48,7 +49,7 @@ impl http_body::Host for Session {
         &mut self,
         dest: http_types::BodyHandle,
         src: http_types::BodyHandle,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         // Take the `src` body out of the session, and get a mutable reference
         // to the `dest` body we will append to.
         let src = self.take_body(src.into())?;
@@ -69,7 +70,7 @@ impl http_body::Host for Session {
         &mut self,
         h: http_types::BodyHandle,
         chunk_size: u32,
-    ) -> Result<Vec<u8>, types::FastlyError> {
+    ) -> Result<Vec<u8>, FastlyError> {
         // only normal bodies (not streaming bodies) can be read from
         let body = self.body_mut(h.into())?;
 
@@ -91,7 +92,7 @@ impl http_body::Host for Session {
         }
     }
 
-    async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), types::FastlyError> {
+    async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), FastlyError> {
         // Drop the body and pass up an error if the handle does not exist
         if self.is_streaming_body(h.into()) {
             // Make sure a streaming body gets a `finish` message

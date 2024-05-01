@@ -1,9 +1,10 @@
 use {
-    super::fastly::compute_at_edge::{secret_store, types},
+    super::fastly::api::secret_store,
+    super::FastlyError,
     crate::{
         body::Body,
         error::Error,
-        object_store::{ObjectKey, ObjectStoreError},
+        kv_store::{ObjectKey, ObjectStoreError},
         secret_store::SecretLookup,
         session::Session,
         wiggle_abi::SecretStoreError,
@@ -12,10 +13,7 @@ use {
 
 #[async_trait::async_trait]
 impl secret_store::Host for Session {
-    async fn open(
-        &mut self,
-        name: String,
-    ) -> Result<secret_store::StoreHandle, types::FastlyError> {
+    async fn open(&mut self, name: String) -> Result<secret_store::StoreHandle, FastlyError> {
         let handle = self
             .secret_store_handle(&name)
             .ok_or(Error::SecretStoreError(
@@ -28,7 +26,7 @@ impl secret_store::Host for Session {
         &mut self,
         store: secret_store::StoreHandle,
         key: String,
-    ) -> Result<Option<secret_store::SecretHandle>, types::FastlyError> {
+    ) -> Result<Option<secret_store::SecretHandle>, FastlyError> {
         let store = self.get_obj_store_key(store.into()).unwrap();
         let key = ObjectKey::new(&key)?;
         match self.obj_lookup(store, &key) {
@@ -47,7 +45,7 @@ impl secret_store::Host for Session {
     async fn plaintext(
         &mut self,
         secret: secret_store::SecretHandle,
-    ) -> Result<Option<String>, types::FastlyError> {
+    ) -> Result<Option<String>, FastlyError> {
         let lookup = self
             .secret_lookup(secret.into())
             .ok_or(Error::SecretStoreError(
@@ -79,7 +77,7 @@ impl secret_store::Host for Session {
     async fn from_bytes(
         &mut self,
         plaintext: String,
-    ) -> Result<secret_store::SecretHandle, types::FastlyError> {
+    ) -> Result<secret_store::SecretHandle, FastlyError> {
         Ok(self.add_secret(Vec::from(plaintext.as_bytes())).into())
     }
 }

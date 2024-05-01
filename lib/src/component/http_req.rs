@@ -1,5 +1,6 @@
 use {
-    super::fastly::compute_at_edge::{http_req, http_types, types},
+    super::fastly::api::{http_req, http_types, types},
+    super::FastlyError,
     crate::{
         config::{Backend, ClientCertInfo},
         error::Error,
@@ -20,19 +21,13 @@ const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
 impl http_req::Host for Session {
-    async fn method_get(
-        &mut self,
-        h: http_types::RequestHandle,
-    ) -> Result<String, types::FastlyError> {
+    async fn method_get(&mut self, h: http_types::RequestHandle) -> Result<String, FastlyError> {
         let req = self.request_parts(h.into())?;
         let req_method = &req.method;
         Ok(req_method.to_string())
     }
 
-    async fn uri_get(
-        &mut self,
-        h: http_types::RequestHandle,
-    ) -> Result<String, types::FastlyError> {
+    async fn uri_get(&mut self, h: http_types::RequestHandle) -> Result<String, FastlyError> {
         let req = self.request_parts(h.into())?;
         let req_uri = &req.uri;
         Ok(req_uri.to_string())
@@ -45,12 +40,12 @@ impl http_req::Host for Session {
         _ttl: Option<u32>,
         _stale_while_revalidate: Option<u32>,
         _sk: Option<String>,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         // For now, we ignore caching directives because we never cache anything
         Ok(())
     }
 
-    async fn downstream_client_ip_addr(&mut self) -> Result<Vec<u8>, types::FastlyError> {
+    async fn downstream_client_ip_addr(&mut self) -> Result<Vec<u8>, FastlyError> {
         use std::net::IpAddr;
         match self.downstream_client_ip() {
             IpAddr::V4(addr) => {
@@ -66,33 +61,31 @@ impl http_req::Host for Session {
         }
     }
 
-    async fn downstream_tls_cipher_openssl_name(&mut self) -> Result<String, types::FastlyError> {
+    async fn downstream_tls_cipher_openssl_name(&mut self) -> Result<String, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_protocol(&mut self) -> Result<String, types::FastlyError> {
+    async fn downstream_tls_protocol(&mut self) -> Result<String, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_client_hello(&mut self) -> Result<Vec<u8>, types::FastlyError> {
+    async fn downstream_tls_client_hello(&mut self) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_raw_client_certificate(
-        &mut self,
-    ) -> Result<Vec<u8>, types::FastlyError> {
+    async fn downstream_tls_raw_client_certificate(&mut self) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_client_cert_verify_result(&mut self) -> Result<(), types::FastlyError> {
+    async fn downstream_tls_client_cert_verify_result(&mut self) -> Result<(), FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_ja3_md5(&mut self) -> Result<Vec<u8>, types::FastlyError> {
+    async fn downstream_tls_ja3_md5(&mut self) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client TLS JA3 hash").into())
     }
 
-    async fn new(&mut self) -> Result<http_types::RequestHandle, types::FastlyError> {
+    async fn new(&mut self) -> Result<http_types::RequestHandle, FastlyError> {
         let (parts, _) = Request::new(()).into_parts();
         Ok(self.insert_request_parts(parts).into())
     }
@@ -100,7 +93,7 @@ impl http_req::Host for Session {
     async fn header_names_get(
         &mut self,
         h: http_types::RequestHandle,
-    ) -> Result<Vec<String>, types::FastlyError> {
+    ) -> Result<Vec<String>, FastlyError> {
         let headers = &self.request_parts(h.into())?.headers;
         Ok(headers
             .keys()
@@ -112,7 +105,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-    ) -> Result<Option<String>, types::FastlyError> {
+    ) -> Result<Option<String>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -129,7 +122,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-    ) -> Result<Option<Vec<String>>, types::FastlyError> {
+    ) -> Result<Option<Vec<String>>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -152,7 +145,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         name: String,
         values: Vec<String>,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -179,7 +172,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         name: String,
         value: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -197,7 +190,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         name: String,
         value: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -214,7 +207,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -223,7 +216,7 @@ impl http_req::Host for Session {
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers
             .remove(name)
-            .ok_or(types::FastlyError::from(types::Error::InvalidArgument))?;
+            .ok_or(FastlyError::from(types::Error::InvalidArgument))?;
 
         Ok(())
     }
@@ -232,7 +225,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         method: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let method_ref = &mut self.request_parts_mut(h.into())?.method;
         *method_ref = Method::from_bytes(method.as_bytes())?;
         Ok(())
@@ -242,7 +235,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         uri: String,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let uri_ref = &mut self.request_parts_mut(h.into())?.uri;
         *uri_ref = Uri::try_from(uri.as_bytes())?;
         Ok(())
@@ -251,7 +244,7 @@ impl http_req::Host for Session {
     async fn version_get(
         &mut self,
         h: http_types::RequestHandle,
-    ) -> Result<http_types::HttpVersion, types::FastlyError> {
+    ) -> Result<http_types::HttpVersion, FastlyError> {
         let req = self.request_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
@@ -261,7 +254,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         version: http_types::HttpVersion,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let req = self.request_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
@@ -272,14 +265,14 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         b: http_types::BodyHandle,
         backend_name: String,
-    ) -> Result<http_types::Response, types::FastlyError> {
+    ) -> Result<http_types::Response, FastlyError> {
         // prepare the request
         let req_parts = self.take_request_parts(h.into())?;
         let req_body = self.take_body(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
             .backend(&backend_name)
-            .ok_or(types::FastlyError::from(types::Error::UnknownError))?;
+            .ok_or(FastlyError::from(types::Error::UnknownError))?;
 
         // synchronously send the request
         let resp = upstream::send_request(req, backend, self.tls_config()).await?;
@@ -292,14 +285,14 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         b: http_types::BodyHandle,
         backend_name: String,
-    ) -> Result<http_types::PendingRequestHandle, types::FastlyError> {
+    ) -> Result<http_types::PendingRequestHandle, FastlyError> {
         // prepare the request
         let req_parts = self.take_request_parts(h.into())?;
         let req_body = self.take_body(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
             .backend(&backend_name)
-            .ok_or(types::FastlyError::from(types::Error::UnknownError))?;
+            .ok_or(FastlyError::from(types::Error::UnknownError))?;
 
         // asynchronously send the request
         let task =
@@ -314,14 +307,14 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         b: http_types::BodyHandle,
         backend_name: String,
-    ) -> Result<http_types::PendingRequestHandle, types::FastlyError> {
+    ) -> Result<http_types::PendingRequestHandle, FastlyError> {
         // prepare the request
         let req_parts = self.take_request_parts(h.into())?;
         let req_body = self.begin_streaming(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
             .backend(&backend_name)
-            .ok_or(types::FastlyError::from(types::Error::UnknownError))?;
+            .ok_or(FastlyError::from(types::Error::UnknownError))?;
 
         // asynchronously send the request
         let task =
@@ -334,7 +327,7 @@ impl http_req::Host for Session {
     async fn pending_req_poll(
         &mut self,
         h: http_types::PendingRequestHandle,
-    ) -> Result<Option<http_types::Response>, types::FastlyError> {
+    ) -> Result<Option<http_types::Response>, FastlyError> {
         if self
             .async_item_mut(AsyncItemHandle::from_u32(h))?
             .is_ready()
@@ -350,7 +343,7 @@ impl http_req::Host for Session {
     async fn pending_req_wait(
         &mut self,
         h: http_types::PendingRequestHandle,
-    ) -> Result<http_types::Response, types::FastlyError> {
+    ) -> Result<http_types::Response, FastlyError> {
         let pending_req = self.take_pending_request(h.into())?.recv().await?;
         let (resp_handle, body_handle) = self.insert_response(pending_req);
         Ok((resp_handle.into(), body_handle.into()))
@@ -359,7 +352,7 @@ impl http_req::Host for Session {
     async fn pending_req_select(
         &mut self,
         h: Vec<http_types::PendingRequestHandle>,
-    ) -> Result<(u32, http_types::Response), types::FastlyError> {
+    ) -> Result<(u32, http_types::Response), FastlyError> {
         use crate::wiggle_abi::types;
 
         if h.is_empty() {
@@ -400,7 +393,7 @@ impl http_req::Host for Session {
         Ok(outcome)
     }
 
-    async fn close(&mut self, h: http_types::RequestHandle) -> Result<(), types::FastlyError> {
+    async fn close(&mut self, h: http_types::RequestHandle) -> Result<(), FastlyError> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
         self.take_request_parts(h.into())?;
@@ -411,7 +404,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         encodings: http_types::ContentEncodings,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         use crate::wiggle_abi::types;
 
         // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
@@ -439,18 +432,15 @@ impl http_req::Host for Session {
         Ok(())
     }
 
-    async fn upgrade_websocket(&mut self, _backend: String) -> Result<(), types::FastlyError> {
+    async fn upgrade_websocket(&mut self, _backend: String) -> Result<(), FastlyError> {
         Err(Error::NotAvailable("WebSocket upgrade").into())
     }
 
-    async fn redirect_to_websocket_proxy(
-        &mut self,
-        _backend: String,
-    ) -> Result<(), types::FastlyError> {
+    async fn redirect_to_websocket_proxy(&mut self, _backend: String) -> Result<(), FastlyError> {
         Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
     }
 
-    async fn redirect_to_grip_proxy(&mut self, _backend: String) -> Result<(), types::FastlyError> {
+    async fn redirect_to_grip_proxy(&mut self, _backend: String) -> Result<(), FastlyError> {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy").into())
     }
 
@@ -458,7 +448,7 @@ impl http_req::Host for Session {
         &mut self,
         _h: http_types::RequestHandle,
         mode: http_types::FramingHeadersMode,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         match mode {
             http_types::FramingHeadersMode::ManuallyFromHeaders => {
                 Err(Error::NotAvailable("Manual framing headers").into())
@@ -472,7 +462,7 @@ impl http_req::Host for Session {
         prefix: String,
         target: String,
         config: http_types::DynamicBackendConfig,
-    ) -> Result<(), types::FastlyError> {
+    ) -> Result<(), FastlyError> {
         let name = prefix.as_str();
         let origin_name = target.as_str();
 
@@ -589,15 +579,15 @@ impl http_req::Host for Session {
         Ok(())
     }
 
-    async fn downstream_client_h2_fingerprint(&mut self) -> Result<Vec<u8>, types::FastlyError> {
+    async fn downstream_client_h2_fingerprint(&mut self) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client H2 fingerprint").into())
     }
 
-    async fn downstream_client_request_id(&mut self) -> Result<String, types::FastlyError> {
+    async fn downstream_client_request_id(&mut self) -> Result<String, FastlyError> {
         Ok(format!("{:032x}", self.req_id()))
     }
 
-    async fn original_header_names_get(&mut self) -> Result<Vec<String>, types::FastlyError> {
+    async fn original_header_names_get(&mut self) -> Result<Vec<String>, FastlyError> {
         Ok(self
             .downstream_original_headers()
             .keys()
@@ -605,7 +595,7 @@ impl http_req::Host for Session {
             .collect())
     }
 
-    async fn original_header_count(&mut self) -> Result<u32, types::FastlyError> {
+    async fn original_header_count(&mut self) -> Result<u32, FastlyError> {
         Ok(self
             .downstream_original_headers()
             .len()

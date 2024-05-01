@@ -1,5 +1,5 @@
 use {
-    super::fastly::compute_at_edge::{http_types, types},
+    super::fastly::api::{http_types, types},
     crate::session::Session,
 };
 
