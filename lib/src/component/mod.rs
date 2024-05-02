@@ -1,15 +1,44 @@
 use {crate::linking::ComponentCtx, wasmtime::component};
 
-pub(crate) enum FastlyError {
+pub enum FastlyError {
     FastlyError(anyhow::Error),
     Trap(anyhow::Error),
+}
+
+impl FastlyError {
+    pub fn with_empty_detail<T>(
+        self,
+    ) -> wasmtime::Result<
+        Result<
+            T,
+            (
+                Option<fastly::api::http_req::SendErrorDetail>,
+                fastly::api::types::Error,
+            ),
+        >,
+    > {
+        match self {
+            Self::FastlyError(e) => match e.downcast() {
+                Ok(e) => Ok(Err((None, e))),
+                Err(e) => Err(e),
+            },
+            Self::Trap(e) => Err(e),
+        }
+    }
 }
 
 component::bindgen!({
     path: "wit",
     world: "fastly:api/compute",
-    tracing: true,
     async: true,
+    with: {
+        "fastly:api/uap/user-agent": uap::UserAgent,
+
+        "wasi:clocks": wasmtime_wasi::bindings::clocks,
+        "wasi:random": wasmtime_wasi::bindings::random,
+        "wasi:io": wasmtime_wasi::bindings::io,
+        "wasi:cli": wasmtime_wasi::bindings::cli,
+    },
     trappable_error_type: {
         "fastly:api/types/error" => FastlyError
     },
@@ -21,6 +50,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::random::random::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::filesystem::types::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::filesystem::preopens::add_to_linker(linker, |x| x)?;
+    wasmtime_wasi::bindings::io::error::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::io::streams::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::environment::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::exit::add_to_linker(linker, |x| x)?;
@@ -28,6 +58,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::cli::stdout::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::stderr::add_to_linker(linker, |x| x)?;
 
+    fastly::api::fastly_abi::add_to_linker(linker, ComponentCtx::session)?;
     fastly::api::async_io::add_to_linker(linker, |x| x.session())?;
     fastly::api::backend::add_to_linker(linker, |x| x.session())?;
     fastly::api::cache::add_to_linker(linker, |x| x.session())?;
@@ -52,7 +83,9 @@ pub mod backend;
 pub mod cache;
 pub mod dictionary;
 pub mod error;
+pub mod fastly_abi;
 pub mod geo;
+pub mod headers;
 pub mod http_body;
 pub mod http_req;
 pub mod http_resp;

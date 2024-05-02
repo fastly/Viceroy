@@ -141,10 +141,10 @@ interface uap {
   use types.{error};
 
   resource user-agent {
-    family: func() -> string;
-    major: func() -> string;
-    minor: func() -> string;
-    patch: func() -> string;
+    family: func(max-len: u64) -> string;
+    major: func(max-len: u64) -> string;
+    minor: func(max-len: u64) -> string;
+    patch: func(max-len: u64) -> string;
   }
 
   parse: func(user-agent: string) -> result<user-agent, error>;
@@ -844,12 +844,28 @@ interface cache {
   type duration-ns = u64;
   type cache-hit-count = u64;
 
+  flags lookup-options-mask {
+    request-headers,
+  }
+
   /// Extensible options for cache lookup operations; currently used for both `lookup` and `transaction_lookup`.
   record lookup-options {
     /**
      * A full request handle, but used only for its headers
      */
-    request-headers: option<request-handle>,
+    request-headers: request-handle,
+  }
+
+  flags write-options-mask {
+    reserved,
+    request-headers,
+    vary-rule,
+    initial-age-ns,
+    stale-while-revalidate-ns,
+    surrogate-keys,
+    length,
+    user-metadata,
+    sensitive-data,
   }
 
   /// Configuration for several hostcalls that write to the cache:
@@ -876,12 +892,17 @@ interface cache {
     surrogate-keys: string,
     length: object-length,
     user-metadata: list<u8>,
-    sensitive-data: bool,
+  }
+
+  flags get-body-options-mask {
+    reserved,
+    %from,
+    to,
   }
 
   record get-body-options {
-    start: u64,
-    end: u64,
+    %from: u64,
+    to: u64,
   }
 
   /// The status of this lookup (and potential transaction)
@@ -899,21 +920,31 @@ interface cache {
   /// Performs a non-request-collapsing cache lookup.
   ///
   /// Returns a result without waiting for any request collapsing that may be ongoing.
-  lookup: func(key: string, options: lookup-options) -> result<handle, error>;
+  lookup: func(
+    key: string,
+    mask: lookup-options-mask,
+    options: lookup-options,
+  ) -> result<handle, error>;
 
   /// Performs a non-request-collapsing cache insertion (or update).
   ///
   /// The returned handle is to a streaming body that is used for writing the object into
   /// the cache.
-  insert: func(key: string, options: write-options) -> result<body-handle,
-error>;
+  insert: func(
+    key: string,
+    options-mask: write-options-mask,
+    options: write-options,
+  ) -> result<body-handle, error>;
 
   /// The entrypoint to the request-collapsing cache transaction API.
   ///
   /// This operation always participates in request collapsing and may return stale objects. To bypass
   /// request collapsing, use `lookup` and `insert` instead.
-  transaction-lookup: func(key: string, options: lookup-options) ->
-result<handle, error>;
+  transaction-lookup: func(
+    key: string,
+    mask: lookup-options-mask,
+    options: lookup-options,
+  ) -> result<handle, error>;
 
   /// Insert an object into the cache with the given metadata.
   ///
@@ -921,8 +952,11 @@ result<handle, error>;
   ///
   /// The returned handle is to a streaming body that is used for writing the object into
   /// the cache.
-  transaction-insert: func(handle: handle, options: write-options) ->
-result<body-handle, error>;
+  transaction-insert: func(
+    handle: handle,
+    mask: write-options-mask,
+    options: write-options,
+  ) -> result<body-handle, error>;
 
   /// Insert an object into the cache with the given metadata, and return a readable stream of the
   /// bytes as they are stored.
@@ -934,20 +968,29 @@ result<body-handle, error>;
   /// The returned body handle is to a streaming body that is used for writing the object _into_
   /// the cache. The returned cache handle provides a separate transaction for reading out the
   /// newly cached object to send elsewhere.
-  transaction-insert-and-stream-back: func(handle: handle, options:
-write-options) -> result<tuple<body-handle, handle>, error>;
+  transaction-insert-and-stream-back: func(
+    handle: handle,
+    mask: write-options-mask,
+    options: write-options,
+  ) -> result<tuple<body-handle, handle>, error>;
 
   /// Update the metadata of an object in the cache without changing its data.
   ///
   /// Can only be used in if the cache handle state includes both of the flags:
   /// - `found`
   /// - `must-insert-or-update`
-  transaction-update: func(handle: handle) -> result<_, error>;
+  transaction-update: func(
+    handle: handle,
+    mask: write-options-mask,
+    options: write-options,
+  ) -> result<_, error>;
 
   /// Cancel an obligation to provide an object to the cache.
   ///
   /// Useful if there is an error before streaming is possible, e.g. if a backend is unreachable.
   transaction-cancel: func(handle: handle) -> result<_, error>;
+
+  close: func(handle: handle) -> result<_, error>;
 
   get-state: func(handle: handle) -> result<lookup-state, error>;
 
@@ -964,8 +1007,11 @@ write-options) -> result<tuple<body-handle, handle>, error>;
   /// Note: until the CacheD protocol is adjusted to fully support this functionality,
   /// the body of objects that are past the stale-while-revalidate period will not
   /// be available, even when other metadata is.
-  get-body: func(handle: handle, options: get-body-options) ->
-result<body-handle, error>;
+  get-body: func(
+    handle: handle,
+    mask: get-body-options-mask,
+    options: get-body-options,
+  ) -> result<body-handle, error>;
 
   /// Gets the content length of the found object, returning the `$none` error if there
   /// was no found object, or no content length was provided.
@@ -1001,6 +1047,8 @@ interface reactor {
 world compute {
     import wasi:clocks/wall-clock@0.2.0;
     import wasi:clocks/monotonic-clock@0.2.0;
+    import wasi:io/error@0.2.0;
+    import wasi:io/streams@0.2.0;
     import wasi:random/random@0.2.0;
     import wasi:cli/stdout@0.2.0;
     import wasi:cli/stderr@0.2.0;
@@ -1017,7 +1065,6 @@ world compute {
     import http-body;
     import http-req;
     import http-resp;
-    import http-types;
     import log;
     import kv-store;
     import purge;

@@ -1,6 +1,9 @@
 use {
-    super::fastly::api::{http_req, http_types, types},
-    super::FastlyError,
+    super::{
+        fastly::api::{http_req, http_types, types},
+        headers::write_values,
+        FastlyError,
+    },
     crate::{
         config::{Backend, ClientCertInfo},
         error::Error,
@@ -15,30 +18,69 @@ use {
         request::Request,
         Method, Uri,
     },
+    std::str::FromStr,
 };
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
 impl http_req::Host for Session {
-    async fn method_get(&mut self, h: http_types::RequestHandle) -> Result<String, FastlyError> {
+    async fn method_get(
+        &mut self,
+        h: http_types::RequestHandle,
+        max_len: u64,
+    ) -> Result<String, FastlyError> {
         let req = self.request_parts(h.into())?;
         let req_method = &req.method;
+
+        if req_method.as_str().len() > usize::try_from(max_len).unwrap() {
+            return Err(Error::BufferLengthError {
+                buf: "method",
+                len: "method_max_len",
+            }
+            .into());
+        }
+
         Ok(req_method.to_string())
     }
 
-    async fn uri_get(&mut self, h: http_types::RequestHandle) -> Result<String, FastlyError> {
+    async fn uri_get(
+        &mut self,
+        h: http_types::RequestHandle,
+        max_len: u64,
+    ) -> Result<String, FastlyError> {
         let req = self.request_parts(h.into())?;
         let req_uri = &req.uri;
-        Ok(req_uri.to_string())
+        let res = req_uri.to_string();
+
+        if res.len() > usize::try_from(max_len).unwrap() {
+            return Err(Error::BufferLengthError {
+                buf: "reqid_out",
+                len: "reqid_max_len",
+            }
+            .into());
+        }
+
+        Ok(res)
     }
 
     async fn cache_override_set(
         &mut self,
         _h: http_types::RequestHandle,
         _tag: http_req::CacheOverrideTag,
-        _ttl: Option<u32>,
-        _stale_while_revalidate: Option<u32>,
+        _ttl: u32,
+        _stale_while_revalidate: u32,
+    ) -> Result<(), FastlyError> {
+        // For now, we ignore caching directives because we never cache anything
+        Ok(())
+    }
+
+    async fn cache_override_v2_set(
+        &mut self,
+        _h: http_types::RequestHandle,
+        _tag: http_req::CacheOverrideTag,
+        _ttl: u32,
+        _stale_while_revalidate: u32,
         _sk: Option<String>,
     ) -> Result<(), FastlyError> {
         // For now, we ignore caching directives because we never cache anything
@@ -61,23 +103,35 @@ impl http_req::Host for Session {
         }
     }
 
-    async fn downstream_tls_cipher_openssl_name(&mut self) -> Result<String, FastlyError> {
+    async fn downstream_server_ip_addr(&mut self) -> Result<Vec<u8>, FastlyError> {
+        Err(Error::NotAvailable("Downstream server ip address").into())
+    }
+
+    async fn downstream_tls_cipher_openssl_name(
+        &mut self,
+        _max_len: u64,
+    ) -> Result<String, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_protocol(&mut self) -> Result<String, FastlyError> {
+    async fn downstream_tls_protocol(&mut self, _max_len: u64) -> Result<String, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_client_hello(&mut self) -> Result<Vec<u8>, FastlyError> {
+    async fn downstream_tls_client_hello(&mut self, _max_len: u64) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_raw_client_certificate(&mut self) -> Result<Vec<u8>, FastlyError> {
+    async fn downstream_tls_raw_client_certificate(
+        &mut self,
+        _max_len: u64,
+    ) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_client_cert_verify_result(&mut self) -> Result<(), FastlyError> {
+    async fn downstream_tls_client_cert_verify_result(
+        &mut self,
+    ) -> Result<http_req::ClientCertVerifyResult, FastlyError> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
@@ -93,58 +147,83 @@ impl http_req::Host for Session {
     async fn header_names_get(
         &mut self,
         h: http_types::RequestHandle,
-    ) -> Result<Vec<String>, FastlyError> {
+        max_len: u64,
+        cursor: u32,
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
         let headers = &self.request_parts(h.into())?.headers;
-        Ok(headers
-            .keys()
-            .map(|name| String::from(name.as_str()))
-            .collect())
+
+        let (buf, next) = write_values(
+            headers.keys(),
+            b'\0',
+            usize::try_from(max_len).unwrap(),
+            cursor,
+        );
+
+        if buf.is_empty() && next.is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some((buf, next)))
     }
 
     async fn header_value_get(
         &mut self,
         h: http_types::RequestHandle,
         name: String,
+        max_len: u64,
     ) -> Result<Option<String>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
 
         let headers = &self.request_parts(h.into())?.headers;
-        if let Some(value) = headers.get(&name) {
-            Ok(Some(String::from(value.to_str()?)))
+        let value = if let Some(value) = headers.get(&name) {
+            value
         } else {
-            Ok(None)
+            return Ok(None);
+        };
+
+        if value.len() > usize::try_from(max_len).unwrap() {
+            return Err(Error::BufferLengthError {
+                buf: "value",
+                len: "value_max_len",
+            }
+            .into());
         }
+
+        Ok(Some(String::from(value.to_str()?)))
     }
 
     async fn header_values_get(
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-    ) -> Result<Option<Vec<String>>, FastlyError> {
-        if name.len() > MAX_HEADER_NAME_LEN {
-            return Err(Error::InvalidArgument.into());
-        }
-
+        max_len: u64,
+        cursor: u32,
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
         let headers = &self.request_parts(h.into())?.headers;
-        let mut values = Vec::new();
-        for value in headers.get_all(&name).iter() {
-            values.push(String::from(value.to_str()?));
+
+        let values = headers.get_all(HeaderName::from_str(&name)?);
+
+        let (buf, next) = write_values(
+            values.into_iter(),
+            b'\0',
+            usize::try_from(max_len).unwrap(),
+            cursor,
+        );
+
+        if buf.is_empty() && next.is_none() {
+            return Ok(None);
         }
 
-        if values.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(values))
-        }
+        Ok(Some((buf, next)))
     }
 
     async fn header_values_set(
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-        values: Vec<String>,
+        values: Vec<u8>,
     ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
@@ -160,8 +239,8 @@ impl http_req::Host for Session {
         }
 
         // Add all the new values
-        for value in values {
-            headers.append(&name, HeaderValue::from_bytes(value.as_bytes())?);
+        for value in values.split(|b| *b == 0) {
+            headers.append(&name, HeaderValue::from_bytes(value)?);
         }
 
         Ok(())
@@ -280,6 +359,22 @@ impl http_req::Host for Session {
         Ok((resp_handle.into(), body_handle.into()))
     }
 
+    async fn send_v2(
+        &mut self,
+        h: http_types::RequestHandle,
+        b: http_types::BodyHandle,
+        backend_name: String,
+    ) -> Result<
+        Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)>,
+        anyhow::Error,
+    > {
+        // This initial implementation ignores the error detail field
+        match self.send(h, b, backend_name).await {
+            Ok(r) => Ok(Ok(r)),
+            Err(e) => e.with_empty_detail(),
+        }
+    }
+
     async fn send_async(
         &mut self,
         h: http_types::RequestHandle,
@@ -340,6 +435,19 @@ impl http_req::Host for Session {
         }
     }
 
+    async fn pending_req_poll_v2(
+        &mut self,
+        h: http_types::PendingRequestHandle,
+    ) -> Result<
+        Result<Option<http_types::Response>, (Option<http_req::SendErrorDetail>, types::Error)>,
+        anyhow::Error,
+    > {
+        match self.pending_req_poll(h).await {
+            Ok(r) => Ok(Ok(r)),
+            Err(e) => e.with_empty_detail(),
+        }
+    }
+
     async fn pending_req_wait(
         &mut self,
         h: http_types::PendingRequestHandle,
@@ -347,6 +455,19 @@ impl http_req::Host for Session {
         let pending_req = self.take_pending_request(h.into())?.recv().await?;
         let (resp_handle, body_handle) = self.insert_response(pending_req);
         Ok((resp_handle.into(), body_handle.into()))
+    }
+
+    async fn pending_req_wait_v2(
+        &mut self,
+        h: http_types::PendingRequestHandle,
+    ) -> Result<
+        Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)>,
+        anyhow::Error,
+    > {
+        match self.pending_req_wait(h).await {
+            Ok(r) => Ok(Ok(r)),
+            Err(e) => e.with_empty_detail(),
+        }
     }
 
     async fn pending_req_select(
@@ -391,6 +512,23 @@ impl http_req::Host for Session {
         };
 
         Ok(outcome)
+    }
+
+    async fn pending_req_select_v2(
+        &mut self,
+        h: Vec<http_types::PendingRequestHandle>,
+    ) -> Result<
+        Result<(u32, http_types::Response), (Option<http_req::SendErrorDetail>, types::Error)>,
+        anyhow::Error,
+    > {
+        match self.pending_req_select(h).await {
+            Ok(r) => Ok(Ok(r)),
+            Err(e) => e.with_empty_detail(),
+        }
+    }
+
+    async fn fastly_key_is_valid(&mut self) -> Result<bool, FastlyError> {
+        Err(Error::NotAvailable("FASTLY_KEY is valid").into())
     }
 
     async fn close(&mut self, h: http_types::RequestHandle) -> Result<(), FastlyError> {
@@ -440,7 +578,23 @@ impl http_req::Host for Session {
         Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
     }
 
+    async fn redirect_to_websocket_proxy_v2(
+        &mut self,
+        _handle: http_req::RequestHandle,
+        _backend: String,
+    ) -> Result<(), FastlyError> {
+        Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
+    }
+
     async fn redirect_to_grip_proxy(&mut self, _backend: String) -> Result<(), FastlyError> {
+        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy").into())
+    }
+
+    async fn redirect_to_grip_proxy_v2(
+        &mut self,
+        _handle: http_req::RequestHandle,
+        _backend: String,
+    ) -> Result<(), FastlyError> {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy").into())
     }
 
@@ -461,60 +615,61 @@ impl http_req::Host for Session {
         &mut self,
         prefix: String,
         target: String,
+        options: http_types::BackendConfigOptions,
         config: http_types::DynamicBackendConfig,
     ) -> Result<(), FastlyError> {
         let name = prefix.as_str();
         let origin_name = target.as_str();
 
-        let override_host = if let Some(override_host) = config.host_override {
-            if override_host.is_empty() {
+        let override_host = if options.contains(http_types::BackendConfigOptions::HOST_OVERRIDE) {
+            if config.host_override.is_empty() {
                 return Err(types::Error::InvalidArgument.into());
             }
 
-            if override_host.len() > 1024 {
+            if config.host_override.len() > 1024 {
                 return Err(types::Error::InvalidArgument.into());
             }
 
-            Some(HeaderValue::from_bytes(override_host.as_bytes())?)
+            Some(HeaderValue::from_bytes(config.host_override.as_bytes())?)
         } else {
             None
         };
 
-        let scheme = if config.use_ssl.unwrap_or(false) {
+        let scheme = if options.contains(http_types::BackendConfigOptions::USE_SSL) {
             "https"
         } else {
             "http"
         };
 
-        let mut cert_host = if let Some(cert_host) = config.cert_hostname {
-            if cert_host.is_empty() {
+        let mut cert_host = if options.contains(http_types::BackendConfigOptions::CERT_HOSTNAME) {
+            if config.cert_hostname.is_empty() {
                 return Err(types::Error::InvalidArgument.into());
             }
 
-            if cert_host.len() > 1024 {
+            if config.cert_hostname.len() > 1024 {
                 return Err(types::Error::InvalidArgument.into());
             }
 
-            Some(cert_host)
+            Some(config.cert_hostname)
         } else {
             None
         };
 
-        let use_sni = if let Some(sni_hostname) = config.sni_hostname {
-            if sni_hostname.len() > 1024 {
+        let use_sni = if options.contains(http_types::BackendConfigOptions::SNI_HOSTNAME) {
+            if config.sni_hostname.len() > 1024 {
                 return Err(types::Error::InvalidArgument.into());
             }
 
-            if sni_hostname.is_empty() {
+            if config.sni_hostname.is_empty() {
                 false
             } else {
                 if let Some(cert_host) = &cert_host {
-                    if cert_host != &sni_hostname {
+                    if cert_host != &config.sni_hostname {
                         // because we're using rustls, we cannot support distinct SNI and cert hostnames
                         return Err(types::Error::InvalidArgument.into());
                     }
                 } else {
-                    cert_host = Some(sni_hostname.to_owned());
+                    cert_host = Some(config.sni_hostname);
                 }
 
                 true
@@ -523,11 +678,11 @@ impl http_req::Host for Session {
             true
         };
 
-        let client_cert = if let Some(cert) = config.client_cert {
+        let client_cert = if options.contains(http_types::BackendConfigOptions::CLIENT_CERT) {
             let key_lookup =
-                self.secret_lookup(cert.client_key.into())
+                self.secret_lookup(config.client_key.into())
                     .ok_or(Error::SecretStoreError(
-                        SecretStoreError::InvalidSecretHandle(cert.client_key.into()),
+                        SecretStoreError::InvalidSecretHandle(config.client_key.into()),
                     ))?;
             let key = match &key_lookup {
                 SecretLookup::Standard {
@@ -537,21 +692,18 @@ impl http_req::Host for Session {
                     .secret_stores()
                     .get_store(store_name)
                     .ok_or(Error::SecretStoreError(
-                        SecretStoreError::InvalidSecretHandle(cert.client_key.into()),
+                        SecretStoreError::InvalidSecretHandle(config.client_key.into()),
                     ))?
                     .get_secret(secret_name)
                     .ok_or(Error::SecretStoreError(
-                        SecretStoreError::InvalidSecretHandle(cert.client_key.into()),
+                        SecretStoreError::InvalidSecretHandle(config.client_key.into()),
                     ))?
                     .plaintext(),
 
                 SecretLookup::Injected { plaintext } => plaintext,
             };
 
-            Some(ClientCertInfo::new(
-                cert.client_cert.as_str().as_bytes(),
-                key,
-            )?)
+            Some(ClientCertInfo::new(config.client_cert.as_bytes(), key)?)
         } else {
             None
         };
@@ -579,20 +731,51 @@ impl http_req::Host for Session {
         Ok(())
     }
 
-    async fn downstream_client_h2_fingerprint(&mut self) -> Result<Vec<u8>, FastlyError> {
+    async fn downstream_client_h2_fingerprint(
+        &mut self,
+        _max_len: u64,
+    ) -> Result<Vec<u8>, FastlyError> {
         Err(Error::NotAvailable("Client H2 fingerprint").into())
     }
 
-    async fn downstream_client_request_id(&mut self) -> Result<String, FastlyError> {
-        Ok(format!("{:032x}", self.req_id()))
+    async fn downstream_client_request_id(&mut self, max_len: u64) -> Result<String, FastlyError> {
+        let result = format!("{:032x}", self.req_id());
+
+        if result.len() > usize::try_from(max_len).unwrap() {
+            return Err(Error::BufferLengthError {
+                buf: "reqid_out",
+                len: "reqid_max_len",
+            }
+            .into());
+        }
+
+        Ok(result)
     }
 
-    async fn original_header_names_get(&mut self) -> Result<Vec<String>, FastlyError> {
-        Ok(self
-            .downstream_original_headers()
-            .keys()
-            .map(|name| String::from(name.as_str()))
-            .collect())
+    async fn downstream_client_oh_fingerprint(
+        &mut self,
+        _max_len: u64,
+    ) -> Result<Vec<u8>, FastlyError> {
+        Err(Error::NotAvailable("Client original header fingerprint").into())
+    }
+
+    async fn downstream_tls_ja4(&mut self, _max_len: u64) -> Result<Vec<u8>, FastlyError> {
+        Err(Error::NotAvailable("Client TLS JA4 hash").into())
+    }
+
+    async fn downstream_compliance_region(
+        &mut self,
+        _max_len: u64,
+    ) -> Result<Vec<u8>, FastlyError> {
+        Err(Error::NotAvailable("Client TLS JA4 hash").into())
+    }
+
+    async fn original_header_names_get(
+        &mut self,
+        _max_len: u64,
+        _cursor: u32,
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
+        Err(Error::NotAvailable("Client Compliance Region").into())
     }
 
     async fn original_header_count(&mut self) -> Result<u32, FastlyError> {

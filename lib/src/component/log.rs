@@ -29,10 +29,10 @@ impl log::Host for Session {
         Ok(self.log_endpoint_handle(name).into())
     }
 
-    async fn write(&mut self, h: log::Handle, msg: String) -> Result<(), FastlyError> {
+    async fn write(&mut self, h: log::Handle, msg: String) -> Result<u64, FastlyError> {
         let endpoint = self.log_endpoint(h.into())?;
         let msg = msg.as_bytes();
         endpoint.write_entry(&msg)?;
-        Ok(())
+        Ok(u64::try_from(msg.len()).unwrap())
     }
 }

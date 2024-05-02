@@ -15,6 +15,12 @@ use {
     },
 };
 
+impl From<types::Error> for FastlyError {
+    fn from(err: types::Error) -> Self {
+        Self::FastlyError(err.into())
+    }
+}
+
 impl From<HandleError> for FastlyError {
     fn from(_: HandleError) -> Self {
         types::Error::BadHandle.into()
@@ -195,7 +201,7 @@ impl From<error::Error> for FastlyError {
             | Error::UnfinishedStreamingBody
             | Error::ValueAbsent
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse{ .. }
+            | Error::InvalidAlpnRepsonse { .. }
             | Error::DeviceDetectionError(_)
             | Error::Again
             | Error::SharedMemory => types::Error::GenericError.into(),

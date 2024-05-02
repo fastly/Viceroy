@@ -26,17 +26,39 @@ impl backend::Host for Session {
         }
     }
 
-    async fn get_host(&mut self, backend: String) -> Result<String, FastlyError> {
+    async fn get_host(&mut self, backend: String, max_len: u64) -> Result<String, FastlyError> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
-        Ok(String::from(
-            backend.uri.host().expect("backend uri has host"),
-        ))
+
+        let host = backend.uri.host().expect("backend uri has host");
+
+        if host.len() > usize::try_from(max_len).unwrap() {
+            return Err(Error::BufferLengthError {
+                buf: "host_out",
+                len: "host_max_len",
+            }
+            .into());
+        }
+
+        Ok(String::from(host))
     }
 
-    async fn get_override_host(&mut self, backend: String) -> Result<Option<String>, FastlyError> {
+    async fn get_override_host(
+        &mut self,
+        backend: String,
+        max_len: u64,
+    ) -> Result<Option<String>, FastlyError> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         if let Some(host) = backend.override_host.as_ref() {
             let host = host.to_str()?;
+
+            if host.len() > usize::try_from(max_len).unwrap() {
+                return Err(Error::BufferLengthError {
+                    buf: "host_out",
+                    len: "host_max_len",
+                }
+                .into());
+            }
+
             Ok(Some(String::from(host)))
         } else {
             Ok(None)

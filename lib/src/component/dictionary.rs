@@ -15,6 +15,7 @@ impl dictionary::Host for Session {
         &mut self,
         h: dictionary::Handle,
         key: String,
+        max_len: u64,
     ) -> Result<Option<String>, FastlyError> {
         let dict = self
             .dictionary(h.into())?
@@ -25,6 +26,14 @@ impl dictionary::Host for Session {
         let item = dict
             .get(key)
             .ok_or_else(|| FastlyError::from(types::Error::OptionalNone))?;
+
+        if item.len() > usize::try_from(max_len).unwrap() {
+            return Err(error::Error::BufferLengthError {
+                buf: "item_out",
+                len: "item_max_len",
+            }
+            .into());
+        }
 
         Ok(Some(item.clone()))
     }

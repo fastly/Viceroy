@@ -4,7 +4,7 @@ use {
     crate::{
         body::Body,
         error::Error,
-        kv_store::{ObjectKey, ObjectStoreError},
+        object_store::{ObjectKey, ObjectStoreError},
         secret_store::SecretLookup,
         session::Session,
         wiggle_abi::SecretStoreError,
@@ -45,6 +45,7 @@ impl secret_store::Host for Session {
     async fn plaintext(
         &mut self,
         secret: secret_store::SecretHandle,
+        max_len: u64,
     ) -> Result<Option<String>, FastlyError> {
         let lookup = self
             .secret_lookup(secret.into())
@@ -70,6 +71,14 @@ impl secret_store::Host for Session {
 
             SecretLookup::Injected { plaintext } => plaintext,
         };
+
+        if plaintext.len() > usize::try_from(max_len).unwrap() {
+            return Err(Error::BufferLengthError {
+                buf: "plaintext",
+                len: "plaintext_max_len",
+            }
+            .into());
+        }
 
         Ok(Some(String::from(std::str::from_utf8(plaintext)?)))
     }

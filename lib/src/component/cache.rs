@@ -9,6 +9,7 @@ impl cache::Host for Session {
     async fn lookup(
         &mut self,
         _key: String,
+        _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, FastlyError> {
         Err(Error::Unsupported {
@@ -20,6 +21,7 @@ impl cache::Host for Session {
     async fn insert(
         &mut self,
         _key: String,
+        _options_mask: cache::WriteOptionsMask,
         _options: cache::WriteOptions,
     ) -> Result<cache::BodyHandle, FastlyError> {
         Err(Error::Unsupported {
@@ -31,6 +33,7 @@ impl cache::Host for Session {
     async fn get_body(
         &mut self,
         _handle: cache::Handle,
+        _options_mask: cache::GetBodyOptionsMask,
         _options: cache::GetBodyOptions,
     ) -> Result<http_types::BodyHandle, FastlyError> {
         Err(Error::Unsupported {
@@ -42,6 +45,7 @@ impl cache::Host for Session {
     async fn transaction_lookup(
         &mut self,
         _key: String,
+        _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, FastlyError> {
         Err(Error::Unsupported {
@@ -53,6 +57,7 @@ impl cache::Host for Session {
     async fn transaction_insert(
         &mut self,
         _handle: cache::Handle,
+        _options_mask: cache::WriteOptionsMask,
         _options: cache::WriteOptions,
     ) -> Result<http_types::BodyHandle, FastlyError> {
         Err(Error::Unsupported {
@@ -64,6 +69,7 @@ impl cache::Host for Session {
     async fn transaction_insert_and_stream_back(
         &mut self,
         _handle: cache::Handle,
+        _options_mask: cache::WriteOptionsMask,
         _options: cache::WriteOptions,
     ) -> Result<(http_types::BodyHandle, cache::Handle), FastlyError> {
         Err(Error::Unsupported {
@@ -72,7 +78,12 @@ impl cache::Host for Session {
         .into())
     }
 
-    async fn transaction_update(&mut self, _handle: cache::Handle) -> Result<(), FastlyError> {
+    async fn transaction_update(
+        &mut self,
+        _handle: cache::Handle,
+        _options_mask: cache::WriteOptionsMask,
+        _options: cache::WriteOptions,
+    ) -> Result<(), FastlyError> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -80,6 +91,13 @@ impl cache::Host for Session {
     }
 
     async fn transaction_cancel(&mut self, _handle: cache::Handle) -> Result<(), FastlyError> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn close(&mut self, _handle: cache::Handle) -> Result<(), FastlyError> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }

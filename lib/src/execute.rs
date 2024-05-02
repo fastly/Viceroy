@@ -9,7 +9,7 @@ use crate::config::UnknownImportBehavior;
 use {
     crate::{
         body::Body,
-        component as xqd,
+        component as compute,
         config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
@@ -124,7 +124,7 @@ impl ExecuteCtx {
         let engine = Engine::new(config)?;
         let instance_pre = if is_component {
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
-            xqd::link_host_functions(&mut linker)?;
+            compute::link_host_functions(&mut linker)?;
             let component = Component::from_binary(&engine, &input)?;
             let instance_pre = linker.instantiate_pre(&component)?;
             Instance::Component(instance_pre)
@@ -380,16 +380,16 @@ impl ExecuteCtx {
             let req = session.downstream_request();
             let body = session.downstream_request_body();
 
-            let mut store = ComponentCtx::create_store(&self, &[], session, None)
+            let mut store = ComponentCtx::create_store(&self, session, None, |_| {})
                 .map_err(ExecutionError::Context)?;
 
-            let (xqd, _instance) = xqd::Xqd::instantiate_pre(&mut store, instance_pre)
+            let (compute, _instance) = compute::Compute::instantiate_pre(&mut store, instance_pre)
                 .await
                 .map_err(ExecutionError::Instantiation)?;
 
-            let result = xqd
-                .fastly_compute_at_edge_reactor()
-                .call_serve(&mut store, (req.into(), body.into()))
+            let result = compute
+                .fastly_api_reactor()
+                .call_serve(&mut store, req.into(), body.into())
                 .await
                 .map_err(ExecutionError::Typechecking)?;
 

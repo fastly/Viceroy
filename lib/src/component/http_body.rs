@@ -1,9 +1,16 @@
 use {
-    super::fastly::api::{http_body, http_types},
-    super::FastlyError,
-    crate::{body::Body, session::Session},
+    super::{
+        fastly::api::{http_body, http_types},
+        headers, FastlyError,
+    },
+    crate::{body::Body, error::Error, session::Session},
     ::http_body::Body as HttpBody,
+    http::header::{HeaderName, HeaderValue},
 };
+
+/// This constant reflects a similar constant within Hyper, which will panic
+/// if given header names longer than this value.
+pub const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
 impl http_body::Host for Session {
@@ -101,5 +108,146 @@ impl http_body::Host for Session {
         } else {
             Ok(self.drop_body(h.into())?)
         }
+    }
+
+    async fn known_length(&mut self, h: http_types::BodyHandle) -> Result<u64, FastlyError> {
+        if self.is_streaming_body(h.into()) {
+            Err(Error::ValueAbsent.into())
+        } else if let Some(len) = self.body_mut(h.into())?.len() {
+            Ok(len)
+        } else {
+            Err(Error::ValueAbsent.into())
+        }
+    }
+
+    async fn trailer_append(
+        &mut self,
+        h: http_types::BodyHandle,
+        name: String,
+        value: String,
+    ) -> Result<(), FastlyError> {
+        // Appending trailers is always allowed for bodies and streaming bodies.
+        if self.is_streaming_body(h.into()) {
+            let body = self.streaming_body_mut(h.into())?;
+            let name = HeaderName::from_bytes(name.as_bytes())?;
+            let value = HeaderValue::from_bytes(value.as_bytes())?;
+            body.append_trailer(name, value);
+            Ok(())
+        } else {
+            let trailers = &mut self.body_mut(h.into())?.trailers;
+            if name.len() > MAX_HEADER_NAME_LEN {
+                return Err(Error::InvalidArgument.into());
+            }
+
+            let name = HeaderName::from_bytes(name.as_bytes())?;
+            let value = HeaderValue::from_bytes(value.as_bytes())?;
+            trailers.append(name, value);
+            Ok(())
+        }
+    }
+
+    async fn trailer_names_get(
+        &mut self,
+        h: http_types::BodyHandle,
+        max_len: u64,
+        cursor: u32,
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
+        // Read operations are not allowed on streaming bodies.
+        if self.is_streaming_body(h.into()) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let body = self.body_mut(h.into())?;
+        if !body.trailers_ready {
+            return Err(Error::Again.into());
+        }
+
+        let trailers = &body.trailers;
+        let (buf, next) = headers::write_values(
+            trailers.keys(),
+            b'\0',
+            usize::try_from(max_len).unwrap(),
+            cursor,
+        );
+        if buf.is_empty() && next.is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some((buf, next)))
+    }
+
+    async fn trailer_value_get(
+        &mut self,
+        h: http_types::BodyHandle,
+        name: String,
+        max_len: u64,
+    ) -> Result<Option<String>, FastlyError> {
+        // Read operations are not allowed on streaming bodies.
+        if self.is_streaming_body(h.into()) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let body = &mut self.body_mut(h.into())?;
+        if !body.trailers_ready {
+            return Err(Error::Again.into());
+        }
+
+        let trailers = &mut body.trailers;
+        if name.len() > MAX_HEADER_NAME_LEN {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let value = {
+            let name = HeaderName::from_bytes(name.as_bytes())?;
+            if let Some(value) = trailers.get(&name) {
+                value
+            } else {
+                return Ok(None);
+            }
+        };
+
+        if value.len() > max_len as usize {
+            return Err(Error::BufferLengthError {
+                buf: "value",
+                len: "value_max_len",
+            }
+            .into());
+        }
+
+        // TODO: this will trap if the string conversion fails
+        Ok(Some(value.to_str()?.to_owned()))
+    }
+
+    async fn trailer_values_get(
+        &mut self,
+        h: http_types::BodyHandle,
+        name: String,
+        max_len: u64,
+        cursor: u32,
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
+        // Read operations are not allowed on streaming bodies.
+        if self.is_streaming_body(h.into()) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let body = &mut self.body_mut(h.into())?;
+        if !body.trailers_ready {
+            return Err(Error::Again.into());
+        }
+
+        let trailers = &mut body.trailers;
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let (buf, next) = headers::write_values(
+            trailers.get_all(&name).into_iter(),
+            b'\0',
+            usize::try_from(max_len).unwrap(),
+            cursor,
+        );
+
+        if buf.is_empty() && next.is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some((buf, next)))
     }
 }

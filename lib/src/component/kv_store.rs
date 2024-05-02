@@ -14,7 +14,7 @@ use {
 #[async_trait::async_trait]
 impl kv_store::Host for Session {
     async fn open(&mut self, name: String) -> Result<kv_store::Handle, FastlyError> {
-        if self.kv_store.store_exists(&name)? {
+        if self.object_store.store_exists(&name)? {
             let handle = self.obj_store_handle(&name)?;
             Ok(handle.into())
         } else {
@@ -101,7 +101,9 @@ impl kv_store::Host for Session {
         let fut = futures::future::ok(self.obj_insert(store, key, bytes));
         let task = PeekableTask::spawn(fut).await;
 
-        Ok(self.insert_pending_kv_insert(PendingKvInsertTask::new(task)))
+        Ok(self
+            .insert_pending_kv_insert(PendingKvInsertTask::new(task))
+            .into())
     }
 
     async fn pending_insert_wait(
@@ -125,7 +127,9 @@ impl kv_store::Host for Session {
         let fut = futures::future::ok(self.obj_delete(store, key));
         let task = PeekableTask::spawn(fut).await;
 
-        Ok(self.insert_pending_kv_delete(PendingKvDeleteTask::new(task)))
+        Ok(self
+            .insert_pending_kv_delete(PendingKvDeleteTask::new(task))
+            .into())
     }
 
     async fn pending_delete_wait(
@@ -135,7 +139,7 @@ impl kv_store::Host for Session {
         Ok((self
             .take_pending_kv_delete(handle.into())?
             .task()
+            .recv()
             .await?)?)
     }
-
 }

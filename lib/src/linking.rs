@@ -77,16 +77,17 @@ impl ComponentCtx {
     /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
     pub(crate) fn create_store<'a>(
         ctx: &ExecuteCtx,
-        args: &[&str],
         session: Session,
         guest_profiler: Option<GuestProfiler>,
+        extra_init: impl FnOnce(&mut WasiCtxBuilder),
     ) -> Result<Store<Self>, anyhow::Error> {
-        let mut table = wasmtime_wasi::ResourceTable::new();
-        let wasi = make_wasi_preview2_ctx(ctx, args, &session, &mut table)
-            .context("creating Wasi context")?;
+        let mut builder = make_wasi_ctx(ctx, &session);
+
+        extra_init(&mut builder);
+
         let wasm_ctx = Self {
-            table,
-            wasi,
+            table: wasmtime_wasi::ResourceTable::new(),
+            wasi: builder.build(),
             session,
             guest_profiler: guest_profiler.map(Box::new),
             limiter: Limiter::default(),
@@ -103,50 +104,6 @@ impl ComponentCtx {
         store.limiter(|ctx| &mut ctx.limiter);
         Ok(store)
     }
-}
-
-/// Constructs a fresh `WasiCtx` for _each_ incoming request.
-fn make_wasi_preview2_ctx(
-    ctx: &ExecuteCtx,
-    args: &[&str],
-    session: &Session,
-    table: &mut wasmtime_wasi::ResourceTable,
-) -> wasmtime_wasi::WasiCtx {
-    let mut wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new();
-
-    // Viceroy provides a subset of the `FASTLY_*` environment variables that the production
-    // Compute@Edge platform provides:
-
-    // signal that we're in a local testing environment
-    wasi_ctx.env("FASTLY_HOSTNAME".to_string(), "localhost".to_string());
-
-    // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
-    wasi_ctx.env(
-        "FASTLY_TRACE_ID".to_string(),
-        &format!("{:032x}", session.req_id()),
-    );
-
-    if !args.is_empty() {
-        wasi_ctx.args(args);
-    }
-
-    if ctx.log_stdout() {
-        let pipe =
-            wasmtime_wasi::pipe::AsyncWriteStream::new(usize::MAX, LogEndpoint::new(b"stdout"));
-        wasi_ctx.stdout(pipe);
-    } else {
-        wasi_ctx.inherit_stdout();
-    }
-
-    if ctx.log_stderr() {
-        let pipe =
-            wasmtime_wasi::pipe::AsyncWriteStream::new(usize::MAX, LogEndpoint::new(b"stderr"));
-        wasi_ctx.stderr(pipe);
-    } else {
-        wasi_ctx.inherit_stderr();
-    }
-
-    wasi_ctx.build()
 }
 
 impl wasmtime_wasi::WasiView for ComponentCtx {
@@ -277,6 +234,7 @@ pub fn link_host_functions(
                 wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
             }
         })?;
+
     wasmtime_wasi::preview1::add_to_linker_async(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
