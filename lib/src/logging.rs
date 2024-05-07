@@ -57,7 +57,10 @@ impl LogEndpoint {
         }
         to_write.push(b'\n');
 
-        LOG_WRITER.lock().unwrap().write_all(&to_write)
+        eprintln!("locking");
+        LOG_WRITER.lock().unwrap().write_all(&to_write)?;
+        eprintln!("unlocking");
+        Ok(())
     }
 }
 
@@ -69,5 +72,36 @@ impl Write for LogEndpoint {
 
     fn flush(&mut self) -> io::Result<()> {
         LOG_WRITER.lock().unwrap().flush()
+    }
+}
+
+impl wasmtime_wasi::StdoutStream for LogEndpoint {
+    fn stream(&self) -> Box<dyn wasmtime_wasi::HostOutputStream> {
+        Box::new(LogEndpoint(self.0.clone()))
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+}
+
+#[wiggle::async_trait]
+impl wasmtime_wasi::Subscribe for LogEndpoint {
+    async fn ready(&mut self) {}
+}
+
+impl wasmtime_wasi::HostOutputStream for LogEndpoint {
+    fn write(&mut self, bytes: bytes::Bytes) -> wasmtime_wasi::StreamResult<()> {
+        self.write_entry(&bytes)
+            .map_err(|e| wasmtime_wasi::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+    }
+
+    fn flush(&mut self) -> wasmtime_wasi::StreamResult<()> {
+        <Self as Write>::flush(self)
+            .map_err(|e| wasmtime_wasi::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+    }
+
+    fn check_write(&mut self) -> wasmtime_wasi::StreamResult<usize> {
+        Ok(1024 * 1024)
     }
 }
