@@ -224,6 +224,7 @@ where
                         // If there's not enough room to write even a single value, that's an error.
                         // Write out the number of bytes necessary to fit this header value, or zero
                         // on overflow to signal an error condition.
+                        drop(buf);
                         nwritten_out.write(value_len_with_term.try_into().unwrap_or(0))?;
                         return Err(Error::BufferLengthError {
                             buf: "buf",
@@ -263,6 +264,7 @@ where
             types::MultiValueCursorResult::from(cursor as i64)
         };
 
+        drop(buf);
         nwritten_out.write(buf_offset.try_into().unwrap_or(0))?;
 
         Ok(ending_cursor)

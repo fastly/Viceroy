@@ -30,17 +30,18 @@ impl FastlyDeviceDetection for Session {
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let user_agent_slice = user_agent
-            .as_bytes()
-            .as_slice()?
-            .ok_or(Error::SharedMemory)?;
-        let user_agent_str = std::str::from_utf8(&user_agent_slice)?;
+        let result = {
+            let user_agent_slice = user_agent
+                .as_bytes()
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
+            let user_agent_str = std::str::from_utf8(&user_agent_slice)?;
 
-        let result = self
-            .device_detection_lookup(user_agent_str)
-            .ok_or_else(|| {
-                DeviceDetectionError::NoDeviceDetectionData(user_agent_str.to_string())
-            })?;
+            self.device_detection_lookup(user_agent_str)
+                .ok_or_else(|| {
+                    DeviceDetectionError::NoDeviceDetectionData(user_agent_str.to_string())
+                })?
+        };
 
         if result.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
@@ -52,12 +53,9 @@ impl FastlyDeviceDetection for Session {
         let result_len =
             u32::try_from(result.len()).expect("smaller than buf_len means it must fit");
 
-        let mut buf_ptr = buf
-            .as_array(result_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
+        buf.as_array(result_len)
+            .copy_from_slice(result.as_bytes())?;
 
-        buf_ptr.copy_from_slice(result.as_bytes());
         nwritten_out.write(result_len)?;
         Ok(())
     }

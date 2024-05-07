@@ -86,11 +86,7 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
         }
         let value_len =
             u32::try_from(value_bytes.len()).expect("smaller than value_max_len means it must fit");
-        let mut value_out = value_ptr
-            .as_array(value_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        value_out.copy_from_slice(value_bytes);
+        value_ptr.as_array(value_len).copy_from_slice(value_bytes)?;
         nwritten_out.write(value_len)?;
 
         Ok(())

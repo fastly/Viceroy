@@ -115,11 +115,9 @@ impl FastlySecretStore for Session {
         let plaintext_len = u32::try_from(plaintext.len())
             .expect("smaller than plaintext_max_len means it must fit");
 
-        let mut plaintext_out = plaintext_buf
+        plaintext_buf
             .as_array(plaintext_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        plaintext_out.copy_from_slice(plaintext);
+            .copy_from_slice(plaintext)?;
         nwritten_out.write(plaintext_len)?;
 
         Ok(())

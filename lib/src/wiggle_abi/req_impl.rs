@@ -73,22 +73,18 @@ impl FastlyHttpReq for Session {
                 let octets = addr.octets();
                 let octets_bytes = octets.len() as u32;
                 debug_assert_eq!(octets_bytes, 4);
-                let mut octets_slice = addr_octets_ptr
+                addr_octets_ptr
                     .as_array(octets_bytes)
-                    .as_slice_mut()?
-                    .ok_or(Error::SharedMemory)?;
-                octets_slice.copy_from_slice(&octets);
+                    .copy_from_slice(&octets)?;
                 Ok(octets_bytes)
             }
             IpAddr::V6(addr) => {
                 let octets = addr.octets();
                 let octets_bytes = octets.len() as u32;
                 debug_assert_eq!(octets_bytes, 16);
-                let mut octets_slice = addr_octets_ptr
+                addr_octets_ptr
                     .as_array(octets_bytes)
-                    .as_slice_mut()?
-                    .ok_or(Error::SharedMemory)?;
-                octets_slice.copy_from_slice(&octets);
+                    .copy_from_slice(&octets)?;
                 Ok(octets_bytes)
             }
         }
@@ -125,11 +121,9 @@ impl FastlyHttpReq for Session {
         let reqid_len =
             u32::try_from(reqid_bytes.len()).expect("smaller u32::MAX means it must fit");
 
-        let mut reqid_slice = reqid_out
+        reqid_out
             .as_array(reqid_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        reqid_slice.copy_from_slice(&reqid_bytes);
+            .copy_from_slice(&reqid_bytes)?;
         nwritten_out.write(reqid_len)?;
         Ok(())
     }
@@ -257,13 +251,17 @@ impl FastlyHttpReq for Session {
         backend_info_mask: BackendConfigOptions,
         backend_info: &GuestPtr<'a, DynamicBackendConfig<'a>>,
     ) -> Result<(), Error> {
-        let name_slice = name.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
-        let name = std::str::from_utf8(&name_slice)?;
-        let origin_name_slice = upstream_dynamic
-            .as_bytes()
-            .as_slice()?
-            .ok_or(Error::SharedMemory)?;
-        let origin_name = std::str::from_utf8(&origin_name_slice)?;
+        let name = {
+            let name_slice = name.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
+            std::str::from_utf8(&name_slice)?.to_owned()
+        };
+        let origin_name = {
+            let origin_name_slice = upstream_dynamic
+                .as_bytes()
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
+            std::str::from_utf8(&origin_name_slice)?.to_owned()
+        };
         let config = backend_info.read()?;
 
         // If someone set our reserved bit, error. We might need it, and we don't
@@ -427,8 +425,8 @@ impl FastlyHttpReq for Session {
             ca_certs,
         };
 
-        if !self.add_backend(name, new_backend) {
-            return Err(Error::BackendNameRegistryError(name.to_string()));
+        if !self.add_backend(&name, new_backend) {
+            return Err(Error::BackendNameRegistryError(name));
         }
 
         Ok(())
@@ -570,11 +568,8 @@ impl FastlyHttpReq for Session {
         let req_method_len = u32::try_from(req_method_bytes.len())
             .expect("smaller than method_max_len means it must fit");
 
-        let mut buf_slice = buf
-            .as_array(req_method_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_slice.copy_from_slice(&req_method_bytes);
+        buf.as_array(req_method_len)
+            .copy_from_slice(&req_method_bytes)?;
         nwritten_out.write(req_method_len)?;
 
         Ok(())
@@ -615,11 +610,7 @@ impl FastlyHttpReq for Session {
         let req_uri_len =
             u32::try_from(req_uri_bytes.len()).expect("smaller than uri_max_len means it must fit");
 
-        let mut buf_slice = buf
-            .as_array(req_uri_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_slice.copy_from_slice(&req_uri_bytes);
+        buf.as_array(req_uri_len).copy_from_slice(&req_uri_bytes)?;
         nwritten_out.write(req_uri_len)?;
 
         Ok(())
