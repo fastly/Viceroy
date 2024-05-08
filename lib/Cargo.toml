@@ -19,6 +19,7 @@ include = [
     "../CHANGELOG.md",
     "../SECURITY.md",
     "src/**/*",
+    "wit/**/*",
     "compute-at-edge-abi/**/*.witx",
 ]
 
