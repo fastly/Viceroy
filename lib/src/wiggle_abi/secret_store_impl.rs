@@ -128,11 +128,7 @@ impl FastlySecretStore for Session {
         plaintext_buf: &GuestPtr<'_, u8>,
         plaintext_len: u32,
     ) -> Result<SecretHandle, Error> {
-        let plaintext = plaintext_buf
-            .as_array(plaintext_len)
-            .as_slice()?
-            .ok_or(Error::SharedMemory)?
-            .to_vec();
+        let plaintext = plaintext_buf.as_array(plaintext_len).to_vec()?;
         Ok(self.add_secret(plaintext))
     }
 }
