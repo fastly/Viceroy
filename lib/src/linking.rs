@@ -5,11 +5,9 @@ use {
         config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint, session::Session,
         wiggle_abi, Error,
     },
-    anyhow::Context,
     std::collections::HashSet,
-    wasi_common::{pipe::WritePipe, WasiCtx},
     wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
-    wasmtime_wasi::WasiCtxBuilder,
+    wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
@@ -44,7 +42,7 @@ impl wasmtime::ResourceLimiter for Limiter {
 }
 
 pub struct WasmCtx {
-    wasi: WasiCtx,
+    wasi: WasiP1Ctx,
     wasi_nn: WasiNnCtx,
     session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
@@ -52,7 +50,7 @@ pub struct WasmCtx {
 }
 
 impl WasmCtx {
-    pub fn wasi(&mut self) -> &mut WasiCtx {
+    pub fn wasi(&mut self) -> &mut WasiP1Ctx {
         &mut self.wasi
     }
 
@@ -87,8 +85,13 @@ pub(crate) fn create_store(
     ctx: &ExecuteCtx,
     session: Session,
     guest_profiler: Option<GuestProfiler>,
+    extra_init: impl FnOnce(&mut WasiCtxBuilder),
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
-    let wasi = make_wasi_ctx(ctx, &session).context("creating Wasi context")?;
+    let mut builder = make_wasi_ctx(ctx, &session);
+
+    extra_init(&mut builder);
+
+    let wasi = builder.build_p1();
     let (backends, registry) = wasmtime_wasi_nn::preload(&[])?;
     let wasi_nn = WasiNnCtx::new(backends, registry);
     let wasm_ctx = WasmCtx {
@@ -102,7 +105,7 @@ pub(crate) fn create_store(
     store.set_epoch_deadline(1);
     store.epoch_deadline_callback(|mut store| {
         if let Some(mut prof) = store.data_mut().guest_profiler.take() {
-            prof.sample(&store);
+            prof.sample(&store, std::time::Duration::ZERO);
             store.data_mut().guest_profiler = Some(prof);
         }
         Ok(UpdateDeadline::Yield(1))
@@ -111,8 +114,8 @@ pub(crate) fn create_store(
     Ok(store)
 }
 
-/// Constructs a fresh `WasiCtx` for _each_ incoming request.
-fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow::Error> {
+/// Constructs a `WasiCtxBuilder` for _each_ incoming request.
+fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> WasiCtxBuilder {
     let mut wasi_ctx = WasiCtxBuilder::new();
 
     // Viceroy provides the same `FASTLY_*` environment variables that the production
@@ -120,29 +123,30 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> Result<WasiCtx, anyhow:
 
     wasi_ctx
         // These variables are stubbed out for compatibility
-        .env("FASTLY_CACHE_GENERATION", "0")?
-        .env("FASTLY_CUSTOMER_ID", "0000000000000000000000")?
-        .env("FASTLY_POP", "XXX")?
-        .env("FASTLY_REGION", "Somewhere")?
-        .env("FASTLY_SERVICE_ID", "0000000000000000000000")?
-        .env("FASTLY_SERVICE_VERSION", "0")?
+        .env("FASTLY_CACHE_GENERATION", "0")
+        .env("FASTLY_CUSTOMER_ID", "0000000000000000000000")
+        .env("FASTLY_POP", "XXX")
+        .env("FASTLY_REGION", "Somewhere")
+        .env("FASTLY_SERVICE_ID", "0000000000000000000000")
+        .env("FASTLY_SERVICE_VERSION", "0")
         // signal that we're in a local testing environment
-        .env("FASTLY_HOSTNAME", "localhost")?
+        .env("FASTLY_HOSTNAME", "localhost")
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
-        .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()))?;
+        .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()));
 
     if ctx.log_stdout() {
-        wasi_ctx.stdout(Box::new(WritePipe::new(LogEndpoint::new(b"stdout"))));
+        wasi_ctx.stdout(LogEndpoint::new(b"stdout"));
     } else {
         wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        wasi_ctx.stderr(Box::new(WritePipe::new(LogEndpoint::new(b"stderr"))));
+        wasi_ctx.stderr(LogEndpoint::new(b"stderr"));
     } else {
         wasi_ctx.inherit_stderr();
     }
-    Ok(wasi_ctx.build())
+
+    wasi_ctx
 }
 
 pub fn link_host_functions(
@@ -156,7 +160,7 @@ pub fn link_host_functions(
                 wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
             }
         })?;
-    wasmtime_wasi::add_to_linker(linker, WasmCtx::wasi)?;
+    wasmtime_wasi::preview1::add_to_linker_async(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::session)?;

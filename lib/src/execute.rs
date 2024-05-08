@@ -31,8 +31,8 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
-    wasi_common::I32Exit,
     wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
+    wasmtime_wasi::I32Exit,
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
@@ -364,7 +364,8 @@ impl ExecuteCtx {
         // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
         // However, the fact that the module itself is created within `ExecuteCtx::new`
         // means that the heavy lifting happens only once.
-        let mut store = create_store(&self, session, profiler).map_err(ExecutionError::Context)?;
+        let mut store =
+            create_store(&self, session, profiler, |_| {}).map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre
@@ -446,11 +447,13 @@ impl ExecuteCtx {
                 vec![(program_name.to_string(), self.module.clone())],
             )
         });
-        let mut store = create_store(&self, session, profiler).map_err(ExecutionError::Context)?;
-        store.data_mut().wasi().push_arg(program_name)?;
-        for arg in args {
-            store.data_mut().wasi().push_arg(arg)?;
-        }
+        let mut store = create_store(&self, session, profiler, |builder| {
+            builder.arg(program_name);
+            for arg in args {
+                builder.arg(arg);
+            }
+        })
+        .map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre

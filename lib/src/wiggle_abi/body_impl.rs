@@ -53,11 +53,6 @@ impl FastlyHttpBody for Session {
         buf: &GuestPtr<'a, u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let mut buf_slice = buf
-            .as_array(buf_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-
         // only normal bodies (not streaming bodies) can be read from
         let body = self.body_mut(body_handle)?;
 
@@ -65,9 +60,11 @@ impl FastlyHttpBody for Session {
             // pass up any error encountered when reading a chunk
             let mut chunk = chunk?;
             // split the chunk, saving any bytes that don't fit into the destination buffer
-            let extra_bytes = chunk.split_off(std::cmp::min(buf_len as usize, chunk.len()));
+            let copy_len = std::cmp::min(buf_len as usize, chunk.len());
+            let extra_bytes = chunk.split_off(copy_len);
             // `chunk.len()` is now the smaller of (1) the destination buffer and (2) the available data.
-            buf_slice[..chunk.len()].copy_from_slice(&chunk);
+            buf.as_array(u32::try_from(copy_len).unwrap())
+                .copy_from_slice(&chunk)?;
             // if there are leftover bytes, put them back at the front of the body
             if !extra_bytes.is_empty() {
                 body.push_front(extra_bytes);

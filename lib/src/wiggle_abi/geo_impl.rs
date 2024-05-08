@@ -48,11 +48,8 @@ impl FastlyGeo for Session {
         let result_len =
             u32::try_from(result.len()).expect("smaller than value_max_len means it must fit");
 
-        let mut buf_ptr = buf
-            .as_array(result_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_ptr.copy_from_slice(result.as_bytes());
+        buf.as_array(result_len)
+            .copy_from_slice(result.as_bytes())?;
         nwritten_out.write(result_len)?;
         Ok(())
     }

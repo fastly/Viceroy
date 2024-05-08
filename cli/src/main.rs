@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use wasi_common::I32Exit;
+use wasmtime_wasi::I32Exit;
 
 mod opts;
 
