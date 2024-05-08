@@ -57,10 +57,7 @@ impl LogEndpoint {
         }
         to_write.push(b'\n');
 
-        eprintln!("locking");
-        LOG_WRITER.lock().unwrap().write_all(&to_write)?;
-        eprintln!("unlocking");
-        Ok(())
+        LOG_WRITER.lock().unwrap().write_all(&to_write)
     }
 }
 
