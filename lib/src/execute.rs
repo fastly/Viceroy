@@ -109,6 +109,12 @@ impl ExecuteCtx {
     ) -> Result<Self, Error> {
         let input = fs::read(&module_path)?;
 
+        let is_wat = module_path
+            .as_ref()
+            .extension()
+            .map(|str| str == "wat")
+            .unwrap_or(false);
+
         let is_component = matches!(
             wasmparser::Parser::new(0).parse(&input, true),
             Ok(wasmparser::Chunk::Parsed {
@@ -125,13 +131,21 @@ impl ExecuteCtx {
         let instance_pre = if is_component {
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
             compute::link_host_functions(&mut linker)?;
-            let component = Component::from_binary(&engine, &input)?;
+            let component = if is_wat {
+                Component::from_file(&engine, &module_path)?
+            } else {
+                Component::from_binary(&engine, &input)?
+            };
             let instance_pre = linker.instantiate_pre(&component)?;
             Instance::Component(instance_pre)
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
-            let module = Module::from_binary(&engine, &input)?;
+            let module = if is_wat {
+                Module::from_file(&engine, &module_path)?
+            } else {
+                Module::from_binary(&engine, &input)?
+            };
             let instance_pre = linker.instantiate_pre(&module)?;
             Instance::Module(module, instance_pre)
         };
