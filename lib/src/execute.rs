@@ -105,7 +105,7 @@ impl ExecuteCtx {
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_path: Option<PathBuf>,
-        _unknown_import_behavior: UnknownImportBehavior,
+        unknown_import_behavior: UnknownImportBehavior,
     ) -> Result<Self, Error> {
         let input = fs::read(&module_path)?;
 
@@ -129,6 +129,12 @@ impl ExecuteCtx {
         let config = &configure_wasmtime(is_component, profiling_strategy);
         let engine = Engine::new(config)?;
         let instance_pre = if is_component {
+            assert_eq!(
+                unknown_import_behavior,
+                UnknownImportBehavior::LinkError,
+                "Wasm components do not support unknown import behaviors other than link-time errors",
+            );
+
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
             compute::link_host_functions(&mut linker)?;
             let component = if is_wat {
@@ -146,6 +152,15 @@ impl ExecuteCtx {
             } else {
                 Module::from_binary(&engine, &input)?
             };
+
+            match unknown_import_behavior {
+                UnknownImportBehavior::LinkError => (),
+                UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
+                UnknownImportBehavior::ZeroOrNull => {
+                    linker.define_unknown_imports_as_default_values(&module)?
+                }
+            }
+
             let instance_pre = linker.instantiate_pre(&module)?;
             Instance::Module(module, instance_pre)
         };
