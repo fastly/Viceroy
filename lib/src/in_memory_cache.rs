@@ -97,9 +97,10 @@ impl InMemoryCache {
 
         let surrogate_keys = if options_mask.contains(types::CacheWriteOptionsMask::SURROGATE_KEYS)
         {
-            if options.surrogate_keys_len == 0 {
-                return Err(Error::InvalidArgument);
-            }
+            // Unclear if needed.
+            // if options.surrogate_keys_len == 0 {
+            //     return Err(Error::InvalidArgument);
+            // }
 
             let byte_slice = options
                 .surrogate_keys_ptr
