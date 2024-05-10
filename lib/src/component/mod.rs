@@ -52,6 +52,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::filesystem::preopens::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::io::error::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::io::streams::add_to_linker(linker, |x| x)?;
+    wasmtime_wasi::bindings::io::poll::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::environment::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::exit::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::stdin::add_to_linker(linker, |x| x)?;
