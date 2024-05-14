@@ -124,13 +124,13 @@ impl http_body::Host for Session {
         &mut self,
         h: http_types::BodyHandle,
         name: String,
-        value: String,
+        value: Vec<u8>,
     ) -> Result<(), FastlyError> {
         // Appending trailers is always allowed for bodies and streaming bodies.
         if self.is_streaming_body(h.into()) {
             let body = self.streaming_body_mut(h.into())?;
             let name = HeaderName::from_bytes(name.as_bytes())?;
-            let value = HeaderValue::from_bytes(value.as_bytes())?;
+            let value = HeaderValue::from_bytes(value.as_slice())?;
             body.append_trailer(name, value);
             Ok(())
         } else {
@@ -140,7 +140,7 @@ impl http_body::Host for Session {
             }
 
             let name = HeaderName::from_bytes(name.as_bytes())?;
-            let value = HeaderValue::from_bytes(value.as_bytes())?;
+            let value = HeaderValue::from_bytes(value.as_slice())?;
             trailers.append(name, value);
             Ok(())
         }
@@ -181,7 +181,7 @@ impl http_body::Host for Session {
         h: http_types::BodyHandle,
         name: String,
         max_len: u64,
-    ) -> Result<Option<String>, FastlyError> {
+    ) -> Result<Option<Vec<u8>>, FastlyError> {
         // Read operations are not allowed on streaming bodies.
         if self.is_streaming_body(h.into()) {
             return Err(Error::InvalidArgument.into());
@@ -214,8 +214,7 @@ impl http_body::Host for Session {
             .into());
         }
 
-        // TODO: this will trap if the string conversion fails
-        Ok(Some(value.to_str()?.to_owned()))
+        Ok(Some(value.as_bytes().to_owned()))
     }
 
     async fn trailer_values_get(

@@ -39,7 +39,7 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         name: String,
-        value: String,
+        value: Vec<u8>,
     ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             Err(types::Error::InvalidArgument)?;
@@ -47,7 +47,7 @@ impl http_resp::Host for Session {
 
         let headers = &mut self.response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
-        let value = HeaderValue::from_bytes(value.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
         Ok(())
     }
@@ -100,7 +100,7 @@ impl http_resp::Host for Session {
         h: http_types::ResponseHandle,
         name: String,
         max_len: u64,
-    ) -> Result<Option<String>, FastlyError> {
+    ) -> Result<Option<Vec<u8>>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -120,7 +120,7 @@ impl http_resp::Host for Session {
             .into());
         }
 
-        Ok(Some(String::from(value.to_str()?)))
+        Ok(Some(value.as_bytes().to_owned()))
     }
 
     async fn header_values_get(
@@ -179,7 +179,7 @@ impl http_resp::Host for Session {
         &mut self,
         h: http_types::ResponseHandle,
         name: String,
-        value: String,
+        value: Vec<u8>,
     ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
@@ -187,7 +187,7 @@ impl http_resp::Host for Session {
 
         let headers = &mut self.response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
-        let value = HeaderValue::from_bytes(value.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
 
         Ok(())

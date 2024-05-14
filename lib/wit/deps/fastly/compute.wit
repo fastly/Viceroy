@@ -173,7 +173,7 @@ interface http-body {
   trailer-append: func(
     h: body-handle,
     name: string,
-    value: string,
+    value: list<u8>,
   ) -> result<_, error>;
 
   trailer-names-get: func(
@@ -186,7 +186,7 @@ interface http-body {
     h: body-handle,
     name: string,
     max-len: u64,
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 
   trailer-values-get: func(
     h: body-handle,
@@ -343,7 +343,7 @@ interface http-req {
     h: request-handle,
     name: string,
     max-len: u64,
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 
   header-values-get: func(
     h: request-handle,
@@ -358,12 +358,12 @@ interface http-req {
     values: list<u8>
   ) -> result<_, error>;
 
-  header-insert: func(h: request-handle, name: string, value: string) -> result<_, error>;
+  header-insert: func(h: request-handle, name: string, value: list<u8>) -> result<_, error>;
 
   header-append: func(
     h: request-handle,
     name: string,
-    value: string
+    value: list<u8>,
   ) -> result<_, error>;
 
   header-remove: func(h: request-handle, name: string) -> result<_, error>;
@@ -482,7 +482,7 @@ interface http-resp {
     h: response-handle,
     name: string,
     max-len: u64,
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 
   header-values-get: func(
     h: response-handle,
@@ -500,13 +500,13 @@ interface http-resp {
   header-insert: func(
     h: response-handle,
     name: string,
-    value: string,
+    value: list<u8>,
   ) -> result<_, error>;
 
   header-append: func(
     h: response-handle,
     name: string,
-    value: string,
+    value: list<u8>,
   ) -> result<_, error>;
 
   header-remove: func(

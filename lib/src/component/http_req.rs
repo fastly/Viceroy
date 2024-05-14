@@ -171,7 +171,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         name: String,
         max_len: u64,
-    ) -> Result<Option<String>, FastlyError> {
+    ) -> Result<Option<Vec<u8>>, FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
@@ -191,7 +191,7 @@ impl http_req::Host for Session {
             .into());
         }
 
-        Ok(Some(String::from(value.to_str()?)))
+        Ok(Some(value.as_bytes().to_owned()))
     }
 
     async fn header_values_get(
@@ -250,7 +250,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-        value: String,
+        value: Vec<u8>,
     ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
@@ -258,7 +258,7 @@ impl http_req::Host for Session {
 
         let headers = &mut self.request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
-        let value = HeaderValue::from_bytes(value.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
 
         Ok(())
@@ -268,7 +268,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
         name: String,
-        value: String,
+        value: Vec<u8>,
     ) -> Result<(), FastlyError> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
@@ -276,7 +276,7 @@ impl http_req::Host for Session {
 
         let headers = &mut self.request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
-        let value = HeaderValue::from_bytes(value.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
 
         Ok(())
