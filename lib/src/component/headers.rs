@@ -16,7 +16,8 @@ where
     let mut buf = Vec::with_capacity(max_len);
 
     let mut finished = true;
-    for item in iter.skip(usize::try_from(cursor).unwrap()) {
+    let skip_amt = usize::try_from(cursor).expect("u32 can fit in usize");
+    for item in iter.skip(skip_amt) {
         let bytes = item.as_ref();
 
         let needed = buf.len() + bytes.len() + 1;

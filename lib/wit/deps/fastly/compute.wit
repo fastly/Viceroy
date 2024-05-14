@@ -212,7 +212,7 @@ interface log {
 
   endpoint-get: func(name: string) -> result<handle, error>;
 
-  write: func(h: handle, msg: string) -> result<u64, error>;
+  write: func(h: handle, msg: string) -> result<u32, error>;
 }
 
 /*

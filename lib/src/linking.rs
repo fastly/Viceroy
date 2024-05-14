@@ -75,7 +75,7 @@ impl ComponentCtx {
     ///
     /// [ctx]: ../wiggle_abi/struct.ExecuteCtx.html
     /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
-    pub(crate) fn create_store<'a>(
+    pub(crate) fn create_store(
         ctx: &ExecuteCtx,
         session: Session,
         guest_profiler: Option<GuestProfiler>,
@@ -155,7 +155,7 @@ impl WasmCtx {
 ///
 /// [ctx]: ../wiggle_abi/struct.ExecuteCtx.html
 /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
-pub(crate) fn create_store<'a>(
+pub(crate) fn create_store(
     ctx: &ExecuteCtx,
     session: Session,
     guest_profiler: Option<GuestProfiler>,

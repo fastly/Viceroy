@@ -1,7 +1,23 @@
 use {crate::linking::ComponentCtx, wasmtime::component};
 
+/// This error type is used to classify two errors that can arise in a host-side implementation of
+/// the fastly api:
+///
+/// * Application errors that are recoverable, and returned to the guest, and
+/// * Traps that are expected to cause the guest to tear down immediately.
+///
+/// So a return type of `Result<T, FastlyError>` is  morally equivalent to
+/// `Result<Result<T, ApplicationError>, TrapError>`, but the former is much more pleasant to
+/// program with.
+///
+/// We write explicit `From` impls for errors that we raise throughout the implementation of the
+/// compute apis, so that we're able to make the choice between an application error and a trap.
 pub enum FastlyError {
+    /// An application error, that will be communicated back to the guest through the
+    /// `fastly:api/types/error` type.
     FastlyError(anyhow::Error),
+
+    /// An trap, which will cause wasmtime to immediately terminate the guest.
     Trap(anyhow::Error),
 }
 

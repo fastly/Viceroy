@@ -2,12 +2,7 @@ use {
     super::fastly::api::secret_store,
     super::FastlyError,
     crate::{
-        body::Body,
-        error::Error,
-        object_store::{ObjectKey, ObjectStoreError},
-        secret_store::SecretLookup,
-        session::Session,
-        wiggle_abi::SecretStoreError,
+        error::Error, secret_store::SecretLookup, session::Session, wiggle_abi::SecretStoreError,
     },
 };
 
@@ -27,19 +22,12 @@ impl secret_store::Host for Session {
         store: secret_store::StoreHandle,
         key: String,
     ) -> Result<Option<secret_store::SecretHandle>, FastlyError> {
-        let store = self.get_obj_store_key(store.into()).unwrap();
-        let key = ObjectKey::new(&key)?;
-        match self.obj_lookup(store, &key) {
-            Ok(obj) => {
-                let new_handle = self.insert_body(Body::from(obj));
-                Ok(Some(new_handle.into()))
-            }
-            // Don't write to the invalid handle as the SDK will return Ok(None)
-            // if the object does not exist. We need to return `Ok(())` here to
-            // make sure Viceroy does not crash
-            Err(ObjectStoreError::MissingObject) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
+        let store_name = self.secret_store_name(store.into()).ok_or_else(|| {
+            FastlyError::from(SecretStoreError::InvalidSecretStoreHandle(store.into()))
+        })?;
+        Ok(self
+            .secret_handle(&store_name, &key)
+            .map(secret_store::SecretHandle::from))
     }
 
     async fn plaintext(
