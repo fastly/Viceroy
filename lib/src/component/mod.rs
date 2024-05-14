@@ -75,7 +75,6 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::cli::stdout::add_to_linker(linker, |x| x)?;
     wasmtime_wasi::bindings::cli::stderr::add_to_linker(linker, |x| x)?;
 
-    fastly::api::fastly_abi::add_to_linker(linker, ComponentCtx::session)?;
     fastly::api::async_io::add_to_linker(linker, |x| x.session())?;
     fastly::api::backend::add_to_linker(linker, |x| x.session())?;
     fastly::api::cache::add_to_linker(linker, |x| x.session())?;
@@ -100,7 +99,6 @@ pub mod backend;
 pub mod cache;
 pub mod dictionary;
 pub mod error;
-pub mod fastly_abi;
 pub mod geo;
 pub mod headers;
 pub mod http_body;
