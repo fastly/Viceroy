@@ -21,6 +21,31 @@ use {
     std::str::FromStr,
 };
 
+// NOTE [error-detail]:
+//
+// The v2 apis return additional error through an send-error-detail outparam, but this is a little
+// bit awkward in the context of wit, which lacks the notion of an outparam. As the presence of
+// this value is optional, and only serves to augment additional error context, we instead
+// represent this as a different error result in compute.wit:
+//
+// ```
+// result<T, tuple<option<send-error-detail>, error>>
+// ```
+//
+// The effect of this is that we can no longer rely on the `trappable_error_types` option to
+// `component::bindgen!` to give us a type that represents both an error and a trap. Instead, we
+// get the following translated return type:
+//
+// ```
+// Result<Result<T, (Option<SendErrorDetail>, Error)>, anyhow::Error>
+// ```
+//
+// Where the outer result is for managing errors that should be considered traps, and the inner
+// result is for managing successful return values, or application-level errors that might include
+// additional details. We could wrap up the tuple into an additional error type and declare it as a
+// trappable error, but that's a bit more overhead for only four functions that currently don't
+// populate the send-error-detail.
+
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
@@ -365,6 +390,8 @@ impl http_req::Host for Session {
         b: http_types::BodyHandle,
         backend_name: String,
     ) -> Result<
+        // This return type is a little surprising. Please see the [error-detail] note at the top
+        // of the file for an explanation.
         Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)>,
         anyhow::Error,
     > {
@@ -439,6 +466,8 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::PendingRequestHandle,
     ) -> Result<
+        // This return type is a little surprising. Please see the [error-detail] note at the top
+        // of the file for an explanation.
         Result<Option<http_types::Response>, (Option<http_req::SendErrorDetail>, types::Error)>,
         anyhow::Error,
     > {
@@ -461,6 +490,8 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::PendingRequestHandle,
     ) -> Result<
+        // This return type is a little surprising. Please see the [error-detail] note at the top
+        // of the file for an explanation.
         Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)>,
         anyhow::Error,
     > {
@@ -518,6 +549,8 @@ impl http_req::Host for Session {
         &mut self,
         h: Vec<http_types::PendingRequestHandle>,
     ) -> Result<
+        // This return type is a little surprising. Please see the [error-detail] note at the top
+        // of the file for an explanation.
         Result<(u32, http_types::Response), (Option<http_req::SendErrorDetail>, types::Error)>,
         anyhow::Error,
     > {
