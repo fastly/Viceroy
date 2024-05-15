@@ -41,6 +41,80 @@ impl wasmtime::ResourceLimiter for Limiter {
     }
 }
 
+#[allow(unused)]
+pub struct ComponentCtx {
+    table: wasmtime_wasi::ResourceTable,
+    wasi: wasmtime_wasi::WasiCtx,
+    session: Session,
+    guest_profiler: Option<Box<GuestProfiler>>,
+    limiter: Limiter,
+}
+
+impl ComponentCtx {
+    pub fn wasi(&mut self) -> &mut wasmtime_wasi::WasiCtx {
+        &mut self.wasi
+    }
+
+    pub fn session(&mut self) -> &mut Session {
+        &mut self.session
+    }
+
+    pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
+        self.guest_profiler.take()
+    }
+
+    pub fn limiter(&self) -> &Limiter {
+        &self.limiter
+    }
+
+    pub fn close_downstream_response_sender(&mut self) {
+        self.session.close_downstream_response_sender()
+    }
+
+    /// Initialize a new [`Store`][store], given an [`ExecuteCtx`][ctx].
+    ///
+    /// [ctx]: ../wiggle_abi/struct.ExecuteCtx.html
+    /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
+    pub(crate) fn create_store(
+        ctx: &ExecuteCtx,
+        session: Session,
+        guest_profiler: Option<GuestProfiler>,
+        extra_init: impl FnOnce(&mut WasiCtxBuilder),
+    ) -> Result<Store<Self>, anyhow::Error> {
+        let mut builder = make_wasi_ctx(ctx, &session);
+
+        extra_init(&mut builder);
+
+        let wasm_ctx = Self {
+            table: wasmtime_wasi::ResourceTable::new(),
+            wasi: builder.build(),
+            session,
+            guest_profiler: guest_profiler.map(Box::new),
+            limiter: Limiter::default(),
+        };
+        let mut store = Store::new(ctx.engine(), wasm_ctx);
+        store.set_epoch_deadline(1);
+        store.epoch_deadline_callback(|mut store| {
+            if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+                prof.sample(&store, std::time::Duration::ZERO);
+                store.data_mut().guest_profiler = Some(prof);
+            }
+            Ok(UpdateDeadline::Yield(1))
+        });
+        store.limiter(|ctx| &mut ctx.limiter);
+        Ok(store)
+    }
+}
+
+impl wasmtime_wasi::WasiView for ComponentCtx {
+    fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
+        &mut self.table
+    }
+    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
+        &mut self.wasi
+    }
+}
+
 pub struct WasmCtx {
     wasi: WasiP1Ctx,
     wasi_nn: WasiNnCtx,
@@ -160,6 +234,7 @@ pub fn link_host_functions(
                 wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
             }
         })?;
+
     wasmtime_wasi::preview1::add_to_linker_async(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;

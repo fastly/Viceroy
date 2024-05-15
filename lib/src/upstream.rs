@@ -325,6 +325,7 @@ pub fn send_request(
 /// The type ultimately yielded by a `PendingRequest`.
 
 /// An asynchronous request awaiting a response.
+#[allow(unused)]
 #[derive(Debug)]
 pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.

@@ -9,10 +9,11 @@ use crate::config::UnknownImportBehavior;
 use {
     crate::{
         body::Body,
+        component as compute,
         config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
-        linking::{create_store, link_host_functions, WasmCtx},
+        linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
         secret_store::SecretStores,
         session::Session,
@@ -22,6 +23,7 @@ use {
     hyper::{Request, Response},
     std::{
         collections::HashSet,
+        fs,
         net::{IpAddr, Ipv4Addr},
         path::{Path, PathBuf},
         sync::atomic::{AtomicBool, AtomicU64, Ordering},
@@ -30,12 +32,30 @@ use {
         time::{Duration, Instant},
     },
     tokio::sync::oneshot::{self, Sender},
-    tracing::{event, info, info_span, Instrument, Level},
-    wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
+    tracing::{event, info, info_span, warn, Instrument, Level},
+    wasmtime::{
+        component::{self, Component},
+        Engine, InstancePre, Linker, Module, ProfilingStrategy,
+    },
     wasmtime_wasi::I32Exit,
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+
+enum Instance {
+    Module(Module, InstancePre<WasmCtx>),
+    Component(component::InstancePre<ComponentCtx>),
+}
+
+impl Instance {
+    fn unwrap_module(&self) -> (&Module, &InstancePre<WasmCtx>) {
+        match self {
+            Instance::Module(m, i) => (m, i),
+            Instance::Component(_) => panic!("unwrap_module called on a component"),
+        }
+    }
+}
+
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
 ///
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
@@ -46,9 +66,7 @@ pub struct ExecuteCtx {
     /// A reference to the global context for Wasm compilation.
     engine: Engine,
     /// An almost-linked Instance: each import function is linked, just needs a Store
-    instance_pre: Arc<InstancePre<WasmCtx>>,
-    /// The module to run
-    module: Module,
+    instance_pre: Arc<Instance>,
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// The device detection mappings for this execution.
@@ -89,19 +107,76 @@ impl ExecuteCtx {
         guest_profile_path: Option<PathBuf>,
         unknown_import_behavior: UnknownImportBehavior,
     ) -> Result<Self, Error> {
-        let config = &configure_wasmtime(profiling_strategy);
+        let input = fs::read(&module_path)?;
+
+        let is_wat = module_path
+            .as_ref()
+            .extension()
+            .map(|str| str == "wat")
+            .unwrap_or(false);
+
+        let is_component = matches!(
+            wasmparser::Parser::new(0).parse(&input, true),
+            Ok(wasmparser::Chunk::Parsed {
+                payload: wasmparser::Payload::Version {
+                    encoding: wasmparser::Encoding::Component,
+                    ..
+                },
+                ..
+            })
+        );
+
+        let config = &configure_wasmtime(is_component, profiling_strategy);
         let engine = Engine::new(config)?;
-        let mut linker = Linker::new(&engine);
-        link_host_functions(&mut linker, &wasi_modules)?;
-        let module = Module::from_file(&engine, module_path)?;
-        match unknown_import_behavior {
-            UnknownImportBehavior::LinkError => (),
-            UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
-            UnknownImportBehavior::ZeroOrNull => {
-                linker.define_unknown_imports_as_default_values(&module)?
+        let instance_pre = if is_component {
+            if unknown_import_behavior != UnknownImportBehavior::LinkError {
+                return Err(Error::Other(anyhow::anyhow!(
+                    "Wasm components do not support unknown import behaviors other than link-time errors"
+                )));
             }
-        }
-        let instance_pre = linker.instantiate_pre(&module)?;
+
+            warn!(
+                "
+
+   +------------------------------------------------------------------------+
+   |                                                                        |
+   | Wasm Component support in viceroy is in active development, and is not |
+   |                    supported for general consumption.                  |
+   |                                                                        |
+   +------------------------------------------------------------------------+
+
+            "
+            );
+
+            let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
+            compute::link_host_functions(&mut linker)?;
+            let component = if is_wat {
+                Component::from_file(&engine, &module_path)?
+            } else {
+                Component::from_binary(&engine, &input)?
+            };
+            let instance_pre = linker.instantiate_pre(&component)?;
+            Instance::Component(instance_pre)
+        } else {
+            let mut linker = Linker::new(&engine);
+            link_host_functions(&mut linker, &wasi_modules)?;
+            let module = if is_wat {
+                Module::from_file(&engine, &module_path)?
+            } else {
+                Module::from_binary(&engine, &input)?
+            };
+
+            match unknown_import_behavior {
+                UnknownImportBehavior::LinkError => (),
+                UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
+                UnknownImportBehavior::ZeroOrNull => {
+                    linker.define_unknown_imports_as_default_values(&module)?
+                }
+            }
+
+            let instance_pre = linker.instantiate_pre(&module)?;
+            Instance::Module(module, instance_pre)
+        };
 
         // Create the epoch-increment thread.
 
@@ -118,7 +193,6 @@ impl ExecuteCtx {
         Ok(Self {
             engine,
             instance_pre: Arc::new(instance_pre),
-            module,
             backends: Arc::new(Backends::default()),
             device_detection: Arc::new(DeviceDetection::default()),
             geolocation: Arc::new(Geolocation::default()),
@@ -351,71 +425,119 @@ impl ExecuteCtx {
                 .as_secs();
             path.join(format!("{}-{}.json", now, req_id))
         });
-        let profiler = guest_profile_path.is_some().then(|| {
-            let program_name = "main";
-            GuestProfiler::new(
-                program_name,
-                EPOCH_INTERRUPTION_PERIOD,
-                vec![(program_name.to_string(), self.module.clone())],
-            )
-        });
 
-        // We currently have to postpone linking and instantiation to the guest task
-        // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
-        // However, the fact that the module itself is created within `ExecuteCtx::new`
-        // means that the heavy lifting happens only once.
-        let mut store =
-            create_store(&self, session, profiler, |_| {}).map_err(ExecutionError::Context)?;
-
-        let instance = self
-            .instance_pre
-            .instantiate_async(&mut store)
-            .await
-            .map_err(ExecutionError::Instantiation)?;
-
-        // Pull out the `_start` function, which by convention with WASI is the main entry point for
-        // an application.
-        let main_func = instance
-            .get_typed_func::<(), ()>(&mut store, "_start")
-            .map_err(ExecutionError::Typechecking)?;
-
-        // Invoke the entrypoint function, which may or may not send a downstream response.
-        let outcome = match main_func.call_async(&mut store, ()).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                if let Some(exit) = e.downcast_ref::<I32Exit>() {
-                    if exit.0 == 0 {
-                        Ok(())
-                    } else {
-                        event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);
-                        Err(ExecutionError::WasmTrap(e))
-                    }
-                } else {
-                    event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
-                    Err(ExecutionError::WasmTrap(e))
+        match self.instance_pre.as_ref() {
+            Instance::Component(instance_pre) => {
+                if self.guest_profile_path.is_some() {
+                    warn!("Components do not currently support the guest profiler");
                 }
+
+                let req = session.downstream_request();
+                let body = session.downstream_request_body();
+
+                let mut store = ComponentCtx::create_store(&self, session, None, |_| {})
+                    .map_err(ExecutionError::Context)?;
+
+                let (compute, _instance) =
+                    compute::Compute::instantiate_pre(&mut store, instance_pre)
+                        .await
+                        .map_err(ExecutionError::Instantiation)?;
+
+                let result = compute
+                    .fastly_api_reactor()
+                    .call_serve(&mut store, req.into(), body.into())
+                    .await
+                    .map_err(ExecutionError::Typechecking)?;
+
+                let outcome = match result {
+                    Ok(()) => Ok(()),
+                    Err(()) => {
+                        event!(Level::ERROR, "WebAssembly exited with an error");
+                        Err(ExecutionError::WasmTrap(anyhow::Error::msg("failed")))
+                    }
+                };
+
+                // Ensure the downstream response channel is closed, whether or not a response was
+                // sent during execution.
+                store.data_mut().close_downstream_response_sender();
+
+                let request_duration = Instant::now().duration_since(start_timestamp);
+
+                info!(
+                    "request completed using {} of WebAssembly heap",
+                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
+                );
+
+                info!("request completed in {:.0?}", request_duration);
+
+                outcome
             }
-        };
 
-        // If we collected a profile, write it to the file
-        write_profile(&mut store, guest_profile_path.as_ref());
+            Instance::Module(module, instance_pre) => {
+                let profiler = self.guest_profile_path.is_some().then(|| {
+                    let program_name = "main";
+                    GuestProfiler::new(
+                        program_name,
+                        EPOCH_INTERRUPTION_PERIOD,
+                        vec![(program_name.to_string(), module.clone())],
+                    )
+                });
 
-        // Ensure the downstream response channel is closed, whether or not a response was
-        // sent during execution.
-        store.data_mut().close_downstream_response_sender();
+                // We currently have to postpone linking and instantiation to the guest task
+                // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
+                // However, the fact that the module itself is created within `ExecuteCtx::new`
+                // means that the heavy lifting happens only once.
+                let mut store = create_store(&self, session, profiler, |_| {})
+                    .map_err(ExecutionError::Context)?;
 
-        let heap_bytes = store.data().limiter().memory_allocated;
+                let instance = instance_pre
+                    .instantiate_async(&mut store)
+                    .await
+                    .map_err(ExecutionError::Instantiation)?;
 
-        let request_duration = Instant::now().duration_since(start_timestamp);
+                // Pull out the `_start` function, which by convention with WASI is the main entry point for
+                // an application.
+                let main_func = instance
+                    .get_typed_func::<(), ()>(&mut store, "_start")
+                    .map_err(ExecutionError::Typechecking)?;
 
-        info!(
-            "request completed using {} of WebAssembly heap",
-            bytesize::ByteSize::b(heap_bytes as u64)
-        );
+                // Invoke the entrypoint function, which may or may not send a downstream response.
+                let outcome = match main_func.call_async(&mut store, ()).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        if let Some(exit) = e.downcast_ref::<I32Exit>() {
+                            if exit.0 == 0 {
+                                Ok(())
+                            } else {
+                                event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);
+                                Err(ExecutionError::WasmTrap(e))
+                            }
+                        } else {
+                            event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
+                            Err(ExecutionError::WasmTrap(e))
+                        }
+                    }
+                };
 
-        info!("request completed in {:.0?}", request_duration);
+                // If we collected a profile, write it to the file
+                write_profile(&mut store, guest_profile_path.as_ref());
 
-        outcome
+                // Ensure the downstream response channel is closed, whether or not a response was
+                // sent during execution.
+                store.data_mut().close_downstream_response_sender();
+
+                let request_duration = Instant::now().duration_since(start_timestamp);
+
+                info!(
+                    "request completed using {} of WebAssembly heap",
+                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64)
+                );
+
+                info!("request completed in {:.0?}", request_duration);
+
+                outcome
+            }
+        }
     }
 
     pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
@@ -440,11 +562,17 @@ impl ExecuteCtx {
             self.secret_stores.clone(),
         );
 
+        if let Instance::Component(_) = self.instance_pre.as_ref() {
+            panic!("components not currently supported with `run`");
+        }
+
+        let (module, instance_pre) = self.instance_pre.unwrap_module();
+
         let profiler = self.guest_profile_path.is_some().then(|| {
             GuestProfiler::new(
                 program_name,
                 EPOCH_INTERRUPTION_PERIOD,
-                vec![(program_name.to_string(), self.module.clone())],
+                vec![(program_name.to_string(), module.clone())],
             )
         });
         let mut store = create_store(&self, session, profiler, |builder| {
@@ -455,8 +583,7 @@ impl ExecuteCtx {
         })
         .map_err(ExecutionError::Context)?;
 
-        let instance = self
-            .instance_pre
+        let instance = instance_pre
             .instantiate_async(&mut store)
             .await
             .map_err(ExecutionError::Instantiation)?;
@@ -520,7 +647,10 @@ impl Drop for ExecuteCtx {
     }
 }
 
-fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config {
+fn configure_wasmtime(
+    allow_components: bool,
+    profiling_strategy: ProfilingStrategy,
+) -> wasmtime::Config {
     use wasmtime::{
         Config, InstanceAllocationStrategy, PoolingAllocationConfig, WasmBacktraceDetails,
     };
@@ -567,6 +697,10 @@ fn configure_wasmtime(profiling_strategy: ProfilingStrategy) -> wasmtime::Config
     config.allocation_strategy(InstanceAllocationStrategy::Pooling(
         pooling_allocation_config,
     ));
+
+    if allow_components {
+        config.wasm_component_model(true);
+    }
 
     config
 }
