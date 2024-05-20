@@ -257,15 +257,22 @@ impl http_req::Host for Session {
         let headers = &mut self.request_parts_mut(h.into())?.headers;
 
         let name = HeaderName::from_bytes(name.as_bytes())?;
+        let values = {
+            // split slice along nul bytes
+            let mut iter = values.split(|b| *b == 0);
+            // drop the empty item at the end
+            iter.next_back();
+            iter.map(HeaderValue::from_bytes)
+                .collect::<Result<Vec<HeaderValue>, _>>()?
+        };
 
         // Remove any values if they exist
         if let http::header::Entry::Occupied(e) = headers.entry(&name) {
             e.remove_entry_mult();
         }
 
-        // Add all the new values
-        for value in values.split(|b| *b == 0) {
-            headers.append(&name, HeaderValue::from_bytes(value)?);
+        for value in values {
+            headers.append(&name, value);
         }
 
         Ok(())
