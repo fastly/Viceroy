@@ -55,25 +55,39 @@ component::bindgen!({
         "wasi:io": wasmtime_wasi::bindings::io,
         "wasi:cli": wasmtime_wasi::bindings::cli,
     },
+    trappable_imports: true,
     trappable_error_type: {
         "fastly:api/types/error" => FastlyError
     },
 });
 
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {
-    wasmtime_wasi::bindings::clocks::wall_clock::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::clocks::monotonic_clock::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::random::random::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::filesystem::types::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::filesystem::preopens::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::io::error::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::io::streams::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::io::poll::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::cli::environment::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::cli::exit::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::cli::stdin::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::cli::stdout::add_to_linker(linker, |x| x)?;
-    wasmtime_wasi::bindings::cli::stderr::add_to_linker(linker, |x| x)?;
+    // A utility function to add the types needed for `add_to_linker_get_host`.
+    fn project_wasi_view(
+        t: &mut impl wasmtime_wasi::WasiView,
+    ) -> &mut impl wasmtime_wasi::WasiView {
+        t
+    }
+
+    wasmtime_wasi::bindings::clocks::wall_clock::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::clocks::monotonic_clock::add_to_linker_get_host(
+        linker,
+        project_wasi_view,
+    )?;
+    wasmtime_wasi::bindings::random::random::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::filesystem::types::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::filesystem::preopens::add_to_linker_get_host(
+        linker,
+        project_wasi_view,
+    )?;
+    wasmtime_wasi::bindings::io::error::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::cli::environment::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::cli::exit::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::cli::stdin::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::cli::stdout::add_to_linker_get_host(linker, project_wasi_view)?;
+    wasmtime_wasi::bindings::cli::stderr::add_to_linker_get_host(linker, project_wasi_view)?;
 
     fastly::api::async_io::add_to_linker(linker, |x| x.session())?;
     fastly::api::backend::add_to_linker(linker, |x| x.session())?;
