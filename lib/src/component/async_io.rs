@@ -1,6 +1,5 @@
 use {
     super::fastly::api::{async_io, types},
-    super::FastlyError,
     crate::{session::Session, wiggle_abi},
     futures::FutureExt,
     std::time::Duration,
@@ -12,7 +11,7 @@ impl async_io::Host for Session {
         &mut self,
         hs: Vec<async_io::Handle>,
         timeout_ms: u32,
-    ) -> Result<Option<u32>, FastlyError> {
+    ) -> Result<Option<u32>, types::Error> {
         if hs.is_empty() && timeout_ms == 0 {
             return Err(types::Error::InvalidArgument.into());
         }
@@ -42,7 +41,7 @@ impl async_io::Host for Session {
         }
     }
 
-    async fn is_ready(&mut self, handle: async_io::Handle) -> Result<bool, FastlyError> {
+    async fn is_ready(&mut self, handle: async_io::Handle) -> Result<bool, types::Error> {
         let handle = wiggle_abi::types::AsyncItemHandle::from(handle);
         Ok(self
             .async_item_mut(handle.into())?

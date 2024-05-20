@@ -1,6 +1,5 @@
 use {
-    super::fastly::api::{http_types, kv_store},
-    super::FastlyError,
+    super::fastly::api::{http_types, kv_store, types},
     crate::{
         body::Body,
         error,
@@ -13,7 +12,7 @@ use {
 
 #[async_trait::async_trait]
 impl kv_store::Host for Session {
-    async fn open(&mut self, name: String) -> Result<kv_store::Handle, FastlyError> {
+    async fn open(&mut self, name: String) -> Result<kv_store::Handle, types::Error> {
         if self.object_store.store_exists(&name)? {
             let handle = self.obj_store_handle(&name)?;
             Ok(handle.into())
@@ -29,7 +28,7 @@ impl kv_store::Host for Session {
         &mut self,
         store: kv_store::Handle,
         key: String,
-    ) -> Result<Option<kv_store::BodyHandle>, FastlyError> {
+    ) -> Result<Option<kv_store::BodyHandle>, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap();
         let key = ObjectKey::new(&key)?;
         match self.obj_lookup(store, &key) {
@@ -49,7 +48,7 @@ impl kv_store::Host for Session {
         &mut self,
         store: kv_store::Handle,
         key: String,
-    ) -> Result<kv_store::PendingLookupHandle, FastlyError> {
+    ) -> Result<kv_store::PendingLookupHandle, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap();
         let key = ObjectKey::new(key)?;
         // just create a future that's already ready
@@ -61,7 +60,7 @@ impl kv_store::Host for Session {
     async fn pending_lookup_wait(
         &mut self,
         pending: kv_store::PendingLookupHandle,
-    ) -> Result<Option<kv_store::BodyHandle>, FastlyError> {
+    ) -> Result<Option<kv_store::BodyHandle>, types::Error> {
         let pending_obj = self
             .take_pending_kv_lookup(pending.into())?
             .task()
@@ -80,7 +79,7 @@ impl kv_store::Host for Session {
         store: kv_store::Handle,
         key: String,
         body_handle: http_types::BodyHandle,
-    ) -> Result<(), FastlyError> {
+    ) -> Result<(), types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let bytes = self.take_body(body_handle.into())?.read_into_vec().await?;
@@ -94,7 +93,7 @@ impl kv_store::Host for Session {
         store: kv_store::Handle,
         key: String,
         body_handle: http_types::BodyHandle,
-    ) -> Result<kv_store::PendingInsertHandle, FastlyError> {
+    ) -> Result<kv_store::PendingInsertHandle, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let bytes = self.take_body(body_handle.into())?.read_into_vec().await?;
@@ -109,7 +108,7 @@ impl kv_store::Host for Session {
     async fn pending_insert_wait(
         &mut self,
         handle: kv_store::PendingInsertHandle,
-    ) -> Result<(), FastlyError> {
+    ) -> Result<(), types::Error> {
         Ok((self
             .take_pending_kv_insert(handle.into())?
             .task()
@@ -121,7 +120,7 @@ impl kv_store::Host for Session {
         &mut self,
         store: kv_store::Handle,
         key: String,
-    ) -> Result<kv_store::PendingDeleteHandle, FastlyError> {
+    ) -> Result<kv_store::PendingDeleteHandle, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let fut = futures::future::ok(self.obj_delete(store, key));
@@ -135,7 +134,7 @@ impl kv_store::Host for Session {
     async fn pending_delete_wait(
         &mut self,
         handle: kv_store::PendingDeleteHandle,
-    ) -> Result<(), FastlyError> {
+    ) -> Result<(), types::Error> {
         Ok((self
             .take_pending_kv_delete(handle.into())?
             .task()

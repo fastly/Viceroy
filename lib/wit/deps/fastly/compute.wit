@@ -136,10 +136,10 @@ interface uap {
   use types.{error};
 
   resource user-agent {
-    family: func(max-len: u64) -> string;
-    major: func(max-len: u64) -> string;
-    minor: func(max-len: u64) -> string;
-    patch: func(max-len: u64) -> string;
+    family: func(max-len: u64) -> result<string, error>;
+    major: func(max-len: u64) -> result<string, error>;
+    minor: func(max-len: u64) -> result<string, error>;
+    patch: func(max-len: u64) -> result<string, error>;
   }
 
   parse: func(user-agent: string) -> result<user-agent, error>;
