@@ -38,8 +38,8 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = "20.0.0"
-wasmtime-wasi = "20.0.0"
-wasmtime-wasi-nn = "20.0.0"
-wiggle = "20.0.0"
-wasmparser = "0.207.0"
+wasmtime = "21.0.0"
+wasmtime-wasi = "21.0.0"
+wasmtime-wasi-nn = "21.0.0"
+wiggle = "21.0.0"
+wasmparser = "0.208.0"
