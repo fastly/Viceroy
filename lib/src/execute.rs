@@ -86,7 +86,7 @@ pub struct ExecuteCtx {
     /// The ID to assign the next incoming request
     next_req_id: Arc<AtomicU64>,
     /// The ObjectStore associated with this instance of Viceroy
-    object_store: Arc<ObjectStores>,
+    object_store: ObjectStores,
     /// The secret stores for this execution.
     secret_stores: Arc<SecretStores>,
     // `Arc` for the two fields below because this struct must be `Clone`.
@@ -202,7 +202,7 @@ impl ExecuteCtx {
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
-            object_store: Arc::new(ObjectStores::new()),
+            object_store: ObjectStores::new(),
             secret_stores: Arc::new(SecretStores::new()),
             epoch_increment_thread,
             epoch_increment_stop,
@@ -261,7 +261,7 @@ impl ExecuteCtx {
 
     /// Set the object store for this execution context.
     pub fn with_object_stores(mut self, object_store: ObjectStores) -> Self {
-        self.object_store = Arc::new(object_store);
+        self.object_store = object_store;
         self
     }
 
