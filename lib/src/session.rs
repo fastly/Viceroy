@@ -103,7 +103,7 @@ pub struct Session {
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) object_store: Arc<ObjectStores>,
+    pub(crate) object_store: ObjectStores,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
@@ -142,7 +142,7 @@ impl Session {
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
-        object_store: Arc<ObjectStores>,
+        object_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
     ) -> Session {
         let (parts, body) = req.into_parts();
