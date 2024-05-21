@@ -1,7 +1,7 @@
 use {
     super::{
-        fastly::api::{http_body, http_types},
-        headers, FastlyError,
+        fastly::api::{http_body, http_types, types},
+        headers,
     },
     crate::{body::Body, error::Error, session::Session},
     ::http_body::Body as HttpBody,
@@ -14,7 +14,7 @@ pub const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
 impl http_body::Host for Session {
-    async fn new(&mut self) -> Result<http_types::BodyHandle, FastlyError> {
+    async fn new(&mut self) -> Result<http_types::BodyHandle, types::Error> {
         Ok(self.insert_body(Body::empty()).into())
     }
 
@@ -23,7 +23,7 @@ impl http_body::Host for Session {
         h: http_types::BodyHandle,
         buf: Vec<u8>,
         end: http_body::WriteEnd,
-    ) -> Result<u32, FastlyError> {
+    ) -> Result<u32, types::Error> {
         // Validate the body handle and the buffer.
         let buf = buf.as_slice();
 
@@ -56,7 +56,7 @@ impl http_body::Host for Session {
         &mut self,
         dest: http_types::BodyHandle,
         src: http_types::BodyHandle,
-    ) -> Result<(), FastlyError> {
+    ) -> Result<(), types::Error> {
         // Take the `src` body out of the session, and get a mutable reference
         // to the `dest` body we will append to.
         let src = self.take_body(src.into())?;
@@ -77,7 +77,7 @@ impl http_body::Host for Session {
         &mut self,
         h: http_types::BodyHandle,
         chunk_size: u32,
-    ) -> Result<Vec<u8>, FastlyError> {
+    ) -> Result<Vec<u8>, types::Error> {
         // only normal bodies (not streaming bodies) can be read from
         let body = self.body_mut(h.into())?;
 
@@ -99,7 +99,7 @@ impl http_body::Host for Session {
         }
     }
 
-    async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), FastlyError> {
+    async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), types::Error> {
         // Drop the body and pass up an error if the handle does not exist
         if self.is_streaming_body(h.into()) {
             // Make sure a streaming body gets a `finish` message
@@ -110,7 +110,7 @@ impl http_body::Host for Session {
         }
     }
 
-    async fn known_length(&mut self, h: http_types::BodyHandle) -> Result<u64, FastlyError> {
+    async fn known_length(&mut self, h: http_types::BodyHandle) -> Result<u64, types::Error> {
         if self.is_streaming_body(h.into()) {
             Err(Error::ValueAbsent.into())
         } else if let Some(len) = self.body_mut(h.into())?.len() {
@@ -125,7 +125,7 @@ impl http_body::Host for Session {
         h: http_types::BodyHandle,
         name: String,
         value: Vec<u8>,
-    ) -> Result<(), FastlyError> {
+    ) -> Result<(), types::Error> {
         // Appending trailers is always allowed for bodies and streaming bodies.
         if self.is_streaming_body(h.into()) {
             let body = self.streaming_body_mut(h.into())?;
@@ -151,7 +151,7 @@ impl http_body::Host for Session {
         h: http_types::BodyHandle,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
         // Read operations are not allowed on streaming bodies.
         if self.is_streaming_body(h.into()) {
             return Err(Error::InvalidArgument.into());
@@ -181,7 +181,7 @@ impl http_body::Host for Session {
         h: http_types::BodyHandle,
         name: String,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, FastlyError> {
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         // Read operations are not allowed on streaming bodies.
         if self.is_streaming_body(h.into()) {
             return Err(Error::InvalidArgument.into());
@@ -223,7 +223,7 @@ impl http_body::Host for Session {
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, FastlyError> {
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
         // Read operations are not allowed on streaming bodies.
         if self.is_streaming_body(h.into()) {
             return Err(Error::InvalidArgument.into());

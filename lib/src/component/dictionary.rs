@@ -1,12 +1,11 @@
 use {
     super::fastly::api::{dictionary, types},
-    super::FastlyError,
     crate::{error, session::Session},
 };
 
 #[async_trait::async_trait]
 impl dictionary::Host for Session {
-    async fn open(&mut self, name: String) -> Result<dictionary::Handle, FastlyError> {
+    async fn open(&mut self, name: String) -> Result<dictionary::Handle, types::Error> {
         let handle = self.dictionary_handle(name.as_str())?;
         Ok(handle.into())
     }
@@ -16,7 +15,7 @@ impl dictionary::Host for Session {
         h: dictionary::Handle,
         key: String,
         max_len: u64,
-    ) -> Result<Option<String>, FastlyError> {
+    ) -> Result<Option<String>, types::Error> {
         let dict = self
             .dictionary(h.into())?
             .contents()
@@ -25,7 +24,7 @@ impl dictionary::Host for Session {
         let key = key.as_str();
         let item = dict
             .get(key)
-            .ok_or_else(|| FastlyError::from(types::Error::OptionalNone))?;
+            .ok_or_else(|| types::Error::from(types::Error::OptionalNone))?;
 
         if item.len() > usize::try_from(max_len).unwrap() {
             return Err(error::Error::BufferLengthError {
