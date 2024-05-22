@@ -2,7 +2,6 @@ use {
     super::fastly::api::{http_types, kv_store, types},
     crate::{
         body::Body,
-        error,
         object_store::{ObjectKey, ObjectStoreError},
         session::{
             PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask, Session,
@@ -12,15 +11,12 @@ use {
 
 #[async_trait::async_trait]
 impl kv_store::Host for Session {
-    async fn open(&mut self, name: String) -> Result<kv_store::Handle, types::Error> {
+    async fn open(&mut self, name: String) -> Result<Option<kv_store::Handle>, types::Error> {
         if self.object_store.store_exists(&name)? {
             let handle = self.obj_store_handle(&name)?;
-            Ok(handle.into())
+            Ok(Some(handle.into()))
         } else {
-            Err(
-                error::Error::ObjectStoreError(ObjectStoreError::UnknownObjectStore(name.clone()))
-                    .into(),
-            )
+            Ok(None)
         }
     }
 
