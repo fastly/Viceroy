@@ -40,6 +40,9 @@ pub enum Commands {
 
     /// Run the input wasm once and then exit.
     Run(RunArgs),
+
+    /// Adapt core wasm to a component.
+    Adapt(AdaptArgs),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -209,6 +212,37 @@ impl SharedArgs {
     /// to a value before starting Viceroy
     pub fn verbosity(&self) -> u8 {
         self.verbosity
+    }
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AdaptArgs {
+    /// The path to the service's Wasm module.
+    #[arg(value_parser = check_module, required=true)]
+    input: Option<String>,
+
+    /// The output name
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+}
+
+impl AdaptArgs {
+    pub(crate) fn input(&self) -> PathBuf {
+        PathBuf::from(self.input.as_ref().expect("input wasm name"))
+    }
+
+    pub(crate) fn output(&self) -> PathBuf {
+        if let Some(output) = self.output.as_ref() {
+            return output.clone();
+        }
+
+        let mut output = PathBuf::from(
+            PathBuf::from(self.input.as_ref().expect("input wasm name"))
+                .file_name()
+                .expect("input filename"),
+        );
+        output.set_extension("component.wasm");
+        output
     }
 }
 

@@ -2378,7 +2378,7 @@ dependencies = [
  "byte-array-literals",
  "object 0.33.0",
  "wasi",
- "wasm-encoder 0.205.0",
+ "wasm-encoder 0.208.1",
  "wit-bindgen-rust-macro",
 ]
 
@@ -2418,11 +2418,13 @@ dependencies = [
  "tracing-futures",
  "url",
  "viceroy-artifacts",
+ "wasm-encoder 0.208.1",
  "wasmparser 0.208.1",
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-nn",
  "wiggle",
+ "wit-component",
 ]
 
 [[package]]
@@ -2506,15 +2508,6 @@ checksum = "af190c94f2773fdb3729c55b007a722abb5384da03bc0986df4c289bf5567e96"
 
 [[package]]
 name = "wasm-encoder"
-version = "0.205.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90e95b3563d164f33c1cfb0a7efbd5940c37710019be10cd09f800fdec8b0e5c"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.207.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d996306fb3aeaee0d9157adbe2f670df0236caf19f6728b221e92d0f27b3fe17"
@@ -2529,6 +2522,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6425e84e42f7f558478e40ecc2287912cb319f2ca68e5c0bb93c61d4fc63fa17"
 dependencies = [
  "leb128",
+ "wasmparser 0.208.1",
 ]
 
 [[package]]

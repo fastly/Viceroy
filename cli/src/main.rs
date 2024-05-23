@@ -93,6 +93,34 @@ pub async fn main() -> ExitCode {
                 Err(_) => ExitCode::FAILURE,
             }
         }
+        Commands::Adapt(adapt_args) => {
+            let input = adapt_args.input();
+            let output = adapt_args.output();
+            let bytes = match std::fs::read(&input) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    eprintln!("Failed to read module from: {}", input.display());
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let module = match viceroy_lib::adapt::adapt_bytes(&bytes) {
+                Ok(module) => module,
+                Err(e) => {
+                    eprintln!("Failed to adapt module: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            println!("Writing component to: {}", output.display());
+            match std::fs::write(output, module) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Failed to write component: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
     }
 }
 

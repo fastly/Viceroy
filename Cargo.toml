@@ -47,13 +47,14 @@ wasmtime-wasi = "21.0.0"
 wasmtime-wasi-nn = "21.0.0"
 wiggle = "21.0.0"
 wasmparser = "0.208.0"
+wasm-encoder = { version = "0.208.0", features = ["wasmparser"] }
+wit-component = "0.208.0"
 
 # Adapter dependencies
 byte-array-literals = { path = "crates/adapter/byte-array-literals" }
 bitflags = { version = "2.5.0", default-features = false }
 object = { version = "0.33", default-features = false, features = ["archive"] }
 wasi = { version = "0.11.0", default-features = false }
-wasm-encoder = "0.205.0"
 wit-bindgen-rust-macro = { version = "0.25.0", default-features = false }
 
 [profile.release.package.viceroy-component-adapter]

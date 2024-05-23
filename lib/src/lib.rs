@@ -13,6 +13,7 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+pub mod adapt;
 pub mod body;
 pub mod config;
 pub mod error;
