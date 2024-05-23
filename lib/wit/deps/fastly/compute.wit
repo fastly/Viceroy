@@ -1008,7 +1008,7 @@ interface cache {
 
   /// Close an ongoing interaction with the cache.
   ///
-  /// If the cache handle state includes the `$must_insert_or_update` (and hence no insert or
+  /// If the cache handle state includes the `must-insert-or-update` (and hence no insert or
   /// update has been performed), closing the handle cancels any request collapsing, potentially
   /// choosing a new waiter to perform the insertion/update.
   close: func(handle: handle) -> result<_, error>;
