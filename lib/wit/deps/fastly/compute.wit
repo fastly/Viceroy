@@ -641,7 +641,7 @@ interface kv-store {
   type pending-insert-handle = u32;
   type pending-delete-handle = u32;
 
-  open: func(name: string) -> result<handle, error>;
+  open: func(name: string) -> result<option<handle>, error>;
 
   lookup: func(
     store: handle,
