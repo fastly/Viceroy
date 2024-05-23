@@ -1,0 +1,8 @@
+[package]
+name = "byte-array-literals"
+publish = false
+
+[lib]
+proc-macro = true
+test = false
+doctest = false
