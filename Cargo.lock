@@ -2367,6 +2367,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "viceroy-artifacts"
+version = "0.1.0"
+
+[[package]]
 name = "viceroy-component-adapter"
 version = "0.1.0"
 dependencies = [
@@ -2413,6 +2417,7 @@ dependencies = [
  "tracing",
  "tracing-futures",
  "url",
+ "viceroy-artifacts",
  "wasmparser 0.208.1",
  "wasmtime",
  "wasmtime-wasi",
