@@ -53,6 +53,28 @@ impl cache::Host for Session {
         .into())
     }
 
+    async fn transaction_lookup_async(
+        &mut self,
+        _key: String,
+        _options_mask: cache::LookupOptionsMask,
+        _options: cache::LookupOptions,
+    ) -> Result<cache::BusyHandle, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn cache_busy_handle_wait(
+        &mut self,
+        _handle: cache::BusyHandle,
+    ) -> Result<cache::Handle, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
     async fn transaction_insert(
         &mut self,
         _handle: cache::Handle,
@@ -90,6 +112,13 @@ impl cache::Host for Session {
     }
 
     async fn transaction_cancel(&mut self, _handle: cache::Handle) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn close_busy(&mut self, _handle: cache::BusyHandle) -> Result<(), types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }

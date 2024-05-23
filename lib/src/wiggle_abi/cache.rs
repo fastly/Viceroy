@@ -32,6 +32,22 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
+    fn transaction_lookup_async<'a>(
+        &mut self,
+        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+        options_mask: types::CacheLookupOptionsMask,
+        options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
+    ) -> Result<types::CacheBusyHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn cache_busy_handle_wait(
+        &mut self,
+        handle: types::CacheBusyHandle,
+    ) -> Result<types::CacheHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
     fn transaction_insert<'a>(
         &mut self,
         handle: types::CacheHandle,
@@ -60,6 +76,10 @@ impl FastlyCache for Session {
     }
 
     fn transaction_cancel(&mut self, handle: types::CacheHandle) -> Result<(), Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn close_busy(&mut self, handle: types::CacheBusyHandle) -> Result<(), Error> {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 

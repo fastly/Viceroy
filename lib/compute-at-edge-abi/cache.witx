@@ -1,5 +1,7 @@
 ;;; The outcome of a cache lookup (either bare or as part of a cache transaction)
 (typename $cache_handle (handle))
+;;; Handle that can be used to check whether or not a cache lookup is waiting on another client.
+(typename $cache_busy_handle (handle))
 (typename $cache_object_length u64)
 (typename $cache_duration_ns u64)
 (typename $cache_hit_count u64)
@@ -117,6 +119,24 @@
         (result $err (expected $cache_handle (error $fastly_status)))
     )
 
+    ;;; The entrypoint to the request-collapsing cache transaction API, returning instead of waiting on busy.
+    ;;;
+    ;;; This operation always participates in request collapsing and may return stale objects. To bypass
+    ;;; request collapsing, use `lookup` and `insert` instead.
+    (@interface func (export "transaction_lookup_async")
+        (param $cache_key (list u8))
+        (param $options_mask $cache_lookup_options_mask)
+        (param $options (@witx pointer $cache_lookup_options))
+        (result $err (expected $cache_busy_handle (error $fastly_status)))
+    )
+
+    ;;; Continues the lookup transaction from which the given busy handle was returned,
+    ;;; waiting for the leader transaction if request collapsed, and returns a cache handle.
+    (@interface func (export "cache_busy_handle_wait")
+        (param $busy_handle $cache_busy_handle)
+        (result $err (expected $cache_handle (error $fastly_status)))
+    )
+
     ;;; Insert an object into the cache with the given metadata.
     ;;;
     ;;; Can only be used in if the cache handle state includes the `$must_insert_or_update` flag.
@@ -165,6 +185,12 @@
     (@interface func (export "transaction_cancel")
         (param $handle $cache_handle)
         (result $err (expected (error $fastly_status))))
+
+    ;;; Close an interaction with the cache that has not yet finished request collapsing.
+    (@interface func (export "close_busy")
+        (param $handle $cache_busy_handle)
+        (result $err (expected (error $fastly_status)))
+    )
 
     ;;; Close an ongoing interaction with the cache.
     ;;;
