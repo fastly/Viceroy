@@ -522,7 +522,7 @@ interface http-resp {
   ) -> result<_, error>;
 
   send-downstream: func(
-    h: response-handle, 
+    h: response-handle,
     b: body-handle,
     streaming: bool,
   ) -> result<_, error>;
@@ -835,6 +835,8 @@ interface cache {
 
   /// The outcome of a cache lookup (either bare or as part of a cache transaction)
   type handle = u32;
+  /// Handle that can be used to check whether or not a cache lookup is waiting on another client.
+  type busy-handle = u32;
   type object-length = u64;
   type duration-ns = u64;
   type cache-hit-count = u64;
@@ -941,6 +943,22 @@ interface cache {
     options: lookup-options,
   ) -> result<handle, error>;
 
+  /// The entrypoint to the request-collapsing cache transaction API, returning instead of waiting on busy.
+  ///
+  /// This operation always participates in request collapsing and may return stale objects. To bypass
+  /// request collapsing, use `lookup` and `insert` instead.
+  transaction-lookup-async: func(
+    key: string,
+    mask: lookup-options-mask,
+    options: lookup-options,
+  ) -> result<busy-handle, error>;
+
+  /// Continues the lookup transaction from which the given busy handle was returned,
+  /// waiting for the leader transaction if request collapsed, and returns a cache handle.
+  cache-busy-handle-wait: func(
+    handle: busy-handle,
+  ) -> result<handle, error>;
+
   /// Insert an object into the cache with the given metadata.
   ///
   /// Can only be used in if the cache handle state includes the `must-insert-or-update` flag.
@@ -985,6 +1003,14 @@ interface cache {
   /// Useful if there is an error before streaming is possible, e.g. if a backend is unreachable.
   transaction-cancel: func(handle: handle) -> result<_, error>;
 
+  /// Close an interaction with the cache that has not yet finished request collapsing.
+  close-busy: func(handle: busy-handle) -> result<_, error>;
+
+  /// Close an ongoing interaction with the cache.
+  ///
+  /// If the cache handle state includes the `must-insert-or-update` (and hence no insert or
+  /// update has been performed), closing the handle cancels any request collapsing, potentially
+  /// choosing a new waiter to perform the insertion/update.
   close: func(handle: handle) -> result<_, error>;
 
   get-state: func(handle: handle) -> result<lookup-state, error>;
