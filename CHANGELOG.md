@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.9.7 (2024-05-24)
 
 - Update to wasmtime-21.0.0 ([#369](https://github.com/fastly/Viceroy/pull/369))
