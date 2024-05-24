@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.9.7 (2024-05-24)
+
+- Update to wasmtime-21.0.0 ([#369](https://github.com/fastly/Viceroy/pull/369))
+- Initial WebAssembly component support ([#367](https://github.com/fastly/Viceroy/pull/367))
+- Add stubs for new busy-handle hostcalls ([#373](https://github.com/fastly/Viceroy/pull/373))
+
 ## 0.9.6 (2024-04-08)
 
 - Return a ValueAbsent for all the downstream-tls related functions instead of a NotAvailable ([#315](https://github.com/fastly/Viceroy/pull/315))
