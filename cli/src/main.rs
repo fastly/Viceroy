@@ -271,6 +271,7 @@ async fn create_execution_context(
         args.wasi_modules(),
         guest_profile_path,
         args.unknown_import_behavior(),
+        args.adapt(),
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout());

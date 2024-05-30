@@ -16,12 +16,14 @@ pub type TestResult = Result<(), Error>;
 #[tokio::test(flavor = "multi_thread")]
 async fn fatal_error_traps() -> TestResult {
     let module_path = format!("{RUST_FIXTURE_PATH}/response.wasm");
+    let adapt_core_wasm = false;
     let ctx = ExecuteCtx::new(
         module_path,
         ProfilingStrategy::None,
         HashSet::new(),
         None,
         viceroy_lib::config::UnknownImportBehavior::LinkError,
+        adapt_core_wasm,
     )?;
     let req = Request::get("http://127.0.0.1:7676/").body(Body::from(""))?;
     let resp = ctx

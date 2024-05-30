@@ -111,6 +111,10 @@ pub struct SharedArgs {
     /// effect if you set RUST_LOG to a value before starting Viceroy
     #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbosity: u8,
+    /// Whether or not to automatically adapt core-wasm modules to
+    /// components before running them.
+    #[arg(long = "adapt")]
+    adapt: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +216,10 @@ impl SharedArgs {
     /// to a value before starting Viceroy
     pub fn verbosity(&self) -> u8 {
         self.verbosity
+    }
+
+    pub fn adapt(&self) -> bool {
+        self.adapt
     }
 }
 
