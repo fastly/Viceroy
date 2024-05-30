@@ -1,3 +1,24 @@
+const ADAPTER_BYTES: &[u8] = include_bytes!("../data/wasi_snapshot_preview1.wasm");
+
+/// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
+/// adapter.
+pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let module = mangle_imports(bytes)?;
+
+    let component = wit_component::ComponentEncoder::default()
+        .module(module.as_slice())?
+        .adapter("wasi_snapshot_preview1", ADAPTER_BYTES)?
+        .validate(true)
+        .encode()?;
+
+    Ok(component)
+}
+
+/// We need to ensure that the imports of the core wasm module are all remapped to the single
+/// adapter `wasi_snapshot_preview1`, as that allows us to reuse common infrastructure in the
+/// adapter's implementation. To accomplish this, we change imports to all come from the
+/// `wasi_snapshot_preview1` module, and mangle the function name to
+/// `original_module#original_name`.
 fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
     let mut module = wasm_encoder::Module::new();
 
@@ -49,20 +70,4 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
     }
 
     Ok(module)
-}
-
-const ADAPTER_BYTES: &[u8] = include_bytes!("../data/wasi_snapshot_preview1.wasm");
-
-/// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
-/// adapter.
-pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let module = mangle_imports(bytes)?;
-
-    let component = wit_component::ComponentEncoder::default()
-        .module(module.as_slice())?
-        .adapter("wasi_snapshot_preview1", ADAPTER_BYTES)?
-        .validate(true)
-        .encode()?;
-
-    Ok(component)
 }
