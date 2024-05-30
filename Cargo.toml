@@ -4,7 +4,6 @@ members = [
     "lib",
     "crates/adapter",
     "crates/adapter/byte-array-literals",
-    "crates/artifacts",
 ]
 resolver = "2"
 
@@ -39,7 +38,6 @@ tracing = "0.1.37"
 tracing-futures = "0.2.5"
 futures = "0.3.24"
 url = "2.3.1"
-viceroy-artifacts = { path = "crates/artifacts" }
 
 # Wasmtime dependencies
 wasmtime = "21.0.0"

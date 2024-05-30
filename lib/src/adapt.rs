@@ -51,6 +51,8 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
     Ok(module)
 }
 
+const ADAPTER_BYTES: &[u8] = include_bytes!("../data/wasi_snapshot_preview1.wasm");
+
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -58,7 +60,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
 
     let component = wit_component::ComponentEncoder::default()
         .module(module.as_slice())?
-        .adapter("wasi_snapshot_preview1", viceroy_artifacts::ADAPTER_BYTES)?
+        .adapter("wasi_snapshot_preview1", ADAPTER_BYTES)?
         .validate(true)
         .encode()?;
 

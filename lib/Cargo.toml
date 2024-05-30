@@ -21,6 +21,7 @@ include = [
     "src/**/*",
     "wit/**/*",
     "compute-at-edge-abi/**/*.witx",
+    "data/*.wasm",
 ]
 
 [dependencies]
@@ -61,8 +62,6 @@ wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-nn = { workspace = true }
 wiggle = { workspace = true }
-
-viceroy-artifacts = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.6.0"
