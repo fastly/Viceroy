@@ -126,6 +126,8 @@ pub struct Session {
     config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
+    /// FASTLY_KEY read in from the environment
+    fastly_key: Arc<Option<String>>
 }
 
 impl Session {
@@ -144,6 +146,7 @@ impl Session {
         config_path: Arc<Option<PathBuf>>,
         object_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
+        fastly_key: Arc<Option<String>>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -179,6 +182,7 @@ impl Session {
             secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
+            fastly_key,
         }
     }
 
@@ -837,6 +841,12 @@ impl Session {
 
     pub fn secret_stores(&self) -> &Arc<SecretStores> {
         &self.secret_stores
+    }
+
+    // ----- FASTLY_KEY (env var) -----
+
+    pub fn fastly_key_read(&self) -> Option<String> {
+        self.fastly_key.as_ref().as_ref().cloned()
     }
 
     // ----- Pending Requests API -----

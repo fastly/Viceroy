@@ -89,6 +89,8 @@ pub struct ExecuteCtx {
     object_store: ObjectStores,
     /// The secret stores for this execution.
     secret_stores: Arc<SecretStores>,
+    /// The FASTLY_KEY read in from the environment
+    fastly_key: Arc<Option<String>>,
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
@@ -189,6 +191,7 @@ impl ExecuteCtx {
                 engine_clone.increment_epoch();
             }
         })));
+        let fastly_key = std::env::var("FASTLY_KEY").ok();
 
         Ok(Self {
             engine,
@@ -204,6 +207,7 @@ impl ExecuteCtx {
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
             secret_stores: Arc::new(SecretStores::new()),
+            fastly_key: Arc::new(fastly_key),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_path: Arc::new(guest_profile_path),
@@ -416,6 +420,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.fastly_key.clone(),
         );
 
         let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
@@ -560,6 +565,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.fastly_key.clone(),
         );
 
         if let Instance::Component(_) = self.instance_pre.as_ref() {
