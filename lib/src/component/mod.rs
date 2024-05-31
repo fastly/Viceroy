@@ -2,7 +2,7 @@ use {crate::linking::ComponentCtx, wasmtime::component};
 
 component::bindgen!({
     path: "wit",
-    world: "fastly:api/compute",
+    world: "fastly:viceroy/compute",
     async: true,
     with: {
         "fastly:api/uap/user-agent": uap::UserAgent,
@@ -57,6 +57,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::secret_store::add_to_linker(linker, |x| x.session())?;
     fastly::api::types::add_to_linker(linker, |x| x.session())?;
     fastly::api::uap::add_to_linker(linker, |x| x.session())?;
+    fastly::api::viceroy_env::add_to_linker(linker, |x| x.session())?;
 
     Ok(())
 }
@@ -78,3 +79,4 @@ pub mod purge;
 pub mod secret_store;
 pub mod types;
 pub mod uap;
+pub mod viceroy_env;

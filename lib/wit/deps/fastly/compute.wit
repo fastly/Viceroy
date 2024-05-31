@@ -1065,6 +1065,10 @@ interface reactor {
   serve: func(req: request-handle, body: body-handle) -> result;
 }
 
+interface viceroy-env {
+	fastly-key: func() -> result<string>;
+}
+
 world compute {
     import wasi:clocks/wall-clock@0.2.0;
     import wasi:clocks/monotonic-clock@0.2.0;

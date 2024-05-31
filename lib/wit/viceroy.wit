@@ -2,4 +2,5 @@ package fastly:viceroy;
 
 world compute {
 	include fastly:api/compute;
+	import fastly:api/viceroy-env;
 }
