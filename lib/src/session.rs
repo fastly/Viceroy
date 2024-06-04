@@ -127,7 +127,7 @@ pub struct Session {
     /// The ID for the client request being processed.
     req_id: u64,
     /// FASTLY_KEY read in from the environment
-    fastly_key: Arc<Option<String>>
+    fastly_key: Arc<Option<String>>,
 }
 
 impl Session {
