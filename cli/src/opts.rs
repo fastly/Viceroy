@@ -232,6 +232,12 @@ pub struct AdaptArgs {
     /// The output name
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
+    /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
+    /// effect if you set RUST_LOG to a value before starting Viceroy
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    verbosity: u8,
 }
 
 impl AdaptArgs {
@@ -251,6 +257,13 @@ impl AdaptArgs {
         );
         output.set_extension("component.wasm");
         output
+    }
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
+    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
+    /// to a value before starting Viceroy
+    pub fn verbosity(&self) -> u8 {
+        self.verbosity
     }
 }
 

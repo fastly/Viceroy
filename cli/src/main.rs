@@ -94,6 +94,7 @@ pub async fn main() -> ExitCode {
             }
         }
         Commands::Adapt(adapt_args) => {
+            install_tracing_subscriber(adapt_args.verbosity());
             let input = adapt_args.input();
             let output = adapt_args.output();
             let bytes = match std::fs::read(&input) {
