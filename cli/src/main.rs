@@ -99,7 +99,11 @@ pub async fn main() -> ExitCode {
             let bytes = match std::fs::read(&input) {
                 Ok(bytes) => bytes,
                 Err(_) => {
-                    eprintln!("Failed to read module from: {}", input.display());
+                    event!(
+                        Level::ERROR,
+                        "Failed to read module from: {}",
+                        input.display()
+                    );
                     return ExitCode::FAILURE;
                 }
             };
@@ -107,16 +111,16 @@ pub async fn main() -> ExitCode {
             let module = match viceroy_lib::adapt::adapt_bytes(&bytes) {
                 Ok(module) => module,
                 Err(e) => {
-                    eprintln!("Failed to adapt module: {e}");
+                    event!(Level::ERROR, "Failed to adapt module: {e}");
                     return ExitCode::FAILURE;
                 }
             };
 
-            println!("Writing component to: {}", output.display());
+            event!(Level::INFO, "Writing component to: {}", output.display());
             match std::fs::write(output, module) {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(e) => {
-                    eprintln!("Failed to write component: {e}");
+                    event!(Level::ERROR, "Failed to write component: {e}");
                     return ExitCode::FAILURE;
                 }
             }
