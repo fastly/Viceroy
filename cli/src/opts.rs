@@ -69,7 +69,7 @@ pub struct RunArgs {
 pub struct SharedArgs {
     /// The path to the service's Wasm module.
     #[arg(value_parser = check_module, required=true)]
-    input: Option<String>,
+    input: Option<PathBuf>,
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
@@ -175,7 +175,7 @@ impl RunArgs {
 impl SharedArgs {
     /// The path to the service's Wasm binary.
     pub fn input(&self) -> PathBuf {
-        PathBuf::from(self.input.as_ref().unwrap())
+        self.input.as_ref().unwrap().clone()
     }
 
     /// The path to a `local_server` configuration file.
@@ -225,9 +225,9 @@ impl SharedArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct AdaptArgs {
-    /// The path to the service's Wasm module.
+    /// The path to the Wasm module to adapt.
     #[arg(value_parser = check_module, required=true)]
-    input: Option<String>,
+    input: PathBuf,
 
     /// The output name
     #[arg(short = 'o', long = "output")]
@@ -242,7 +242,7 @@ pub struct AdaptArgs {
 
 impl AdaptArgs {
     pub(crate) fn input(&self) -> PathBuf {
-        PathBuf::from(self.input.as_ref().expect("input wasm name"))
+        self.input.clone()
     }
 
     pub(crate) fn output(&self) -> PathBuf {
@@ -250,11 +250,7 @@ impl AdaptArgs {
             return output.clone();
         }
 
-        let mut output = PathBuf::from(
-            PathBuf::from(self.input.as_ref().expect("input wasm name"))
-                .file_name()
-                .expect("input filename"),
-        );
+        let mut output = PathBuf::from(self.input.file_name().expect("input filename"));
         output.set_extension("component.wasm");
         output
     }
@@ -309,11 +305,11 @@ impl From<&ExperimentalModule> for ExperimentalModuleArg {
 /// binary or text format.
 ///
 /// [opts]: struct.Opts.html
-fn check_module(s: &str) -> Result<String, Error> {
+fn check_module(s: &str) -> Result<PathBuf, Error> {
     let path = PathBuf::from(s);
-    let contents = std::fs::read(path)?;
+    let contents = std::fs::read(&path)?;
     match wat::parse_bytes(&contents) {
-        Ok(_) => Ok(s.to_string()),
+        Ok(_) => Ok(path),
         _ => Err(Error::FileFormat),
     }
 }
