@@ -8,6 +8,7 @@ use crate::config::UnknownImportBehavior;
 
 use {
     crate::{
+        adapt,
         body::Body,
         component as compute,
         config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
@@ -106,6 +107,7 @@ impl ExecuteCtx {
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_path: Option<PathBuf>,
         unknown_import_behavior: UnknownImportBehavior,
+        adapt_components: bool,
     ) -> Result<Self, Error> {
         let input = fs::read(&module_path)?;
 
@@ -125,6 +127,22 @@ impl ExecuteCtx {
                 ..
             })
         );
+
+        // When the input wasn't a component, but we're automatically adapting,
+        // apply the component adapter.
+        let (is_component, input) = if !is_component && adapt_components {
+            // It's not possible to adapt a component from WAT, we can't continue at this point.
+            if is_wat {
+                return Err(Error::Other(anyhow::anyhow!(
+                    "Wasm components may only be adapted from binary wasm components, not wat"
+                )));
+            }
+
+            let input = adapt::adapt_bytes(&input)?;
+            (true, input)
+        } else {
+            (is_component, input)
+        };
 
         let config = &configure_wasmtime(is_component, profiling_strategy);
         let engine = Engine::new(config)?;
@@ -323,7 +341,8 @@ impl ExecuteCtx {
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default())?;
+    /// let adapt_core_wasm = false;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
     /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
     /// # Ok(())
     /// # }

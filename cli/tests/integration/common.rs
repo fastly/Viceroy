@@ -276,12 +276,14 @@ impl Test {
             self.backends.start_servers().await;
         }
 
+        let adapt_core_wasm = false;
         let ctx = ExecuteCtx::new(
             &self.module_path,
             ProfilingStrategy::None,
             HashSet::new(),
             None,
             self.unknown_import_behavior,
+            adapt_core_wasm,
         )?
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())

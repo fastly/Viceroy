@@ -21,6 +21,7 @@ include = [
     "src/**/*",
     "wit/**/*",
     "compute-at-edge-abi/**/*.witx",
+    "data/*.wasm",
 ]
 
 [dependencies]
@@ -55,6 +56,8 @@ tracing = { workspace = true }
 tracing-futures = { workspace = true }
 url = { workspace = true }
 wasmparser = { workspace = true }
+wasm-encoder = { workspace = true }
+wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-nn = { workspace = true }

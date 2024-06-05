@@ -2,6 +2,8 @@
 members = [
     "cli",
     "lib",
+    "crates/adapter",
+    "crates/adapter/byte-array-literals",
 ]
 resolver = "2"
 
@@ -43,3 +45,28 @@ wasmtime-wasi = "21.0.0"
 wasmtime-wasi-nn = "21.0.0"
 wiggle = "21.0.0"
 wasmparser = "0.208.0"
+wasm-encoder = { version = "0.208.0", features = ["wasmparser"] }
+wit-component = "0.208.0"
+
+# Adapter dependencies
+byte-array-literals = { path = "crates/adapter/byte-array-literals" }
+bitflags = { version = "2.5.0", default-features = false }
+object = { version = "0.33", default-features = false, features = ["archive"] }
+wasi = { version = "0.11.0", default-features = false }
+wit-bindgen-rust-macro = { version = "0.25.0", default-features = false }
+
+[profile.release.package.viceroy-component-adapter]
+opt-level = 's'
+strip = 'debuginfo'
+
+[profile.dev.package.viceroy-component-adapter]
+# Make dev look like a release build since this adapter module won't work with
+# a debug build that uses data segments and such.
+incremental = false
+opt-level = 's'
+# Omit assertions, which include failure messages which require string
+# initializers.
+debug-assertions = false
+# Omit integer overflow checks, which include failure messages which require
+# string initializers.
+overflow-checks = false

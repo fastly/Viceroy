@@ -40,6 +40,9 @@ pub enum Commands {
 
     /// Run the input wasm once and then exit.
     Run(RunArgs),
+
+    /// Adapt core wasm to a component.
+    Adapt(AdaptArgs),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -66,7 +69,7 @@ pub struct RunArgs {
 pub struct SharedArgs {
     /// The path to the service's Wasm module.
     #[arg(value_parser = check_module, required=true)]
-    input: Option<String>,
+    input: Option<PathBuf>,
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
@@ -108,6 +111,10 @@ pub struct SharedArgs {
     /// effect if you set RUST_LOG to a value before starting Viceroy
     #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbosity: u8,
+    /// Whether or not to automatically adapt core-wasm modules to
+    /// components before running them.
+    #[arg(long = "adapt")]
+    adapt: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -168,7 +175,7 @@ impl RunArgs {
 impl SharedArgs {
     /// The path to the service's Wasm binary.
     pub fn input(&self) -> PathBuf {
-        PathBuf::from(self.input.as_ref().unwrap())
+        self.input.as_ref().unwrap().clone()
     }
 
     /// The path to a `local_server` configuration file.
@@ -202,6 +209,50 @@ impl SharedArgs {
     /// Unknown import behavior
     pub fn unknown_import_behavior(&self) -> UnknownImportBehavior {
         self.unknown_import_behavior
+    }
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
+    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
+    /// to a value before starting Viceroy
+    pub fn verbosity(&self) -> u8 {
+        self.verbosity
+    }
+
+    pub fn adapt(&self) -> bool {
+        self.adapt
+    }
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AdaptArgs {
+    /// The path to the Wasm module to adapt.
+    #[arg(value_parser = check_module, required=true)]
+    input: PathBuf,
+
+    /// The output name
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
+    /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
+    /// effect if you set RUST_LOG to a value before starting Viceroy
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    verbosity: u8,
+}
+
+impl AdaptArgs {
+    pub(crate) fn input(&self) -> PathBuf {
+        self.input.clone()
+    }
+
+    pub(crate) fn output(&self) -> PathBuf {
+        if let Some(output) = self.output.as_ref() {
+            return output.clone();
+        }
+
+        let mut output = PathBuf::from(self.input.file_name().expect("input filename"));
+        output.set_extension("component.wasm");
+        output
     }
 
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
@@ -254,11 +305,11 @@ impl From<&ExperimentalModule> for ExperimentalModuleArg {
 /// binary or text format.
 ///
 /// [opts]: struct.Opts.html
-fn check_module(s: &str) -> Result<String, Error> {
+fn check_module(s: &str) -> Result<PathBuf, Error> {
     let path = PathBuf::from(s);
-    let contents = std::fs::read(path)?;
+    let contents = std::fs::read(&path)?;
     match wat::parse_bytes(&contents) {
-        Ok(_) => Ok(s.to_string()),
+        Ok(_) => Ok(path),
         _ => Err(Error::FileFormat),
     }
 }

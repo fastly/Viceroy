@@ -43,7 +43,8 @@ impl ViceroyService {
     /// # use std::collections::HashSet;
     /// use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # fn f() -> Result<(), Error> {
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default())?;
+    /// let adapt_core_wasm = false;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
     /// let svc = ViceroyService::new(ctx);
     /// # Ok(())
     /// # }

@@ -93,6 +93,39 @@ pub async fn main() -> ExitCode {
                 Err(_) => ExitCode::FAILURE,
             }
         }
+        Commands::Adapt(adapt_args) => {
+            install_tracing_subscriber(adapt_args.verbosity());
+            let input = adapt_args.input();
+            let output = adapt_args.output();
+            let bytes = match std::fs::read(&input) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to read module from: {}",
+                        input.display()
+                    );
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let module = match viceroy_lib::adapt::adapt_bytes(&bytes) {
+                Ok(module) => module,
+                Err(e) => {
+                    event!(Level::ERROR, "Failed to adapt module: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            event!(Level::INFO, "Writing component to: {}", output.display());
+            match std::fs::write(output, module) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    event!(Level::ERROR, "Failed to write component: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
     }
 }
 
@@ -243,6 +276,7 @@ async fn create_execution_context(
         args.wasi_modules(),
         guest_profile_path,
         args.unknown_import_behavior(),
+        args.adapt(),
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout());
