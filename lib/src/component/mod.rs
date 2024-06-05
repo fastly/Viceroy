@@ -57,6 +57,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::secret_store::add_to_linker(linker, |x| x.session())?;
     fastly::api::types::add_to_linker(linker, |x| x.session())?;
     fastly::api::uap::add_to_linker(linker, |x| x.session())?;
+    fastly::api::config_store::add_to_linker(linker, |x| x.session())?;
 
     Ok(())
 }
@@ -64,6 +65,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
 pub mod async_io;
 pub mod backend;
 pub mod cache;
+pub mod config_store;
 pub mod dictionary;
 pub mod error;
 pub mod geo;

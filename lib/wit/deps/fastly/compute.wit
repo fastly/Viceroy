@@ -1055,6 +1055,22 @@ interface cache {
   get-hits: func(handle: handle) -> result<u64, error>;
 }
 
+interface config-store {
+  use types.{error};
+
+  type handle = u32;
+
+  /// Attempt to open the named config store.
+  open: func(name: string) -> result<handle, error>;
+
+  /// Fetch a value from the config store, returning `None` if it doesn't exist.
+  get: func(
+    store: handle,
+    key: string,
+    max-len: u64,
+  ) -> result<option<string>, error>;
+}
+
 interface reactor {
   use http-types.{request-handle, body-handle};
 
@@ -1089,6 +1105,7 @@ world compute {
     import kv-store;
     import purge;
     import secret-store;
+    import config-store;
     import uap;
 
     export reactor;

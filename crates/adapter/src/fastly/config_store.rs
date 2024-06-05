@@ -1,5 +1,6 @@
-use super::fastly_dictionary;
 use super::FastlyStatus;
+use crate::{bindings::fastly::api::config_store, with_buffer, TrappingUnwrap};
+use core::slice;
 
 pub type ConfigStoreHandle = u32;
 
@@ -9,7 +10,16 @@ pub fn open(
     name_len: usize,
     store_handle_out: *mut ConfigStoreHandle,
 ) -> FastlyStatus {
-    fastly_dictionary::open(name, name_len, store_handle_out)
+    let name = unsafe { slice::from_raw_parts(name, name_len) };
+    match config_store::open(name) {
+        Ok(res) => {
+            unsafe {
+                *store_handle_out = res;
+            }
+            FastlyStatus::OK
+        }
+        Err(e) => e.into(),
+    }
 }
 
 #[export_name = "fastly_config_store#get"]
@@ -21,5 +31,23 @@ pub fn get(
     value_max_len: usize,
     nwritten: *mut usize,
 ) -> FastlyStatus {
-    fastly_dictionary::get(store_handle, key, key_len, value, value_max_len, nwritten)
+    let key = unsafe { slice::from_raw_parts(key, key_len) };
+    with_buffer!(
+        value,
+        value_max_len,
+        {
+            config_store::get(
+                store_handle,
+                key,
+                u64::try_from(value_max_len).trapping_unwrap(),
+            )
+        },
+        |res| {
+            let res = res.ok_or(FastlyStatus::NONE)?;
+            unsafe {
+                *nwritten = res.len();
+            }
+            std::mem::forget(res)
+        }
+    )
 }
