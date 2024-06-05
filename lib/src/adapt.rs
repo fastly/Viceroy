@@ -1,4 +1,4 @@
-const ADAPTER_BYTES: &[u8] = include_bytes!("../data/wasi_snapshot_preview1.wasm");
+const ADAPTER_BYTES: &[u8] = include_bytes!("../data/viceroy-component-adapter.wasm");
 
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
@@ -7,6 +7,11 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
 
     let component = wit_component::ComponentEncoder::default()
         .module(module.as_slice())?
+        // NOTE: the adapter uses the module name `wasi_snapshot_preview1` as it was originally a
+        // fork of the wasi_snapshot_preview1 adapter. The wasm has a different name to make the
+        // codebase make more sense, but plumbing that name all the way through the adapter would
+        // require adjusting all preview1 functions to have a mangled name, like
+        // "wasi_snapshot_preview1#args_get".
         .adapter("wasi_snapshot_preview1", ADAPTER_BYTES)?
         .validate(true)
         .encode()?;

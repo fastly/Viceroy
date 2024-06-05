@@ -81,5 +81,5 @@ adapter:
 		-p viceroy-component-adapter \
 		--target wasm32-unknown-unknown
 	mkdir -p lib/adapter
-	cp target/wasm32-unknown-unknown/release/wasi_snapshot_preview1.wasm \
-		lib/adapter/
+	cp target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
+		lib/data/viceroy-component-adapter.wasm
