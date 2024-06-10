@@ -16,10 +16,7 @@ impl config_store::Host for Session {
         name: String,
         max_len: u64,
     ) -> Result<Option<String>, types::Error> {
-        let dict = self
-            .dictionary(store.into())?
-            .contents()
-            .map_err(|err| error::Error::Other(err.into()))?;
+        let dict = &self.dictionary(store.into())?.contents;
 
         let item = if let Some(item) = dict.get(&name) {
             item

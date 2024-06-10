@@ -45,10 +45,7 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let dict = self
-            .dictionary(dictionary)?
-            .contents()
-            .map_err(|err| Error::Other(err.into()))?;
+        let dict = &self.dictionary(dictionary)?.contents;
 
         let item_bytes = {
             let key: &str = &key.as_str()?.ok_or(Error::SharedMemory)?;
