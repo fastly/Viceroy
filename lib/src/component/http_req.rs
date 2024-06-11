@@ -211,11 +211,7 @@ impl http_req::Host for Session {
         };
 
         if value.len() > usize::try_from(max_len).unwrap() {
-            return Err(Error::BufferLengthError {
-                buf: "value",
-                len: "value_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(u64::try_from(value.len()).unwrap()));
         }
 
         Ok(Some(value.as_bytes().to_owned()))

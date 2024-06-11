@@ -3,7 +3,7 @@
 // wrappers around these definitions.
 
 use super::{convert_result, FastlyStatus};
-use crate::{alloc_result, with_buffer, TrappingUnwrap};
+use crate::{alloc_result, alloc_result_opt, handle_buffer_len, with_buffer, TrappingUnwrap};
 
 impl From<crate::bindings::fastly::api::http_types::HttpVersion> for u32 {
     fn from(value: crate::bindings::fastly::api::http_types::HttpVersion) -> Self {
@@ -420,7 +420,7 @@ pub mod fastly_http_body {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -453,24 +453,13 @@ pub mod fastly_http_body {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        with_buffer!(
-            value,
-            value_max_len,
-            {
-                http_body::trailer_value_get(
-                    body_handle,
-                    name,
-                    u64::try_from(value_max_len).trapping_unwrap(),
-                )
-            },
-            |res| {
-                let res = res.ok_or(FastlyStatus::NONE)?;
-                unsafe {
-                    *nwritten = res.len();
-                }
-                std::mem::forget(res);
-            }
-        )
+        alloc_result_opt!(value, value_max_len, nwritten, {
+            http_body::trailer_value_get(
+                body_handle,
+                name,
+                u64::try_from(value_max_len).trapping_unwrap(),
+            )
+        })
     }
 
     #[export_name = "fastly_http_body#trailer_values_get"]
@@ -497,7 +486,7 @@ pub mod fastly_http_body {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -1093,7 +1082,7 @@ pub mod fastly_http_req {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -1149,7 +1138,7 @@ pub mod fastly_http_req {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -1195,7 +1184,7 @@ pub mod fastly_http_req {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -1243,24 +1232,13 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        with_buffer!(
-            value,
-            value_max_len,
-            {
-                fastly::api::http_req::header_value_get(
-                    req_handle,
-                    name,
-                    u64::try_from(value_max_len).trapping_unwrap(),
-                )
-            },
-            |res| {
-                let res = res.ok_or(FastlyStatus::NONE)?;
-                unsafe {
-                    *nwritten = res.len();
-                }
-                std::mem::forget(res);
-            }
-        )
+        alloc_result_opt!(value, value_max_len, nwritten, {
+            fastly::api::http_req::header_value_get(
+                req_handle,
+                name,
+                u64::try_from(value_max_len).trapping_unwrap(),
+            )
+        })
     }
 
     #[export_name = "fastly_http_req#header_remove"]
@@ -1748,7 +1726,7 @@ pub mod fastly_http_resp {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -1781,24 +1759,13 @@ pub mod fastly_http_resp {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        with_buffer!(
-            value,
-            value_max_len,
-            {
-                http_resp::header_value_get(
-                    resp_handle,
-                    name,
-                    u64::try_from(value_max_len).trapping_unwrap(),
-                )
-            },
-            |res| {
-                let res = res.ok_or(FastlyStatus::NONE)?;
-                unsafe {
-                    *nwritten = res.len();
-                }
-                std::mem::forget(res);
-            }
-        )
+        alloc_result_opt!(value, value_max_len, nwritten, {
+            http_resp::header_value_get(
+                resp_handle,
+                name,
+                u64::try_from(value_max_len).trapping_unwrap(),
+            )
+        })
     }
 
     #[export_name = "fastly_http_resp#header_values_get"]
@@ -1825,7 +1792,7 @@ pub mod fastly_http_resp {
                 )
             },
             |res| {
-                let (written, end) = match res {
+                let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
                         let written = bytes.len();
                         let end = match next {
@@ -2017,24 +1984,13 @@ pub mod fastly_dictionary {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key, key_len) };
-        with_buffer!(
-            value,
-            value_max_len,
-            {
-                dictionary::get(
-                    dict_handle,
-                    key,
-                    u64::try_from(value_max_len).trapping_unwrap(),
-                )
-            },
-            |res| {
-                let res = res.ok_or(FastlyStatus::NONE)?;
-                unsafe {
-                    *nwritten = res.len();
-                }
-                std::mem::forget(res)
-            }
-        )
+        alloc_result_opt!(value, value_max_len, nwritten, {
+            dictionary::get(
+                dict_handle,
+                key,
+                u64::try_from(value_max_len).trapping_unwrap(),
+            )
+        })
     }
 }
 
@@ -2405,23 +2361,12 @@ pub mod fastly_secret_store {
         plaintext_max_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        with_buffer!(
-            plaintext_buf,
-            plaintext_max_len,
-            {
-                secret_store::plaintext(
-                    secret_handle,
-                    u64::try_from(plaintext_max_len).trapping_unwrap(),
-                )
-            },
-            |res| {
-                let res = res.ok_or(FastlyStatus::NONE)?;
-                unsafe {
-                    *nwritten_out = res.len();
-                }
-                std::mem::forget(res);
-            }
-        )
+        alloc_result_opt!(plaintext_buf, plaintext_max_len, nwritten_out, {
+            secret_store::plaintext(
+                secret_handle,
+                u64::try_from(plaintext_max_len).trapping_unwrap(),
+            )
+        })
     }
 
     #[export_name = "fastly_secret_store#from_bytes"]
@@ -2564,18 +2509,9 @@ pub mod fastly_backend {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend_ptr, backend_len) };
-        with_buffer!(
-            value,
-            value_max_len,
-            { backend::get_override_host(backend, u64::try_from(value_max_len).trapping_unwrap()) },
-            |res| {
-                let res = res.ok_or(FastlyStatus::NONE)?;
-                unsafe {
-                    *nwritten = res.len();
-                }
-                std::mem::forget(res);
-            }
-        )
+        alloc_result_opt!(value, value_max_len, nwritten, {
+            backend::get_override_host(backend, u64::try_from(value_max_len).trapping_unwrap())
+        })
     }
 
     #[export_name = "fastly_backend#get_port"]
@@ -2796,7 +2732,7 @@ pub mod fastly_purge {
                 )
             },
             |res| {
-                if let Some(res) = res {
+                if let Some(res) = res? {
                     unsafe {
                         *(*options).ret_buf_nwritten_out = res.len();
                     }
