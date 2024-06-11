@@ -21,10 +21,9 @@ mod limits;
 /// Types and deserializers for dictionaries configuration settings.
 mod dictionaries;
 
-pub use self::dictionaries::Dictionary;
-pub use self::dictionaries::DictionaryName;
+pub use self::dictionaries::{Dictionary, LoadedDictionary};
 
-pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
+pub type Dictionaries = HashMap<String, Dictionary>;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;

@@ -11,10 +11,7 @@ use {
     self::downstream::DownstreamResponse,
     crate::{
         body::Body,
-        config::{
-            Backend, Backends, DeviceDetection, Dictionaries, Dictionary, DictionaryName,
-            Geolocation,
-        },
+        config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
@@ -96,10 +93,8 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     dictionaries: Arc<Dictionaries>,
-    /// The dictionaries configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName>,
+    /// The dictionaries that have been opened by the guest.
+    loaded_dictionaries: PrimaryMap<DictionaryHandle, LoadedDictionary>,
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
@@ -171,7 +166,7 @@ impl Session {
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
-            dictionaries_by_name: PrimaryMap::new(),
+            loaded_dictionaries: PrimaryMap::new(),
             object_store,
             object_store_by_name: PrimaryMap::new(),
             secret_stores,
@@ -603,9 +598,9 @@ impl Session {
 
     /// Look up a dictionary-handle by name.
     pub fn dictionary_handle(&mut self, name: &str) -> Result<DictionaryHandle, Error> {
-        let dict = DictionaryName::new(name.to_string());
-        if self.dictionaries.contains_key(&dict) {
-            Ok(self.dictionaries_by_name.push(dict))
+        if let Some(dict) = self.dictionaries.get(name) {
+            let loaded = dict.load().map_err(|err| Error::Other(err.into()))?;
+            Ok(self.loaded_dictionaries.push(loaded))
         } else {
             Err(Error::DictionaryError(
                 crate::wiggle_abi::DictionaryError::UnknownDictionary(name.to_owned()),
@@ -614,10 +609,9 @@ impl Session {
     }
 
     /// Look up a dictionary by dictionary-handle.
-    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, HandleError> {
-        self.dictionaries_by_name
+    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&LoadedDictionary, HandleError> {
+        self.loaded_dictionaries
             .get(handle)
-            .and_then(|name| self.dictionaries.get(name))
             .ok_or(HandleError::InvalidDictionaryHandle(handle))
     }
 
