@@ -60,6 +60,7 @@ pub struct Test {
     log_stderr: bool,
     via_hyper: bool,
     unknown_import_behavior: UnknownImportBehavior,
+    adapt_component: bool,
 }
 
 impl Test {
@@ -80,6 +81,7 @@ impl Test {
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
+            adapt_component: false,
         }
     }
 
@@ -100,6 +102,7 @@ impl Test {
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
+            adapt_component: false,
         }
     }
 
@@ -234,6 +237,12 @@ impl Test {
         }
     }
 
+    /// Automatically adapt the wasm to a component before running.
+    pub fn adapt_component(mut self) -> Self {
+        self.adapt_component = true;
+        self
+    }
+
     /// Pass the given requests through this test, returning the associated responses.
     ///
     /// A `Test` can be used repeatedly against different requests, either individually (as with
@@ -276,14 +285,13 @@ impl Test {
             self.backends.start_servers().await;
         }
 
-        let adapt_core_wasm = false;
         let ctx = ExecuteCtx::new(
             &self.module_path,
             ProfilingStrategy::None,
             HashSet::new(),
             None,
             self.unknown_import_behavior,
-            adapt_core_wasm,
+            self.adapt_component,
         )?
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())

@@ -2,7 +2,7 @@ package fastly:api;
 
 interface types {
   // TODO: split this up into function-specific error enums
-  enum error {
+  variant error {
     /// Unknown error value.
     /// It should be an internal error if this is returned.
     unknown-error,
@@ -15,8 +15,9 @@ interface types {
     /// Thrown when a handle is not valid. E.G. No dictionary exists with the given name.
     bad-handle,
     /// Buffer length error.
-    /// Thrown when a buffer is too long.
-    buffer-len,
+    /// Thrown when a buffer is the wrong size.
+    /// Includes the buffer length that would allow the operation to succeed.
+    buffer-len(u64),
     /// Unsupported operation error.
     /// This error is thrown when some operation cannot be performed, because it is not supported.
     unsupported,

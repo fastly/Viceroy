@@ -1,5 +1,5 @@
 use super::FastlyStatus;
-use crate::{bindings::fastly::api::config_store, with_buffer, TrappingUnwrap};
+use crate::{alloc_result_opt, bindings::fastly::api::config_store, TrappingUnwrap};
 use core::slice;
 
 pub type ConfigStoreHandle = u32;
@@ -32,22 +32,11 @@ pub fn get(
     nwritten: *mut usize,
 ) -> FastlyStatus {
     let key = unsafe { slice::from_raw_parts(key, key_len) };
-    with_buffer!(
-        value,
-        value_max_len,
-        {
-            config_store::get(
-                store_handle,
-                key,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
-        },
-        |res| {
-            let res = res.ok_or(FastlyStatus::NONE)?;
-            unsafe {
-                *nwritten = res.len();
-            }
-            std::mem::forget(res)
-        }
-    )
+    alloc_result_opt!(value, value_max_len, nwritten, {
+        config_store::get(
+            store_handle,
+            key,
+            u64::try_from(value_max_len).trapping_unwrap(),
+        )
+    })
 }

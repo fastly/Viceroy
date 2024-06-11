@@ -88,8 +88,17 @@ impl http_resp::Host for Session {
             cursor,
         );
 
-        if buf.is_empty() && next.is_none() {
-            return Ok(None);
+        if buf.is_empty() {
+            if next.is_none() {
+                return Ok(None);
+            } else {
+                // It's an error if we couldn't write even a single value.
+                return Err(Error::BufferLengthError {
+                    buf: "buf",
+                    len: "buf.len()",
+                }
+                .into());
+            }
         }
 
         Ok(Some((buf, next)))
@@ -113,11 +122,7 @@ impl http_resp::Host for Session {
         };
 
         if value.len() > usize::try_from(max_len).unwrap() {
-            return Err(Error::BufferLengthError {
-                buf: "value",
-                len: "value_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(u64::try_from(value.len()).unwrap()));
         }
 
         Ok(Some(value.as_bytes().to_owned()))
@@ -130,6 +135,10 @@ impl http_resp::Host for Session {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
+        if name.len() > MAX_HEADER_NAME_LEN {
+            return Err(Error::InvalidArgument.into());
+        }
+
         let headers = &self.response_parts(h.into())?.headers;
 
         let values = headers.get_all(HeaderName::from_str(&name)?);
@@ -141,8 +150,17 @@ impl http_resp::Host for Session {
             cursor,
         );
 
-        if buf.is_empty() && next.is_none() {
-            return Ok(None);
+        if buf.is_empty() {
+            if next.is_none() {
+                return Ok(None);
+            } else {
+                // It's an error if we couldn't write even a single value.
+                return Err(Error::BufferLengthError {
+                    buf: "buf",
+                    len: "buf.len()",
+                }
+                .into());
+            }
         }
 
         Ok(Some((buf, next)))

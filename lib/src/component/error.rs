@@ -159,7 +159,7 @@ impl From<error::Error> for types::Error {
     fn from(err: error::Error) -> Self {
         use error::Error;
         match err {
-            Error::BufferLengthError { .. } => types::Error::BufferLen,
+            Error::BufferLengthError { .. } => types::Error::BufferLen(0),
             Error::InvalidArgument => types::Error::InvalidArgument,
             Error::Unsupported { .. } => types::Error::Unsupported,
             Error::HandleError { .. } => types::Error::BadHandle,

@@ -24,7 +24,7 @@ impl From<crate::bindings::fastly::api::types::Error> for FastlyStatus {
             Error::GenericError => 1,
             Error::InvalidArgument => Self::INVALID_ARGUMENT.0,
             Error::BadHandle => 3,
-            Error::BufferLen => 4,
+            Error::BufferLen(_) => 4,
             Error::Unsupported => 5,
             Error::BadAlign => 6,
             Error::HttpInvalid => 7,

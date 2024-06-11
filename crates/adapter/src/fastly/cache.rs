@@ -1,5 +1,5 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle};
-use crate::{alloc_result, with_buffer, TrappingUnwrap};
+use crate::{alloc_result, TrappingUnwrap};
 
 pub type CacheHandle = u32;
 
