@@ -59,11 +59,9 @@ impl http_req::Host for Session {
         let req_method = &req.method;
 
         if req_method.as_str().len() > usize::try_from(max_len).unwrap() {
-            return Err(Error::BufferLengthError {
-                buf: "method",
-                len: "method_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(
+                u64::try_from(req_method.as_str().len()).unwrap(),
+            ));
         }
 
         Ok(req_method.to_string())
@@ -79,11 +77,7 @@ impl http_req::Host for Session {
         let res = req_uri.to_string();
 
         if res.len() > usize::try_from(max_len).unwrap() {
-            return Err(Error::BufferLengthError {
-                buf: "reqid_out",
-                len: "reqid_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(u64::try_from(res.len()).unwrap()));
         }
 
         Ok(res)
@@ -187,8 +181,17 @@ impl http_req::Host for Session {
             cursor,
         );
 
-        if buf.is_empty() && next.is_none() {
-            return Ok(None);
+        if buf.is_empty() {
+            if next.is_none() {
+                return Ok(None);
+            } else {
+                // It's an error if we couldn't write even a single value.
+                return Err(Error::BufferLengthError {
+                    buf: "buf",
+                    len: "buf.len()",
+                }
+                .into());
+            }
         }
 
         Ok(Some((buf, next)))
@@ -236,8 +239,17 @@ impl http_req::Host for Session {
             cursor,
         );
 
-        if buf.is_empty() && next.is_none() {
-            return Ok(None);
+        if buf.is_empty() {
+            if next.is_none() {
+                return Ok(None);
+            } else {
+                // It's an error if we couldn't write even a single value.
+                return Err(Error::BufferLengthError {
+                    buf: "buf",
+                    len: "buf.len()",
+                }
+                .into());
+            }
         }
 
         Ok(Some((buf, next)))
@@ -759,11 +771,9 @@ impl http_req::Host for Session {
         let result = format!("{:032x}", self.req_id());
 
         if result.len() > usize::try_from(max_len).unwrap() {
-            return Err(Error::BufferLengthError {
-                buf: "reqid_out",
-                len: "reqid_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(
+                u64::try_from(result.len()).unwrap(),
+            ));
         }
 
         Ok(result)
