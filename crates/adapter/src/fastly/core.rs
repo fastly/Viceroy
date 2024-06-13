@@ -1232,13 +1232,26 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        alloc_result_opt!(value, value_max_len, nwritten, {
-            fastly::api::http_req::header_value_get(
-                req_handle,
-                name,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
-        })
+        with_buffer!(
+            value,
+            value_max_len,
+            {
+                fastly::api::http_req::header_value_get(
+                    req_handle,
+                    name,
+                    u64::try_from(value_max_len).trapping_unwrap(),
+                )
+            },
+            |res| {
+                let res =
+                    handle_buffer_len!(res, nwritten).ok_or(FastlyStatus::INVALID_ARGUMENT)?;
+                unsafe {
+                    *nwritten = res.len();
+                }
+
+                std::mem::forget(res);
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#header_remove"]
@@ -1336,7 +1349,7 @@ pub mod fastly_http_req {
             Err((detail, e)) => {
                 unsafe {
                     *error_detail = detail
-                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Ok.into())
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
@@ -1546,7 +1559,7 @@ pub mod fastly_http_req {
             Err((detail, e)) => {
                 unsafe {
                     *error_detail = detail
-                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Ok.into())
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *is_done_out = 0;
                     *resp_handle_out = INVALID_HANDLE;
@@ -1604,7 +1617,7 @@ pub mod fastly_http_req {
             Err((detail, e)) => {
                 unsafe {
                     *error_detail = detail
-                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Ok.into())
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
@@ -1634,7 +1647,7 @@ pub mod fastly_http_req {
             Err((detail, e)) => {
                 unsafe {
                     *error_detail = detail
-                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Ok.into())
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
@@ -1759,13 +1772,26 @@ pub mod fastly_http_resp {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        alloc_result_opt!(value, value_max_len, nwritten, {
-            http_resp::header_value_get(
-                resp_handle,
-                name,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
-        })
+        with_buffer!(
+            value,
+            value_max_len,
+            {
+                http_resp::header_value_get(
+                    resp_handle,
+                    name,
+                    u64::try_from(value_max_len).trapping_unwrap(),
+                )
+            },
+            |res| {
+                let res =
+                    handle_buffer_len!(res, nwritten).ok_or(FastlyStatus::INVALID_ARGUMENT)?;
+                unsafe {
+                    *nwritten = res.len();
+                }
+
+                std::mem::forget(res);
+            }
+        )
     }
 
     #[export_name = "fastly_http_resp#header_values_get"]
@@ -2028,7 +2054,7 @@ pub mod fastly_device_detection {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         let user_agent = unsafe { slice::from_raw_parts(user_agent, user_agent_max_len) };
-        alloc_result!(buf, buf_len, nwritten_out, {
+        alloc_result_opt!(buf, buf_len, nwritten_out, {
             device_detection::lookup(user_agent, u64::try_from(buf_len).trapping_unwrap())
         })
     }
@@ -2177,7 +2203,7 @@ pub mod fastly_kv_store {
                     *kv_store_handle_out = INVALID_HANDLE;
                 }
 
-                FastlyStatus::NONE
+                FastlyStatus::INVALID_ARGUMENT
             }
             Ok(Some(res)) => {
                 unsafe {
@@ -2659,7 +2685,7 @@ pub mod fastly_async_io {
                 unsafe {
                     *done_index_out = u32::MAX;
                 }
-                FastlyStatus::NONE
+                FastlyStatus::OK
             }
             Err(e) => e.into(),
         }

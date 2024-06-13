@@ -48,6 +48,29 @@ macro_rules! viceroy_test {
     };
 }
 
+/// A variation of `viceroy_test` that will produce one test, and run the core-wasm and component
+/// cases sequentially. A failure in either one causes the whole test to fail, which makes things a
+/// little bit harder to debug, but for tests like logging that manipulate a shared resource, this
+/// is the simplest solution.
+#[macro_export]
+macro_rules! viceroy_test_sequential {
+    ($name:ident, |$is_component:ident| $body:block) => {
+        mod $name {
+            use super::*;
+
+            async fn test_impl($is_component: bool) -> TestResult {
+                $body
+            }
+
+            #[tokio::test(flavor = "multi_thread")]
+            async fn sequential() -> TestResult {
+                test_impl(false).await?;
+                test_impl(true).await
+            }
+        }
+    };
+}
+
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
 ///
 /// This value can be appended with the name of a fixture's `.wasm` in a test program, using the

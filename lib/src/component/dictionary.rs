@@ -1,6 +1,6 @@
 use {
     super::fastly::api::{dictionary, types},
-    crate::{error, session::Session},
+    crate::session::Session,
 };
 
 #[async_trait::async_trait]
@@ -25,11 +25,7 @@ impl dictionary::Host for Session {
         };
 
         if item.len() > usize::try_from(max_len).unwrap() {
-            return Err(error::Error::BufferLengthError {
-                buf: "item_out",
-                len: "item_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(u64::try_from(item.len()).unwrap()));
         }
 
         Ok(Some(item.clone()))

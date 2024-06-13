@@ -1,8 +1,10 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::{body::to_bytes, StatusCode};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn json_dictionary_lookup_works() -> TestResult {
+viceroy_test!(json_dictionary_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "json-dictionary-lookup"
         description = "json dictionary lookup test"
@@ -16,6 +18,7 @@ async fn json_dictionary_lookup_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("dictionary-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -28,10 +31,9 @@ async fn json_dictionary_lookup_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn inline_toml_dictionary_lookup_works() -> TestResult {
+viceroy_test!(inline_toml_dictionary_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "inline-toml-dictionary-lookup"
         description = "inline toml dictionary lookup test"
@@ -47,6 +49,7 @@ async fn inline_toml_dictionary_lookup_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("dictionary-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -59,10 +62,9 @@ async fn inline_toml_dictionary_lookup_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn missing_dictionary_works() -> TestResult {
+viceroy_test!(missing_dictionary_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "missing-dictionary-config"
         description = "missing dictionary test"
@@ -70,6 +72,7 @@ async fn missing_dictionary_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("dictionary-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -77,4 +80,4 @@ async fn missing_dictionary_works() -> TestResult {
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
     Ok(())
-}
+});

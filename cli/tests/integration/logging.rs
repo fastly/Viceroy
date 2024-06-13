@@ -1,5 +1,8 @@
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::StatusCode,
     std::{
         io::{self, Write},
@@ -20,10 +23,10 @@ impl Write for LogWriter {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn logging_works() -> TestResult {
+viceroy_test!(logging_works, |is_component| {
     let log_writer = Arc::new(Mutex::new(LogWriter(Vec::new())));
     let resp = Test::using_fixture("logging.wasm")
+        .adapt_component(is_component)
         .capture_logs(log_writer.clone())
         .log_stderr()
         .log_stdout()
@@ -61,4 +64,4 @@ async fn logging_works() -> TestResult {
     assert_eq!(read_log_line(), "stderr :: on each write\n");
 
     Ok(())
-}
+});

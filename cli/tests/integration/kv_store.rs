@@ -1,8 +1,10 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::{body::to_bytes, StatusCode};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn kv_store() -> TestResult {
+viceroy_test!(kv_store, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
@@ -14,6 +16,7 @@ async fn kv_store() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -26,10 +29,9 @@ async fn kv_store() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn object_stores_backward_compat() -> TestResult {
+viceroy_test!(object_stores_backward_compat, |is_component| {
     // Previously the "kv_stores" key was named "object_stores" and
     // the "file" key was named "path".  This test ensures that both
     // still work.
@@ -44,6 +46,7 @@ async fn object_stores_backward_compat() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -56,9 +59,9 @@ async fn object_stores_backward_compat() -> TestResult {
         .is_empty());
 
     Ok(())
-}
-#[tokio::test(flavor = "multi_thread")]
-async fn object_store_backward_compat() -> TestResult {
+});
+
+viceroy_test!(object_store_backward_compat, |is_component| {
     // Previously the "object_stores" key was named "object_store" and
     // the "file" key was named "path".  This test ensures that both
     // still work.
@@ -73,6 +76,7 @@ async fn object_store_backward_compat() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -85,10 +89,9 @@ async fn object_store_backward_compat() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn kv_store_bad_configs() -> TestResult {
+viceroy_test!(kv_store_bad_configs, |is_component| {
     const BAD_1_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
@@ -97,7 +100,10 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = 3, data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_1_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
+        .using_fastly_toml(BAD_1_FASTLY_TOML)
+    {
         Err(e) => assert_eq!(
             "invalid configuration for 'store_one': The `key` value for an object is not a string.",
             &e.to_string()
@@ -113,7 +119,9 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "first", data = 3}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_2_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
+        .using_fastly_toml(BAD_2_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': The `data` value for the object `first` is not a string.", &e.to_string()),
       _ => panic!(),
     }
@@ -126,7 +134,7 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "first", data = "This is some data", file = "../test-fixtures/data/kv-store.txt"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_3_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_3_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': The `file` and `data` keys for the object `first` are set. Only one can be used.", &e.to_string()),
       _ => panic!(),
     }
@@ -139,7 +147,7 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "first", file = 3}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_4_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_4_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': The `file` value for the object `first` is not a string.", &e.to_string()),
       _ => panic!(),
     }
@@ -164,7 +172,10 @@ async fn kv_store_bad_configs() -> TestResult {
     #[cfg(target_os = "windows")]
     let invalid_path_message = "invalid configuration for 'store_one': The system cannot find the path specified. (os error 3)";
 
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_5_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
+        .using_fastly_toml(BAD_5_FASTLY_TOML)
+    {
         Err(e) => assert_eq!(invalid_path_message, &e.to_string()),
         _ => panic!(),
     }
@@ -177,7 +188,7 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "first"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_6_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_6_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': The `file` or `data` key for the object `first` is not set. One must be used.", &e.to_string()),
       _ => panic!(),
     }
@@ -190,7 +201,7 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = [{data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_7_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_7_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': The `key` key for an object is not set. It must be used.", &e.to_string()),
       _ => panic!(),
     }
@@ -203,7 +214,7 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = "lol lmao"
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_8_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_8_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': There is no array of objects for the given store.", &e.to_string()),
       _ => panic!(),
     }
@@ -216,16 +227,15 @@ async fn kv_store_bad_configs() -> TestResult {
         [local_server]
         kv_stores.store_one = ["This is some data"]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_9_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_9_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': There is an object in the given store that is not a table of keys.", &e.to_string()),
       _ => panic!(),
     }
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn kv_store_bad_key_values() -> TestResult {
+viceroy_test!(kv_store_bad_key_values, |is_component| {
     const BAD_1_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
@@ -234,7 +244,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_1_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_1_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot be empty.", &e.to_string()),
         _ => panic!(),
     }
@@ -247,7 +257,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "LOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong,looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong,keeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeEEEEEEEEEEEEEEEEEEEEEEEEEEEEEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeey", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_2_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_2_FASTLY_TOML) {
         Err(e) => assert_eq!(
             "invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot be over 1024 bytes in size.",
             &e.to_string()
@@ -263,7 +273,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = ".well-known/acme-challenge/wheeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_3_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_3_FASTLY_TOML) {
         Err(e) => assert_eq!(
             "invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot start with `.well-known/acme-challenge`.",
             &e.to_string()
@@ -279,7 +289,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = ".", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_4_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_4_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot be named `.`.", &e.to_string()),
         _ => panic!(),
     }
@@ -292,7 +302,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "..", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_5_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_5_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot be named `..`.", &e.to_string()),
         _ => panic!(),
     }
@@ -305,7 +315,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "carriage\rreturn", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_6_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_6_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `\r`.", &e.to_string()),
         _ => panic!(),
     }
@@ -318,7 +328,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "newlines\nin\nthis\neconomy?", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_7_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_7_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `\n`.", &e.to_string()),
         _ => panic!(),
     }
@@ -331,7 +341,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "howdy[", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_8_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_8_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `[`.", &e.to_string()),
         _ => panic!(),
     }
@@ -344,7 +354,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "hello]", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_9_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_9_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `]`.", &e.to_string()),
         _ => panic!(),
     }
@@ -357,7 +367,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "yoohoo*", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_10_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_10_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `*`.", &e.to_string()),
         _ => panic!(),
     }
@@ -370,7 +380,7 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "hey?", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_11_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_11_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `?`.", &e.to_string()),
         _ => panic!(),
     }
@@ -383,10 +393,10 @@ async fn kv_store_bad_key_values() -> TestResult {
         [local_server]
         kv_stores.store_one = [{key = "ello ello#", data = "This is some data"}]
     "#;
-    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_12_FASTLY_TOML) {
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_12_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `#`.", &e.to_string()),
         _ => panic!(),
     }
 
     Ok(())
-}
+});
