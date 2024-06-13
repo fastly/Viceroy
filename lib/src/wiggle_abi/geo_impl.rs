@@ -39,6 +39,7 @@ impl FastlyGeo for Session {
         let result = self.geolocation_lookup(&ip_addr).unwrap_or_default();
 
         if result.len() > buf_len as usize {
+            nwritten_out.write(buf_len)?;
             return Err(Error::BufferLengthError {
                 buf: "geolocation_lookup",
                 len: "geolocation_lookup_max_len",
