@@ -44,7 +44,7 @@ impl FastlyDeviceDetection for Session {
         };
 
         if result.len() > buf_len as usize {
-            nwritten_out.write(buf_len)?;
+            nwritten_out.write(u32::try_from(result.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "device_detection_lookup",
                 len: "device_detection_lookup_max_len",
