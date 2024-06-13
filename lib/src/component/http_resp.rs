@@ -80,8 +80,6 @@ impl http_resp::Host for Session {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        {}
-
         let headers = &self.response_parts(h.into())?.headers;
 
         let (buf, next) = write_values(
