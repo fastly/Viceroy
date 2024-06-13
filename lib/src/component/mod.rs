@@ -12,6 +12,14 @@ component::bindgen!({
         "wasi:io": wasmtime_wasi::bindings::io,
         "wasi:cli": wasmtime_wasi::bindings::cli,
     },
+
+    trappable_error_type: {
+        "fastly:api/types/error" => types::TrappableError,
+    },
+
+    trappable_imports: [
+        "header-values-get"
+    ],
 });
 
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {

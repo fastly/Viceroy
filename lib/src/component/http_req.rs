@@ -2,6 +2,7 @@ use {
     super::{
         fastly::api::{http_req, http_types, types},
         headers::write_values,
+        types::TrappableError,
     },
     crate::{
         config::{Backend, ClientCertInfo},
@@ -223,7 +224,7 @@ impl http_req::Host for Session {
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
         let headers = &self.request_parts(h.into())?.headers;
 
         let values = headers.get_all(HeaderName::from_str(&name)?);

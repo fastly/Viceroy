@@ -465,14 +465,19 @@ impl ExecuteCtx {
                 let result = compute
                     .fastly_api_reactor()
                     .call_serve(&mut store, req.into(), body.into())
-                    .await
-                    .map_err(ExecutionError::Typechecking)?;
+                    .await;
 
                 let outcome = match result {
-                    Ok(()) => Ok(()),
-                    Err(()) => {
+                    Ok(Ok(())) => Ok(()),
+
+                    Ok(Err(())) => {
                         event!(Level::ERROR, "WebAssembly exited with an error");
                         Err(ExecutionError::WasmTrap(anyhow::Error::msg("failed")))
+                    }
+
+                    Err(e) => {
+                        event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
+                        Err(ExecutionError::WasmTrap(e))
                     }
                 };
 

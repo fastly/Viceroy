@@ -1,7 +1,8 @@
 use {
     super::fastly::api::{http_resp, http_types, types},
-    super::headers::write_values,
+    super::{headers::write_values, types::TrappableError},
     crate::{error::Error, session::Session},
+    cfg_if::cfg_if,
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
     std::str::FromStr,
@@ -134,36 +135,44 @@ impl http_resp::Host for Session {
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        if name.len() > MAX_HEADER_NAME_LEN {
-            return Err(Error::InvalidArgument.into());
-        }
-
-        let headers = &self.response_parts(h.into())?.headers;
-
-        let values = headers.get_all(HeaderName::from_str(&name)?);
-
-        let (buf, next) = write_values(
-            values.into_iter(),
-            b'\0',
-            usize::try_from(max_len).unwrap(),
-            cursor,
-        );
-
-        if buf.is_empty() {
-            if next.is_none() {
-                return Ok(None);
+    ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
+        cfg_if! {
+            if #[cfg(feature = "test-fatalerror-config")] {
+                // Avoid warnings:
+                let _ = (h, name, max_len, cursor);
+                return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into());
             } else {
-                // It's an error if we couldn't write even a single value.
-                return Err(Error::BufferLengthError {
-                    buf: "buf",
-                    len: "buf.len()",
+                if name.len() > MAX_HEADER_NAME_LEN {
+                    return Err(Error::InvalidArgument.into());
                 }
-                .into());
+
+                let headers = &self.response_parts(h.into())?.headers;
+
+                let values = headers.get_all(HeaderName::from_str(&name)?);
+
+                let (buf, next) = write_values(
+                    values.into_iter(),
+                    b'\0',
+                    usize::try_from(max_len).unwrap(),
+                    cursor,
+                );
+
+                if buf.is_empty() {
+                    if next.is_none() {
+                        return Ok(None);
+                    } else {
+                        // It's an error if we couldn't write even a single value.
+                        return Err(Error::BufferLengthError {
+                            buf: "buf",
+                            len: "buf.len()",
+                        }
+                        .into());
+                    }
+                }
+
+                Ok(Some((buf, next)))
             }
         }
-
-        Ok(Some((buf, next)))
     }
 
     async fn header_values_set(

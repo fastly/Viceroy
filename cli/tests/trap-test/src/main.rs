@@ -13,10 +13,8 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 /// Handy alias for the return type of async Tokio tests
 pub type TestResult = Result<(), Error>;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn fatal_error_traps() -> TestResult {
+async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
     let module_path = format!("{RUST_FIXTURE_PATH}/response.wasm");
-    let adapt_core_wasm = false;
     let ctx = ExecuteCtx::new(
         module_path,
         ProfilingStrategy::None,
@@ -44,4 +42,14 @@ async fn fatal_error_traps() -> TestResult {
     );
 
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fatal_error_traps() -> TestResult {
+    fatal_error_traps_impl(false).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fatal_error_traps_component() -> TestResult {
+    fatal_error_traps_impl(true).await
 }
