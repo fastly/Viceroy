@@ -168,12 +168,17 @@ impl http_body::Host for Session {
             b'\0',
             usize::try_from(max_len).unwrap(),
             cursor,
-        );
-        if buf.is_empty() && next.is_none() {
-            return Ok(None);
-        }
+        )
+        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
 
-        Ok(Some((buf, next)))
+        // At this point we know that the buffer being empty will also mean that there are no
+        // remaining entries to read.
+        if buf.is_empty() {
+            debug_assert!(next.is_none());
+            Ok(None)
+        } else {
+            Ok(Some((buf, next)))
+        }
     }
 
     async fn trailer_value_get(
@@ -241,12 +246,16 @@ impl http_body::Host for Session {
             b'\0',
             usize::try_from(max_len).unwrap(),
             cursor,
-        );
+        )
+        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
 
-        if buf.is_empty() && next.is_none() {
-            return Ok(None);
+        // At this point we know that the buffer being empty will also mean that there are no
+        // remaining entries to read.
+        if buf.is_empty() {
+            debug_assert!(next.is_none());
+            Ok(None)
+        } else {
+            Ok(Some((buf, next)))
         }
-
-        Ok(Some((buf, next)))
     }
 }
