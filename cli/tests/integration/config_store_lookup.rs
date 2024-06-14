@@ -8,14 +8,13 @@ async fn json_config_store_lookup_works() -> TestResult {
         description = "json config_store lookup test"
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
-        [local_server]
-        [local_server.config_stores]
         [local_server.config_stores.animals]
         file = "../test-fixtures/data/json-config_store.json"
         format = "json"
     "#;
 
-    let resp = Test::using_fixture("config_store-lookup.wasm")
+    // let resp = Test::using_fixture("config_store-lookup.wasm")
+    let resp = Test::using_fixture("config-store-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -37,8 +36,6 @@ async fn inline_toml_config_store_lookup_works() -> TestResult {
         description = "inline toml config_store lookup test"
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
-        [local_server]
-        [local_server.config_stores]
         [local_server.config_stores.animals]
         format = "inline-toml"
         [local_server.config_stores.animals.contents]
@@ -46,7 +43,7 @@ async fn inline_toml_config_store_lookup_works() -> TestResult {
         cat = "meow"
     "#;
 
-    let resp = Test::using_fixture("config_store-lookup.wasm")
+    let resp = Test::using_fixture("config-store-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -69,7 +66,7 @@ async fn missing_config_store_works() -> TestResult {
         language = "rust"
     "#;
 
-    let resp = Test::using_fixture("config_store-lookup.wasm")
+    let resp = Test::using_fixture("config-store-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
