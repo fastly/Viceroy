@@ -6,7 +6,38 @@ use futures::FutureExt;
 use http::Response;
 use tokio::sync::oneshot;
 
-pub type PendingKvTask = PeekableTask<Result<Vec<u8>, ObjectStoreError>>;
+#[derive(Debug)]
+pub struct PendingKvLookupTask(PeekableTask<Result<Vec<u8>, ObjectStoreError>>);
+impl PendingKvLookupTask {
+    pub fn new(t: PeekableTask<Result<Vec<u8>, ObjectStoreError>>) -> PendingKvLookupTask {
+        PendingKvLookupTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<Vec<u8>, ObjectStoreError>> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct PendingKvInsertTask(PeekableTask<Result<(), ObjectStoreError>>);
+impl PendingKvInsertTask {
+    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvInsertTask {
+        PendingKvInsertTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct PendingKvDeleteTask(PeekableTask<Result<(), ObjectStoreError>>);
+impl PendingKvDeleteTask {
+    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvDeleteTask {
+        PendingKvDeleteTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+        self.0
+    }
+}
 
 /// Represents either a full body, or the write end of a streaming body.
 ///
@@ -17,7 +48,9 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
-    PendingKvLookup(PendingKvTask),
+    PendingKvLookup(PendingKvLookupTask),
+    PendingKvInsert(PendingKvInsertTask),
+    PendingKvDelete(PendingKvDeleteTask),
 }
 
 impl AsyncItem {
@@ -74,16 +107,44 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvTask> {
+    pub fn as_pending_kv_lookup(&self) -> Option<&PendingKvLookupTask> {
         match self {
             Self::PendingKvLookup(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn into_pending_kv_lookup(self) -> Option<PendingKvTask> {
+    pub fn into_pending_kv_lookup(self) -> Option<PendingKvLookupTask> {
         match self {
             Self::PendingKvLookup(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_kv_insert(&self) -> Option<&PendingKvInsertTask> {
+        match self {
+            Self::PendingKvInsert(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_insert(self) -> Option<PendingKvInsertTask> {
+        match self {
+            Self::PendingKvInsert(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_kv_delete(&self) -> Option<&PendingKvDeleteTask> {
+        match self {
+            Self::PendingKvDelete(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_delete(self) -> Option<PendingKvDeleteTask> {
+        match self {
+            Self::PendingKvDelete(req) => Some(req),
             _ => None,
         }
     }
@@ -114,7 +175,9 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
-            Self::PendingKvLookup(obj) => obj.await_ready().await,
+            Self::PendingKvLookup(req) => req.0.await_ready().await,
+            Self::PendingKvInsert(req) => req.0.await_ready().await,
+            Self::PendingKvDelete(req) => req.0.await_ready().await,
         }
     }
 
@@ -129,9 +192,21 @@ impl From<PeekableTask<Response<Body>>> for AsyncItem {
     }
 }
 
-impl From<PendingKvTask> for AsyncItem {
-    fn from(task: PendingKvTask) -> Self {
+impl From<PendingKvLookupTask> for AsyncItem {
+    fn from(task: PendingKvLookupTask) -> Self {
         Self::PendingKvLookup(task)
+    }
+}
+
+impl From<PendingKvInsertTask> for AsyncItem {
+    fn from(task: PendingKvInsertTask) -> Self {
+        Self::PendingKvInsert(task)
+    }
+}
+
+impl From<PendingKvDeleteTask> for AsyncItem {
+    fn from(task: PendingKvDeleteTask) -> Self {
+        Self::PendingKvDelete(task)
     }
 }
 

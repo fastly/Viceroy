@@ -6,7 +6,7 @@ use hyper::{body::to_bytes, StatusCode};
 /// `sleep.wasm` is a guest program which sleeps for 100 milliseconds,then returns.
 #[tokio::test(flavor = "multi_thread")]
 async fn empty_ok_response_by_default_after_sleep() -> TestResult {
-    let resp = Test::using_fixture("sleep.wasm").against_empty().await;
+    let resp = Test::using_fixture("sleep.wasm").against_empty().await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())

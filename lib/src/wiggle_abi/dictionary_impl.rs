@@ -45,16 +45,14 @@ impl FastlyDictionary for Session {
         buf: &GuestPtr<u8>,
         buf_len: u32,
     ) -> Result<u32, Error> {
-        let dict = self
-            .dictionary(dictionary)?
-            .contents()
-            .map_err(|err| Error::Other(err.into()))?;
+        let dict = &self.dictionary(dictionary)?.contents;
 
-        let key: &str = &key.as_str()?.ok_or(Error::SharedMemory)?;
-        let item_bytes = dict
-            .get(key)
-            .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
-            .as_bytes();
+        let item_bytes = {
+            let key: &str = &key.as_str()?.ok_or(Error::SharedMemory)?;
+            dict.get(key)
+                .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
+                .as_bytes()
+        };
 
         if item_bytes.len() > buf_len as usize {
             return Err(Error::BufferLengthError {
@@ -65,11 +63,7 @@ impl FastlyDictionary for Session {
         let item_len = u32::try_from(item_bytes.len())
             .expect("smaller than dictionary_item_max_len means it must fit");
 
-        let mut buf_slice = buf
-            .as_array(item_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_slice.copy_from_slice(item_bytes);
+        buf.as_array(item_len).copy_from_slice(item_bytes)?;
         Ok(item_len)
     }
 }

@@ -6,7 +6,7 @@ use hyper::{Request, StatusCode};
 async fn direct_wasm_works() -> TestResult {
     let resp = Test::using_wat_fixture("return_ok.wat")
         .against_empty()
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
 }
@@ -22,7 +22,7 @@ async fn heap_limit_test_ok() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     println!("response: {:?}", resp);
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers().len(), 16);
@@ -45,7 +45,7 @@ async fn heap_limit_test_bad() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }

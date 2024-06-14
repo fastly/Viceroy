@@ -36,7 +36,7 @@ async fn logging_works() -> TestResult {
         .log_stderr()
         .log_stdout()
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
 

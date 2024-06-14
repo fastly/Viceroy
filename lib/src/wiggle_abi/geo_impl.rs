@@ -6,31 +6,10 @@ use std::{
 };
 
 use {
-    crate::{
-        error::Error,
-        session::Session,
-        wiggle_abi::{fastly_geo::FastlyGeo, types::FastlyStatus},
-    },
+    crate::{error::Error, session::Session, wiggle_abi::fastly_geo::FastlyGeo},
     std::convert::TryFrom,
     wiggle::GuestPtr,
 };
-
-#[derive(Debug, thiserror::Error)]
-pub enum GeolocationError {
-    /// Geolocation data for given address not found.
-    #[error("No geolocation data: {0}")]
-    NoGeolocationData(String),
-}
-
-impl GeolocationError {
-    /// Convert to an error code representation suitable for passing across the ABI boundary.
-    pub fn to_fastly_status(&self) -> FastlyStatus {
-        use GeolocationError::*;
-        match self {
-            NoGeolocationData(_) => FastlyStatus::None,
-        }
-    }
-}
 
 impl FastlyGeo for Session {
     fn lookup(
@@ -57,11 +36,10 @@ impl FastlyGeo for Session {
             _ => return Err(Error::InvalidArgument),
         };
 
-        let result = self
-            .geolocation_lookup(&ip_addr)
-            .ok_or_else(|| GeolocationError::NoGeolocationData(ip_addr.to_string()))?;
+        let result = self.geolocation_lookup(&ip_addr).unwrap_or_default();
 
         if result.len() > buf_len as usize {
+            nwritten_out.write(u32::try_from(result.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "geolocation_lookup",
                 len: "geolocation_lookup_max_len",
@@ -71,11 +49,8 @@ impl FastlyGeo for Session {
         let result_len =
             u32::try_from(result.len()).expect("smaller than value_max_len means it must fit");
 
-        let mut buf_ptr = buf
-            .as_array(result_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_ptr.copy_from_slice(result.as_bytes());
+        buf.as_array(result_len)
+            .copy_from_slice(result.as_bytes())?;
         nwritten_out.write(result_len)?;
         Ok(())
     }

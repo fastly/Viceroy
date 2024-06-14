@@ -2,44 +2,26 @@ use {
     crate::error::DictionaryConfigError,
     std::{
         collections::HashMap,
-        fmt, fs,
+        fs,
         path::{Path, PathBuf},
+        sync::Arc,
     },
 };
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct DictionaryName(String);
-
-impl fmt::Display for DictionaryName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl DictionaryName {
-    pub fn new(name: String) -> Self {
-        Self(name)
-    }
-}
 
 /// A single Dictionary definition.
 ///
 /// A Dictionary consists of a file and format, but more fields may be added in the future.
 #[derive(Clone, Debug)]
 pub enum Dictionary {
-    InlineToml { contents: HashMap<String, String> },
-    Json { file: PathBuf },
+    InlineToml {
+        contents: Arc<HashMap<String, String>>,
+    },
+    Json {
+        file: PathBuf,
+    },
 }
 
 impl Dictionary {
-    /// Returns a reference to the dictionary's contents.
-    pub fn contents(&self) -> Result<HashMap<String, String>, DictionaryConfigError> {
-        match self {
-            Self::InlineToml { contents } => Ok(contents.clone()),
-            Self::Json { file } => Self::read_json_contents(file),
-        }
-    }
-
     /// Returns `true` if this is dictionary uses an external JSON file.
     pub fn is_json(&self) -> bool {
         matches!(self, Self::Json { .. })
@@ -86,11 +68,28 @@ impl Dictionary {
 
         Ok(contents)
     }
+
+    pub fn load(&self) -> Result<LoadedDictionary, DictionaryConfigError> {
+        let contents = match self {
+            Dictionary::InlineToml { contents } => Arc::clone(contents),
+            Dictionary::Json { file } => {
+                let contents = Self::read_json_contents(file)?;
+                Arc::new(contents)
+            }
+        };
+
+        Ok(LoadedDictionary { contents })
+    }
+}
+
+#[derive(Clone)]
+pub struct LoadedDictionary {
+    pub contents: Arc<HashMap<String, String>>,
 }
 
 /// A map of [`Dictionary`] definitions, keyed by their name.
 #[derive(Clone, Debug, Default)]
-pub struct DictionariesConfig(pub HashMap<DictionaryName, Dictionary>);
+pub struct DictionariesConfig(pub HashMap<String, Dictionary>);
 
 /// This module contains [`TryFrom`] implementations used when deserializing a `fastly.toml`.
 ///
@@ -99,12 +98,12 @@ pub struct DictionariesConfig(pub HashMap<DictionaryName, Dictionary>);
 /// not valid, a [`FastlyConfigError`] will be returned.
 mod deserialization {
     use {
-        super::{DictionariesConfig, Dictionary, DictionaryName},
+        super::{DictionariesConfig, Dictionary},
         crate::{
             config::limits::{DICTIONARY_ITEM_KEY_MAX_LEN, DICTIONARY_ITEM_VALUE_MAX_LEN},
             error::{DictionaryConfigError, FastlyConfigError},
         },
-        std::{collections::HashMap, path::PathBuf, str::FromStr},
+        std::{collections::HashMap, path::PathBuf, sync::Arc},
         toml::value::{Table, Value},
         tracing::info,
     };
@@ -129,7 +128,7 @@ mod deserialization {
             fn process_entry(
                 name: &str,
                 entry: Value,
-            ) -> Result<(DictionaryName, Dictionary), DictionaryConfigError> {
+            ) -> Result<(String, Dictionary), DictionaryConfigError> {
                 let mut toml = match entry {
                     Value::Table(table) => table,
                     _ => return Err(DictionaryConfigError::InvalidEntryType),
@@ -154,10 +153,9 @@ mod deserialization {
                     }
                 };
 
-                let name = name.parse()?;
                 check_for_unrecognized_keys(&toml)?;
 
-                Ok((name, dictionary))
+                Ok((name.to_string(), dictionary))
             }
 
             toml.into_iter()
@@ -195,7 +193,9 @@ mod deserialization {
         // Validate that the dictionary adheres to Fastly's API.
         validate_dictionary_contents(&contents)?;
 
-        Ok(Dictionary::InlineToml { contents })
+        Ok(Dictionary::InlineToml {
+            contents: Arc::new(contents),
+        })
     }
 
     fn process_json_dictionary(toml: &mut Table) -> Result<Dictionary, DictionaryConfigError> {
@@ -240,13 +240,5 @@ mod deserialization {
         }
 
         Ok(())
-    }
-
-    impl FromStr for DictionaryName {
-        type Err = DictionaryConfigError;
-        fn from_str(name: &str) -> Result<Self, Self::Err> {
-            // We do not do any validation on the name as Config Stores and Dictionaries have different validation rules
-            Ok(Self(name.to_owned()))
-        }
     }
 }

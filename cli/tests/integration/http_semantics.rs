@@ -23,7 +23,7 @@ async fn framing_headers_are_overridden() -> TestResult {
     let resp = test
         .via_hyper()
         .against(Request::post("/").body("greetings").unwrap())
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -46,7 +46,7 @@ async fn content_length_is_computed_correctly() -> TestResult {
         })
         .await;
 
-    let resp = test.via_hyper().against_empty().await;
+    let resp = test.via_hyper().against_empty().await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
 

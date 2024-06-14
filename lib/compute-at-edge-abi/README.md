@@ -1,6 +1,6 @@
 # 🔗 compute-at-edge-abi
 
-This directory contains the canonical `witx` definitions for the Compute@Edge
+This directory contains the canonical `witx` definitions for the Compute
 platform ABI.
 
 ### About `witx`
