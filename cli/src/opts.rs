@@ -1,5 +1,7 @@
 //! Command line arguments.
 
+use viceroy_lib::config::UnknownImportBehavior;
+
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
     std::net::{IpAddr, Ipv4Addr},
@@ -17,7 +19,7 @@ use {
 // [clap](https://docs.rs/clap/latest/clap/) documentation for more information.
 //
 // Note that the doc comment below is used as descriptive text in the `--help` output.
-/// Viceroy is a local testing daemon for Compute@Edge.
+/// Viceroy is a local testing daemon for Compute.
 #[derive(Parser, Debug)]
 #[command(name = "viceroy", author, version, about)]
 #[command(propagate_version = true)]
@@ -38,6 +40,9 @@ pub enum Commands {
 
     /// Run the input wasm once and then exit.
     Run(RunArgs),
+
+    /// Adapt core wasm to a component.
+    Adapt(AdaptArgs),
 }
 
 #[derive(Debug, Args, Clone)]
@@ -45,11 +50,6 @@ pub struct ServeArgs {
     /// The IP address that the service should be bound to.
     #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
-
-    /// Whether to profile the wasm guest. Takes an optional directory to save
-    /// per-request profiles to
-    #[arg(long, default_missing_value = "guest-profiles", num_args=0..=1, require_equals=true)]
-    profile_guest: Option<PathBuf>,
 
     #[command(flatten)]
     shared: SharedArgs,
@@ -60,11 +60,6 @@ pub struct RunArgs {
     #[command(flatten)]
     shared: SharedArgs,
 
-    /// Whether to profile the wasm guest. Takes an optional filename to save
-    /// the profile to
-    #[arg(long, default_missing_value = "guest-profile.json", num_args=0..=1, require_equals=true)]
-    profile_guest: Option<PathBuf>,
-
     /// Args to pass along to the binary being executed.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     wasm_args: Vec<String>,
@@ -74,7 +69,7 @@ pub struct RunArgs {
 pub struct SharedArgs {
     /// The path to the service's Wasm module.
     #[arg(value_parser = check_module, required=true)]
-    input: Option<String>,
+    input: Option<PathBuf>,
     /// The path to a TOML file containing `local_server` configuration.
     #[arg(short = 'C', long = "config")]
     config_path: Option<PathBuf>,
@@ -84,17 +79,48 @@ pub struct SharedArgs {
     /// Whether to treat stderr as a logging endpoint
     #[arg(long = "log-stderr", default_value = "false")]
     log_stderr: bool,
-    /// Whether to enable wasmtime's builtin profiler.
-    #[arg(long = "profiler", value_parser = check_wasmtime_profiler_mode)]
-    profiler: Option<ProfilingStrategy>,
+    /// Profiling strategy (valid options are: perfmap, jitdump, vtune, guest)
+    ///
+    /// The perfmap, jitdump, and vtune profiling strategies integrate Viceroy
+    /// with external profilers such as `perf`.
+    ///
+    /// The guest profiling strategy enables in-process sampling. By default,
+    /// when Viceroy is running as a server it will write the captured
+    /// per-request profiles to the `guest-profiles` directory, and as a test
+    /// runner it will write the captured profile to the `guest-profile.json`
+    /// file. These profiles can be viewed at https://profiler.firefox.com/.
+    ///
+    /// The `guest` option can be additionally configured as:
+    ///
+    ///     --profile=guest[,path]
+    ///
+    /// where `path` is the directory or filename to write the profile(s) to.
+    #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
+    profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
+    /// Set the behavior for unknown imports.
+    ///
+    /// Note that if a program only works with a non-default setting for this flag, it is unlikely
+    /// to be publishable to Fastly.
+    #[arg(long = "unknown-import-behavior", value_enum, default_value_t = UnknownImportBehavior::LinkError)]
+    unknown_import_behavior: UnknownImportBehavior,
     /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
     /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
     /// effect if you set RUST_LOG to a value before starting Viceroy
     #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbosity: u8,
+    /// Whether or not to automatically adapt core-wasm modules to
+    /// components before running them.
+    #[arg(long = "adapt")]
+    adapt: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Profile {
+    Native(ProfilingStrategy),
+    Guest { path: Option<String> },
 }
 
 impl ServeArgs {
@@ -105,8 +131,16 @@ impl ServeArgs {
     }
 
     /// The path to write guest profiles to
-    pub fn profile_guest(&self) -> Option<&PathBuf> {
-        self.profile_guest.as_ref()
+    pub fn profile_guest(&self) -> Option<PathBuf> {
+        if let Some(Profile::Guest { path }) = &self.shared.profile {
+            Some(
+                path.clone()
+                    .unwrap_or_else(|| "guest-profiles".to_string())
+                    .into(),
+            )
+        } else {
+            None
+        }
     }
 
     pub fn shared(&self) -> &SharedArgs {
@@ -125,15 +159,23 @@ impl RunArgs {
     }
 
     /// The path to write a guest profile to
-    pub fn profile_guest(&self) -> Option<&PathBuf> {
-        self.profile_guest.as_ref()
+    pub fn profile_guest(&self) -> Option<PathBuf> {
+        if let Some(Profile::Guest { path }) = &self.shared.profile {
+            Some(
+                path.clone()
+                    .unwrap_or_else(|| "guest-profile.json".to_string())
+                    .into(),
+            )
+        } else {
+            None
+        }
     }
 }
 
 impl SharedArgs {
     /// The path to the service's Wasm binary.
     pub fn input(&self) -> PathBuf {
-        PathBuf::from(self.input.as_ref().unwrap())
+        self.input.as_ref().unwrap().clone()
     }
 
     /// The path to a `local_server` configuration file.
@@ -151,14 +193,66 @@ impl SharedArgs {
         self.log_stderr
     }
 
-    // Whether to enable wasmtime's builtin profiler.
+    /// Whether to enable wasmtime's builtin profiler.
     pub fn profiling_strategy(&self) -> ProfilingStrategy {
-        self.profiler.unwrap_or(ProfilingStrategy::None)
+        match self.profile {
+            Some(Profile::Native(s)) => s,
+            _ => ProfilingStrategy::None,
+        }
     }
 
-    // Set of experimental wasi modules to link against.
+    /// Set of experimental wasi modules to link against.
     pub fn wasi_modules(&self) -> HashSet<ExperimentalModule> {
         self.experimental_modules.iter().map(|x| x.into()).collect()
+    }
+
+    /// Unknown import behavior
+    pub fn unknown_import_behavior(&self) -> UnknownImportBehavior {
+        self.unknown_import_behavior
+    }
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
+    /// `-vv` to TRACE. This option will not take effect if you set RUST_LOG
+    /// to a value before starting Viceroy
+    pub fn verbosity(&self) -> u8 {
+        self.verbosity
+    }
+
+    pub fn adapt(&self) -> bool {
+        self.adapt
+    }
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AdaptArgs {
+    /// The path to the Wasm module to adapt.
+    #[arg(value_parser = check_module, required=true)]
+    input: PathBuf,
+
+    /// The output name
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+
+    /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
+    /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
+    /// effect if you set RUST_LOG to a value before starting Viceroy
+    #[arg(short = 'v', action = clap::ArgAction::Count)]
+    verbosity: u8,
+}
+
+impl AdaptArgs {
+    pub(crate) fn input(&self) -> PathBuf {
+        self.input.clone()
+    }
+
+    pub(crate) fn output(&self) -> PathBuf {
+        if let Some(output) = self.output.as_ref() {
+            return output.clone();
+        }
+
+        let mut output = PathBuf::from(self.input.file_name().expect("input filename"));
+        output.set_extension("component.wasm");
+        output
     }
 
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
@@ -211,11 +305,11 @@ impl From<&ExperimentalModule> for ExperimentalModuleArg {
 /// binary or text format.
 ///
 /// [opts]: struct.Opts.html
-fn check_module(s: &str) -> Result<String, Error> {
+fn check_module(s: &str) -> Result<PathBuf, Error> {
     let path = PathBuf::from(s);
-    let contents = std::fs::read(path)?;
+    let contents = std::fs::read(&path)?;
     match wat::parse_bytes(&contents) {
-        Ok(_) => Ok(s.to_string()),
+        Ok(_) => Ok(path),
         _ => Err(Error::FileFormat),
     }
 }
@@ -223,10 +317,16 @@ fn check_module(s: &str) -> Result<String, Error> {
 /// A parsing function used by [`Opts`][opts] to check that the input is valid wasmtime's profiling strategy.
 ///
 /// [opts]: struct.Opts.html
-fn check_wasmtime_profiler_mode(s: &str) -> Result<ProfilingStrategy, Error> {
-    match s {
-        "jitdump" => Ok(ProfilingStrategy::JitDump),
-        "vtune" => Ok(ProfilingStrategy::VTune),
+fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
+    let parts = s.split(',').collect::<Vec<_>>();
+    match &parts[..] {
+        ["jitdump"] => Ok(Profile::Native(ProfilingStrategy::JitDump)),
+        ["perfmap"] => Ok(Profile::Native(ProfilingStrategy::PerfMap)),
+        ["vtune"] => Ok(Profile::Native(ProfilingStrategy::VTune)),
+        ["guest"] => Ok(Profile::Guest { path: None }),
+        ["guest", path] => Ok(Profile::Guest {
+            path: Some(path.to_string()),
+        }),
         _ => Err(Error::ProfilingStrategy),
     }
 }
@@ -369,7 +469,7 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_jitdump_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "jitdump",
             &test_file("minimal.wat"),
         ];
@@ -384,8 +484,53 @@ mod opts_tests {
     fn wasmtime_profiling_strategy_vtune_is_accepted() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "vtune",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's PerfMap profiling strategy is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_perfmap_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profile",
+            "perfmap",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's guest profiling strategy without path is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_guest_without_path_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profile",
+            "guest",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    /// Test that wasmtime's guest profiling strategy with path is accepted.
+    #[test]
+    fn wasmtime_profiling_strategy_guest_with_path_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profile",
+            "guest,/some/path",
             &test_file("minimal.wat"),
         ];
         match Opts::try_parse_from(args) {
@@ -399,7 +544,7 @@ mod opts_tests {
     fn invalid_wasmtime_profiling_strategy_is_rejected() -> TestResult {
         let args = &[
             "dummy-program-name",
-            "--profiler",
+            "--profile",
             "invalid_profiling_strategy",
             &test_file("minimal.wat"),
         ];

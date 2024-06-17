@@ -18,7 +18,7 @@ async fn json_geolocation_lookup_works() -> TestResult {
     let resp = Test::using_fixture("geolocation-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())
@@ -85,7 +85,7 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
     let resp = Test::using_fixture("geolocation-lookup.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())
@@ -109,7 +109,7 @@ async fn default_configuration_geolocation_lookup_works() -> TestResult {
     let resp = Test::using_fixture("geolocation-lookup-default.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())

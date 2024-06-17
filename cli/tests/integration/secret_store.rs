@@ -17,7 +17,7 @@ async fn secret_store_works() -> TestResult {
     let resp = Test::using_fixture("secret-store.wasm")
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())

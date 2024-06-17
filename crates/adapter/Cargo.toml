@@ -1,0 +1,19 @@
+[package]
+name = "viceroy-component-adapter"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+wasi = { workspace = true }
+wit-bindgen-rust-macro = { workspace = true }
+byte-array-literals = { workspace = true }
+bitflags = { workspace = true }
+
+[build-dependencies]
+wasm-encoder = { workspace = true }
+object = { workspace = true }
+
+[lib]
+test = false
+crate-type = ["cdylib"]
