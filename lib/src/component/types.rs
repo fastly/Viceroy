@@ -21,6 +21,12 @@ impl types::Host for Session {
     }
 }
 
+impl From<types::Error> for TrappableError {
+    fn from(e: types::Error) -> Self {
+        Self::Error(e)
+    }
+}
+
 impl From<HandleError> for TrappableError {
     fn from(_: HandleError) -> Self {
         Self::Error(types::Error::BadHandle)

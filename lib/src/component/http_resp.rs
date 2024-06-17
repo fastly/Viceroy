@@ -87,22 +87,17 @@ impl http_resp::Host for Session {
             b'\0',
             usize::try_from(max_len).unwrap(),
             cursor,
-        );
+        )
+        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
 
+        // At this point we know that the buffer being empty will also mean that there are no
+        // remaining entries to read.
         if buf.is_empty() {
-            if next.is_none() {
-                return Ok(None);
-            } else {
-                // It's an error if we couldn't write even a single value.
-                return Err(Error::BufferLengthError {
-                    buf: "buf",
-                    len: "buf.len()",
-                }
-                .into());
-            }
+            debug_assert!(next.is_none());
+            Ok(None)
+        } else {
+            Ok(Some((buf, next)))
         }
-
-        Ok(Some((buf, next)))
     }
 
     async fn header_value_get(
@@ -155,22 +150,17 @@ impl http_resp::Host for Session {
                     b'\0',
                     usize::try_from(max_len).unwrap(),
                     cursor,
-                );
+                )
+                .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
 
+                // At this point we know that the buffer being empty will also mean that there are no
+                // remaining entries to read.
                 if buf.is_empty() {
-                    if next.is_none() {
-                        return Ok(None);
-                    } else {
-                        // It's an error if we couldn't write even a single value.
-                        return Err(Error::BufferLengthError {
-                            buf: "buf",
-                            len: "buf.len()",
-                        }
-                        .into());
-                    }
+                    debug_assert!(next.is_none());
+                    Ok(None)
+                } else {
+                    Ok(Some((buf, next)))
                 }
-
-                Ok(Some((buf, next)))
             }
         }
     }
