@@ -73,31 +73,27 @@ impl FastlyHttpReq for Session {
                 let octets = addr.octets();
                 let octets_bytes = octets.len() as u32;
                 debug_assert_eq!(octets_bytes, 4);
-                let mut octets_slice = addr_octets_ptr
+                addr_octets_ptr
                     .as_array(octets_bytes)
-                    .as_slice_mut()?
-                    .ok_or(Error::SharedMemory)?;
-                octets_slice.copy_from_slice(&octets);
+                    .copy_from_slice(&octets)?;
                 Ok(octets_bytes)
             }
             IpAddr::V6(addr) => {
                 let octets = addr.octets();
                 let octets_bytes = octets.len() as u32;
                 debug_assert_eq!(octets_bytes, 16);
-                let mut octets_slice = addr_octets_ptr
+                addr_octets_ptr
                     .as_array(octets_bytes)
-                    .as_slice_mut()?
-                    .ok_or(Error::SharedMemory)?;
-                octets_slice.copy_from_slice(&octets);
+                    .copy_from_slice(&octets)?;
                 Ok(octets_bytes)
             }
         }
     }
 
     #[allow(unused_variables)] // FIXME JDC 2023-06-18: Remove this directive once implemented.
-    fn downstream_client_h2_fingerprint<'a>(
+    fn downstream_client_h2_fingerprint(
         &mut self,
-        h2fp_out: &GuestPtr<'a, u8>,
+        h2fp_out: &GuestPtr<'_, u8>,
         h2fp_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -125,32 +121,30 @@ impl FastlyHttpReq for Session {
         let reqid_len =
             u32::try_from(reqid_bytes.len()).expect("smaller u32::MAX means it must fit");
 
-        let mut reqid_slice = reqid_out
+        reqid_out
             .as_array(reqid_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        reqid_slice.copy_from_slice(&reqid_bytes);
+            .copy_from_slice(&reqid_bytes)?;
         nwritten_out.write(reqid_len)?;
         Ok(())
     }
 
-    fn downstream_client_oh_fingerprint<'a>(
+    fn downstream_client_oh_fingerprint(
         &mut self,
-        _ohfp_out: &GuestPtr<'a, u8>,
+        _ohfp_out: &GuestPtr<'_, u8>,
         _ohfp_max_len: u32,
         _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Client original header fingerprint"))
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_cipher_openssl_name<'a>(
         &mut self,
-        cipher_out: &GuestPtr<'a, u8>,
-        cipher_max_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        _cipher_out: &GuestPtr<'a, u8>,
+        _cipher_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
@@ -168,62 +162,73 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
-    fn redirect_to_websocket_proxy_v2<'a>(
+    fn redirect_to_websocket_proxy_v2(
         &mut self,
         _req_handle: RequestHandle,
-        _backend: &GuestPtr<'a, str>,
+        _backend: &GuestPtr<'_, str>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Redirect to WebSocket proxy"))
     }
 
-    fn redirect_to_grip_proxy_v2<'a>(
+    fn redirect_to_grip_proxy_v2(
         &mut self,
         _req_handle: RequestHandle,
-        _backend: &GuestPtr<'a, str>,
+        _backend: &GuestPtr<'_, str>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_protocol<'a>(
         &mut self,
-        protocol_out: &GuestPtr<'a, u8>,
-        protocol_max_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        _protocol_out: &GuestPtr<'a, u8>,
+        _protocol_max_len: u32,
+        _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
     #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
-    fn downstream_tls_client_hello<'a>(
+    fn downstream_tls_client_hello(
         &mut self,
-        chello_out: &GuestPtr<'a, u8>,
+        chello_out: &GuestPtr<'_, u8>,
         chello_max_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
-    #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
     fn downstream_tls_raw_client_certificate<'a>(
         &mut self,
-        _raw_client_cert_out: &GuestPtr<'a, u8>,
+        _tokio_rustlsraw_client_cert_out: &GuestPtr<'a, u8>,
         _raw_client_cert_max_len: u32,
         _nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
-    #[allow(unused_variables)] // FIXME HL 2022-09-19: Remove this directive once implemented.
     fn downstream_tls_client_cert_verify_result(
         &mut self,
     ) -> Result<ClientCertVerifyResult, Error> {
-        Err(Error::NotAvailable("Client TLS data"))
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
     }
 
-    #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
-    fn downstream_tls_ja3_md5(&mut self, ja3_md5_out: &GuestPtr<u8>) -> Result<u32, Error> {
-        Err(Error::NotAvailable("Client TLS JA3 hash"))
+    fn downstream_tls_ja3_md5(&mut self, _ja3_md5_out: &GuestPtr<u8>) -> Result<u32, Error> {
+        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
+        Err(Error::ValueAbsent)
+    }
+
+    #[allow(unused_variables)] // FIXME UFSM 2024-02-19: Remove this directive once implemented.
+    fn downstream_tls_ja4(
+        &mut self,
+        ja4_out: &GuestPtr<u8>,
+        ja4_max_len: u32,
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Client TLS JA4 hash"))
     }
 
     fn framing_headers_mode_set(
@@ -246,13 +251,17 @@ impl FastlyHttpReq for Session {
         backend_info_mask: BackendConfigOptions,
         backend_info: &GuestPtr<'a, DynamicBackendConfig<'a>>,
     ) -> Result<(), Error> {
-        let name_slice = name.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
-        let name = std::str::from_utf8(&name_slice)?;
-        let origin_name_slice = upstream_dynamic
-            .as_bytes()
-            .as_slice()?
-            .ok_or(Error::SharedMemory)?;
-        let origin_name = std::str::from_utf8(&origin_name_slice)?;
+        let name = {
+            let name_slice = name.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
+            std::str::from_utf8(&name_slice)?.to_owned()
+        };
+        let origin_name = {
+            let origin_name_slice = upstream_dynamic
+                .as_bytes()
+                .as_slice()?
+                .ok_or(Error::SharedMemory)?;
+            std::str::from_utf8(&origin_name_slice)?.to_owned()
+        };
         let config = backend_info.read()?;
 
         // If someone set our reserved bit, error. We might need it, and we don't
@@ -279,10 +288,11 @@ impl FastlyHttpReq for Session {
             let byte_slice = config
                 .host_override
                 .as_array(config.host_override_len)
-                .as_slice()?
-                .ok_or(Error::SharedMemory)?;
+                .to_vec()?;
 
-            Some(HeaderValue::from_bytes(&byte_slice)?)
+            let string = String::from_utf8(byte_slice).map_err(|_| Error::InvalidArgument)?;
+
+            Some(HeaderValue::from_str(&string)?)
         } else {
             None
         };
@@ -292,6 +302,30 @@ impl FastlyHttpReq for Session {
         } else {
             "http"
         };
+
+        let ca_certs =
+            if (scheme == "https") && backend_info_mask.contains(BackendConfigOptions::CA_CERT) {
+                if config.ca_cert_len == 0 {
+                    return Err(Error::InvalidArgument);
+                }
+
+                if config.ca_cert_len > (64 * 1024) {
+                    return Err(Error::InvalidArgument);
+                }
+
+                let byte_slice = config
+                    .ca_cert
+                    .as_array(config.ca_cert_len)
+                    .as_slice()?
+                    .ok_or(Error::SharedMemory)?;
+                let mut byte_cursor = std::io::Cursor::new(&byte_slice[..]);
+                rustls_pemfile::certs(&mut byte_cursor)?
+                    .drain(..)
+                    .map(rustls::Certificate)
+                    .collect()
+            } else {
+                vec![]
+            };
 
         let mut cert_host = if backend_info_mask.contains(BackendConfigOptions::CERT_HOSTNAME) {
             if config.cert_hostname_len == 0 {
@@ -375,6 +409,8 @@ impl FastlyHttpReq for Session {
             None
         };
 
+        let grpc = backend_info_mask.contains(BackendConfigOptions::GRPC);
+
         let new_backend = Backend {
             uri: Uri::builder()
                 .scheme(scheme)
@@ -384,11 +420,13 @@ impl FastlyHttpReq for Session {
             override_host,
             cert_host,
             use_sni,
+            grpc,
             client_cert,
+            ca_certs,
         };
 
-        if !self.add_backend(name, new_backend) {
-            return Err(Error::BackendNameRegistryError(name.to_string()));
+        if !self.add_backend(&name, new_backend) {
+            return Err(Error::BackendNameRegistryError(name));
         }
 
         Ok(())
@@ -399,10 +437,10 @@ impl FastlyHttpReq for Session {
         Ok(self.insert_request_parts(parts))
     }
 
-    fn header_names_get<'a>(
+    fn header_names_get(
         &mut self,
         req_handle: RequestHandle,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         cursor: MultiValueCursor,
         ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
@@ -415,9 +453,9 @@ impl FastlyHttpReq for Session {
         )
     }
 
-    fn original_header_names_get<'a>(
+    fn original_header_names_get(
         &mut self,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         cursor: MultiValueCursor,
         ending_cursor_out: &GuestPtr<MultiValueCursorResult>,
@@ -506,10 +544,10 @@ impl FastlyHttpReq for Session {
         HttpHeaders::remove(headers, name)
     }
 
-    fn method_get<'a>(
+    fn method_get(
         &mut self,
         req_handle: RequestHandle,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -530,20 +568,17 @@ impl FastlyHttpReq for Session {
         let req_method_len = u32::try_from(req_method_bytes.len())
             .expect("smaller than method_max_len means it must fit");
 
-        let mut buf_slice = buf
-            .as_array(req_method_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_slice.copy_from_slice(&req_method_bytes);
+        buf.as_array(req_method_len)
+            .copy_from_slice(&req_method_bytes)?;
         nwritten_out.write(req_method_len)?;
 
         Ok(())
     }
 
-    fn method_set<'a>(
+    fn method_set(
         &mut self,
         req_handle: RequestHandle,
-        method: &GuestPtr<'a, str>,
+        method: &GuestPtr<'_, str>,
     ) -> Result<(), Error> {
         let method_ref = &mut self.request_parts_mut(req_handle)?.method;
         let method_slice = method.as_bytes().as_slice()?.ok_or(Error::SharedMemory)?;
@@ -552,10 +587,10 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
-    fn uri_get<'a>(
+    fn uri_get(
         &mut self,
         req_handle: RequestHandle,
-        buf: &GuestPtr<'a, u8>,
+        buf: &GuestPtr<'_, u8>,
         buf_len: u32,
         nwritten_out: &GuestPtr<u32>,
     ) -> Result<(), Error> {
@@ -575,21 +610,13 @@ impl FastlyHttpReq for Session {
         let req_uri_len =
             u32::try_from(req_uri_bytes.len()).expect("smaller than uri_max_len means it must fit");
 
-        let mut buf_slice = buf
-            .as_array(req_uri_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_slice.copy_from_slice(&req_uri_bytes);
+        buf.as_array(req_uri_len).copy_from_slice(&req_uri_bytes)?;
         nwritten_out.write(req_uri_len)?;
 
         Ok(())
     }
 
-    fn uri_set<'a>(
-        &mut self,
-        req_handle: RequestHandle,
-        uri: &GuestPtr<'a, str>,
-    ) -> Result<(), Error> {
+    fn uri_set(&mut self, req_handle: RequestHandle, uri: &GuestPtr<'_, str>) -> Result<(), Error> {
         let uri_ref = &mut self.request_parts_mut(req_handle)?.uri;
         let req_uri_str = uri.as_str()?.ok_or(Error::SharedMemory)?;
         let req_uri_bytes = req_uri_str.as_bytes();

@@ -7,9 +7,9 @@ use crate::{
     wiggle_abi::types::ContentEncodings,
 };
 use futures::Future;
-use http::{uri, HeaderValue};
+use http::{uri, HeaderValue, Version};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
-use rustls::client::{ServerName, WantsTransparencyPolicyOrClientCert};
+use rustls::client::ServerName;
 use std::{
     io,
     pin::Pin,
@@ -37,8 +37,8 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config:
-        rustls::ConfigBuilder<rustls::ClientConfig, WantsTransparencyPolicyOrClientCert>,
+    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
@@ -47,7 +47,9 @@ impl TlsConfig {
         match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
                 for cert in certs {
-                    roots.add(&rustls::Certificate(cert.0)).unwrap();
+                    if let Err(e) = roots.add(&rustls::Certificate(cert.0)) {
+                        warn!("failed to load certificate: {e}");
+                    }
                 }
             }
             Err(err) => return Err(Error::BadCerts(err)),
@@ -56,11 +58,12 @@ impl TlsConfig {
             warn!("no CA certificates available");
         }
 
-        let partial_config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(roots);
+        let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
 
-        Ok(TlsConfig { partial_config })
+        Ok(TlsConfig {
+            partial_config,
+            default_roots: roots,
+        })
     }
 }
 
@@ -115,19 +118,36 @@ impl hyper::service::Service<Uri> for BackendConnector {
         // the future for establishing the TCP connection. we create this outside of the `async`
         // block to avoid capturing `http`
         let connect_fut = self.http.call(backend.uri.clone());
+        let mut custom_roots = rustls::RootCertStore::empty();
+        let (added, ignored) = custom_roots.add_parsable_certificates(&self.backend.ca_certs);
+        if ignored > 0 {
+            tracing::warn!(
+                "Ignored {} certificates in provided CA certificate.",
+                ignored
+            );
+        }
+        let config = if self.backend.ca_certs.is_empty() {
+            config
+                .partial_config
+                .with_root_certificates(config.default_roots)
+        } else {
+            tracing::trace!("Using {} certificates from provided CA certificate.", added);
+            config.partial_config.with_root_certificates(custom_roots)
+        };
 
         Box::pin(async move {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
             if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
-                    config
-                        .partial_config
-                        .with_client_auth_cert(certed_key.certs(), certed_key.key())?
+                    config.with_client_auth_cert(certed_key.certs(), certed_key.key())?
                 } else {
-                    config.partial_config.with_no_client_auth()
+                    config.with_no_client_auth()
                 };
                 config.enable_sni = backend.use_sni;
+                if backend.grpc {
+                    config.alpn_protocols = vec![b"h2".to_vec()];
+                }
                 let connector = TlsConnector::from(Arc::new(config));
 
                 let cert_host = backend
@@ -138,6 +158,29 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
 
                 let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+
+                if backend.grpc {
+                    let (_, tls_state) = tls.get_ref();
+
+                    match tls_state.alpn_protocol() {
+                        None => {
+                            tracing::warn!(
+                                "Unexpected; request h2 for grpc, but got nothing back from ALPN"
+                            );
+                        }
+
+                        Some(b"h2") => {}
+
+                        Some(other_value) => {
+                            return Err(Error::InvalidAlpnRepsonse(
+                                "h2",
+                                String::from_utf8_lossy(other_value).to_string(),
+                            )
+                            .into())
+                        }
+                    }
+                }
+
                 Ok(Connection::Https(Box::new(tls)))
             } else {
                 Ok(Connection::Http(tcp))
@@ -237,9 +280,17 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
+    let h2only = backend.grpc;
     async move {
-        let basic_response = Client::builder()
+        let mut builder = Client::builder();
+
+        if req.version() == Version::HTTP_2 {
+            builder.http2_only(true);
+        }
+
+        let basic_response = builder
             .set_host(false)
+            .http2_only(h2only)
             .build(connector)
             .request(req)
             .await
@@ -274,6 +325,7 @@ pub fn send_request(
 /// The type ultimately yielded by a `PendingRequest`.
 
 /// An asynchronous request awaiting a response.
+#[allow(unused)]
 #[derive(Debug)]
 pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.

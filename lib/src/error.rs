@@ -5,6 +5,7 @@ use std::io;
 use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Thrown by hostcalls when a buffer is larger than its `*_len` limit.
     #[error("Buffer length error: {buf} too long to fit in {len}")]
@@ -89,7 +90,7 @@ pub enum Error {
     DictionaryError(#[from] crate::wiggle_abi::DictionaryError),
 
     #[error(transparent)]
-    GeolocationError(#[from] crate::wiggle_abi::GeolocationError),
+    DeviceDetectionError(#[from] crate::wiggle_abi::DeviceDetectionError),
 
     #[error(transparent)]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
@@ -138,6 +139,12 @@ pub enum Error {
 
     #[error("invalid client certificate")]
     InvalidClientCert(#[from] crate::config::ClientCertError),
+
+    #[error("Invalid response to ALPN request; wanted '{0}', got '{1}'")]
+    InvalidAlpnRepsonse(&'static str, String),
+
+    #[error("Resource temporarily unavailable")]
+    Again,
 }
 
 impl Error {
@@ -152,7 +159,7 @@ impl Error {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
             Error::InvalidArgument => FastlyStatus::Inval,
             Error::ValueAbsent => FastlyStatus::None,
-            Error::Unsupported { .. } => FastlyStatus::Unsupported,
+            Error::Unsupported { .. } | Error::NotAvailable(_) => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
             Error::UnknownBackend(_) | Error::InvalidClientCert(_) => FastlyStatus::Inval,
@@ -173,9 +180,10 @@ impl Error {
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.to_fastly_status(),
-            Error::GeolocationError(e) => e.to_fastly_status(),
+            Error::DeviceDetectionError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
+            Error::Again => FastlyStatus::Again,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -191,7 +199,6 @@ impl Error {
             | Error::InvalidMethod(_)
             | Error::InvalidUri(_)
             | Error::IoError(_)
-            | Error::NotAvailable(_)
             | Error::Other(_)
             | Error::ProfilingStrategy
             | Error::StreamingChunkSend
@@ -202,7 +209,8 @@ impl Error {
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
-            | Error::ToStr(_) => FastlyStatus::Error,
+            | Error::ToStr(_)
+            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
         }
     }
 
@@ -255,6 +263,14 @@ pub enum HandleError {
     /// A lookup handle was not valid.
     #[error("Invalid pending KV lookup handle: {0}")]
     InvalidPendingKvLookupHandle(crate::wiggle_abi::types::PendingKvLookupHandle),
+
+    /// A insert handle was not valid.
+    #[error("Invalid pending KV insert handle: {0}")]
+    InvalidPendingKvInsertHandle(crate::wiggle_abi::types::PendingKvInsertHandle),
+
+    /// A delete handle was not valid.
+    #[error("Invalid pending KV delete handle: {0}")]
+    InvalidPendingKvDeleteHandle(crate::wiggle_abi::types::PendingKvDeleteHandle),
 
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
@@ -316,6 +332,13 @@ pub enum FastlyConfigError {
         path: String,
         #[source]
         err: std::io::Error,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidDeviceDetectionDefinition {
+        name: String,
+        #[source]
+        err: DeviceDetectionConfigError,
     },
 
     #[error("invalid configuration for '{name}': {err}")]
@@ -390,8 +413,17 @@ pub enum BackendConfigError {
     #[error("'cert_host' field was not a string")]
     InvalidCertHostEntry,
 
+    #[error("'ca_certificate' field is empty")]
+    EmptyCACert,
+
+    #[error("'ca_certificate' field was invalid: {0}")]
+    InvalidCACertEntry(String),
+
     #[error("'use_sni' field was not a boolean")]
     InvalidUseSniEntry,
+
+    #[error("'grpc' field was not a boolean")]
+    InvalidGrpcEntry,
 
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
@@ -480,6 +512,58 @@ pub enum DictionaryConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON Object"
     )]
     DictionaryFileWrongFormat,
+}
+
+/// Errors that may occur while validating device detection configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceDetectionConfigError {
+    /// An I/O error that occured while reading the file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    #[error("definition was not provided as a TOML table")]
+    InvalidEntryType,
+
+    #[error("missing 'file' field")]
+    MissingFile,
+
+    #[error("'file' field is empty")]
+    EmptyFileEntry,
+
+    #[error("missing 'user_agents' field")]
+    MissingUserAgents,
+
+    #[error("inline device detection value was not a string")]
+    InvalidInlineEntryType,
+
+    #[error("'file' field was not a string")]
+    InvalidFileEntry,
+
+    #[error("'user_agents' was not provided as a TOML table")]
+    InvalidUserAgentsType,
+
+    #[error("unrecognized key '{0}'")]
+    UnrecognizedKey(String),
+
+    #[error("missing 'format' field")]
+    MissingFormat,
+
+    #[error("'format' field was not a string")]
+    InvalidFormatEntry,
+
+    #[error("'{0}' is not a valid format for the device detection mapping. Supported format(s) are: 'inline-toml', 'json'.")]
+    InvalidDeviceDetectionMappingFormat(String),
+
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object"
+    )]
+    DeviceDetectionFileWrongFormat,
+
+    #[error("'format' field is empty")]
+    EmptyFormatEntry,
+
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    DeviceDetectionItemValueWrongFormat { key: String },
 }
 
 /// Errors that may occur while validating geolocation configurations.

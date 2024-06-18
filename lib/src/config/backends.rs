@@ -14,7 +14,9 @@ pub struct Backend {
     pub override_host: Option<HeaderValue>,
     pub cert_host: Option<String>,
     pub use_sni: bool,
+    pub grpc: bool,
     pub client_cert: Option<ClientCertInfo>,
+    pub ca_certs: Vec<rustls::Certificate>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -130,6 +132,22 @@ mod deserialization {
                 .remove("client_certificate")
                 .map(TryFrom::try_from)
                 .transpose()?;
+            let ca_certs = toml
+                .remove("ca_certificate")
+                .map(parse_ca_cert_section)
+                .unwrap_or_else(|| Ok(vec![]))?;
+
+            let grpc = toml
+                .remove("grpc")
+                .map(|grpc| {
+                    if let Value::Boolean(grpc) = grpc {
+                        Ok(grpc)
+                    } else {
+                        Err(BackendConfigError::InvalidGrpcEntry)
+                    }
+                })
+                .transpose()?
+                .unwrap_or(false);
 
             check_for_unrecognized_keys(&toml)?;
 
@@ -139,7 +157,61 @@ mod deserialization {
                 cert_host,
                 use_sni,
                 client_cert,
+                grpc,
+                ca_certs,
             })
+        }
+    }
+
+    fn parse_ca_cert_section(
+        ca_cert: Value,
+    ) -> Result<Vec<rustls::Certificate>, BackendConfigError> {
+        match ca_cert {
+            Value::String(ca_cert) if !ca_cert.trim().is_empty() => {
+                let mut cursor = std::io::Cursor::new(ca_cert);
+                rustls_pemfile::certs(&mut cursor)
+                    .map_err(|e| BackendConfigError::InvalidCACertEntry(format!("Couldn't process certificate: {}", e)))
+                    .map(|mut x| {
+                        x.drain(..)
+                            .map(rustls::Certificate)
+                            .collect::<Vec<rustls::Certificate>>()
+                    })
+            }
+            Value::String(_) => Err(BackendConfigError::EmptyCACert),
+
+            Value::Array(array) => {
+                let mut result = vec![];
+
+                for item in array.into_iter() {
+                    let mut current = parse_ca_cert_section(item)?;
+                    result.append(&mut current);
+                }
+
+                Ok(result)
+            }
+
+            Value::Table(mut table) => {
+                match table.remove("file") {
+                    None => match table.remove("value") {
+                        None => Err(BackendConfigError::InvalidCACertEntry("'ca_certificate' was a dictionary without a 'file' or 'value' field".to_string())),
+                        Some(strval @ Value::String(_)) => parse_ca_cert_section(strval),
+                        Some(_) => Err(BackendConfigError::InvalidCACertEntry("invalid format for 'value' field".to_string())),
+                    },
+                    Some(Value::String(x)) => {
+                        if !table.is_empty() {
+                            return Err(BackendConfigError::InvalidCACertEntry(format!("unknown ca_certificate keys: {:?}", table.keys().collect::<Vec<_>>())));
+                        }
+
+                        let data = std::fs::read_to_string(&x)
+                            .map_err(|e| BackendConfigError::InvalidCACertEntry(format!("{}", e)))?;
+                        parse_ca_cert_section(Value::String(data))
+                    }
+
+                    Some(_) => Err(BackendConfigError::InvalidCACertEntry("invalid format for file reference".to_string())),
+                }
+            }
+
+            _ => Err(BackendConfigError::InvalidCACertEntry("unknown format for 'ca_certificates' field; should be a certificate string, a dictionary with a file reference, or an array of the previous".to_string())),
         }
     }
 }

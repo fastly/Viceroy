@@ -55,7 +55,12 @@
         ;;;
         ;;; This is returned when an attempt to allocate a resource has exceeded the maximum number of
         ;;; resources permitted. For example, creating too many response handles.
-        $limitexceeded))
+        $limitexceeded
+        ;;; Resource temporarily unavailable
+        ;;;
+        ;;; This is returned when an attempting to retrieve a resource that is not yet available.
+        ;;; For example when attempting to read trailers from a Body that has not yet been consumed.
+        $again))
 
 ;;; A tag indicating HTTP protocol versions.
 (typename $http_version
@@ -88,8 +93,12 @@
 (typename $dictionary_handle (handle))
 ;;; A handle to an Object Store.
 (typename $object_store_handle (handle))
-;;; A handle to a pending KV request.
+;;; A handle to a pending KV lookup request.
 (typename $pending_kv_lookup_handle (handle))
+;;; A handle to a pending KV insert request.
+(typename $pending_kv_insert_handle (handle))
+;;; A handle to a pending KV delete request.
+(typename $pending_kv_delete_handle (handle))
 ;;; A handle to a Secret Store.
 (typename $secret_store_handle (handle))
 ;;; A handle to an individual secret.
@@ -342,3 +351,10 @@
     (field $dns_error_info_code u16)
     (field $tls_alert_id u8)
     ))
+
+(typename $blocked u32)
+(typename $rate u32)
+(typename $count u32)
+(typename $has u32)
+
+(typename $body_length u64)

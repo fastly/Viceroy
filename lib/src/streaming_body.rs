@@ -1,4 +1,5 @@
 use crate::{body::Chunk, error::Error};
+use http::{HeaderMap, HeaderName, HeaderValue};
 use tokio::sync::mpsc;
 
 // Note: this constant and comment is copied from xqd
@@ -14,6 +15,7 @@ const STREAMING_CHANNEL_SIZE: usize = 8;
 #[derive(Debug)]
 pub struct StreamingBody {
     sender: mpsc::Sender<StreamingBodyItem>,
+    pub(crate) trailers: HeaderMap,
 }
 
 /// The items sent over the `StreamingBody` channel.
@@ -34,14 +36,20 @@ pub struct StreamingBody {
 #[derive(Debug)]
 pub enum StreamingBodyItem {
     Chunk(Chunk),
-    Finished,
+    Finished(HeaderMap),
 }
 
 impl StreamingBody {
     /// Create a new channel for streaming a body, returning write and read ends as a pair.
     pub fn new() -> (StreamingBody, mpsc::Receiver<StreamingBodyItem>) {
         let (sender, receiver) = mpsc::channel(STREAMING_CHANNEL_SIZE);
-        (StreamingBody { sender }, receiver)
+        (
+            StreamingBody {
+                sender,
+                trailers: HeaderMap::new(),
+            },
+            receiver,
+        )
     }
 
     /// Send a single chunk along this body stream.
@@ -55,6 +63,11 @@ impl StreamingBody {
             .map_err(|_| Error::StreamingChunkSend)
     }
 
+    /// Convenience method for appending trailers.
+    pub fn append_trailer(&mut self, name: HeaderName, value: HeaderValue) {
+        self.trailers.append(name, value);
+    }
+
     /// Block until the body has room for writing additional chunks.
     pub async fn await_ready(&mut self) {
         let _ = self.sender.reserve().await;
@@ -65,17 +78,26 @@ impl StreamingBody {
     /// This is important primarily for `Transfer-Encoding: chunked` bodies where a premature close
     /// is only noticed if the chunked encoding is not properly terminated.
     pub fn finish(self) -> Result<(), Error> {
-        match self.sender.try_send(StreamingBodyItem::Finished) {
+        match self
+            .sender
+            .try_send(StreamingBodyItem::Finished(self.trailers))
+        {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Closed(_)) => Ok(()),
-            Err(mpsc::error::TrySendError::Full(_)) => {
+            Err(mpsc::error::TrySendError::Full(StreamingBodyItem::Finished(trailers))) => {
                 // If the channel is full, maybe the other end is just taking a while to receive all
                 // the bytes. Spawn a task that will send a `finish` message as soon as there's room
                 // in the channel.
                 tokio::task::spawn(async move {
-                    let _ = self.sender.send(StreamingBodyItem::Finished).await;
+                    let _ = self
+                        .sender
+                        .send(StreamingBodyItem::Finished(trailers))
+                        .await;
                 });
                 Ok(())
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                unreachable!("Only a StreamingBodyItem::Finished should be reachable")
             }
         }
     }

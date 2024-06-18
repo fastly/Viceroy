@@ -21,10 +21,9 @@ mod limits;
 /// Types and deserializers for dictionaries configuration settings.
 mod dictionaries;
 
-pub use self::dictionaries::Dictionary;
-pub use self::dictionaries::DictionaryName;
+pub use self::dictionaries::{Dictionary, LoadedDictionary};
 
-pub type Dictionaries = HashMap<DictionaryName, Dictionary>;
+pub type Dictionaries = HashMap<String, Dictionary>;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;
@@ -32,6 +31,11 @@ mod backends;
 pub use self::backends::{Backend, ClientCertError, ClientCertInfo};
 
 pub type Backends = HashMap<String, Arc<Backend>>;
+
+/// Types and deserializers for device detection configuration settings.
+mod device_detection;
+
+pub use self::device_detection::DeviceDetection;
 
 /// Types and deserializers for geolocation configuration settings.
 mod geolocation;
@@ -49,7 +53,7 @@ pub use crate::secret_store::SecretStores;
 
 /// Fastly-specific configuration information.
 ///
-/// This `struct` represents the fields and values in a Compute@Edge package's `fastly.toml`.
+/// This `struct` represents the fields and values in a Compute package's `fastly.toml`.
 #[derive(Debug, Clone)]
 pub struct FastlyConfig {
     name: String,
@@ -85,6 +89,12 @@ impl FastlyConfig {
         &self.local_server.backends.0
     }
 
+    /// Get the device detection configuration.
+    pub fn device_detection(&self) -> &DeviceDetection {
+        &self.local_server.device_detection
+    }
+
+    /// Get the geolocation configuration.
     pub fn geolocation(&self) -> &Geolocation {
         &self.local_server.geolocation
     }
@@ -182,6 +192,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
     backends: BackendsConfig,
+    device_detection: DeviceDetection,
     geolocation: Geolocation,
     dictionaries: DictionariesConfig,
     object_stores: ObjectStoreConfig,
@@ -201,6 +212,7 @@ pub enum ExperimentalModule {
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
     backends: Option<Table>,
+    device_detection: Option<Table>,
     geolocation: Option<Table>,
     #[serde(alias = "config_stores")]
     dictionaries: Option<Table>,
@@ -214,6 +226,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
             backends,
+            device_detection,
             geolocation,
             dictionaries,
             object_stores,
@@ -223,6 +236,11 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             backends.try_into()?
         } else {
             BackendsConfig::default()
+        };
+        let device_detection = if let Some(device_detection) = device_detection {
+            device_detection.try_into()?
+        } else {
+            DeviceDetection::default()
         };
         let geolocation = if let Some(geolocation) = geolocation {
             geolocation.try_into()?
@@ -247,6 +265,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
 
         Ok(LocalServerConfig {
             backends,
+            device_detection,
             geolocation,
             dictionaries,
             object_stores,
@@ -361,4 +380,16 @@ HrM=
     assert!(inline_origin.client_cert.is_some());
 
     assert_eq!(files_origin.client_cert, inline_origin.client_cert);
+}
+
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum, Hash)]
+pub enum UnknownImportBehavior {
+    /// Unknown imports are rejected at link time (default behavior)
+    #[default]
+    LinkError,
+    /// Unknown imports trap when called
+    Trap,
+    /// Unknown imports return zero or a null pointer, depending on the type
+    ZeroOrNull,
 }

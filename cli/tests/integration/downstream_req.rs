@@ -11,7 +11,7 @@ async fn downstream_request_works() -> TestResult {
         .body("Hello, world!")?;
     let resp = Test::using_fixture("downstream-req.wasm")
         .against(req)
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())

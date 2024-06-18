@@ -36,7 +36,7 @@ async fn upstream_sync() -> TestResult {
                 .body("Hello, Viceroy!")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.into_body().read_into_string().await?,
@@ -54,7 +54,7 @@ async fn upstream_sync() -> TestResult {
                 .body("Hello, Viceroy!")
                 .unwrap(),
         )
-        .await;
+        .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.into_body().read_into_string().await?,
@@ -94,7 +94,7 @@ async fn override_host_works() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -120,7 +120,7 @@ async fn duplication_errors_right() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
@@ -132,7 +132,7 @@ async fn duplication_errors_right() -> TestResult {
                 .body("")
                 .unwrap(),
         )
-        .await;
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 

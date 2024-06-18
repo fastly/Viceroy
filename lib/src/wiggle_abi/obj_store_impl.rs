@@ -1,7 +1,8 @@
 //! fastly_obj_store` hostcall implementations.
 
-use super::types::PendingKvLookupHandle;
+use super::types::{PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle};
 use crate::session::PeekableTask;
+use crate::session::{PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask};
 
 use {
     crate::{
@@ -37,7 +38,7 @@ impl FastlyObjectStore for Session {
         opt_body_handle_out: &GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap();
-        let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
+        let key = ObjectKey::new(key.as_str()?.ok_or(Error::SharedMemory)?.to_string())?;
         match self.obj_lookup(store, &key) {
             Ok(obj) => {
                 let new_handle = self.insert_body(Body::from(obj));
@@ -59,11 +60,12 @@ impl FastlyObjectStore for Session {
         opt_pending_body_handle_out: &GuestPtr<PendingKvLookupHandle>,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap();
-        let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
+        let key = ObjectKey::new(key.as_str()?.ok_or(Error::SharedMemory)?.to_string())?;
         // just create a future that's already ready
         let fut = futures::future::ok(self.obj_lookup(store, &key));
         let task = PeekableTask::spawn(fut).await;
-        opt_pending_body_handle_out.write(self.insert_pending_kv_lookup(task))?;
+        opt_pending_body_handle_out
+            .write(self.insert_pending_kv_lookup(PendingKvLookupTask::new(task)))?;
         Ok(())
     }
 
@@ -74,6 +76,7 @@ impl FastlyObjectStore for Session {
     ) -> Result<(), Error> {
         let pending_obj = self
             .take_pending_kv_lookup(pending_body_handle)?
+            .task()
             .recv()
             .await?;
         // proceed with the normal match from lookup()
@@ -95,10 +98,64 @@ impl FastlyObjectStore for Session {
         body_handle: BodyHandle,
     ) -> Result<(), Error> {
         let store = self.get_obj_store_key(store).unwrap().clone();
-        let key = ObjectKey::new(&*key.as_str()?.ok_or(Error::SharedMemory)?)?;
+        let key = ObjectKey::new(key.as_str()?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
         self.obj_insert(store, key, bytes)?;
 
         Ok(())
+    }
+
+    async fn insert_async<'a>(
+        &mut self,
+        store: ObjectStoreHandle,
+        key: &GuestPtr<str>,
+        body_handle: BodyHandle,
+        opt_pending_body_handle_out: &GuestPtr<PendingKvInsertHandle>,
+    ) -> Result<(), Error> {
+        let store = self.get_obj_store_key(store).unwrap().clone();
+        let key = ObjectKey::new(key.as_str()?.ok_or(Error::SharedMemory)?.to_string())?;
+        let bytes = self.take_body(body_handle)?.read_into_vec().await?;
+        let fut = futures::future::ok(self.obj_insert(store, key, bytes));
+        let task = PeekableTask::spawn(fut).await;
+        opt_pending_body_handle_out
+            .write(self.insert_pending_kv_insert(PendingKvInsertTask::new(task)))?;
+        Ok(())
+    }
+
+    async fn pending_insert_wait(
+        &mut self,
+        pending_insert_handle: PendingKvInsertHandle,
+    ) -> Result<(), Error> {
+        Ok((self
+            .take_pending_kv_insert(pending_insert_handle)?
+            .task()
+            .recv()
+            .await?)?)
+    }
+
+    async fn delete_async<'a>(
+        &mut self,
+        store: ObjectStoreHandle,
+        key: &GuestPtr<str>,
+        opt_pending_delete_handle_out: &GuestPtr<PendingKvDeleteHandle>,
+    ) -> Result<(), Error> {
+        let store = self.get_obj_store_key(store).unwrap().clone();
+        let key = ObjectKey::new(key.as_str()?.ok_or(Error::SharedMemory)?.to_string())?;
+        let fut = futures::future::ok(self.obj_delete(store, key));
+        let task = PeekableTask::spawn(fut).await;
+        opt_pending_delete_handle_out
+            .write(self.insert_pending_kv_delete(PendingKvDeleteTask::new(task)))?;
+        Ok(())
+    }
+
+    async fn pending_delete_wait(
+        &mut self,
+        pending_delete_handle: PendingKvDeleteHandle,
+    ) -> Result<(), Error> {
+        Ok((self
+            .take_pending_kv_delete(pending_delete_handle)?
+            .task()
+            .recv()
+            .await?)?)
     }
 }

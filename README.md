@@ -1,12 +1,12 @@
 # Viceroy
 
-Viceroy provides local testing for developers working with Compute@Edge. It
-allows you to run services written against the Compute@Edge APIs on your local
+Viceroy provides local testing for developers working with Fastly Compute. It
+allows you to run services written against the Compute APIs on your local
 development machine, and allows you to configure testing backends for your
 service to communicate with.
 
 Viceroy is normally used through the [Fastly CLI's `fastly compute serve`
-command][cli], where it is fully integrated into Compute@Edge workflows.
+command][cli], where it is fully integrated into Compute workflows.
 However, it is also a standalone open source tool with its own CLI and a
 Rust library that can be embedded into your own testing infrastructure.
 
@@ -16,7 +16,7 @@ Rust library that can be embedded into your own testing infrastructure.
 
 ### Via the Fastly CLI
 
-As mentioned above, most users of Compute@Edge should do local testing via the
+As mentioned above, most users of Compute should do local testing via the
 Fastly CLI, rather than working with Viceroy directly. Any [CLI release] of
 version 0.34 or above supports local testing, and the workflow is documented
 [here][cli].
@@ -50,12 +50,12 @@ viceroy bin/main.wasm
 ```
 
 This will start a local server (by default at: `http://127.0.0.1:7676`), which can
-be used to make requests to your Compute@Edge service locally. You can make requests
+be used to make requests to your Compute service locally. You can make requests
 by using [curl](https://curl.se/), or you can send a simple GET request by visiting
 the URL in your web browser.
 
 ## Usage as a test runner
-Viceroy can also be used as a test runner for running Rust unit tests for Compute@Edge applications in the following way:
+Viceroy can also be used as a test runner for running Rust unit tests for Compute applications in the following way:
 
 1. Ensure the `viceroy` command is available in your path
 2. Add the following to your project's `.cargo/config`:

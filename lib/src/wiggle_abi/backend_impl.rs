@@ -56,33 +56,21 @@ impl FastlyBackend for Session {
         nwritten_out: &wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
         let backend = lookup_backend_definition(self, backend)?;
-        let mut value = value
-            .as_array(value_max_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        let value_max_len: usize = value_max_len
-            .try_into()
-            .map_err(|_| Error::InvalidArgument)?;
         let host = backend.uri.host().expect("backend uri has host");
 
-        match host.len() {
-            len_needed if len_needed > value_max_len => {
-                let len_needed = len_needed.try_into().expect("host.len() must fit in u32");
-                nwritten_out.write(len_needed)?;
-                Err(Error::BufferLengthError {
-                    buf: "host",
-                    len: "host.len()",
-                })
-            }
-
-            len => {
-                let host = host.as_bytes();
-                value[0..len].copy_from_slice(host);
-                let len = len.try_into().expect("host.len() must fit in u32");
-                nwritten_out.write(len)?;
-                Ok(())
-            }
+        let host_len = host.len().try_into().expect("host.len() must fit in u32");
+        if host_len > value_max_len {
+            nwritten_out.write(host_len)?;
+            return Err(Error::BufferLengthError {
+                buf: "host",
+                len: "host.len()",
+            });
         }
+
+        let host = host.as_bytes();
+        value.as_array(host_len).copy_from_slice(host)?;
+        nwritten_out.write(host_len)?;
+        Ok(())
     }
 
     fn get_override_host<'a>(
@@ -93,37 +81,25 @@ impl FastlyBackend for Session {
         nwritten_out: &wiggle::GuestPtr<'a, u32>,
     ) -> Result<(), Error> {
         let backend = lookup_backend_definition(self, backend)?;
-        let mut value = value
-            .as_array(value_max_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        let value_max_len: usize = value_max_len
-            .try_into()
-            .map_err(|_| Error::InvalidArgument)?;
         let host = backend
             .override_host
             .as_ref()
             .ok_or(Error::ValueAbsent)?
             .to_str()?;
 
-        match host.len() {
-            len_needed if len_needed > value_max_len => {
-                let len_needed = len_needed.try_into().expect("host.len() must fit in u32");
-                nwritten_out.write(len_needed)?;
-                Err(Error::BufferLengthError {
-                    buf: "host",
-                    len: "host.len()",
-                })
-            }
-
-            len => {
-                let host = host.as_bytes();
-                value[0..len].copy_from_slice(host);
-                let len = len.try_into().expect("host.len() must fit in u32");
-                nwritten_out.write(len)?;
-                Ok(())
-            }
+        let host_len = host.len().try_into().expect("host.len() must fit in u32");
+        if host_len > value_max_len {
+            nwritten_out.write(host_len)?;
+            return Err(Error::BufferLengthError {
+                buf: "host",
+                len: "host.len()",
+            });
         }
+
+        let host = host.as_bytes();
+        value.as_array(host_len).copy_from_slice(host)?;
+        nwritten_out.write(host_len)?;
+        Ok(())
     }
 
     fn get_port(&mut self, backend: &wiggle::GuestPtr<str>) -> Result<super::types::Port, Error> {
@@ -143,9 +119,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "connection timing is not actually supported in Viceroy",
-        })
+        Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_first_byte_timeout_ms(
@@ -155,9 +129,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "connection timing is not actually supported in Viceroy",
-        })
+        Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_between_bytes_timeout_ms(
@@ -167,9 +139,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "connection timing is not actually supported in Viceroy",
-        })
+        Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_ssl_min_version(
@@ -179,9 +149,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "ssl version flags are not supported in Viceroy",
-        })
+        Err(Error::NotAvailable("SSL version information"))
     }
 
     fn get_ssl_max_version(
@@ -191,9 +159,7 @@ impl FastlyBackend for Session {
         // just doing this to get a different error if the backend doesn't exist
         let _ = lookup_backend_definition(self, backend)?;
         // health checks are not enabled in Viceroy :(
-        Err(Error::Unsupported {
-            msg: "ssl version flags are not supported in Viceroy",
-        })
+        Err(Error::NotAvailable("SSL version information"))
     }
 
     fn is_ssl(&mut self, backend: &wiggle::GuestPtr<str>) -> Result<super::types::IsSsl, Error> {

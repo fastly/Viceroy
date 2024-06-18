@@ -1,4 +1,4 @@
-//! Fastly's local testing daemon for Compute@Edge.
+//! Fastly's local testing daemon for Compute.
 
 // When building the project in release mode:
 //   (1): Promote warnings into errors.
@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use wasi_common::I32Exit;
+use wasmtime_wasi::I32Exit;
 
 mod opts;
 
@@ -40,12 +40,8 @@ use {
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(
-        serve_args.shared(),
-        true,
-        serve_args.profile_guest().cloned(),
-    )
-    .await?;
+    let ctx =
+        create_execution_context(serve_args.shared(), true, serve_args.profile_guest()).await?;
 
     if let Some(guest_profile_path) = serve_args.profile_guest() {
         std::fs::create_dir_all(guest_profile_path)?;
@@ -97,14 +93,46 @@ pub async fn main() -> ExitCode {
                 Err(_) => ExitCode::FAILURE,
             }
         }
+        Commands::Adapt(adapt_args) => {
+            install_tracing_subscriber(adapt_args.verbosity());
+            let input = adapt_args.input();
+            let output = adapt_args.output();
+            let bytes = match std::fs::read(&input) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to read module from: {}",
+                        input.display()
+                    );
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let module = match viceroy_lib::adapt::adapt_bytes(&bytes) {
+                Ok(module) => module,
+                Err(e) => {
+                    event!(Level::ERROR, "Failed to adapt module: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            event!(Level::INFO, "Writing component to: {}", output.display());
+            match std::fs::write(output, module) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    event!(Level::ERROR, "Failed to write component: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
     }
 }
 
 /// Execute a Wasm program in the Viceroy environment.
 pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(run_args.shared(), false, run_args.profile_guest().cloned())
-        .await?;
+    let ctx = create_execution_context(run_args.shared(), false, run_args.profile_guest()).await?;
     let input = run_args.shared().input();
     let program_name = match input.file_stem() {
         Some(stem) => stem.to_string_lossy(),
@@ -247,6 +275,8 @@ async fn create_execution_context(
         args.profiling_strategy(),
         args.wasi_modules(),
         guest_profile_path,
+        args.unknown_import_behavior(),
+        args.adapt(),
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout());
@@ -254,6 +284,7 @@ async fn create_execution_context(
     if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
         let backends = config.backends();
+        let device_detection = config.device_detection();
         let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
         let object_stores = config.object_stores();
@@ -262,6 +293,7 @@ async fn create_execution_context(
 
         ctx = ctx
             .with_backends(backends.clone())
+            .with_device_detection(device_detection.clone())
             .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
             .with_object_stores(object_stores.clone())

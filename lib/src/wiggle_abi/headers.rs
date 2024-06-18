@@ -86,11 +86,7 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
         }
         let value_len =
             u32::try_from(value_bytes.len()).expect("smaller than value_max_len means it must fit");
-        let mut value_out = value_ptr
-            .as_array(value_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        value_out.copy_from_slice(value_bytes);
+        value_ptr.as_array(value_len).copy_from_slice(value_bytes)?;
         nwritten_out.write(value_len)?;
 
         Ok(())
@@ -122,17 +118,15 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
         }
 
         let name = HeaderName::from_bytes(&name.as_slice()?.ok_or(Error::SharedMemory)?)?;
-        let values = values
-            .as_slice()?
-            .ok_or(Error::SharedMemory)?
+        let values = {
+            let values_bytes = values.as_slice()?.ok_or(Error::SharedMemory)?;
             // split slice along nul bytes
-            .split(|b| *b == 0)
-            // reverse and skip to drop the empty item at the end
-            .rev()
-            .skip(1)
-            .map(HeaderValue::from_bytes)
-            // Collect here in order to return early in error case, before modifying headers state
-            .collect::<Result<Vec<HeaderValue>, _>>()?;
+            let mut iter = values_bytes.split(|b| *b == 0);
+            // drop the empty item at the end
+            iter.next_back();
+            iter.map(HeaderValue::from_bytes)
+                .collect::<Result<Vec<HeaderValue>, _>>()?
+        };
 
         // Remove any values if they exist
         if let http::header::Entry::Occupied(e) = self.entry(&name) {
