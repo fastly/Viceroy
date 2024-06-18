@@ -264,4 +264,3 @@ HrM=
 
     assert_eq!(files_origin.client_cert, inline_origin.client_cert);
 }
-
