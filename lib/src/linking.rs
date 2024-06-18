@@ -28,7 +28,10 @@ impl wasmtime::ResourceLimiter for Limiter {
         // gradually resize, this will track the total allocations throughout the lifetime of the
         // instance.
         self.memory_allocated += desired - current;
-        Ok(true)
+        // limit the amount of memory that an instance can use to (roughly) 128MB, erring on
+        // the side of letting things run that might get killed on Compute, because we are not
+        // tracking some runtime factors in this count.
+        Ok(self.memory_allocated < (128 * 1024 * 1024))
     }
 
     fn table_growing(
