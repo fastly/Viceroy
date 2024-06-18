@@ -638,7 +638,8 @@
         (param $key string)
         (param $value (@witx pointer (@witx char8)))
         (param $value_max_len (@witx usize))
-        (result $err (expected $num_bytes (error $fastly_status)))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
     )
 )
 
