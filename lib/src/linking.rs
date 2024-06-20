@@ -20,23 +20,21 @@ pub struct Limiter {
 
 impl Default for Limiter {
     fn default() -> Self {
-        let limits = StoreLimitsBuilder::new()
-            .instances(1)
-            .memories(1)
-            .memory_size(128 * 1024 * 1024)
-            .table_elements(98765)
-            .tables(1)
-            .build();
-
-        Limiter::new(limits)
+        Limiter::new(1, 1)
     }
 }
 
 impl Limiter {
-    fn new(internal: StoreLimits) -> Self {
+    fn new(max_instances: usize, max_tables: usize) -> Self {
         Limiter {
             memory_allocated: 0,
-            internal,
+            internal: StoreLimitsBuilder::new()
+                .instances(max_instances)
+                .memories(1)
+                .memory_size(128 * 1024 * 1024)
+                .table_elements(98765)
+                .tables(max_tables)
+                .build(),
         }
     }
 }
@@ -137,7 +135,7 @@ impl ComponentCtx {
             wasi: builder.build(),
             session,
             guest_profiler: guest_profiler.map(Box::new),
-            limiter: Limiter::default(),
+            limiter: Limiter::new(100, 100),
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
