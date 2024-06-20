@@ -675,9 +675,7 @@ fn configure_wasmtime(
     allow_components: bool,
     profiling_strategy: ProfilingStrategy,
 ) -> wasmtime::Config {
-    use wasmtime::{
-        Config, InstanceAllocationStrategy, PoolingAllocationConfig, WasmBacktraceDetails,
-    };
+    use wasmtime::{Config, InstanceAllocationStrategy, WasmBacktraceDetails};
 
     let mut config = Config::new();
     config.debug_info(false); // Keep this disabled - wasmtime will hang if enabled
@@ -686,41 +684,7 @@ fn configure_wasmtime(
     config.epoch_interruption(true);
     config.profiler(profiling_strategy);
 
-    const MB: usize = 1 << 20;
-    let mut pooling_allocation_config = PoolingAllocationConfig::default();
-
-    // This number matches Compute production
-    pooling_allocation_config.max_core_instance_size(MB);
-
-    // Core wasm programs have 1 memory
-    pooling_allocation_config.total_memories(100);
-    pooling_allocation_config.max_memories_per_module(1);
-
-    // allow for up to 128MiB of linear memory. Wasm pages are 64k
-    pooling_allocation_config.memory_pages(128 * (MB as u64) / (64 * 1024));
-
-    // Core wasm programs have 1 table
-    pooling_allocation_config.max_tables_per_module(1);
-
-    // Some applications create a large number of functions, in particular
-    // when compiled in debug mode or applications written in swift. Every
-    // function can end up in the table
-    pooling_allocation_config.table_elements(98765);
-
-    // Maximum number of slots in the pooling allocator to keep "warm", or those
-    // to keep around to possibly satisfy an affine allocation request or an
-    // instantiation of a module previously instantiated within the pool.
-    pooling_allocation_config.max_unused_warm_slots(10);
-
-    // Use a large pool, but one smaller than the default of 1000 to avoid runnign out of virtual
-    // memory space if multiple engines are spun up in a single process. We'll likely want to move
-    // to the on-demand allocator eventually for most purposes; see
-    // https://github.com/fastly/Viceroy/issues/255
-    pooling_allocation_config.total_core_instances(100);
-
-    config.allocation_strategy(InstanceAllocationStrategy::Pooling(
-        pooling_allocation_config,
-    ));
+    config.allocation_strategy(InstanceAllocationStrategy::OnDemand);
 
     if allow_components {
         config.wasm_component_model(true);
