@@ -46,14 +46,19 @@ impl wasmtime::ResourceLimiter for Limiter {
         desired: usize,
         maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
-        // Track the diff in memory allocated over time. As each instance will start with 0 and
-        // gradually resize, this will track the total allocations throughout the lifetime of the
-        // instance.
-        self.memory_allocated += desired - current;
         // limit the amount of memory that an instance can use to (roughly) 128MB, erring on
         // the side of letting things run that might get killed on Compute, because we are not
         // tracking some runtime factors in this count.
-        self.internal.memory_growing(current, desired, maximum)
+        let result = self.internal.memory_growing(current, desired, maximum);
+
+        if matches!(result, Ok(true)) {
+            // Track the diff in memory allocated over time. As each instance will start with 0 and
+            // gradually resize, this will track the total allocations throughout the lifetime of the
+            // instance.
+            self.memory_allocated += desired - current;
+        }
+
+        result
     }
 
     fn table_growing(
