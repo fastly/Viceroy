@@ -6,15 +6,39 @@ use {
         wiggle_abi, Error,
     },
     std::collections::HashSet,
-    wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
+    wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
     wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
-#[derive(Default)]
 pub struct Limiter {
     /// Total memory allocated so far.
     pub memory_allocated: usize,
+    /// The internal limiter we use to actually answer calls
+    internal: StoreLimits,
+}
+
+impl Default for Limiter {
+    fn default() -> Self {
+        let limits = StoreLimitsBuilder::new()
+            .instances(1)
+            .memories(1)
+            .memory_size(128 * 1024 * 1024)
+            .table_elements(98765)
+            .tables(1)
+            .build();
+
+        Limiter::new(limits)
+    }
+}
+
+impl Limiter {
+    fn new(internal: StoreLimits) -> Self {
+        Limiter {
+            memory_allocated: 0,
+            internal,
+        }
+    }
 }
 
 impl wasmtime::ResourceLimiter for Limiter {
@@ -22,7 +46,7 @@ impl wasmtime::ResourceLimiter for Limiter {
         &mut self,
         current: usize,
         desired: usize,
-        _maximum: Option<usize>,
+        maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
         // Track the diff in memory allocated over time. As each instance will start with 0 and
         // gradually resize, this will track the total allocations throughout the lifetime of the
@@ -31,16 +55,36 @@ impl wasmtime::ResourceLimiter for Limiter {
         // limit the amount of memory that an instance can use to (roughly) 128MB, erring on
         // the side of letting things run that might get killed on Compute, because we are not
         // tracking some runtime factors in this count.
-        Ok(self.memory_allocated < (128 * 1024 * 1024))
+        self.internal.memory_growing(current, desired, maximum)
     }
 
     fn table_growing(
         &mut self,
-        _current: u32,
-        _desired: u32,
-        _maximum: Option<u32>,
+        current: u32,
+        desired: u32,
+        maximum: Option<u32>,
     ) -> anyhow::Result<bool> {
-        Ok(true)
+        self.internal.table_growing(current, desired, maximum)
+    }
+
+    fn memory_grow_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+        self.internal.memory_grow_failed(error)
+    }
+
+    fn table_grow_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+        self.internal.table_grow_failed(error)
+    }
+
+    fn instances(&self) -> usize {
+        self.internal.instances()
+    }
+
+    fn tables(&self) -> usize {
+        self.internal.tables()
+    }
+
+    fn memories(&self) -> usize {
+        self.internal.memories()
     }
 }
 
