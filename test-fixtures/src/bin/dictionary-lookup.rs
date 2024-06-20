@@ -10,7 +10,7 @@ fn main() {
             "animals".len(),
             &mut dict_handle as *mut _,
         );
-        assert_eq!(res, FastlyStatus::OK, "Failed to open config-store");
+        assert_eq!(res, FastlyStatus::OK, "Failed to open dictionary");
         dict_handle
     };
 
