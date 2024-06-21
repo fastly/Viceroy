@@ -6,15 +6,37 @@ use {
         wiggle_abi, Error,
     },
     std::collections::HashSet,
-    wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
+    wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
     wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
-#[derive(Default)]
 pub struct Limiter {
     /// Total memory allocated so far.
     pub memory_allocated: usize,
+    /// The internal limiter we use to actually answer calls
+    internal: StoreLimits,
+}
+
+impl Default for Limiter {
+    fn default() -> Self {
+        Limiter::new(1, 1)
+    }
+}
+
+impl Limiter {
+    fn new(max_instances: usize, max_tables: usize) -> Self {
+        Limiter {
+            memory_allocated: 0,
+            internal: StoreLimitsBuilder::new()
+                .instances(max_instances)
+                .memories(1)
+                .memory_size(128 * 1024 * 1024)
+                .table_elements(98765)
+                .tables(max_tables)
+                .build(),
+        }
+    }
 }
 
 impl wasmtime::ResourceLimiter for Limiter {
@@ -22,22 +44,50 @@ impl wasmtime::ResourceLimiter for Limiter {
         &mut self,
         current: usize,
         desired: usize,
-        _maximum: Option<usize>,
+        maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
-        // Track the diff in memory allocated over time. As each instance will start with 0 and
-        // gradually resize, this will track the total allocations throughout the lifetime of the
-        // instance.
-        self.memory_allocated += desired - current;
-        Ok(true)
+        // limit the amount of memory that an instance can use to (roughly) 128MB, erring on
+        // the side of letting things run that might get killed on Compute, because we are not
+        // tracking some runtime factors in this count.
+        let result = self.internal.memory_growing(current, desired, maximum);
+
+        if matches!(result, Ok(true)) {
+            // Track the diff in memory allocated over time. As each instance will start with 0 and
+            // gradually resize, this will track the total allocations throughout the lifetime of the
+            // instance.
+            self.memory_allocated += desired - current;
+        }
+
+        result
     }
 
     fn table_growing(
         &mut self,
-        _current: u32,
-        _desired: u32,
-        _maximum: Option<u32>,
+        current: u32,
+        desired: u32,
+        maximum: Option<u32>,
     ) -> anyhow::Result<bool> {
-        Ok(true)
+        self.internal.table_growing(current, desired, maximum)
+    }
+
+    fn memory_grow_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+        self.internal.memory_grow_failed(error)
+    }
+
+    fn table_grow_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+        self.internal.table_grow_failed(error)
+    }
+
+    fn instances(&self) -> usize {
+        self.internal.instances()
+    }
+
+    fn tables(&self) -> usize {
+        self.internal.tables()
+    }
+
+    fn memories(&self) -> usize {
+        self.internal.memories()
     }
 }
 
@@ -90,7 +140,7 @@ impl ComponentCtx {
             wasi: builder.build(),
             session,
             guest_profiler: guest_profiler.map(Box::new),
-            limiter: Limiter::default(),
+            limiter: Limiter::new(100, 100),
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
