@@ -44,7 +44,8 @@ impl FastlyDictionary for Session {
         key: &GuestPtr<str>,
         buf: &GuestPtr<u8>,
         buf_len: u32,
-    ) -> Result<u32, Error> {
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
         let dict = &self.dictionary(dictionary)?.contents;
 
         let item_bytes = {
@@ -54,16 +55,23 @@ impl FastlyDictionary for Session {
                 .as_bytes()
         };
 
-        if item_bytes.len() > buf_len as usize {
+        if item_bytes.len() > usize::try_from(buf_len).expect("buf_len must fit in usize") {
+            // Write out the number of bytes necessary to fit this item, or zero on overflow to
+            // signal an error condition. This is probably unnecessary, as config store entries
+            // may be at most 8000 utf-8 characters large.
+            nwritten_out.write(u32::try_from(item_bytes.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "dictionary_item",
                 len: "dictionary_item_max_len",
             });
         }
-        let item_len = u32::try_from(item_bytes.len())
-            .expect("smaller than dictionary_item_max_len means it must fit");
 
+        // We know the conversion of item_bytes.len() to u32 will succeed, as it's <= buf_len.
+        let item_len = u32::try_from(item_bytes.len()).unwrap();
+
+        nwritten_out.write(item_len)?;
         buf.as_array(item_len).copy_from_slice(item_bytes)?;
-        Ok(item_len)
+
+        Ok(())
     }
 }

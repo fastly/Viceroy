@@ -1,8 +1,9 @@
 use super::{
     fastly_config_store::FastlyConfigStore,
+    fastly_dictionary::FastlyDictionary,
     types::{ConfigStoreHandle, DictionaryHandle},
 };
-use crate::{session::Session, wiggle_abi::fastly_dictionary::FastlyDictionary, Error};
+use crate::{session::Session, Error};
 use wiggle::GuestPtr;
 
 impl FastlyConfigStore for Session {
@@ -17,8 +18,9 @@ impl FastlyConfigStore for Session {
         key: &GuestPtr<str>,
         buf: &GuestPtr<u8>,
         buf_len: u32,
-    ) -> Result<u32, Error> {
+        nwritten_out: &GuestPtr<u32>,
+    ) -> Result<(), Error> {
         let dict_handle = DictionaryHandle::from(unsafe { config_store.inner() });
-        <Self as FastlyDictionary>::get(self, dict_handle, key, buf, buf_len)
+        <Self as FastlyDictionary>::get(self, dict_handle, key, buf, buf_len, nwritten_out)
     }
 }
