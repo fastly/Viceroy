@@ -9,7 +9,7 @@ use {
             types::{DictionaryHandle, FastlyStatus},
         },
     },
-    wiggle::GuestPtr,
+    wiggle::{GuestMemory, GuestPtr},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -34,22 +34,27 @@ impl DictionaryError {
 }
 
 impl FastlyDictionary for Session {
-    fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        self.dictionary_handle(&name.as_str()?.ok_or(Error::SharedMemory)?)
+    fn open(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        name: GuestPtr<str>,
+    ) -> Result<DictionaryHandle, Error> {
+        self.dictionary_handle(memory.as_str(name)?.ok_or(Error::SharedMemory)?)
     }
 
     fn get(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         dictionary: DictionaryHandle,
-        key: &GuestPtr<str>,
-        buf: &GuestPtr<u8>,
+        key: GuestPtr<str>,
+        buf: GuestPtr<u8>,
         buf_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
         let dict = &self.dictionary(dictionary)?.contents;
 
         let item_bytes = {
-            let key: &str = &key.as_str()?.ok_or(Error::SharedMemory)?;
+            let key = memory.as_str(key)?.ok_or(Error::SharedMemory)?;
             dict.get(key)
                 .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
                 .as_bytes()
@@ -59,7 +64,7 @@ impl FastlyDictionary for Session {
             // Write out the number of bytes necessary to fit this item, or zero on overflow to
             // signal an error condition. This is probably unnecessary, as config store entries
             // may be at most 8000 utf-8 characters large.
-            nwritten_out.write(u32::try_from(item_bytes.len()).unwrap_or(0))?;
+            memory.write(nwritten_out, u32::try_from(item_bytes.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "dictionary_item",
                 len: "dictionary_item_max_len",
@@ -69,8 +74,8 @@ impl FastlyDictionary for Session {
         // We know the conversion of item_bytes.len() to u32 will succeed, as it's <= buf_len.
         let item_len = u32::try_from(item_bytes.len()).unwrap();
 
-        nwritten_out.write(item_len)?;
-        buf.as_array(item_len).copy_from_slice(item_bytes)?;
+        memory.write(nwritten_out, item_len)?;
+        memory.copy_from_slice(item_bytes, buf.as_array(item_len))?;
 
         Ok(())
     }

@@ -3,9 +3,10 @@ use crate::{config::Backend, error::Error, session::Session};
 
 fn lookup_backend_definition<'sess>(
     session: &'sess Session,
-    backend: &wiggle::GuestPtr<str>,
+    memory: &mut wiggle::GuestMemory<'_>,
+    backend: wiggle::GuestPtr<str>,
 ) -> Result<&'sess Backend, Error> {
-    let name = backend.as_str()?.ok_or(Error::SharedMemory)?;
+    let name = memory.as_str(backend)?.ok_or(Error::SharedMemory)?;
     session
         .backend(&name)
         .map(AsRef::as_ref)
@@ -15,9 +16,10 @@ fn lookup_backend_definition<'sess>(
 impl FastlyBackend for Session {
     fn exists(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::BackendExists, Error> {
-        if lookup_backend_definition(self, backend).is_ok() {
+        if lookup_backend_definition(self, memory, backend).is_ok() {
             Ok(1)
         } else {
             Ok(0)
@@ -26,18 +28,20 @@ impl FastlyBackend for Session {
 
     fn is_healthy(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::BackendHealth, Error> {
         // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, backend)?;
+        let _ = lookup_backend_definition(self, memory, backend)?;
         Ok(super::types::BackendHealth::Unknown)
     }
 
     fn is_dynamic(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::IsDynamic, Error> {
-        let name = backend.as_str()?.ok_or(Error::SharedMemory)?;
+        let name = memory.as_str(backend)?.ok_or(Error::SharedMemory)?;
 
         if self.dynamic_backend(&name).is_some() {
             Ok(1)
@@ -50,17 +54,18 @@ impl FastlyBackend for Session {
 
     fn get_host(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
-        value: &wiggle::GuestPtr<u8>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+        value: wiggle::GuestPtr<u8>,
         value_max_len: u32,
-        nwritten_out: &wiggle::GuestPtr<u32>,
+        nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let backend = lookup_backend_definition(self, backend)?;
+        let backend = lookup_backend_definition(self, memory, backend)?;
         let host = backend.uri.host().expect("backend uri has host");
 
         let host_len = host.len().try_into().expect("host.len() must fit in u32");
         if host_len > value_max_len {
-            nwritten_out.write(host_len)?;
+            memory.write(nwritten_out, host_len)?;
             return Err(Error::BufferLengthError {
                 buf: "host",
                 len: "host.len()",
@@ -68,19 +73,20 @@ impl FastlyBackend for Session {
         }
 
         let host = host.as_bytes();
-        value.as_array(host_len).copy_from_slice(host)?;
-        nwritten_out.write(host_len)?;
+        memory.copy_from_slice(host, value.as_array(host_len))?;
+        memory.write(nwritten_out, host_len)?;
         Ok(())
     }
 
-    fn get_override_host<'a>(
+    fn get_override_host(
         &mut self,
-        backend: &wiggle::GuestPtr<'a, str>,
-        value: &wiggle::GuestPtr<'a, u8>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+        value: wiggle::GuestPtr<u8>,
         value_max_len: u32,
-        nwritten_out: &wiggle::GuestPtr<'a, u32>,
+        nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let backend = lookup_backend_definition(self, backend)?;
+        let backend = lookup_backend_definition(self, memory, backend)?;
         let host = backend
             .override_host
             .as_ref()
@@ -89,7 +95,7 @@ impl FastlyBackend for Session {
 
         let host_len = host.len().try_into().expect("host.len() must fit in u32");
         if host_len > value_max_len {
-            nwritten_out.write(host_len)?;
+            memory.write(nwritten_out, host_len)?;
             return Err(Error::BufferLengthError {
                 buf: "host",
                 len: "host.len()",
@@ -97,13 +103,17 @@ impl FastlyBackend for Session {
         }
 
         let host = host.as_bytes();
-        value.as_array(host_len).copy_from_slice(host)?;
-        nwritten_out.write(host_len)?;
+        memory.copy_from_slice(host, value.as_array(host_len))?;
+        memory.write(nwritten_out, host_len)?;
         Ok(())
     }
 
-    fn get_port(&mut self, backend: &wiggle::GuestPtr<str>) -> Result<super::types::Port, Error> {
-        let backend = lookup_backend_definition(self, backend)?;
+    fn get_port(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<super::types::Port, Error> {
+        let backend = lookup_backend_definition(self, memory, backend)?;
 
         match backend.uri.port_u16() {
             Some(port) => Ok(port),
@@ -114,56 +124,65 @@ impl FastlyBackend for Session {
 
     fn get_connect_timeout_ms(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::TimeoutMs, Error> {
         // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, backend)?;
+        let _ = lookup_backend_definition(self, memory, backend)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_first_byte_timeout_ms(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::TimeoutMs, Error> {
         // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, backend)?;
+        let _ = lookup_backend_definition(self, memory, backend)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_between_bytes_timeout_ms(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::TimeoutMs, Error> {
         // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, backend)?;
+        let _ = lookup_backend_definition(self, memory, backend)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::NotAvailable("Connection timing"))
     }
 
     fn get_ssl_min_version(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::TlsVersion, Error> {
         // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, backend)?;
+        let _ = lookup_backend_definition(self, memory, backend)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::NotAvailable("SSL version information"))
     }
 
     fn get_ssl_max_version(
         &mut self,
-        backend: &wiggle::GuestPtr<str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::TlsVersion, Error> {
         // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, backend)?;
+        let _ = lookup_backend_definition(self, memory, backend)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::NotAvailable("SSL version information"))
     }
 
-    fn is_ssl(&mut self, backend: &wiggle::GuestPtr<str>) -> Result<super::types::IsSsl, Error> {
-        lookup_backend_definition(self, backend)
+    fn is_ssl(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<super::types::IsSsl, Error> {
+        lookup_backend_definition(self, memory, backend)
             .map(|x| x.uri.scheme() == Some(&http::uri::Scheme::HTTPS))
             .map(|x| if x { 1 } else { 0 })
     }
