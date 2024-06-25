@@ -846,7 +846,11 @@ impl FastlyHttpReq for Session {
         let done_index = self
             .select_impl(
                 memory
-                    // TODO: wiggle only supports slices of u8 in 22.0.0
+                    // TODO: `GuestMemory::as_slice` only supports guest pointers to u8 slices in
+                    // wiggle 22.0.0, but `GuestMemory::to_vec` supports guest pointers to slices
+                    // of arbitrary types. As `GuestMemory::to_vec` will copy the contents of the
+                    // slice out of guest memory, we should switch this to `GuestMemory::as_slice`
+                    // once it is polymorphic in the element type of the slice.
                     .to_vec(pending_req_handles)?
                     .into_iter()
                     .map(|handle| PendingRequestHandle::from(handle).into()),
