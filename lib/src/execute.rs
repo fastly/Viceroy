@@ -454,8 +454,10 @@ impl ExecuteCtx {
                 let req = session.downstream_request();
                 let body = session.downstream_request_body();
 
-                let mut store = ComponentCtx::create_store(&self, session, None, |_| {})
-                    .map_err(ExecutionError::Context)?;
+                let mut store = ComponentCtx::create_store(&self, session, None, |ctx| {
+                    ctx.arg("compute-app");
+                })
+                .map_err(ExecutionError::Context)?;
 
                 let (compute, _instance) =
                     compute::Compute::instantiate_pre(&mut store, instance_pre)
