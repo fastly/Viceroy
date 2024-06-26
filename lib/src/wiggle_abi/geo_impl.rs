@@ -8,23 +8,20 @@ use std::{
 use {
     crate::{error::Error, session::Session, wiggle_abi::fastly_geo::FastlyGeo},
     std::convert::TryFrom,
-    wiggle::GuestPtr,
+    wiggle::{GuestMemory, GuestPtr},
 };
 
 impl FastlyGeo for Session {
     fn lookup(
         &mut self,
-        addr_octets: &GuestPtr<u8>,
+        memory: &mut GuestMemory<'_>,
+        addr_octets: GuestPtr<u8>,
         addr_len: u32,
-        buf: &GuestPtr<u8>,
+        buf: GuestPtr<u8>,
         buf_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let octets = addr_octets
-            .as_array(addr_len)
-            .iter()
-            .map(|v| v.unwrap().read().unwrap())
-            .collect::<Vec<u8>>();
+        let octets = memory.to_vec(addr_octets.as_array(addr_len))?;
 
         let ip_addr: IpAddr = match addr_len {
             4 => IpAddr::V4(Ipv4Addr::from(
@@ -39,7 +36,7 @@ impl FastlyGeo for Session {
         let result = self.geolocation_lookup(&ip_addr).unwrap_or_default();
 
         if result.len() > buf_len as usize {
-            nwritten_out.write(u32::try_from(result.len()).unwrap_or(0))?;
+            memory.write(nwritten_out, u32::try_from(result.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "geolocation_lookup",
                 len: "geolocation_lookup_max_len",
@@ -49,9 +46,8 @@ impl FastlyGeo for Session {
         let result_len =
             u32::try_from(result.len()).expect("smaller than value_max_len means it must fit");
 
-        buf.as_array(result_len)
-            .copy_from_slice(result.as_bytes())?;
-        nwritten_out.write(result_len)?;
+        memory.copy_from_slice(result.as_bytes(), buf.as_array(result_len))?;
+        memory.write(nwritten_out, result_len)?;
         Ok(())
     }
 }

@@ -40,10 +40,10 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = "21.0.0"
-wasmtime-wasi = "21.0.0"
-wasmtime-wasi-nn = "21.0.0"
-wiggle = "21.0.0"
+wasmtime = "22.0.0"
+wasmtime-wasi = "22.0.0"
+wasmtime-wasi-nn = "22.0.0"
+wiggle = "22.0.0"
 wasmparser = "0.208.0"
 wasm-encoder = { version = "0.208.0", features = ["wasmparser"] }
 wit-component = "0.208.0"

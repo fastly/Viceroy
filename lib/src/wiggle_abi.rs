@@ -22,7 +22,7 @@ use {
     },
     crate::{error::Error, session::Session},
     tracing::{event, Level},
-    wiggle::{GuestErrorType, GuestPtr},
+    wiggle::{GuestErrorType, GuestMemory, GuestPtr},
 };
 
 pub const ABI_VERSION: u64 = 1;
@@ -36,12 +36,12 @@ pub const ABI_VERSION: u64 = 1;
 // TODO ACF 2020-06-29: this lets us avoid ABI breakage for the moment, but the next time we need
 // to break the ABI, we should revisit whether we want to keep this behavior.
 macro_rules! multi_value_result {
-    ( $expr:expr, $ending_cursor_out:expr ) => {{
+    ( $memory:ident, $expr:expr, $ending_cursor_out:expr ) => {{
         let res = $expr;
         let ec = res.as_ref().unwrap_or(&(-1));
         // the previous implementation would only write these if they were null
         if $ending_cursor_out.offset() != 0 {
-            $ending_cursor_out.write(*ec)?;
+            $memory.write($ending_cursor_out, *ec)?;
         }
         let _ = res?;
         Ok(())
@@ -112,7 +112,7 @@ impl TryFrom<http::version::Version> for types::HttpVersion {
 }
 
 impl FastlyAbi for Session {
-    fn init(&mut self, abi_version: u64) -> Result<(), Error> {
+    fn init(&mut self, _memory: &mut GuestMemory<'_>, abi_version: u64) -> Result<(), Error> {
         if abi_version != ABI_VERSION {
             Err(Error::AbiVersionMismatch)
         } else {
@@ -181,10 +181,11 @@ impl GuestErrorType for FastlyStatus {
 pub(crate) trait MultiValueWriter {
     fn write_values(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         terminator: u8,
-        memory: &GuestPtr<[u8]>,
+        buf: GuestPtr<[u8]>,
         cursor: types::MultiValueCursor,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<types::MultiValueCursorResult, Error>;
 }
 
@@ -196,12 +197,13 @@ where
     #[allow(clippy::useless_conversion)] // numeric conversations that may vary by platform
     fn write_values(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         terminator: u8,
-        memory: &GuestPtr<[u8]>,
+        buf: GuestPtr<[u8]>,
         cursor: types::MultiValueCursor,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<types::MultiValueCursorResult, Error> {
-        let mut buf = memory.as_slice_mut()?.ok_or(Error::SharedMemory)?;
+        let buf = memory.as_slice_mut(buf)?.ok_or(Error::SharedMemory)?;
 
         // Note: the prior implementation multi_value_writer would first
         // terminate the buffer, write -1 to the ending cursor, and zero the nwritten
@@ -224,8 +226,7 @@ where
                         // If there's not enough room to write even a single value, that's an error.
                         // Write out the number of bytes necessary to fit this header value, or zero
                         // on overflow to signal an error condition.
-                        drop(buf);
-                        nwritten_out.write(value_len_with_term.try_into().unwrap_or(0))?;
+                        memory.write(nwritten_out, value_len_with_term.try_into().unwrap_or(0))?;
                         return Err(Error::BufferLengthError {
                             buf: "buf",
                             len: "buf.len()",
@@ -264,8 +265,7 @@ where
             types::MultiValueCursorResult::from(cursor as i64)
         };
 
-        drop(buf);
-        nwritten_out.write(buf_offset.try_into().unwrap_or(0))?;
+        memory.write(nwritten_out, buf_offset.try_into().unwrap_or(0))?;
 
         Ok(ending_cursor)
     }
