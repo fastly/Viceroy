@@ -1088,6 +1088,7 @@ world compute {
     import wasi:io/error@0.2.0;
     import wasi:io/streams@0.2.0;
     import wasi:random/random@0.2.0;
+    import wasi:cli/environment@0.2.0;
     import wasi:cli/stdout@0.2.0;
     import wasi:cli/stderr@0.2.0;
     import wasi:cli/stdin@0.2.0;
