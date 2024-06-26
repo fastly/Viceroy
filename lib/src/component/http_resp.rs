@@ -5,7 +5,6 @@ use {
     cfg_if::cfg_if,
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
-    std::str::FromStr,
 };
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
@@ -137,6 +136,7 @@ impl http_resp::Host for Session {
                 let _ = (h, name, max_len, cursor);
                 return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into());
             } else {
+                use std::str::FromStr;
                 if name.len() > MAX_HEADER_NAME_LEN {
                     return Err(Error::InvalidArgument.into());
                 }
