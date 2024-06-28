@@ -175,6 +175,7 @@ impl From<error::Error> for types::Error {
             Error::DictionaryError(e) => e.into(),
             Error::ObjectStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
+            Error::InvalidBackendUrl => types::Error::HttpInvalid,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
