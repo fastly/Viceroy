@@ -23,11 +23,19 @@ use {
             ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle,
             PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
         },
+        ExecuteCtx,
     },
     cranelift_entity::{entity_impl, PrimaryMap},
     futures::future::{self, FutureExt},
     http::{request, response, HeaderMap, Request, Response},
-    std::{collections::HashMap, future::Future, net::IpAddr, path::PathBuf, sync::Arc},
+    std::{
+        collections::HashMap,
+        future::Future,
+        io::Write,
+        net::IpAddr,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    },
     tokio::sync::oneshot::Sender,
 };
 
@@ -65,6 +73,8 @@ pub struct Session {
     /// [parts]: https://docs.rs/http/latest/http/response/struct.Parts.html
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     resp_parts: PrimaryMap<ResponseHandle, Option<response::Parts>>,
+    /// Where to direct logging endpoint messages.
+    capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// A handle map for logging endpoints.
     log_endpoints: PrimaryMap<EndpointHandle, LogEndpoint>,
     /// A by-name map for logging endpoints.
@@ -131,6 +141,7 @@ impl Session {
         req: Request<Body>,
         resp_sender: Sender<Response<Body>>,
         client_ip: IpAddr,
+        ctx: &ExecuteCtx,
         backends: Arc<Backends>,
         device_detection: Arc<DeviceDetection>,
         geolocation: Arc<Geolocation>,
@@ -158,6 +169,7 @@ impl Session {
             req_parts,
             resp_parts: PrimaryMap::new(),
             downstream_resp: DownstreamResponse::new(resp_sender),
+            capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
@@ -523,7 +535,7 @@ impl Session {
         if let Some(handle) = self.log_endpoints_by_name.get(name).copied() {
             return handle;
         }
-        let endpoint = LogEndpoint::new(name);
+        let endpoint = LogEndpoint::new(name, self.capture_logs.clone());
         let handle = self.log_endpoints.push(endpoint);
         self.log_endpoints_by_name.insert(name.to_owned(), handle);
         handle

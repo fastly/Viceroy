@@ -259,13 +259,13 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> WasiCtxBuilder {
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()));
 
     if ctx.log_stdout() {
-        wasi_ctx.stdout(LogEndpoint::new(b"stdout"));
+        wasi_ctx.stdout(LogEndpoint::new(b"stdout", ctx.capture_logs()));
     } else {
         wasi_ctx.inherit_stdout();
     }
 
     if ctx.log_stderr() {
-        wasi_ctx.stderr(LogEndpoint::new(b"stderr"));
+        wasi_ctx.stderr(LogEndpoint::new(b"stderr", ctx.capture_logs()));
     } else {
         wasi_ctx.inherit_stderr();
     }
