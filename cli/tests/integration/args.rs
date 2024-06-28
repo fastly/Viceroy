@@ -32,7 +32,7 @@ async fn empty_ok_response_by_default_after_args() -> TestResult {
 #[should_panic]
 async fn empty_ok_response_by_default_after_args_component() {
     let resp = Test::using_fixture("args.wasm")
-        .adapt_component()
+        .adapt_component(true)
         .against_empty()
         .await
         .unwrap();
