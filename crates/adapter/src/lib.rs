@@ -1,3 +1,6 @@
+// Promote warnings into errors, when building in release mode.
+#![cfg_attr(not(debug_assertions), deny(warnings))]
+
 use crate::bindings::wasi::clocks::{monotonic_clock, wall_clock};
 use crate::bindings::wasi::io::poll;
 use crate::bindings::wasi::io::streams;
