@@ -1,6 +1,6 @@
 use crate::bindings::wasi::cli::{stderr, stdin, stdout};
 use crate::bindings::wasi::io::streams::{InputStream, OutputStream};
-use crate::{BumpArena, ImportAlloc, TrappingUnwrap};
+use crate::{State, TrappingUnwrap};
 use core::cell::{Cell, OnceCell, UnsafeCell};
 use core::mem::MaybeUninit;
 use wasi::{Errno, Fd};
@@ -78,7 +78,7 @@ pub struct Descriptors {
 }
 
 impl Descriptors {
-    pub fn new(_import_alloc: &ImportAlloc, _arena: &BumpArena) -> Self {
+    pub fn new(_state: &State) -> Self {
         let d = Descriptors {
             table: UnsafeCell::new(MaybeUninit::uninit()),
             table_len: Cell::new(0),
