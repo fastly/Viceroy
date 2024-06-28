@@ -1,13 +1,15 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::http::response;
 use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Request, Server, StatusCode};
 use std::net::SocketAddr;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn grpc_creates_h2_connection() -> TestResult {
-    let test = Test::using_fixture("grpc.wasm");
+viceroy_test!(grpc_creates_h2_connection, |is_component| {
+    let test = Test::using_fixture("grpc.wasm").adapt_component(is_component);
     let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
     let incoming = AddrIncoming::bind(&server_addr).expect("bind");
     let bound_port = incoming.local_addr().port();
@@ -39,4 +41,4 @@ async fn grpc_creates_h2_connection() -> TestResult {
     // assert_eq!(resp.into_body().read_into_string().await?, "Hello!");
 
     Ok(())
-}
+});

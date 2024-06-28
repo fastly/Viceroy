@@ -1,38 +1,43 @@
 //! Tests related to sending HTTP responses downstream.
 
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::{
         body::{to_bytes, HttpBody},
         StatusCode,
     },
 };
 
-/// Use the `teapot-status` fixture to check that responses can be sent downstream by the guest.
-///
-/// `teapot-status.wasm` will create a [`418 I'm a teapot`][tea] response, per [RFC2324][rfc]. This
-/// status code is used to clearly indicate that a response came from the guest program.
-///
-/// [rfc]: https://tools.ietf.org/html/rfc2324
-/// [tea]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418
-#[tokio::test(flavor = "multi_thread")]
-async fn responses_can_be_sent_downstream() -> TestResult {
+// Use the `teapot-status` fixture to check that responses can be sent downstream by the guest.
+//
+// `teapot-status.wasm` will create a [`418 I'm a teapot`][tea] response, per [RFC2324][rfc]. This
+// status code is used to clearly indicate that a response came from the guest program.
+//
+// [rfc]: https://tools.ietf.org/html/rfc2324
+// [tea]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418
+viceroy_test!(responses_can_be_sent_downstream, |is_component| {
     let resp = Test::using_fixture("teapot-status.wasm")
+        .adapt_component(is_component)
         .against_empty()
         .await?;
     assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
     Ok(())
-}
+});
 
-/// Run a program that does nothing, to check that an empty response is sent downstream by default.
-///
-/// `noop.wasm` is an empty guest program. This exists to show that if no response is sent
-/// downstream by the guest, a [`200 OK`][ok] response will be sent.
-///
-/// [ok]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/200
-#[tokio::test(flavor = "multi_thread")]
-async fn empty_ok_response_by_default() -> TestResult {
-    let resp = Test::using_fixture("noop.wasm").against_empty().await?;
+// Run a program that does nothing, to check that an empty response is sent downstream by default.
+//
+// `noop.wasm` is an empty guest program. This exists to show that if no response is sent
+// downstream by the guest, a [`200 OK`][ok] response will be sent.
+//
+// [ok]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/200
+viceroy_test!(empty_ok_response_by_default, |is_component| {
+    let resp = Test::using_fixture("noop.wasm")
+        .adapt_component(is_component)
+        .against_empty()
+        .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(to_bytes(resp.into_body())
@@ -42,23 +47,25 @@ async fn empty_ok_response_by_default() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-/// Run a program that panics, to check that a [`500 Internal Server Error`][err] response is sent
-/// downstream.
-///
-/// [err]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
-#[tokio::test(flavor = "multi_thread")]
-async fn five_hundred_when_guest_panics() -> TestResult {
-    let resp = Test::using_fixture("panic.wasm").against_empty().await?;
+// Run a program that panics, to check that a [`500 Internal Server Error`][err] response is sent
+// downstream.
+//
+// [err]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+viceroy_test!(five_hundred_when_guest_panics, |is_component| {
+    let resp = Test::using_fixture("panic.wasm")
+        .adapt_component(is_component)
+        .against_empty()
+        .await?;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
-}
+});
 
-/// Test that gradually writing to a streaming body works.
-#[tokio::test(flavor = "multi_thread")]
-async fn responses_can_be_streamed_downstream() -> TestResult {
+// Test that gradually writing to a streaming body works.
+viceroy_test!(responses_can_be_streamed_downstream, |is_component| {
     let mut resp = Test::using_fixture("streaming-response.wasm")
+        .adapt_component(is_component)
         .via_hyper()
         .against_empty()
         .await?;
@@ -85,4 +92,4 @@ async fn responses_can_be_streamed_downstream() -> TestResult {
     assert_eq!(i, 1000);
 
     Ok(())
-}
+});

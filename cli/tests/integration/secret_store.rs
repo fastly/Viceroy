@@ -1,10 +1,12 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::{body::to_bytes, StatusCode};
 use viceroy_lib::config::FastlyConfig;
 use viceroy_lib::error::{FastlyConfigError, SecretStoreConfigError};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn secret_store_works() -> TestResult {
+viceroy_test!(secret_store_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "secret-store"
         description = "secret store test"
@@ -15,6 +17,7 @@ async fn secret_store_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("secret-store.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -27,7 +30,7 @@ async fn secret_store_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
 fn bad_config_test(toml_fragment: &str) -> Result<FastlyConfig, FastlyConfigError> {
     let toml = format!(

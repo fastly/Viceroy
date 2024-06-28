@@ -1,13 +1,16 @@
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::{body::HttpBody, Response, StatusCode},
 };
 
-/// Test that guests can stream a body into an upstream request.
-#[tokio::test(flavor = "multi_thread")]
-async fn upstream_streaming() -> TestResult {
+// Test that guests can stream a body into an upstream request.
+viceroy_test!(upstream_streaming, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("upstream-streaming.wasm")
+        .adapt_component(is_component)
         // The "origin" backend simply echos the request body
         .backend("origin", "/", None, |req| Response::new(req.into_body()))
         .await;
@@ -32,4 +35,4 @@ async fn upstream_streaming() -> TestResult {
     assert_eq!(i, 1000);
 
     Ok(())
-}
+});

@@ -384,7 +384,7 @@ impl http_req::Host for Session {
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
             .backend(&backend_name)
-            .ok_or(types::Error::from(types::Error::UnknownError))?;
+            .ok_or_else(|| Error::UnknownBackend(backend_name))?;
 
         // synchronously send the request
         let resp = upstream::send_request(req, backend, self.tls_config()).await?;
@@ -637,16 +637,20 @@ impl http_req::Host for Session {
         options: http_types::BackendConfigOptions,
         config: http_types::DynamicBackendConfig,
     ) -> Result<(), types::Error> {
+        if options.contains(http_types::BackendConfigOptions::RESERVED) {
+            return Err(types::Error::InvalidArgument);
+        }
+
         let name = prefix.as_str();
         let origin_name = target.as_str();
 
         let override_host = if options.contains(http_types::BackendConfigOptions::HOST_OVERRIDE) {
             if config.host_override.is_empty() {
-                return Err(types::Error::InvalidArgument.into());
+                return Err(types::Error::InvalidArgument);
             }
 
             if config.host_override.len() > 1024 {
-                return Err(types::Error::InvalidArgument.into());
+                return Err(types::Error::InvalidArgument);
             }
 
             Some(HeaderValue::from_bytes(config.host_override.as_bytes())?)
@@ -654,10 +658,25 @@ impl http_req::Host for Session {
             None
         };
 
-        let scheme = if options.contains(http_types::BackendConfigOptions::USE_SSL) {
-            "https"
+        let use_ssl = options.contains(http_types::BackendConfigOptions::USE_SSL);
+        let scheme = if use_ssl { "https" } else { "http" };
+
+        let ca_certs = if use_ssl && options.contains(http_types::BackendConfigOptions::CA_CERT) {
+            if config.ca_cert.is_empty() {
+                return Err(types::Error::InvalidArgument);
+            }
+
+            if config.ca_cert.len() > (64 * 1024) {
+                return Err(types::Error::InvalidArgument);
+            }
+
+            let mut byte_cursor = std::io::Cursor::new(config.ca_cert.as_bytes());
+            rustls_pemfile::certs(&mut byte_cursor)?
+                .drain(..)
+                .map(rustls::Certificate)
+                .collect()
         } else {
-            "http"
+            vec![]
         };
 
         let mut cert_host = if options.contains(http_types::BackendConfigOptions::CERT_HOSTNAME) {
@@ -675,12 +694,10 @@ impl http_req::Host for Session {
         };
 
         let use_sni = if options.contains(http_types::BackendConfigOptions::SNI_HOSTNAME) {
-            if config.sni_hostname.len() > 1024 {
-                return Err(types::Error::InvalidArgument.into());
-            }
-
             if config.sni_hostname.is_empty() {
                 false
+            } else if config.sni_hostname.len() > 1024 {
+                return Err(types::Error::InvalidArgument.into());
             } else {
                 if let Some(cert_host) = &cert_host {
                     if cert_host != &config.sni_hostname {
@@ -727,7 +744,7 @@ impl http_req::Host for Session {
             None
         };
 
-        let grpc = false;
+        let grpc = options.contains(http_types::BackendConfigOptions::GRPC);
 
         let new_backend = Backend {
             uri: Uri::builder()
@@ -740,7 +757,7 @@ impl http_req::Host for Session {
             use_sni,
             grpc,
             client_cert,
-            ca_certs: Vec::new(),
+            ca_certs,
         };
 
         if !self.add_backend(name, new_backend) {
@@ -789,10 +806,26 @@ impl http_req::Host for Session {
 
     async fn original_header_names_get(
         &mut self,
-        _max_len: u64,
-        _cursor: u32,
+        max_len: u64,
+        cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        Err(Error::NotAvailable("Client Compliance Region").into())
+        let headers = self.downstream_original_headers();
+        let (buf, next) = write_values(
+            headers.keys(),
+            b'\0',
+            usize::try_from(max_len).unwrap(),
+            cursor,
+        )
+        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
+
+        // At this point we know that the buffer being empty will also mean that there are no
+        // remaining entries to read.
+        if buf.is_empty() {
+            debug_assert!(next.is_none());
+            Ok(None)
+        } else {
+            Ok(Some((buf, next)))
+        }
     }
 
     async fn original_header_count(&mut self) -> Result<u32, types::Error> {

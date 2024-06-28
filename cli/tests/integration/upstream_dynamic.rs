@@ -1,19 +1,22 @@
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::{
         header::{self, HeaderValue},
         Request, Response, StatusCode,
     },
 };
 
-#[tokio::test(flavor = "multi_thread")]
-async fn upstream_sync() -> TestResult {
+viceroy_test!(upstream_sync, |is_component| {
     ////////////////////////////////////////////////////////////////////////////////////
     // Setup
     ////////////////////////////////////////////////////////////////////////////////////
 
     // Set up the test harness
     let test = Test::using_fixture("upstream-dynamic.wasm")
+        .adapt_component(is_component)
         // The "origin" backend simply echos the request body
         .backend("origin", "/", None, |req| {
             let body = req.into_body();
@@ -62,12 +65,12 @@ async fn upstream_sync() -> TestResult {
     );
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn override_host_works() -> TestResult {
+viceroy_test!(override_host_works, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("upstream-dynamic.wasm")
+        .adapt_component(is_component)
         .backend(
             "override-host",
             "/",
@@ -99,12 +102,12 @@ async fn override_host_works() -> TestResult {
     assert_eq!(resp.status(), StatusCode::OK);
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn duplication_errors_right() -> TestResult {
+viceroy_test!(duplication_errors_right, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("upstream-dynamic.wasm")
+        .adapt_component(is_component)
         .backend("static", "/", None, |_| Response::new(vec![]))
         .await;
     // Make sure the backends are started so we can know where to direct the request
@@ -137,4 +140,4 @@ async fn duplication_errors_right() -> TestResult {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
     Ok(())
-}
+});

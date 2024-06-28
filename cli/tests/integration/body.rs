@@ -1,13 +1,16 @@
 //! Tests related to HTTP request and response bodies.
 
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::{body, StatusCode},
 };
 
-#[tokio::test(flavor = "multi_thread")]
-async fn bodies_can_be_written_and_appended() -> TestResult {
+viceroy_test!(bodies_can_be_written_and_appended, |is_component| {
     let resp = Test::using_fixture("write-body.wasm")
+        .adapt_component(is_component)
         .against_empty()
         .await?;
 
@@ -19,13 +22,13 @@ async fn bodies_can_be_written_and_appended() -> TestResult {
     assert_eq!(&body, "Hello, Viceroy!");
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn bodies_can_be_written_and_read() -> TestResult {
+viceroy_test!(bodies_can_be_written_and_read, |is_component| {
     let resp = Test::using_fixture("write-and-read-body.wasm")
+        .adapt_component(is_component)
         .against_empty()
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
-}
+});
