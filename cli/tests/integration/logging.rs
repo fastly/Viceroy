@@ -3,19 +3,16 @@ use {
     hyper::StatusCode,
     std::{
         io::{self, Write},
-        sync::mpsc,
+        sync::{Arc, Mutex},
     },
-    viceroy_lib::logging,
 };
 
-struct LogWriter(mpsc::Sender<Vec<u8>>);
+struct LogWriter(Vec<Vec<u8>>);
 
 impl Write for LogWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self.0.send(buf.to_owned()) {
-            Ok(()) => Ok(buf.len()),
-            Err(_) => Err(io::ErrorKind::ConnectionReset.into()),
-        }
+        self.0.push(buf.to_owned());
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -23,16 +20,11 @@ impl Write for LogWriter {
     }
 }
 
-fn setup_log_writer() -> mpsc::Receiver<Vec<u8>> {
-    let (send, recv) = mpsc::channel();
-    *logging::LOG_WRITER.lock().unwrap() = Box::new(LogWriter(send));
-    recv
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn logging_works() -> TestResult {
-    let log_recv = setup_log_writer();
+    let log_writer = Arc::new(Mutex::new(LogWriter(Vec::new())));
     let resp = Test::using_fixture("logging.wasm")
+        .capture_logs(log_writer.clone())
         .log_stderr()
         .log_stdout()
         .against_empty()
@@ -40,7 +32,8 @@ async fn logging_works() -> TestResult {
 
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let read_log_line = || String::from_utf8(log_recv.recv().unwrap()).unwrap();
+    let mut logs = std::mem::take(&mut log_writer.lock().unwrap().0).into_iter();
+    let mut read_log_line = || String::from_utf8(logs.next().unwrap()).unwrap();
 
     assert_eq!(read_log_line(), "inigo :: Who are you?\n");
     assert_eq!(read_log_line(), "mib :: No one of consequence.\n");

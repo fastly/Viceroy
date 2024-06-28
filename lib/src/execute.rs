@@ -1,17 +1,14 @@
 //! Guest code execution.
 
-use std::time::SystemTime;
-
-use wasmtime::GuestProfiler;
-
-use crate::config::UnknownImportBehavior;
-
 use {
     crate::{
         adapt,
         body::Body,
         component as compute,
-        config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
+        config::{
+            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
+            UnknownImportBehavior,
+        },
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
@@ -25,18 +22,19 @@ use {
     std::{
         collections::HashSet,
         fs,
+        io::Write,
         net::{IpAddr, Ipv4Addr},
         path::{Path, PathBuf},
         sync::atomic::{AtomicBool, AtomicU64, Ordering},
-        sync::Arc,
+        sync::{Arc, Mutex},
         thread::{self, JoinHandle},
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime},
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
-        Engine, InstancePre, Linker, Module, ProfilingStrategy,
+        Engine, GuestProfiler, InstancePre, Linker, Module, ProfilingStrategy,
     },
     wasmtime_wasi::I32Exit,
 };
@@ -80,6 +78,8 @@ pub struct ExecuteCtx {
     dictionaries: Arc<Dictionaries>,
     /// Path to the config, defaults to None
     config_path: Arc<Option<PathBuf>>,
+    /// Where to direct logging endpoint messages, defaults to stdout
+    capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// Whether to treat stdout as a logging endpoint
     log_stdout: bool,
     /// Whether to treat stderr as a logging endpoint
@@ -217,6 +217,7 @@ impl ExecuteCtx {
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
+            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
@@ -292,6 +293,18 @@ impl ExecuteCtx {
     /// Set the path to the config for this execution context.
     pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
         self.config_path = Arc::new(Some(config_path));
+        self
+    }
+
+    /// Where to direct logging endpoint messages. Defaults to stdout.
+    pub fn capture_logs(&self) -> Arc<Mutex<dyn Write + Send>> {
+        self.capture_logs.clone()
+    }
+
+    /// Set where to direct logging endpoint messages for this execution
+    /// context. Defaults to stdout.
+    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
+        self.capture_logs = capture_logs;
         self
     }
 
@@ -427,6 +440,7 @@ impl ExecuteCtx {
             req,
             sender,
             remote,
+            &self,
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),
@@ -580,6 +594,7 @@ impl ExecuteCtx {
             req,
             sender,
             remote,
+            &self,
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),
