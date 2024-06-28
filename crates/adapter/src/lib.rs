@@ -133,147 +133,334 @@ pub unsafe extern "C" fn cabi_import_realloc(
     align: usize,
     new_size: usize,
 ) -> *mut u8 {
-    if !old_ptr.is_null() || old_size != 0 {
-        unreachable!();
-    }
     let mut ptr = null_mut::<u8>();
     State::with::<Errno>(|state| {
-        ptr = state.import_alloc.alloc(align, new_size);
+        let mut alloc = state.import_alloc.replace(ImportAlloc::None);
+        ptr = alloc.alloc(old_ptr, old_size, align, new_size);
+        state.import_alloc.set(alloc);
         Ok(())
     });
     ptr
 }
 
-/// Bump-allocated memory arena. This is a singleton - the
-/// memory will be sized according to `bump_arena_size()`.
-pub struct BumpArena {
-    data: MaybeUninit<[u8; bump_arena_size()]>,
-    position: Cell<usize>,
-}
+/// Different ways that calling imports can allocate memory.
+///
+/// This behavior is used to customize the behavior of `cabi_import_realloc`.
+/// This is configured within `State` whenever an import is called that may
+/// invoke `cabi_import_realloc`.
+///
+/// The general idea behind these various behaviors of import allocation is
+/// that we're limited for space in the adapter here to 1 page of memory but
+/// that may not fit the total sum of arguments, environment variables, and
+/// preopens. WASIp1 APIs all provide user-provided buffers as well for these
+/// allocations so we technically don't need to store them in the adapter
+/// itself. Instead what this does is it tries to copy strings and such directly
+/// into their destination pointers where possible.
+///
+/// The types requiring allocation in the WASIp2 APIs that the WASIp1 APIs call
+/// are relatively simple. They all look like `list<T>` where `T` only has
+/// indirections in the form of `String`. This means that we can apply a
+/// "clever" hack where the alignment of an allocation is used to disambiguate
+/// whether we're allocating a string or allocating the `list<T>` allocation.
+/// This signal with alignment means that we can configure where everything
+/// goes.
+///
+/// For example consider `args_sizes_get` and `args_get`. When `args_sizes_get`
+/// is called the `list<T>` allocation happens first with alignment 4. This
+/// must be valid for the rest of the strings since the canonical ABI will fill
+/// it in, so it's allocated from `State::temporary_data`. Next all other
+/// arguments will be `string` type with alignment 1. These are also allocated
+/// within `State::temporary_data` but they're "allocated on top of one
+/// another" meaning that internal allocator state isn't updated after a string
+/// is allocated. While these strings are discarded their sizes are all summed
+/// up and returned from `args_sizes_get`.
+///
+/// Later though when `args_get` is called it's a similar allocation strategy
+/// except that strings are instead redirected to the allocation provided to
+/// `args_get` itself. This enables strings to be directly allocated into their
+/// destinations.
+///
+/// Overall this means that we're limiting the maximum number of arguments plus
+/// the size of the largest string, but otherwise we're not limiting the total
+/// size of all arguments (or env vars, preopens, etc).
+enum ImportAlloc {
+    /// A single allocation from the provided `BumpAlloc` is supported. After
+    /// the single allocation is performed all future allocations will fail.
+    OneAlloc(BumpAlloc),
 
-impl BumpArena {
-    fn new() -> Self {
-        BumpArena {
-            data: MaybeUninit::uninit(),
-            position: Cell::new(0),
-        }
-    }
-    fn alloc(&self, align: usize, size: usize) -> *mut u8 {
-        let start = self.data.as_ptr() as usize;
-        let next = start + self.position.get();
-        let alloc = align_to(next, align);
-        let offset = alloc - start;
-        if offset + size > bump_arena_size() {
-            unreachable!("out of memory");
-        }
-        self.position.set(offset + size);
-        alloc as *mut u8
-    }
-}
-fn align_to(ptr: usize, align: usize) -> usize {
-    (ptr + (align - 1)) & !(align - 1)
-}
+    /// An allocator intended for `list<T>` where `T` has string types but no
+    /// other indirections. String allocations are discarded but counted for
+    /// size.
+    ///
+    /// This allocator will use `alloc` for all allocations. Any string-related
+    /// allocation, detected via an alignment of 1, is considered "temporary"
+    /// and doesn't affect the internal state of the allocator. The allocation
+    /// is assumed to not be used after the import call returns.
+    ///
+    /// The total sum of all string sizes, however, is accumulated within
+    /// `strings_size`.
+    CountAndDiscardStrings {
+        strings_size: usize,
+        alloc: BumpAlloc,
+    },
 
-// Invariant: buffer not-null and arena is-some are never true at the same
-// time. We did not use an enum to make this invalid behavior unrepresentable
-// because we can't use RefCell to borrow() the variants of the enum - only
-// Cell provides mutability without pulling in panic machinery - so it would
-// make the accessors a lot more awkward to write.
-pub struct ImportAlloc {
-    // When not-null, allocator should use this buffer/len pair at most once
-    // to satisfy allocations.
-    buffer: Cell<*mut u8>,
-    len: Cell<usize>,
-    // When not-empty, allocator should use this arena to satisfy allocations.
-    arena: Cell<Option<&'static BumpArena>>,
+    /// An allocator intended for `list<T>` where `T` has string types but no
+    /// other indirections. String allocations go into `strings` and the
+    /// `list<..>` allocation goes into `pointers`.
+    ///
+    /// This allocator enables placing strings within a caller-supplied buffer
+    /// configured with `strings`. The `pointers` allocation is
+    /// `State::temporary_data`.
+    ///
+    /// This will additionally over-allocate strings with one extra byte to be
+    /// nul-terminated or `=`-terminated in the case of env vars.
+    SeparateStringsAndPointers {
+        strings: BumpAlloc,
+        pointers: BumpAlloc,
+    },
+
+    /// An allocator specifically for getting the nth string allocation used
+    /// for preopens.
+    ///
+    /// This will allocate everything into `alloc`. All strings other than the
+    /// `nth` string, however, will be discarded (the allocator's state is reset
+    /// after the allocation). This means that the pointer returned for the
+    /// `nth` string will be retained in `alloc` while all others will be
+    /// discarded.
+    ///
+    /// The `cur` count starts at 0 and counts up per-string.
+    GetPreopenPath {
+        cur: u32,
+        nth: u32,
+        alloc: BumpAlloc,
+    },
+
+    /// No import allocator is configured and if an allocation happens then
+    /// this will abort.
+    None,
 }
 
 impl ImportAlloc {
-    fn new() -> Self {
-        ImportAlloc {
-            buffer: Cell::new(std::ptr::null_mut()),
-            len: Cell::new(0),
-            arena: Cell::new(None),
-        }
-    }
-
-    /// Expect at most one import allocation during execution of the provided closure.
-    /// Use the provided buffer to satisfy that import allocation. The user is responsible
-    /// for making sure allocated imports are not used beyond the lifetime of the buffer.
-    pub fn with_buffer<T>(&self, buffer: *mut u8, len: usize, f: impl FnOnce() -> T) -> T {
-        if self.arena.get().is_some() {
-            unreachable!("arena mode")
-        }
-        let prev = self.buffer.replace(buffer);
-        if !prev.is_null() {
-            unreachable!("overwrote another buffer")
-        }
-        self.len.set(len);
-        let r = f();
-        self.buffer.set(std::ptr::null_mut());
-        r
-    }
-
     /// To be used by cabi_import_realloc only!
-    fn alloc(&self, align: usize, size: usize) -> *mut u8 {
-        if let Some(arena) = self.arena.get() {
-            arena.alloc(align, size)
-        } else {
-            let buffer = self.buffer.get();
-            if buffer.is_null() {
-                unreachable!("buffer not provided, or already used")
+    unsafe fn alloc(
+        &mut self,
+        old_ptr: *mut u8,
+        old_size: usize,
+        align: usize,
+        size: usize,
+    ) -> *mut u8 {
+        // This is ... a hack. This is a hack in subtle ways that is quite
+        // brittle and may break over time. There's only one case for the
+        // `realloc`-like-behavior in the canonical ABI and that's when the host
+        // is transferring a string to the guest and the host has a different
+        // string encoding. For example JS uses utf-16 (ish) and Rust/WASIp1 use
+        // utf-8. That means that when this adapter is used with a JS host
+        // realloc behavior may be triggered in which case `old_ptr` may not be
+        // null.
+        //
+        // In the case that `old_ptr` may not be null we come to the first
+        // brittle assumption: it's assumed that this is shrinking memory. In
+        // the canonical ABI overlarge allocations are made originally and then
+        // shrunk afterwards once encoding is finished. This means that the
+        // first allocation is too big and the `realloc` call is shrinking
+        // memory. This assumption may be violated in the future if the
+        // canonical ABI is updated to handle growing strings in addition to
+        // shrinking strings. (e.g. starting with an assume-ascii path and then
+        // falling back to an ok-needs-more-space path for larger unicode code
+        // points).
+        //
+        // This comes to the second brittle assumption, nothing happens here
+        // when a shrink happens. This is brittle for each of the cases below,
+        // enumerated here:
+        //
+        // * For `OneAlloc` this isn't the end of the world. That's already
+        //   asserting that only a single string is allocated. Returning the
+        //   original pointer keeps the pointer the same and the host will keep
+        //   track of the appropriate length. In this case the final length is
+        //   read out of the return value of a function, meaning that everything
+        //   actually works out here.
+        //
+        // * For `CountAndDiscardStrings` we're relying on the fact that
+        //   this is only used for `environ_sizes_get` and `args_sizes_get`. In
+        //   both situations we're actually going to return an "overlarge"
+        //   return value for the size of arguments and return values. By
+        //   assuming memory shrinks after the first allocation the return value
+        //   of `environ_sizes_get` and `args_sizes_get` will be the overlong
+        //   approximation for all strings. That means that the final exact size
+        //   won't be what's returned. This ends up being ok because technically
+        //   nothing about WASI says that those blocks have to be exact-sized.
+        //   In our case we're (ab)using that to force the caller to make an
+        //   overlarge return area which we'll allocate into. All-in-all we
+        //   don't track the shrink request and ignore the size.
+        //
+        // * For `SeparateStringsAndPointers` it's similar to the previous case
+        //   except the weird part is that the caller is providing the
+        //   argument/env space buffer to write into. It's over-large because of
+        //   the case of `CountAndDiscardStrings` above, but we'll exploit that
+        //   here and end up having space between all the arguments. Technically
+        //   WASI doesn't say all the strings have to be adjacent, so this
+        //   should work out in practice.
+        //
+        // * Finally for `GetPreopenPath` this works out only insofar that the
+        //   `State::temporary_alloc` space is used to store the path. The
+        //   WASI-provided buffer is precisely sized, not overly large, meaning
+        //   that we're forced to copy from `temporary_alloc` into the
+        //   destination buffer for this WASI call.
+        //
+        // Basically it's a case-by-case basis here that enables ignoring
+        // shrinking return calls here. Not robust.
+        if !old_ptr.is_null() {
+            assert!(old_size > size);
+            assert_eq!(align, 1);
+            return old_ptr;
+        }
+        match self {
+            ImportAlloc::OneAlloc(alloc) => {
+                let ret = alloc.alloc(align, size);
+                *self = ImportAlloc::None;
+                ret
             }
-            let buffer = buffer as usize;
-            let alloc = align_to(buffer, align);
-            if alloc.checked_add(size).trapping_unwrap()
-                > buffer.checked_add(self.len.get()).trapping_unwrap()
-            {
-                unreachable!("out of memory")
+            ImportAlloc::SeparateStringsAndPointers { strings, pointers } => {
+                if align == 1 {
+                    strings.alloc(align, size + 1)
+                } else {
+                    pointers.alloc(align, size)
+                }
             }
-            self.buffer.set(std::ptr::null_mut());
-            alloc as *mut u8
+            ImportAlloc::CountAndDiscardStrings {
+                strings_size,
+                alloc,
+            } => {
+                if align == 1 {
+                    *strings_size += size;
+                    alloc.clone().alloc(align, size)
+                } else {
+                    alloc.alloc(align, size)
+                }
+            }
+            ImportAlloc::GetPreopenPath { cur, nth, alloc } => {
+                if align == 1 {
+                    let real_alloc = *nth == *cur;
+                    if real_alloc {
+                        alloc.alloc(align, size)
+                    } else {
+                        alloc.clone().alloc(align, size)
+                    }
+                } else {
+                    alloc.alloc(align, size)
+                }
+            }
+            ImportAlloc::None => {
+                unreachable!("no allocator configured")
+            }
         }
     }
 }
 
-/// This allocator is only used for the `run` entrypoint.
+/// Helper type to manage allocations from a `base`/`len` combo.
 ///
-/// The implementation here is a bump allocator into `State::long_lived_arena` which
-/// traps when it runs out of data. This means that the total size of
-/// arguments/env/etc coming into a component is bounded by the current 64k
-/// (ish) limit. That's just an implementation limit though which can be lifted
-/// by dynamically calling the main module's allocator as necessary for more data.
-#[no_mangle]
-pub unsafe extern "C" fn cabi_export_realloc(
-    old_ptr: *mut u8,
-    old_size: usize,
-    align: usize,
-    new_size: usize,
-) -> *mut u8 {
-    if !old_ptr.is_null() || old_size != 0 {
-        unreachable!();
+/// This isn't really used much in an arena-style per se but it's used in
+/// combination with the `ImportAlloc` flavors above.
+#[derive(Clone)]
+struct BumpAlloc {
+    base: *mut u8,
+    len: usize,
+}
+
+impl BumpAlloc {
+    unsafe fn alloc(&mut self, align: usize, size: usize) -> *mut u8 {
+        self.align_to(align);
+        if size > self.len {
+            unreachable!("allocation size is too large")
+        }
+        self.len -= size;
+        let ret = self.base;
+        self.base = ret.add(size);
+        ret
     }
-    let mut ret = null_mut::<u8>();
-    State::with::<Errno>(|state| {
-        ret = state.long_lived_arena.alloc(align, new_size);
-        Ok(())
-    });
-    ret
+
+    unsafe fn align_to(&mut self, align: usize) {
+        if !align.is_power_of_two() {
+            unreachable!("invalid alignment");
+        }
+        let align_offset = self.base.align_offset(align);
+        if align_offset >= self.len {
+            unreachable!("failed to allocate")
+        }
+        self.len -= align_offset;
+        self.base = self.base.add(align_offset);
+    }
+}
+
+#[link(wasm_import_module = "wasi:cli/environment@0.2.0")]
+extern "C" {
+    #[link_name = "get-arguments"]
+    fn wasi_cli_get_arguments(rval: *mut WasmStrList);
 }
 
 /// Read command-line argument data.
 /// The size of the array should match that returned by `args_sizes_get`
 #[no_mangle]
-pub unsafe extern "C" fn args_get(_argv: *mut *mut u8, _argv_buf: *mut u8) -> Errno {
-    ERRNO_SUCCESS
+pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errno {
+    State::with(|state| {
+        let alloc = ImportAlloc::SeparateStringsAndPointers {
+            strings: BumpAlloc {
+                base: argv_buf,
+                len: usize::MAX,
+            },
+            pointers: state.temporary_alloc(),
+        };
+        let (list, _) = state.with_import_alloc(alloc, || unsafe {
+            let mut list = WasmStrList {
+                base: std::ptr::null(),
+                len: 0,
+            };
+            wasi_cli_get_arguments(&mut list);
+            list
+        });
+
+        // Fill in `argv` by walking over the returned `list` and then
+        // additionally apply the nul-termination for each argument itself
+        // here.
+        for i in 0..list.len {
+            let s = list.base.add(i).read();
+            *argv.add(i) = s.ptr.cast_mut();
+            *s.ptr.add(s.len).cast_mut() = 0;
+        }
+        Ok(())
+    })
 }
 
 /// Return command-line argument data sizes.
 #[no_mangle]
 pub unsafe extern "C" fn args_sizes_get(argc: *mut Size, argv_buf_size: *mut Size) -> Errno {
-    *argc = 0;
-    *argv_buf_size = 0;
-    ERRNO_SUCCESS
+    State::with::<Errno>(|state| {
+        let alloc = ImportAlloc::CountAndDiscardStrings {
+            strings_size: 0,
+            alloc: state.temporary_alloc(),
+        };
+        let (len, alloc) = state.with_import_alloc(alloc, || unsafe {
+            let mut list = WasmStrList {
+                base: std::ptr::null(),
+                len: 0,
+            };
+            wasi_cli_get_arguments(&mut list);
+            list.len
+        });
+        match alloc {
+            ImportAlloc::CountAndDiscardStrings {
+                strings_size,
+                alloc: _,
+            } => {
+                *argc = len;
+                // add in bytes needed for a 0-byte at the end of each
+                // argument.
+                *argv_buf_size = strings_size + len;
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    })
 }
 
 /// Read environment variable data.
@@ -517,8 +704,7 @@ pub unsafe extern "C" fn fd_read(
                 let read_len = u64::try_from(len).trapping_unwrap();
                 let wasi_stream = streams.get_read_stream()?;
                 let data = match state
-                    .import_alloc
-                    .with_buffer(ptr, len, || blocking_mode.read(wasi_stream, read_len))
+                    .with_one_import_alloc(ptr, len, || blocking_mode.read(wasi_stream, read_len))
                 {
                     Ok(data) => data,
                     Err(streams::StreamError::Closed) => {
@@ -953,7 +1139,7 @@ pub unsafe extern "C" fn poll_oneoff(
             len: 0,
         };
 
-        state.import_alloc.with_buffer(
+        state.with_one_import_alloc(
             results.cast(),
             nsubscriptions
                 .checked_mul(size_of::<u32>())
@@ -1072,8 +1258,7 @@ pub unsafe extern "C" fn random_get(buf: *mut u8, buf_len: Size) -> Errno {
         State::with::<Errno>(|state| {
             assert_eq!(buf_len as u32 as Size, buf_len);
             let result = state
-                .import_alloc
-                .with_buffer(buf, buf_len, || random::get_random_bytes(buf_len as u64));
+                .with_one_import_alloc(buf, buf_len, || random::get_random_bytes(buf_len as u64));
             assert_eq!(result.as_ptr(), buf);
 
             // The returned buffer's memory was allocated in `buf`, so don't separately
@@ -1221,7 +1406,7 @@ pub(crate) struct State {
     magic1: u32,
 
     /// Used to coordinate allocations of `cabi_import_realloc`
-    import_alloc: ImportAlloc,
+    import_alloc: Cell<ImportAlloc>,
 
     /// Storage of mapping from preview1 file descriptors to preview2 file
     /// descriptors.
@@ -1230,13 +1415,8 @@ pub(crate) struct State {
     /// lazy initialization happens.
     descriptors: RefCell<Option<Descriptors>>,
 
-    /// Long-lived bump allocated memory arena.
-    ///
-    /// This is used for the cabi_export_realloc to allocate data passed to the
-    /// `run` entrypoint. Allocations in this arena are safe to use for
-    /// the lifetime of the State struct. It may also be used for import allocations
-    /// which need to be long-lived, by using `import_alloc.with_arena`.
-    long_lived_arena: BumpArena,
+    /// Temporary data
+    temporary_data: UnsafeCell<MaybeUninit<[u8; temporary_data_size()]>>,
 
     /// The incoming request, if the entry-point was through the reactor.
     pub(crate) request: Cell<Option<bindings::fastly::api::http_req::RequestHandle>>,
@@ -1281,7 +1461,7 @@ pub struct ReadyList {
     len: usize,
 }
 
-const fn bump_arena_size() -> usize {
+const fn temporary_data_size() -> usize {
     // The total size of the struct should be a page, so start there
     let mut start = PAGE_SIZE;
 
@@ -1289,7 +1469,7 @@ const fn bump_arena_size() -> usize {
     start -= size_of::<Descriptors>();
 
     // Remove miscellaneous metadata also stored in state.
-    let misc = 11;
+    let misc = 12;
     start -= misc * size_of::<usize>();
 
     // Everything else is the `command_data` allocation.
@@ -1395,11 +1575,11 @@ impl State {
         state.write(State {
             magic1: MAGIC,
             magic2: MAGIC,
-            import_alloc: ImportAlloc::new(),
+            import_alloc: Cell::new(ImportAlloc::None),
             descriptors: RefCell::new(None),
+            temporary_data: UnsafeCell::new(MaybeUninit::uninit()),
             request: Cell::new(None),
             request_body: Cell::new(None),
-            long_lived_arena: BumpArena::new(),
         });
     }
 
@@ -1410,7 +1590,7 @@ impl State {
             .try_borrow_mut()
             .unwrap_or_else(|_| unreachable!());
         if d.is_none() {
-            *d = Some(Descriptors::new(&self.import_alloc, &self.long_lived_arena));
+            *d = Some(Descriptors::new(self));
         }
         RefMut::map(d, |d| d.as_mut().unwrap_or_else(|| unreachable!()))
     }
@@ -1422,8 +1602,47 @@ impl State {
             .try_borrow_mut()
             .unwrap_or_else(|_| unreachable!());
         if d.is_none() {
-            *d = Some(Descriptors::new(&self.import_alloc, &self.long_lived_arena));
+            *d = Some(Descriptors::new(self));
         }
         RefMut::map(d, |d| d.as_mut().unwrap_or_else(|| unreachable!()))
+    }
+
+    unsafe fn temporary_alloc(&self) -> BumpAlloc {
+        BumpAlloc {
+            base: self.temporary_data.get().cast(),
+            len: mem::size_of_val(&self.temporary_data),
+        }
+    }
+
+    /// Configure that `cabi_import_realloc` will allocate once from
+    /// `self.temporary_data` for the duration of the closure `f`.
+    ///
+    /// Panics if the import allocator is already configured.
+    fn with_one_temporary_alloc<T>(&self, f: impl FnOnce() -> T) -> T {
+        let alloc = unsafe { self.temporary_alloc() };
+        self.with_import_alloc(ImportAlloc::OneAlloc(alloc), f).0
+    }
+
+    /// Configure that `cabi_import_realloc` will allocate once from
+    /// `base` with at most `len` bytes for the duration of `f`.
+    ///
+    /// Panics if the import allocator is already configured.
+    fn with_one_import_alloc<T>(&self, base: *mut u8, len: usize, f: impl FnOnce() -> T) -> T {
+        let alloc = BumpAlloc { base, len };
+        self.with_import_alloc(ImportAlloc::OneAlloc(alloc), f).0
+    }
+
+    /// Configures the `alloc` specified to be the allocator for
+    /// `cabi_import_realloc` for the duration of `f`.
+    ///
+    /// Panics if the import allocator is already configured.
+    fn with_import_alloc<T>(&self, alloc: ImportAlloc, f: impl FnOnce() -> T) -> (T, ImportAlloc) {
+        match self.import_alloc.replace(alloc) {
+            ImportAlloc::None => {}
+            _ => unreachable!("import allocator already set"),
+        }
+        let r = f();
+        let alloc = self.import_alloc.replace(ImportAlloc::None);
+        (r, alloc)
     }
 }
