@@ -21,6 +21,29 @@ pub use self::backends::TestBackends;
 
 mod backends;
 
+#[macro_export]
+macro_rules! viceroy_test {
+    ($name:ident, |$is_component:ident| $body:block) => {
+        mod $name {
+            use super::*;
+
+            async fn test_impl($is_component: bool) -> TestResult {
+                $body
+            }
+
+            #[tokio::test(flavor = "multi_thread")]
+            async fn core_wasm() -> TestResult {
+                test_impl(false).await
+            }
+
+            #[tokio::test(flavor = "multi_thread")]
+            async fn component() -> TestResult {
+                test_impl(true).await
+            }
+        }
+    };
+}
+
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
 ///
 /// This value can be appended with the name of a fixture's `.wasm` in a test program, using the
@@ -238,8 +261,8 @@ impl Test {
     }
 
     /// Automatically adapt the wasm to a component before running.
-    pub fn adapt_component(mut self) -> Self {
-        self.adapt_component = true;
+    pub fn adapt_component(mut self, adapt: bool) -> Self {
+        self.adapt_component = adapt;
         self
     }
 
