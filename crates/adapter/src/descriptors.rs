@@ -57,13 +57,7 @@ impl Streams {
 
 pub enum StreamType {
     /// Streams for implementing stdio.
-    Stdio(Stdio),
-}
-
-pub enum Stdio {
-    Stdin,
-    Stdout,
-    Stderr,
+    Stdio,
 }
 
 #[repr(C)]
@@ -94,19 +88,19 @@ impl Descriptors {
         d.push(Descriptor::Streams(Streams {
             input: new_once(stdin::get_stdin()),
             output: OnceCell::new(),
-            type_: StreamType::Stdio(Stdio::Stdin),
+            type_: StreamType::Stdio,
         }))
         .trapping_unwrap();
         d.push(Descriptor::Streams(Streams {
             input: OnceCell::new(),
             output: new_once(stdout::get_stdout()),
-            type_: StreamType::Stdio(Stdio::Stdout),
+            type_: StreamType::Stdio,
         }))
         .trapping_unwrap();
         d.push(Descriptor::Streams(Streams {
             input: OnceCell::new(),
             output: new_once(stderr::get_stderr()),
-            type_: StreamType::Stdio(Stdio::Stderr),
+            type_: StreamType::Stdio,
         }))
         .trapping_unwrap();
 

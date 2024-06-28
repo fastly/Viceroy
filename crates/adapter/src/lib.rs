@@ -1150,7 +1150,7 @@ pub unsafe extern "C" fn poll_oneoff(
                         .trapping_unwrap();
                     match desc {
                         Descriptor::Streams(streams) => match &streams.type_ {
-                            StreamType::Stdio(_) => (ERRNO_SUCCESS, 1, 0),
+                            StreamType::Stdio => (ERRNO_SUCCESS, 1, 0),
                         },
                         _ => unreachable!(),
                     }
@@ -1163,7 +1163,7 @@ pub unsafe extern "C" fn poll_oneoff(
                         .trapping_unwrap();
                     match desc {
                         Descriptor::Streams(streams) => match &streams.type_ {
-                            StreamType::Stdio(_) => (ERRNO_SUCCESS, 1, 0),
+                            StreamType::Stdio => (ERRNO_SUCCESS, 1, 0),
                         },
                         _ => unreachable!(),
                     }
