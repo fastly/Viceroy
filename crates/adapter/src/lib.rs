@@ -392,19 +392,75 @@ impl BumpAlloc {
     }
 }
 
+#[link(wasm_import_module = "wasi:cli/environment@0.2.0")]
+extern "C" {
+    #[link_name = "get-arguments"]
+    fn wasi_cli_get_arguments(rval: *mut WasmStrList);
+}
+
 /// Read command-line argument data.
 /// The size of the array should match that returned by `args_sizes_get`
 #[no_mangle]
-pub unsafe extern "C" fn args_get(_argv: *mut *mut u8, _argv_buf: *mut u8) -> Errno {
-    ERRNO_SUCCESS
+pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errno {
+    State::with(|state| {
+        let alloc = ImportAlloc::SeparateStringsAndPointers {
+            strings: BumpAlloc {
+                base: argv_buf,
+                len: usize::MAX,
+            },
+            pointers: state.temporary_alloc(),
+        };
+        let (list, _) = state.with_import_alloc(alloc, || unsafe {
+            let mut list = WasmStrList {
+                base: std::ptr::null(),
+                len: 0,
+            };
+            wasi_cli_get_arguments(&mut list);
+            list
+        });
+
+        // Fill in `argv` by walking over the returned `list` and then
+        // additionally apply the nul-termination for each argument itself
+        // here.
+        for i in 0..list.len {
+            let s = list.base.add(i).read();
+            *argv.add(i) = s.ptr.cast_mut();
+            *s.ptr.add(s.len).cast_mut() = 0;
+        }
+        Ok(())
+    })
 }
 
 /// Return command-line argument data sizes.
 #[no_mangle]
 pub unsafe extern "C" fn args_sizes_get(argc: *mut Size, argv_buf_size: *mut Size) -> Errno {
-    *argc = 0;
-    *argv_buf_size = 0;
-    ERRNO_SUCCESS
+    State::with::<Errno>(|state| {
+        let alloc = ImportAlloc::CountAndDiscardStrings {
+            strings_size: 0,
+            alloc: state.temporary_alloc(),
+        };
+        let (len, alloc) = state.with_import_alloc(alloc, || unsafe {
+            let mut list = WasmStrList {
+                base: std::ptr::null(),
+                len: 0,
+            };
+            wasi_cli_get_arguments(&mut list);
+            list.len
+        });
+        match alloc {
+            ImportAlloc::CountAndDiscardStrings {
+                strings_size,
+                alloc: _,
+            } => {
+                *argc = len;
+                // add in bytes needed for a 0-byte at the end of each
+                // argument.
+                *argv_buf_size = strings_size + len;
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    })
 }
 
 /// Read environment variable data.

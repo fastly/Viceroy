@@ -29,7 +29,6 @@ async fn empty_ok_response_by_default_after_args() -> TestResult {
 // TODO: The adapter needs to plumb through support for argument handling. This was removed
 // explicitly when we thought we would target the proxy world only, but we'll need it back to
 // simplify adapting programs from languages that need a non-empty args list.
-#[should_panic]
 async fn empty_ok_response_by_default_after_args_component() {
     let resp = Test::using_fixture("args.wasm")
         .adapt_component()
