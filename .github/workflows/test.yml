@@ -43,6 +43,8 @@ jobs:
     - name: test
       run: make ci
       shell: bash
+    - name: adapter
+      run: cargo build --release -p viceroy-component-adapter --target wasm32-unknown-unknown
 
   # Run the trap test in an isolated job. It needs different cargo features than the usual build, so
   # it entails rebuilding the whole workspace if we combine them in a single job. This way, we

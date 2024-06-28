@@ -1,3 +1,6 @@
+// Promote warnings into errors, when building in release mode.
+#![cfg_attr(not(debug_assertions), deny(warnings))]
+
 use crate::bindings::wasi::clocks::{monotonic_clock, wall_clock};
 use crate::bindings::wasi::io::poll;
 use crate::bindings::wasi::io::streams;
@@ -219,22 +222,6 @@ enum ImportAlloc {
         pointers: BumpAlloc,
     },
 
-    /// An allocator specifically for getting the nth string allocation used
-    /// for preopens.
-    ///
-    /// This will allocate everything into `alloc`. All strings other than the
-    /// `nth` string, however, will be discarded (the allocator's state is reset
-    /// after the allocation). This means that the pointer returned for the
-    /// `nth` string will be retained in `alloc` while all others will be
-    /// discarded.
-    ///
-    /// The `cur` count starts at 0 and counts up per-string.
-    GetPreopenPath {
-        cur: u32,
-        nth: u32,
-        alloc: BumpAlloc,
-    },
-
     /// No import allocator is configured and if an allocation happens then
     /// this will abort.
     None,
@@ -301,12 +288,6 @@ impl ImportAlloc {
         //   WASI doesn't say all the strings have to be adjacent, so this
         //   should work out in practice.
         //
-        // * Finally for `GetPreopenPath` this works out only insofar that the
-        //   `State::temporary_alloc` space is used to store the path. The
-        //   WASI-provided buffer is precisely sized, not overly large, meaning
-        //   that we're forced to copy from `temporary_alloc` into the
-        //   destination buffer for this WASI call.
-        //
         // Basically it's a case-by-case basis here that enables ignoring
         // shrinking return calls here. Not robust.
         if !old_ptr.is_null() {
@@ -334,18 +315,6 @@ impl ImportAlloc {
                 if align == 1 {
                     *strings_size += size;
                     alloc.clone().alloc(align, size)
-                } else {
-                    alloc.alloc(align, size)
-                }
-            }
-            ImportAlloc::GetPreopenPath { cur, nth, alloc } => {
-                if align == 1 {
-                    let real_alloc = *nth == *cur;
-                    if real_alloc {
-                        alloc.alloc(align, size)
-                    } else {
-                        alloc.clone().alloc(align, size)
-                    }
                 } else {
                     alloc.alloc(align, size)
                 }
@@ -1181,7 +1150,7 @@ pub unsafe extern "C" fn poll_oneoff(
                         .trapping_unwrap();
                     match desc {
                         Descriptor::Streams(streams) => match &streams.type_ {
-                            StreamType::Stdio(_) => (ERRNO_SUCCESS, 1, 0),
+                            StreamType::Stdio => (ERRNO_SUCCESS, 1, 0),
                         },
                         _ => unreachable!(),
                     }
@@ -1194,7 +1163,7 @@ pub unsafe extern "C" fn poll_oneoff(
                         .trapping_unwrap();
                     match desc {
                         Descriptor::Streams(streams) => match &streams.type_ {
-                            StreamType::Stdio(_) => (ERRNO_SUCCESS, 1, 0),
+                            StreamType::Stdio => (ERRNO_SUCCESS, 1, 0),
                         },
                         _ => unreachable!(),
                     }
@@ -1612,15 +1581,6 @@ impl State {
             base: self.temporary_data.get().cast(),
             len: mem::size_of_val(&self.temporary_data),
         }
-    }
-
-    /// Configure that `cabi_import_realloc` will allocate once from
-    /// `self.temporary_data` for the duration of the closure `f`.
-    ///
-    /// Panics if the import allocator is already configured.
-    fn with_one_temporary_alloc<T>(&self, f: impl FnOnce() -> T) -> T {
-        let alloc = unsafe { self.temporary_alloc() };
-        self.with_import_alloc(ImportAlloc::OneAlloc(alloc), f).0
     }
 
     /// Configure that `cabi_import_realloc` will allocate once from
