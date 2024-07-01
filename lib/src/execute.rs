@@ -130,18 +130,19 @@ impl ExecuteCtx {
 
         // When the input wasn't a component, but we're automatically adapting,
         // apply the component adapter.
-        let (is_component, input) = if !is_component && adapt_components {
-            // It's not possible to adapt a component from WAT, we can't continue at this point.
-            if is_wat {
-                return Err(Error::Other(anyhow::anyhow!(
-                    "Wasm components may only be adapted from binary wasm components, not wat"
-                )));
-            }
+        let (is_wat, is_component, input) = if !is_component && adapt_components {
+            let input = if is_wat {
+                let text = String::from_utf8(input).map_err(|_| {
+                    anyhow::anyhow!("Failed to parse {}", module_path.as_ref().display())
+                })?;
+                adapt::adapt_wat(&text)?
+            } else {
+                adapt::adapt_bytes(&input)?
+            };
 
-            let input = adapt::adapt_bytes(&input)?;
-            (true, input)
+            (false, true, input)
         } else {
-            (is_component, input)
+            (is_wat, is_component, input)
         };
 
         let config = &configure_wasmtime(is_component, profiling_strategy);

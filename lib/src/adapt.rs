@@ -1,5 +1,12 @@
 const ADAPTER_BYTES: &[u8] = include_bytes!("../data/viceroy-component-adapter.wasm");
 
+/// Given bytes that represent a core wasm module in the wat format, adapt it to a component using
+/// the viceroy adapter.
+pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
+    let bytes = wat::parse_str(wat)?;
+    adapt_bytes(&bytes)
+}
+
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
