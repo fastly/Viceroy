@@ -117,19 +117,9 @@ impl ExecuteCtx {
             .map(|str| str == "wat")
             .unwrap_or(false);
 
-        let is_component = matches!(
-            wasmparser::Parser::new(0).parse(&input, true),
-            Ok(wasmparser::Chunk::Parsed {
-                payload: wasmparser::Payload::Version {
-                    encoding: wasmparser::Encoding::Component,
-                    ..
-                },
-                ..
-            })
-        );
-
         // When the input wasn't a component, but we're automatically adapting,
         // apply the component adapter.
+        let is_component = adapt::is_component(&input);
         let (is_wat, is_component, input) = if !is_component && adapt_components {
             let input = if is_wat {
                 let text = String::from_utf8(input).map_err(|_| {
