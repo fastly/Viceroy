@@ -1256,8 +1256,10 @@ pub unsafe extern "C" fn poll_oneoff(
 /// termination of the program. The meanings of other values is dependent on
 /// the environment.
 #[no_mangle]
-pub unsafe extern "C" fn proc_exit(_rval: Exitcode) -> ! {
-    unreachable!("no other implementation available in proxy world");
+pub unsafe extern "C" fn proc_exit(rval: Exitcode) -> ! {
+    let status = if rval == 0 { Ok(()) } else { Err(()) };
+    crate::bindings::wasi::cli::exit::exit(status); // does not return
+    unreachable!("host exit implementation didn't exit!") // actually unreachable
 }
 
 /// Send a signal to the process of the calling thread.
