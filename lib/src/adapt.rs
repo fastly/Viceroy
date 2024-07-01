@@ -1,5 +1,19 @@
 const ADAPTER_BYTES: &[u8] = include_bytes!("../data/viceroy-component-adapter.wasm");
 
+/// Check if the bytes represent a core wasm module, or a component.
+pub fn is_component(bytes: &[u8]) -> bool {
+    matches!(
+        wasmparser::Parser::new(0).parse(&bytes, true),
+        Ok(wasmparser::Chunk::Parsed {
+            payload: wasmparser::Payload::Version {
+                encoding: wasmparser::Encoding::Component,
+                ..
+            },
+            ..
+        })
+    )
+}
+
 /// Given bytes that represent a core wasm module in the wat format, adapt it to a component using
 /// the viceroy adapter.
 pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
