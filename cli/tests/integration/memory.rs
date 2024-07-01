@@ -1,19 +1,22 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::body::to_bytes;
 use hyper::{Request, StatusCode};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn direct_wasm_works() -> TestResult {
+viceroy_test!(direct_wasm_works, |is_component| {
     let resp = Test::using_wat_fixture("return_ok.wat")
+        .adapt_component(is_component)
         .against_empty()
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn heap_limit_test_ok() -> TestResult {
+viceroy_test!(heap_limit_test_ok, |is_component| {
     let resp = Test::using_wat_fixture("combined_heap_limits.wat")
+        .adapt_component(is_component)
         .against(
             Request::get("/")
                 .header("guest-kb", "235")
@@ -34,11 +37,11 @@ async fn heap_limit_test_ok() -> TestResult {
     let body = resp.into_body();
     assert_eq!(to_bytes(body).await.unwrap().len(), 16 * 1024);
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn heap_limit_test_bad() -> TestResult {
+viceroy_test!(heap_limit_test_bad, |is_component| {
     let resp = Test::using_wat_fixture("combined_heap_limits.wat")
+        .adapt_component(is_component)
         .against(
             Request::get("/")
                 .header("guest-kb", "150000")
@@ -48,4 +51,4 @@ async fn heap_limit_test_bad() -> TestResult {
         .await?;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
-}
+});
