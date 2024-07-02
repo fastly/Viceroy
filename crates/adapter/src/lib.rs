@@ -365,6 +365,8 @@ impl BumpAlloc {
 extern "C" {
     #[link_name = "get-arguments"]
     fn wasi_cli_get_arguments(rval: *mut WasmStrList);
+    #[link_name = "get-environment"]
+    fn wasi_cli_get_environment(rval: *mut StrTupleList);
 }
 
 /// Read command-line argument data.
@@ -435,8 +437,37 @@ pub unsafe extern "C" fn args_sizes_get(argc: *mut Size, argv_buf_size: *mut Siz
 /// Read environment variable data.
 /// The sizes of the buffers should match that returned by `environ_sizes_get`.
 #[no_mangle]
-pub unsafe extern "C" fn environ_get(_environ: *mut *mut u8, _nviron_buf: *mut u8) -> Errno {
-    ERRNO_SUCCESS
+pub unsafe extern "C" fn environ_get(environ: *mut *const u8, environ_buf: *mut u8) -> Errno {
+    State::with(|state| {
+        let alloc = ImportAlloc::SeparateStringsAndPointers {
+            strings: BumpAlloc {
+                base: environ_buf,
+                len: usize::MAX,
+            },
+            pointers: state.temporary_alloc(),
+        };
+        let (list, _) = state.with_import_alloc(alloc, || unsafe {
+            let mut list = StrTupleList {
+                base: std::ptr::null(),
+                len: 0,
+            };
+            wasi_cli_get_environment(&mut list);
+            list
+        });
+
+        // Fill in `environ` by walking over the returned `list`. Strings
+        // are guaranteed to be allocated next to each other with one
+        // extra byte at the end, so also insert the `=` between keys and
+        // the `\0` at the end of the env var.
+        for i in 0..list.len {
+            let s = list.base.add(i).read();
+            *environ.add(i) = s.key.ptr;
+            *s.key.ptr.add(s.key.len).cast_mut() = b'=';
+            *s.value.ptr.add(s.value.len).cast_mut() = 0;
+        }
+
+        Ok(())
+    })
 }
 
 /// Return environment variable data sizes.
@@ -445,10 +476,43 @@ pub unsafe extern "C" fn environ_sizes_get(
     environc: *mut Size,
     environ_buf_size: *mut Size,
 ) -> Errno {
-    *environc = 0;
-    *environ_buf_size = 0;
+    if !matches!(
+        get_allocation_state(),
+        AllocationState::StackAllocated | AllocationState::StateAllocated
+    ) {
+        *environc = 0;
+        *environ_buf_size = 0;
+        return ERRNO_SUCCESS;
+    }
 
-    return ERRNO_SUCCESS;
+    State::with(|state| {
+        let alloc = ImportAlloc::CountAndDiscardStrings {
+            strings_size: 0,
+            alloc: state.temporary_alloc(),
+        };
+        let (len, alloc) = state.with_import_alloc(alloc, || unsafe {
+            let mut list = StrTupleList {
+                base: std::ptr::null(),
+                len: 0,
+            };
+            wasi_cli_get_environment(&mut list);
+            list.len
+        });
+        match alloc {
+            ImportAlloc::CountAndDiscardStrings {
+                strings_size,
+                alloc: _,
+            } => {
+                *environc = len;
+                // Account for `=` between keys and a 0-byte at the end of
+                // each key.
+                *environ_buf_size = strings_size + 2 * len;
+            }
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    })
 }
 
 /// Return the resolution of a clock.
