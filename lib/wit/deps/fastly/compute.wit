@@ -580,7 +580,7 @@ interface geo {
 interface device-detection {
   use types.{error};
 
-  lookup: func(user-agent: string, max-len: u64) -> result<string, error>;
+  lookup: func(user-agent: string, max-len: u64) -> result<option<string>, error>;
 }
 
 /*

@@ -1,19 +1,22 @@
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::{
         header::{self, HeaderValue},
         Request, Response, StatusCode,
     },
 };
 
-#[tokio::test(flavor = "multi_thread")]
-async fn upstream_sync() -> TestResult {
+viceroy_test!(upstream_sync, |is_component| {
     ////////////////////////////////////////////////////////////////////////////////////
     // Setup
     ////////////////////////////////////////////////////////////////////////////////////
 
     // Set up the test harness
     let test = Test::using_fixture("upstream.wasm")
+        .adapt_component(is_component)
         // The "origin" backend simply echos the request body
         .backend("origin", "/", None, |req| {
             let body = req.into_body();
@@ -120,12 +123,12 @@ async fn upstream_sync() -> TestResult {
     assert!(resp.status().is_server_error());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn override_host_works() -> TestResult {
+viceroy_test!(override_host_works, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("upstream.wasm")
+        .adapt_component(is_component)
         .backend("override-host", "/", Some("otherhost.com"), |req| {
             assert_eq!(
                 req.headers().get(header::HOST),
@@ -148,12 +151,12 @@ async fn override_host_works() -> TestResult {
     assert_eq!(resp.status(), StatusCode::OK);
 
     Ok(())
-}
+});
 
-/// Test that we can transparently gunzip responses when required.
-#[tokio::test(flavor = "multi_thread")]
-async fn transparent_gunzip() -> TestResult {
+// Test that we can transparently gunzip responses when required.
+viceroy_test!(transparent_gunzip, |is_component| {
     let resp = Test::using_fixture("gzipped-response.wasm")
+        .adapt_component(is_component)
         .backend("echo", "/", None, |mut req| {
             let mut response_builder = Response::builder();
 
@@ -179,4 +182,4 @@ async fn transparent_gunzip() -> TestResult {
     );
 
     Ok(())
-}
+});

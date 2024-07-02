@@ -1,8 +1,10 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::{body::to_bytes, StatusCode};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn json_geolocation_lookup_works() -> TestResult {
+viceroy_test!(json_geolocation_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "json-geolocation-lookup"
         description = "json geolocation lookup test"
@@ -16,6 +18,7 @@ async fn json_geolocation_lookup_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("geolocation-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -28,10 +31,9 @@ async fn json_geolocation_lookup_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn inline_toml_geolocation_lookup_works() -> TestResult {
+viceroy_test!(inline_toml_geolocation_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "inline-toml-geolocation-lookup"
         description = "inline toml geolocation lookup test"
@@ -83,6 +85,7 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("geolocation-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -95,28 +98,31 @@ async fn inline_toml_geolocation_lookup_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn default_configuration_geolocation_lookup_works() -> TestResult {
-    const FASTLY_TOML: &str = r#"
+viceroy_test!(
+    default_configuration_geolocation_lookup_works,
+    |is_component| {
+        const FASTLY_TOML: &str = r#"
         name = "default-config-geolocation-lookup"
         description = "default config geolocation lookup test"
         authors = ["Test User <test_user@fastly.com>"]
         language = "rust"
     "#;
 
-    let resp = Test::using_fixture("geolocation-lookup-default.wasm")
-        .using_fastly_toml(FASTLY_TOML)?
-        .against_empty()
-        .await?;
+        let resp = Test::using_fixture("geolocation-lookup-default.wasm")
+            .adapt_component(is_component)
+            .using_fastly_toml(FASTLY_TOML)?
+            .against_empty()
+            .await?;
 
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty());
 
-    Ok(())
-}
+        Ok(())
+    }
+);
