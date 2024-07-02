@@ -1,6 +1,6 @@
 use crate::{
     common::{Test, TestResult},
-    viceroy_test_sequential,
+    viceroy_test,
 };
 use hyper::{body::HttpBody, Body, Request, Response, StatusCode};
 use std::sync::{
@@ -16,7 +16,7 @@ use tokio::sync::Barrier;
 //
 // https://github.com/fastly/Viceroy/issues/207 tracks the broader issue.
 #[cfg(target_family = "unix")]
-viceroy_test_sequential!(async_io_methods, |is_component| {
+viceroy_test!(async_io_methods, |is_component| {
     let request_count = Arc::new(AtomicUsize::new(0));
     let req_count_1 = request_count.clone();
     let req_count_2 = request_count.clone();
