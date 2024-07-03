@@ -18,6 +18,7 @@ use {
         request::Request,
         Method, Uri,
     },
+    std::net::IpAddr,
     std::str::FromStr,
 };
 
@@ -107,7 +108,6 @@ impl http_req::Host for Session {
     }
 
     async fn downstream_client_ip_addr(&mut self) -> Result<Vec<u8>, types::Error> {
-        use std::net::IpAddr;
         match self.downstream_client_ip() {
             IpAddr::V4(addr) => {
                 let octets = addr.octets();
@@ -123,7 +123,18 @@ impl http_req::Host for Session {
     }
 
     async fn downstream_server_ip_addr(&mut self) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Downstream server ip address").into())
+        match self.downstream_server_ip() {
+            IpAddr::V4(addr) => {
+                let octets = addr.octets();
+                debug_assert_eq!(octets.len(), 4);
+                Ok(Vec::from(octets))
+            }
+            IpAddr::V6(addr) => {
+                let octets = addr.octets();
+                debug_assert_eq!(octets.len(), 16);
+                Ok(Vec::from(octets))
+            }
+        }
     }
 
     async fn downstream_tls_cipher_openssl_name(

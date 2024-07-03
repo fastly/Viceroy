@@ -398,9 +398,11 @@ impl Test {
                     .build()
                     .unwrap();
                 *req.uri_mut() = new_uri;
+                let local = (Ipv4Addr::LOCALHOST, 80).into();
+                let remote = (Ipv4Addr::LOCALHOST, 0).into();
                 let resp = ctx
                     .clone()
-                    .handle_request(req.map(Into::into), Ipv4Addr::LOCALHOST.into())
+                    .handle_request(req.map(Into::into), local, remote)
                     .await
                     .map(|result| {
                         match result {

@@ -25,6 +25,7 @@ use {
     fastly_shared::{INVALID_BODY_HANDLE, INVALID_REQUEST_HANDLE, INVALID_RESPONSE_HANDLE},
     http::{HeaderValue, Method, Uri},
     hyper::http::request::Request,
+    std::net::IpAddr,
     wiggle::{GuestMemory, GuestPtr},
 };
 
@@ -66,13 +67,36 @@ impl FastlyHttpReq for Session {
         Ok(())
     }
 
+    fn downstream_server_ip_addr(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        // Must be a 16-byte array:
+        addr_octets_ptr: GuestPtr<u8>,
+    ) -> Result<u32, Error> {
+        match self.downstream_server_ip() {
+            IpAddr::V4(addr) => {
+                let octets = addr.octets();
+                let octets_bytes = octets.len() as u32;
+                debug_assert_eq!(octets_bytes, 4);
+                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
+                Ok(octets_bytes)
+            }
+            IpAddr::V6(addr) => {
+                let octets = addr.octets();
+                let octets_bytes = octets.len() as u32;
+                debug_assert_eq!(octets_bytes, 16);
+                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
+                Ok(octets_bytes)
+            }
+        }
+    }
+
     fn downstream_client_ip_addr(
         &mut self,
         memory: &mut GuestMemory<'_>,
         // Must be a 16-byte array:
         addr_octets_ptr: GuestPtr<u8>,
     ) -> Result<u32, Error> {
-        use std::net::IpAddr;
         match self.downstream_client_ip() {
             IpAddr::V4(addr) => {
                 let octets = addr.octets();
