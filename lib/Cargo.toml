@@ -61,6 +61,7 @@ wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-nn = { workspace = true }
+wat = { workspace = true }
 wiggle = { workspace = true }
 
 [dev-dependencies]

@@ -44,6 +44,7 @@ wasmtime = "22.0.0"
 wasmtime-wasi = "22.0.0"
 wasmtime-wasi-nn = "22.0.0"
 wiggle = "22.0.0"
+wat = "1.212.0"
 wasmparser = "0.208.0"
 wasm-encoder = { version = "0.208.0", features = ["wasmparser"] }
 wit-component = "0.208.0"
