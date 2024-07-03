@@ -12,6 +12,7 @@ use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response,
 use rustls::client::ServerName;
 use std::{
     io,
+    net::SocketAddr,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -96,8 +97,22 @@ impl BackendConnector {
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 pub enum Connection {
-    Http(TcpStream),
-    Https(Box<TlsStream<TcpStream>>),
+    Http(TcpStream, ConnMetadata),
+    Https(Box<TlsStream<TcpStream>>, ConnMetadata),
+}
+
+impl Connection {
+    fn metadata(&self) -> ConnMetadata {
+        match self {
+            Connection::Http(_, md) => md.clone(),
+            Connection::Https(_, md) => md.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConnMetadata {
+    pub remote_addr: SocketAddr,
 }
 
 impl hyper::service::Service<Uri> for BackendConnector {
@@ -138,7 +153,10 @@ impl hyper::service::Service<Uri> for BackendConnector {
         Box::pin(async move {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
-            if backend.uri.scheme_str() == Some("https") {
+            let remote_addr = tcp.peer_addr()?;
+            let metadata = ConnMetadata { remote_addr };
+
+            let conn = if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
                     config.with_client_auth_cert(certed_key.certs(), certed_key.key())?
                 } else {
@@ -181,10 +199,12 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     }
                 }
 
-                Ok(Connection::Https(Box::new(tls)))
+                Connection::Https(Box::new(tls), metadata)
             } else {
-                Ok(Connection::Http(tcp))
-            }
+                Connection::Http(tcp, metadata)
+            };
+
+            Ok(conn)
         })
     }
 }
@@ -346,7 +366,7 @@ pub struct SelectTarget {
 
 impl hyper::client::connect::Connection for Connection {
     fn connected(&self) -> hyper::client::connect::Connected {
-        hyper::client::connect::Connected::new()
+        hyper::client::connect::Connected::new().extra(self.metadata())
     }
 }
 
@@ -357,8 +377,8 @@ impl AsyncRead for Connection {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<(), io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_read(cx, buf),
-            Connection::Https(s) => Pin::new(s).poll_read(cx, buf),
+            Connection::Http(s, _) => Pin::new(s).poll_read(cx, buf),
+            Connection::Https(s, _) => Pin::new(s).poll_read(cx, buf),
         }
     }
 }
@@ -370,22 +390,22 @@ impl AsyncWrite for Connection {
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_write(cx, buf),
-            Connection::Https(s) => Pin::new(s).poll_write(cx, buf),
+            Connection::Http(s, _) => Pin::new(s).poll_write(cx, buf),
+            Connection::Https(s, _) => Pin::new(s).poll_write(cx, buf),
         }
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_flush(cx),
-            Connection::Https(s) => Pin::new(s).poll_flush(cx),
+            Connection::Http(s, _) => Pin::new(s).poll_flush(cx),
+            Connection::Https(s, _) => Pin::new(s).poll_flush(cx),
         }
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_shutdown(cx),
-            Connection::Https(s) => Pin::new(s).poll_shutdown(cx),
+            Connection::Http(s, _) => Pin::new(s).poll_shutdown(cx),
+            Connection::Https(s, _) => Pin::new(s).poll_shutdown(cx),
         }
     }
 }
