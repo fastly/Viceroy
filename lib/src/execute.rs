@@ -23,7 +23,7 @@ use {
         collections::HashSet,
         fs,
         io::Write,
-        net::{IpAddr, Ipv4Addr},
+        net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
         sync::atomic::{AtomicBool, AtomicU64, Ordering},
         sync::{Arc, Mutex},
@@ -347,14 +347,17 @@ impl ExecuteCtx {
     /// # let req = Request::new(Body::from(""));
     /// let adapt_core_wasm = false;
     /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
-    /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
+    /// let local = "127.0.0.1:80".parse().unwrap();
+    /// let remote = "127.0.0.1:0".parse().unwrap();
+    /// let resp = ctx.handle_request(req, local, remote).await?;
     /// # Ok(())
     /// # }
     /// ```
     pub async fn handle_request(
         self,
         incoming_req: Request<hyper::Body>,
-        remote: IpAddr,
+        local: SocketAddr,
+        remote: SocketAddr,
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
         let req = prepare_request(incoming_req)?;
         let (sender, receiver) = oneshot::channel();
@@ -366,7 +369,7 @@ impl ExecuteCtx {
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
         let guest_handle = tokio::task::spawn(
-            self.run_guest(req, req_id, sender, remote)
+            self.run_guest(req, req_id, sender, local, remote)
                 .instrument(info_span!("request", id = req_id)),
         );
 
@@ -400,9 +403,10 @@ impl ExecuteCtx {
     pub async fn handle_request_with_runtime_error(
         self,
         incoming_req: Request<hyper::Body>,
-        remote: IpAddr,
+        local: SocketAddr,
+        remote: SocketAddr,
     ) -> Result<Response<Body>, Error> {
-        let result = self.handle_request(incoming_req, remote).await?;
+        let result = self.handle_request(incoming_req, local, remote).await?;
         let resp = match result.1 {
             None => result.0,
             Some(err) => {
@@ -422,7 +426,8 @@ impl ExecuteCtx {
         req: Request<Body>,
         req_id: u64,
         sender: Sender<Response<Body>>,
-        remote: IpAddr,
+        local: SocketAddr,
+        remote: SocketAddr,
     ) -> Result<(), ExecutionError> {
         info!("handling request {} {}", req.method(), req.uri());
         let start_timestamp = Instant::now();
@@ -430,6 +435,7 @@ impl ExecuteCtx {
             req_id,
             req,
             sender,
+            local,
             remote,
             &self,
             self.backends.clone(),
@@ -578,12 +584,14 @@ impl ExecuteCtx {
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
         let (sender, receiver) = oneshot::channel();
-        let remote = Ipv4Addr::LOCALHOST.into();
+        let local = (Ipv4Addr::LOCALHOST, 80).into();
+        let remote = (Ipv4Addr::LOCALHOST, 0).into();
 
         let session = Session::new(
             req_id,
             req,
             sender,
+            local,
             remote,
             &self,
             self.backends.clone(),

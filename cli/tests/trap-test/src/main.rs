@@ -24,8 +24,10 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
         adapt_core_wasm,
     )?;
     let req = Request::get("http://127.0.0.1:7676/").body(Body::from(""))?;
+    let local = "127.0.0.1:80".parse().unwrap();
+    let remote = "127.0.0.1:0".parse().unwrap();
     let resp = ctx
-        .handle_request_with_runtime_error(req, "127.0.0.1".parse().unwrap())
+        .handle_request_with_runtime_error(req, local, remote)
         .await?;
 
     // The Guest was terminated and so should return a 500.
