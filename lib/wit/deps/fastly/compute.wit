@@ -323,7 +323,7 @@ interface http-req {
 
   downstream-tls-ja4: func(max-len: u64) -> result<list<u8>, error>;
 
-  downstream-compliance-region: func(max-len: u64) -> result<list<u8>, error>;
+  downstream-compliance-region: func() -> result<list<u8>, error>;
 
   new: func() -> result<request-handle, error>;
 

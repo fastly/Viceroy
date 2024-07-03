@@ -808,11 +808,8 @@ impl http_req::Host for Session {
         Err(Error::NotAvailable("Client TLS JA4 hash").into())
     }
 
-    async fn downstream_compliance_region(
-        &mut self,
-        _max_len: u64,
-    ) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS JA4 hash").into())
+    async fn downstream_compliance_region(&mut self) -> Result<Vec<u8>, types::Error> {
+        Ok(Vec::from(b"none"))
     }
 
     async fn original_header_names_get(

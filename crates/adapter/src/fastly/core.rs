@@ -995,9 +995,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         alloc_result!(region_out, region_max_len, nwritten, {
-            fastly::api::http_req::downstream_compliance_region(
-                u64::try_from(region_max_len).trapping_unwrap(),
-            )
+            fastly::api::http_req::downstream_compliance_region()
         })
     }
 
