@@ -102,10 +102,10 @@ pub enum Connection {
 }
 
 impl Connection {
-    fn metadata(&self) -> ConnMetadata {
+    fn metadata(&self) -> &ConnMetadata {
         match self {
-            Connection::Http(_, md) => md.clone(),
-            Connection::Https(_, md) => md.clone(),
+            Connection::Http(_, md) => &md,
+            Connection::Https(_, md) => &md,
         }
     }
 }
@@ -366,7 +366,7 @@ pub struct SelectTarget {
 
 impl hyper::client::connect::Connection for Connection {
     fn connected(&self) -> hyper::client::connect::Connected {
-        hyper::client::connect::Connected::new().extra(self.metadata())
+        hyper::client::connect::Connected::new().extra(self.metadata().clone())
     }
 }
 
