@@ -1,5 +1,6 @@
 use crate::{
     body::{Body, Chunk},
+    cache::CacheOverride,
     config::Backend,
     error::Error,
     headers::filter_outgoing_headers,
@@ -112,6 +113,7 @@ impl Connection {
 
 #[derive(Clone)]
 pub struct ConnMetadata {
+    pub direct_pass: bool,
     pub remote_addr: SocketAddr,
 }
 
@@ -154,7 +156,10 @@ impl hyper::service::Service<Uri> for BackendConnector {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
             let remote_addr = tcp.peer_addr()?;
-            let metadata = ConnMetadata { remote_addr };
+            let metadata = ConnMetadata {
+                direct_pass: false,
+                remote_addr,
+            };
 
             let conn = if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
@@ -308,7 +313,13 @@ pub fn send_request(
             builder.http2_only(true);
         }
 
-        let basic_response = builder
+        let is_pass = req
+            .extensions()
+            .get::<CacheOverride>()
+            .map(CacheOverride::is_pass)
+            .unwrap_or_default();
+
+        let mut basic_response = builder
             .set_host(false)
             .http2_only(h2only)
             .build(connector)
@@ -318,6 +329,11 @@ pub fn send_request(
                 eprintln!("Error: {:?}", e);
                 e
             })?;
+
+        if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
+            // This is used later to create similar behaviour between Compute and Viceroy.
+            md.direct_pass = is_pass;
+        }
 
         if try_decompression
             && basic_response

@@ -240,6 +240,14 @@ impl FastlyHttpResp for Session {
             .get::<upstream::ConnMetadata>()
             .ok_or(Error::ValueAbsent)?;
 
+        if !md.direct_pass {
+            // Compute currently only returns this value when we are doing
+            // direct pass, so we skip returning a value here for now, even
+            // if we have one, so that guest code doesn't come to expect it
+            // during local testing.
+            return Err(Error::ValueAbsent);
+        }
+
         match md.remote_addr.ip() {
             IpAddr::V4(addr) => {
                 let octets = addr.octets();
@@ -268,6 +276,15 @@ impl FastlyHttpResp for Session {
             .extensions
             .get::<upstream::ConnMetadata>()
             .ok_or(Error::ValueAbsent)?;
+
+        if !md.direct_pass {
+            // Compute currently only returns this value when we are doing
+            // direct pass, so we skip returning a value here for now, even
+            // if we have one, so that guest code doesn't come to expect it
+            // during local testing.
+            return Err(Error::ValueAbsent);
+        }
+
         let port = md.remote_addr.port();
         Ok(port)
     }
