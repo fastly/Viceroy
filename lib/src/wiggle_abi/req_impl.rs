@@ -2,6 +2,7 @@
 
 use super::types::SendErrorDetail;
 use super::SecretStoreError;
+use crate::cache::CacheOverride;
 use crate::config::ClientCertInfo;
 use crate::secret_store::SecretLookup;
 
@@ -40,20 +41,24 @@ impl FastlyHttpReq for Session {
         Ok((req_handle, body_handle))
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn cache_override_set(
         &mut self,
-        memory: &mut GuestMemory<'_>,
+        _memory: &mut GuestMemory<'_>,
         req_handle: RequestHandle,
         tag: CacheOverrideTag,
         ttl: u32,
         stale_while_revalidate: u32,
     ) -> Result<(), Error> {
-        // For now, we ignore caching directives because we never cache anything
+        let overrides = CacheOverride::from_abi(u32::from(tag), ttl, stale_while_revalidate, None)
+            .ok_or(Error::InvalidArgument)?;
+
+        self.request_parts_mut(req_handle)?
+            .extensions
+            .insert(overrides);
+
         Ok(())
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn cache_override_v2_set(
         &mut self,
         memory: &mut GuestMemory<'_>,
@@ -63,7 +68,21 @@ impl FastlyHttpReq for Session {
         stale_while_revalidate: u32,
         sk: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
-        // For now, we ignore caching directives because we never cache anything
+        let sk = if sk.len() > 0 {
+            let sk = memory.as_slice(sk)?.ok_or(Error::SharedMemory)?;
+            let sk = HeaderValue::from_bytes(&sk).map_err(|_| Error::InvalidArgument)?;
+            Some(sk)
+        } else {
+            None
+        };
+
+        let overrides = CacheOverride::from_abi(u32::from(tag), ttl, stale_while_revalidate, sk)
+            .ok_or(Error::InvalidArgument)?;
+
+        self.request_parts_mut(req_handle)?
+            .extensions
+            .insert(overrides);
+
         Ok(())
     }
 

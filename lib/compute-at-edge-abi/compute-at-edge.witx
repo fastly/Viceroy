@@ -631,6 +631,24 @@
         (param $mode $http_keepalive_mode)
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Hostcall for getting the destination IP used for this request.
+    ;;;
+    ;;; The buffer for the IP address must be 16 bytes. This will return
+    ;;; the number of bytes written to the buffer: 4 for IPv4 addresses,
+    ;;; and 16 for IPv6.
+    (@interface func (export "get_addr_dest_ip")
+        (param $h $response_handle)
+        ;; must be a 16-byte array
+        (param $addr_octets_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
+    ;;; Hostcall for getting the destination port used for this request.
+    (@interface func (export "get_addr_dest_port")
+        (param $h $response_handle)
+        (result $err (expected $port (error $fastly_status)))
+    )
 )
 
 (module $fastly_dictionary

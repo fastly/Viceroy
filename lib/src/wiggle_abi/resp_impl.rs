@@ -4,6 +4,7 @@ use {
     crate::{
         error::Error,
         session::Session,
+        upstream,
         wiggle_abi::{
             fastly_http_resp::FastlyHttpResp,
             headers::HttpHeaders,
@@ -15,6 +16,7 @@ use {
     },
     cfg_if::cfg_if,
     hyper::http::response::Response,
+    std::net::IpAddr,
     wiggle::{GuestMemory, GuestPtr},
 };
 
@@ -224,5 +226,66 @@ impl FastlyHttpResp for Session {
             HttpKeepaliveMode::NoKeepalive => Err(Error::NotAvailable("No Keepalive")),
             HttpKeepaliveMode::Automatic => Ok(()),
         }
+    }
+
+    fn get_addr_dest_ip(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        resp_handle: ResponseHandle,
+        addr_octets_ptr: GuestPtr<u8>,
+    ) -> Result<u32, Error> {
+        let resp = self.response_parts(resp_handle)?;
+        let md = resp
+            .extensions
+            .get::<upstream::ConnMetadata>()
+            .ok_or(Error::ValueAbsent)?;
+
+        if !md.direct_pass {
+            // Compute currently only returns this value when we are doing
+            // direct pass, so we skip returning a value here for now, even
+            // if we have one, so that guest code doesn't come to expect it
+            // during local testing.
+            return Err(Error::ValueAbsent);
+        }
+
+        match md.remote_addr.ip() {
+            IpAddr::V4(addr) => {
+                let octets = addr.octets();
+                let octets_bytes = octets.len() as u32;
+                debug_assert_eq!(octets_bytes, 4);
+                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
+                Ok(octets_bytes)
+            }
+            IpAddr::V6(addr) => {
+                let octets = addr.octets();
+                let octets_bytes = octets.len() as u32;
+                debug_assert_eq!(octets_bytes, 16);
+                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
+                Ok(octets_bytes)
+            }
+        }
+    }
+
+    fn get_addr_dest_port(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        resp_handle: ResponseHandle,
+    ) -> Result<u16, Error> {
+        let resp = self.response_parts(resp_handle)?;
+        let md = resp
+            .extensions
+            .get::<upstream::ConnMetadata>()
+            .ok_or(Error::ValueAbsent)?;
+
+        if !md.direct_pass {
+            // Compute currently only returns this value when we are doing
+            // direct pass, so we skip returning a value here for now, even
+            // if we have one, so that guest code doesn't come to expect it
+            // during local testing.
+            return Err(Error::ValueAbsent);
+        }
+
+        let port = md.remote_addr.port();
+        Ok(port)
     }
 }

@@ -545,6 +545,10 @@ interface http-resp {
 
   http-keepalive-mode-set: func(h: response-handle, mode: keepalive-mode) ->
 result<_, error>;
+
+  get-addr-dest-ip: func(h: response-handle) -> result<list<u8>, error>;
+
+  get-addr-dest-port: func(h: response-handle) -> result<u16, error>;
 }
 
 /*

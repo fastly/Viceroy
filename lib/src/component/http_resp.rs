@@ -1,10 +1,11 @@
 use {
     super::fastly::api::{http_resp, http_types, types},
     super::{headers::write_values, types::TrappableError},
-    crate::{error::Error, session::Session},
+    crate::{error::Error, session::Session, upstream},
     cfg_if::cfg_if,
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
+    std::net::IpAddr,
 };
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
@@ -285,5 +286,42 @@ impl http_resp::Host for Session {
             }
             http_resp::KeepaliveMode::Automatic => Ok(()),
         }
+    }
+
+    async fn get_addr_dest_ip(
+        &mut self,
+        resp_handle: http_types::ResponseHandle,
+    ) -> Result<Vec<u8>, types::Error> {
+        let resp = self.response_parts(resp_handle.into())?;
+        let md = resp
+            .extensions
+            .get::<upstream::ConnMetadata>()
+            .ok_or(Error::ValueAbsent)?;
+
+        match md.remote_addr.ip() {
+            IpAddr::V4(addr) => {
+                let octets = addr.octets();
+                debug_assert_eq!(octets.len(), 4);
+                Ok(Vec::from(octets))
+            }
+            IpAddr::V6(addr) => {
+                let octets = addr.octets();
+                debug_assert_eq!(octets.len(), 16);
+                Ok(Vec::from(octets))
+            }
+        }
+    }
+
+    async fn get_addr_dest_port(
+        &mut self,
+        resp_handle: http_types::ResponseHandle,
+    ) -> Result<u16, types::Error> {
+        let resp = self.response_parts(resp_handle.into())?;
+        let md = resp
+            .extensions
+            .get::<upstream::ConnMetadata>()
+            .ok_or(Error::ValueAbsent)?;
+        let port = md.remote_addr.port();
+        Ok(port)
     }
 }

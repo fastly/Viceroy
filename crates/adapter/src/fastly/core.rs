@@ -1974,6 +1974,30 @@ pub mod fastly_http_resp {
     pub fn close(resp_handle: ResponseHandle) -> FastlyStatus {
         convert_result(fastly::api::http_resp::close(resp_handle))
     }
+
+    #[export_name = "fastly_http_resp#get_addr_dest_ip"]
+    pub fn get_addr_dest_ip(
+        resp_handle: ResponseHandle,
+        addr_octets_out: *mut u8,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(addr_octets_out, 16, nwritten_out, {
+            fastly::api::http_resp::get_addr_dest_ip(resp_handle)
+        })
+    }
+
+    #[export_name = "fastly_http_resp#get_addr_dest_port"]
+    pub fn get_addr_dest_port(resp_handle: ResponseHandle, port_out: *mut u16) -> FastlyStatus {
+        match fastly::api::http_resp::get_addr_dest_port(resp_handle) {
+            Ok(port) => {
+                unsafe {
+                    *port_out = port;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
 }
 
 pub mod fastly_dictionary {
