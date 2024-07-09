@@ -1,26 +1,23 @@
-use {
-    lazy_static::lazy_static,
-    std::{
-        io::{self, Write},
-        sync::Mutex,
-    },
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
 };
 
-/// A logging endpoint, which for Viceroy is just a name.
-pub struct LogEndpoint(Vec<u8>);
-
-lazy_static! {
-    /// The underlying writer to use for all log messages. It defaults to `stdout`,
-    /// but can be redirected for tests. We make this a static, rather than e.g.
-    /// a field in `ExecuteCtx`, because the `Write` implementation for `LogEndpoint`
-    /// doesn't have direct access to context data.
-    pub static ref LOG_WRITER: Mutex<Box<dyn Write + Send>> = Mutex::new(Box::new(io::stdout()));
+/// A named logging endpoint.
+#[derive(Clone)]
+pub struct LogEndpoint {
+    name: Vec<u8>,
+    writer: Arc<Mutex<dyn Write + Send>>,
 }
 
 impl LogEndpoint {
-    /// Allocate a new `LogEndpoint` with the given name.
-    pub fn new(name: &[u8]) -> LogEndpoint {
-        LogEndpoint(name.to_owned())
+    /// Allocate a new `LogEndpoint` with the given name, with log messages sent
+    /// to the given writer.
+    pub fn new(name: &[u8], writer: Arc<Mutex<dyn Write + Send>>) -> LogEndpoint {
+        LogEndpoint {
+            name: name.to_owned(),
+            writer,
+        }
     }
 
     /// Write a log entry to this endpoint.
@@ -28,7 +25,7 @@ impl LogEndpoint {
     /// Log entries are prefixed with the endpoint name and terminated with a newline.
     /// Any newlines in the message will be escaped to the string r"\n".
     ///
-    /// The entry is written atomically to `LOG_WRITER`.
+    /// The entry is written atomically to the writer given to [`LogEndpoint::new`].
     pub fn write_entry(&self, mut msg: &[u8]) -> io::Result<()> {
         const LOG_ENDPOINT_DELIM: &[u8] = b" :: ";
 
@@ -44,9 +41,9 @@ impl LogEndpoint {
 
         // Accumulate log entry into a buffer before writing, while escaping newlines
         let mut to_write =
-            Vec::with_capacity(msg.len() + self.0.len() + LOG_ENDPOINT_DELIM.len() + 1);
+            Vec::with_capacity(msg.len() + self.name.len() + LOG_ENDPOINT_DELIM.len() + 1);
 
-        to_write.extend_from_slice(&self.0);
+        to_write.extend_from_slice(&self.name);
         to_write.extend_from_slice(LOG_ENDPOINT_DELIM);
         for &byte in msg {
             if byte == b'\n' {
@@ -57,7 +54,7 @@ impl LogEndpoint {
         }
         to_write.push(b'\n');
 
-        LOG_WRITER.lock().unwrap().write_all(&to_write)
+        self.writer.lock().unwrap().write_all(&to_write)
     }
 }
 
@@ -68,13 +65,13 @@ impl Write for LogEndpoint {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        LOG_WRITER.lock().unwrap().flush()
+        self.writer.lock().unwrap().flush()
     }
 }
 
 impl wasmtime_wasi::StdoutStream for LogEndpoint {
     fn stream(&self) -> Box<dyn wasmtime_wasi::HostOutputStream> {
-        Box::new(LogEndpoint(self.0.clone()))
+        Box::new(self.clone())
     }
 
     fn isatty(&self) -> bool {

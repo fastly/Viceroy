@@ -1,17 +1,14 @@
 //! Guest code execution.
 
-use std::time::SystemTime;
-
-use wasmtime::GuestProfiler;
-
-use crate::config::UnknownImportBehavior;
-
 use {
     crate::{
         adapt,
         body::Body,
         component as compute,
-        config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
+        config::{
+            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
+            UnknownImportBehavior,
+        },
         downstream::prepare_request,
         error::ExecutionError,
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
@@ -25,18 +22,19 @@ use {
     std::{
         collections::HashSet,
         fs,
-        net::{IpAddr, Ipv4Addr},
+        io::Write,
+        net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
         sync::atomic::{AtomicBool, AtomicU64, Ordering},
-        sync::Arc,
+        sync::{Arc, Mutex},
         thread::{self, JoinHandle},
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime},
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
-        Engine, InstancePre, Linker, Module, ProfilingStrategy,
+        Engine, GuestProfiler, InstancePre, Linker, Module, ProfilingStrategy,
     },
     wasmtime_wasi::I32Exit,
 };
@@ -80,6 +78,8 @@ pub struct ExecuteCtx {
     dictionaries: Arc<Dictionaries>,
     /// Path to the config, defaults to None
     config_path: Arc<Option<PathBuf>>,
+    /// Where to direct logging endpoint messages, defaults to stdout
+    capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// Whether to treat stdout as a logging endpoint
     log_stdout: bool,
     /// Whether to treat stderr as a logging endpoint
@@ -117,31 +117,22 @@ impl ExecuteCtx {
             .map(|str| str == "wat")
             .unwrap_or(false);
 
-        let is_component = matches!(
-            wasmparser::Parser::new(0).parse(&input, true),
-            Ok(wasmparser::Chunk::Parsed {
-                payload: wasmparser::Payload::Version {
-                    encoding: wasmparser::Encoding::Component,
-                    ..
-                },
-                ..
-            })
-        );
-
         // When the input wasn't a component, but we're automatically adapting,
         // apply the component adapter.
-        let (is_component, input) = if !is_component && adapt_components {
-            // It's not possible to adapt a component from WAT, we can't continue at this point.
-            if is_wat {
-                return Err(Error::Other(anyhow::anyhow!(
-                    "Wasm components may only be adapted from binary wasm components, not wat"
-                )));
-            }
+        let is_component = adapt::is_component(&input);
+        let (is_wat, is_component, input) = if !is_component && adapt_components {
+            let input = if is_wat {
+                let text = String::from_utf8(input).map_err(|_| {
+                    anyhow::anyhow!("Failed to parse {}", module_path.as_ref().display())
+                })?;
+                adapt::adapt_wat(&text)?
+            } else {
+                adapt::adapt_bytes(&input)?
+            };
 
-            let input = adapt::adapt_bytes(&input)?;
-            (true, input)
+            (false, true, input)
         } else {
-            (is_component, input)
+            (is_wat, is_component, input)
         };
 
         let config = &configure_wasmtime(is_component, profiling_strategy);
@@ -217,6 +208,7 @@ impl ExecuteCtx {
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
             config_path: Arc::new(None),
+            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
@@ -295,6 +287,18 @@ impl ExecuteCtx {
         self
     }
 
+    /// Where to direct logging endpoint messages. Defaults to stdout.
+    pub fn capture_logs(&self) -> Arc<Mutex<dyn Write + Send>> {
+        self.capture_logs.clone()
+    }
+
+    /// Set where to direct logging endpoint messages for this execution
+    /// context. Defaults to stdout.
+    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
+        self.capture_logs = capture_logs;
+        self
+    }
+
     /// Whether to treat stdout as a logging endpoint.
     pub fn log_stdout(&self) -> bool {
         self.log_stdout
@@ -343,14 +347,17 @@ impl ExecuteCtx {
     /// # let req = Request::new(Body::from(""));
     /// let adapt_core_wasm = false;
     /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
-    /// let resp = ctx.handle_request(req, "127.0.0.1".parse().unwrap()).await?;
+    /// let local = "127.0.0.1:80".parse().unwrap();
+    /// let remote = "127.0.0.1:0".parse().unwrap();
+    /// let resp = ctx.handle_request(req, local, remote).await?;
     /// # Ok(())
     /// # }
     /// ```
     pub async fn handle_request(
         self,
         incoming_req: Request<hyper::Body>,
-        remote: IpAddr,
+        local: SocketAddr,
+        remote: SocketAddr,
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
         let req = prepare_request(incoming_req)?;
         let (sender, receiver) = oneshot::channel();
@@ -362,7 +369,7 @@ impl ExecuteCtx {
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
         let guest_handle = tokio::task::spawn(
-            self.run_guest(req, req_id, sender, remote)
+            self.run_guest(req, req_id, sender, local, remote)
                 .instrument(info_span!("request", id = req_id)),
         );
 
@@ -396,9 +403,10 @@ impl ExecuteCtx {
     pub async fn handle_request_with_runtime_error(
         self,
         incoming_req: Request<hyper::Body>,
-        remote: IpAddr,
+        local: SocketAddr,
+        remote: SocketAddr,
     ) -> Result<Response<Body>, Error> {
-        let result = self.handle_request(incoming_req, remote).await?;
+        let result = self.handle_request(incoming_req, local, remote).await?;
         let resp = match result.1 {
             None => result.0,
             Some(err) => {
@@ -418,7 +426,8 @@ impl ExecuteCtx {
         req: Request<Body>,
         req_id: u64,
         sender: Sender<Response<Body>>,
-        remote: IpAddr,
+        local: SocketAddr,
+        remote: SocketAddr,
     ) -> Result<(), ExecutionError> {
         info!("handling request {} {}", req.method(), req.uri());
         let start_timestamp = Instant::now();
@@ -426,7 +435,9 @@ impl ExecuteCtx {
             req_id,
             req,
             sender,
+            local,
             remote,
+            &self,
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),
@@ -454,8 +465,10 @@ impl ExecuteCtx {
                 let req = session.downstream_request();
                 let body = session.downstream_request_body();
 
-                let mut store = ComponentCtx::create_store(&self, session, None, |_| {})
-                    .map_err(ExecutionError::Context)?;
+                let mut store = ComponentCtx::create_store(&self, session, None, |ctx| {
+                    ctx.arg("compute-app");
+                })
+                .map_err(ExecutionError::Context)?;
 
                 let (compute, _instance) =
                     compute::Compute::instantiate_pre(&mut store, instance_pre)
@@ -511,8 +524,10 @@ impl ExecuteCtx {
                 // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
                 // However, the fact that the module itself is created within `ExecuteCtx::new`
                 // means that the heavy lifting happens only once.
-                let mut store = create_store(&self, session, profiler, |_| {})
-                    .map_err(ExecutionError::Context)?;
+                let mut store = create_store(&self, session, profiler, |ctx| {
+                    ctx.arg("compute-app");
+                })
+                .map_err(ExecutionError::Context)?;
 
                 let instance = instance_pre
                     .instantiate_async(&mut store)
@@ -569,13 +584,16 @@ impl ExecuteCtx {
         let req = Request::get("http://example.com/").body(Body::empty())?;
         let req_id = 0;
         let (sender, receiver) = oneshot::channel();
-        let remote = Ipv4Addr::LOCALHOST.into();
+        let local = (Ipv4Addr::LOCALHOST, 80).into();
+        let remote = (Ipv4Addr::LOCALHOST, 0).into();
 
         let session = Session::new(
             req_id,
             req,
             sender,
+            local,
             remote,
+            &self,
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),

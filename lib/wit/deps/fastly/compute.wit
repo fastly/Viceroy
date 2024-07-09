@@ -545,6 +545,10 @@ interface http-resp {
 
   http-keepalive-mode-set: func(h: response-handle, mode: keepalive-mode) ->
 result<_, error>;
+
+  get-addr-dest-ip: func(h: response-handle) -> result<list<u8>, error>;
+
+  get-addr-dest-port: func(h: response-handle) -> result<u16, error>;
 }
 
 /*
@@ -580,7 +584,7 @@ interface geo {
 interface device-detection {
   use types.{error};
 
-  lookup: func(user-agent: string, max-len: u64) -> result<string, error>;
+  lookup: func(user-agent: string, max-len: u64) -> result<option<string>, error>;
 }
 
 /*
@@ -1088,6 +1092,8 @@ world compute {
     import wasi:io/error@0.2.0;
     import wasi:io/streams@0.2.0;
     import wasi:random/random@0.2.0;
+    import wasi:cli/environment@0.2.0;
+    import wasi:cli/exit@0.2.0;
     import wasi:cli/stdout@0.2.0;
     import wasi:cli/stderr@0.2.0;
     import wasi:cli/stdin@0.2.0;

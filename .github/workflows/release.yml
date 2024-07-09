@@ -60,7 +60,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release --all --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+          cargo build --release --workspace --exclude viceroy-component-adapter --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
       - name: Strip symbols (linux)
         if: ${{ matrix.name == 'linux' }}

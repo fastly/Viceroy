@@ -7,6 +7,13 @@ pub use async_item::{
     AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
 };
 
+use std::collections::HashMap;
+use std::future::Future;
+use std::io::Write;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -23,19 +30,21 @@ use {
             ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle,
             PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
         },
+        ExecuteCtx,
     },
     cranelift_entity::{entity_impl, PrimaryMap},
     futures::future::{self, FutureExt},
     http::{request, response, HeaderMap, Request, Response},
-    std::{collections::HashMap, future::Future, net::IpAddr, path::PathBuf, sync::Arc},
     tokio::sync::oneshot::Sender,
 };
 
 /// Data specific to an individual request, including any host-side
 /// allocations on behalf of the guest processing the request.
 pub struct Session {
-    /// The downstream IP address for this session.
-    downstream_client_ip: IpAddr,
+    /// The downstream IP address and port for this session.
+    downstream_client_addr: SocketAddr,
+    /// The IP address and port that received this session.
+    downstream_server_addr: SocketAddr,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
     downstream_req_handle: RequestHandle,
@@ -65,6 +74,8 @@ pub struct Session {
     /// [parts]: https://docs.rs/http/latest/http/response/struct.Parts.html
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     resp_parts: PrimaryMap<ResponseHandle, Option<response::Parts>>,
+    /// Where to direct logging endpoint messages.
+    capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// A handle map for logging endpoints.
     log_endpoints: PrimaryMap<EndpointHandle, LogEndpoint>,
     /// A by-name map for logging endpoints.
@@ -130,7 +141,9 @@ impl Session {
         req_id: u64,
         req: Request<Body>,
         resp_sender: Sender<Response<Body>>,
-        client_ip: IpAddr,
+        server_addr: SocketAddr,
+        client_addr: SocketAddr,
+        ctx: &ExecuteCtx,
         backends: Arc<Backends>,
         device_detection: Arc<DeviceDetection>,
         geolocation: Arc<Geolocation>,
@@ -150,7 +163,8 @@ impl Session {
         let downstream_req_body_handle = async_items.push(Some(AsyncItem::Body(body))).into();
 
         Session {
-            downstream_client_ip: client_ip,
+            downstream_server_addr: server_addr,
+            downstream_client_addr: client_addr,
             downstream_req_handle,
             downstream_req_body_handle,
             downstream_req_original_headers,
@@ -158,6 +172,7 @@ impl Session {
             req_parts,
             resp_parts: PrimaryMap::new(),
             downstream_resp: DownstreamResponse::new(resp_sender),
+            capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
             backends,
@@ -180,8 +195,13 @@ impl Session {
     // ----- Downstream Request API -----
 
     /// Retrieve the downstream client IP address associated with this session.
-    pub fn downstream_client_ip(&self) -> &IpAddr {
-        &self.downstream_client_ip
+    pub fn downstream_client_ip(&self) -> IpAddr {
+        self.downstream_client_addr.ip()
+    }
+
+    /// Retrieve the IP address the downstream client connected to for this session.
+    pub fn downstream_server_ip(&self) -> IpAddr {
+        self.downstream_server_addr.ip()
     }
 
     /// Retrieve the handle corresponding to the downstream request.
@@ -523,7 +543,7 @@ impl Session {
         if let Some(handle) = self.log_endpoints_by_name.get(name).copied() {
             return handle;
         }
-        let endpoint = LogEndpoint::new(name);
+        let endpoint = LogEndpoint::new(name, self.capture_logs.clone());
         let handle = self.log_endpoints.push(endpoint);
         self.log_endpoints_by_name.insert(name.to_owned(), handle);
         handle

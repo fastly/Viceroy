@@ -1,14 +1,17 @@
 //! Tests related to HTTP semantics (e.g. framing headers, status codes).
 
 use {
-    crate::common::{Test, TestResult},
+    crate::{
+        common::{Test, TestResult},
+        viceroy_test,
+    },
     hyper::{header, Request, Response, StatusCode},
 };
 
-#[tokio::test(flavor = "multi_thread")]
-async fn framing_headers_are_overridden() -> TestResult {
+viceroy_test!(framing_headers_are_overridden, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("bad-framing-headers.wasm")
+        .adapt_component(is_component)
         // The "TheOrigin" backend checks framing headers on the request and then echos its body.
         .backend("TheOrigin", "/", None, |req| {
             assert!(!req.headers().contains_key(header::TRANSFER_ENCODING));
@@ -34,12 +37,12 @@ async fn framing_headers_are_overridden() -> TestResult {
     );
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn content_length_is_computed_correctly() -> TestResult {
+viceroy_test!(content_length_is_computed_correctly, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("content-length.wasm")
+        .adapt_component(is_component)
         // The "TheOrigin" backend supplies a fixed-size body.
         .backend("TheOrigin", "/", None, |_| {
             Response::new(Vec::from(&b"ABCDEFGHIJKLMNOPQRST"[..]))
@@ -59,4 +62,4 @@ async fn content_length_is_computed_correctly() -> TestResult {
     assert_eq!(resp_body, "ABCD12345xyzEFGHIJKLMNOPQRST");
 
     Ok(())
-}
+});
