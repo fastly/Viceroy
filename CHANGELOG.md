@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.10.0 (2024-07-09)
 
 - Add `get_addr_dest_{ip,port}` hostcalls ([#402](https://github.com/fastly/Viceroy/pull/402))

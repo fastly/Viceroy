@@ -1,7 +1,7 @@
 [package]
 name = "viceroy"
 description = "Viceroy is a local testing daemon for Fastly Compute."
-version = "0.10.0"
+version = "0.10.1"
 authors = ["Fastly"]
 readme = "../README.md"
 edition = "2021"
@@ -45,7 +45,7 @@ tokio-rustls = { workspace = true }
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
-viceroy-lib = { path = "../lib", version = "^0.10.0" }
+viceroy-lib = { path = "../lib", version = "^0.10.1" }
 wat = "^1.0.38"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
