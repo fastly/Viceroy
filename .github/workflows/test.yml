@@ -10,10 +10,6 @@ jobs:
     strategy:
       matrix:
         platform: [ubuntu-24.04, windows-2022, macos-14]
-        arch: [amd64, arm64]
-        exclude:
-          - os: windows-2022
-            arch: arm64
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -57,10 +53,6 @@ jobs:
     strategy:
       matrix:
         platform: [ubuntu-24.04, windows-2022, macos-14]
-        arch: [amd64, arm64]
-        exclude:
-          - os: windows-2022
-            arch: arm64
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
