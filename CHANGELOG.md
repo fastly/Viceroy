@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.10.1 (2024-07-11)
+
+- Revert a CI configuration change that inadvertently prevented builds being created for amd64 macOS endpoints ([#405](https://github.com/fastly/Viceroy/pull/405))
+
 ## 0.10.0 (2024-07-09)
 
 - Add `get_addr_dest_{ip,port}` hostcalls ([#402](https://github.com/fastly/Viceroy/pull/402))
