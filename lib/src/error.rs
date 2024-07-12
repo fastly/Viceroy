@@ -439,6 +439,9 @@ pub enum BackendConfigError {
 
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
+
+    #[error(transparent)]
+    ClientCertError(#[from] crate::config::ClientCertError),
 }
 
 /// Errors that may occur while validating dictionary configurations.
