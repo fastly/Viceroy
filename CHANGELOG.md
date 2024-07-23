@@ -1,10 +1,13 @@
 ## Unreleased
 
+## 0.10.2 (2024-07-22)
+
 - Add support for supplying client certificates in fastly.toml, through the use of the
   `client_cert_info` table, which must have one of a "certificate" or "certificate_file"
   key, as well as one of a "key" and "key_file" key. The "_file" variants can be used to
   point to certificate/key files on disk, whereas the non-"_file" variants should be
   multi-line string constants in the toml. In all cases, they should be in PEM format.
+- Restore compatibility with older glibc versions in release artifacts
 
 ## 0.10.1 (2024-07-11)
 
