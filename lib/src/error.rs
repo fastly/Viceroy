@@ -647,6 +647,16 @@ pub enum ObjectStoreConfigError {
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
     #[error("Invalid `key` value used: {0}.")]
     KeyValidationError(#[from] crate::object_store::KeyValidationError),
+    #[error("'{0}' is not a valid format for the config store. Supported format(s) are: 'json'.")]
+    InvalidFileFormat(String),
+    #[error("When using a top-level 'file' to load data, both 'file' and 'format' must be set.")]
+    OnlyOneFormatOrFileSet,
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object."
+    )]
+    FileWrongFormat,
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String.")]
+    FileValueWrongFormat { key: String },
 }
 
 /// Errors that may occur while validating secret store configurations.
