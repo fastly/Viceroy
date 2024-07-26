@@ -63,12 +63,12 @@ viceroy_test!(object_stores_backward_compat, |is_component| {
 
 viceroy_test!(kv_store_allows_fetching_of_key_from_file, |is_component| {
     // This test checks that we can provide a "format" and a "file"
-    // with a JSON dictionary inside it for an object store (aka KV Store)
+    // with a JSON dictionary inside it for a KV Store
     // and have the KV Store populated with it.
     const FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
-        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
@@ -265,7 +265,7 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     const BAD_10_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
-        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
@@ -279,7 +279,7 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     const BAD_11_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
-        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
@@ -293,7 +293,7 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     const BAD_12_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
-        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
@@ -307,17 +307,20 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     const BAD_13_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
-        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
         kv_stores.store_one = { file = "../test-fixtures/data/ABSOLUTELY_NOT_A_REAL_PATH", format = "json" }
     "#;
     match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_13_FASTLY_TOML) {
-        Err(e) => assert_eq!(
-            "invalid configuration for 'store_one': No such file or directory (os error 2)",
-            &e.to_string()
-        ),
+        Err(e) => {
+            // We can't assert on the whole error message here as the next part of the string is platform-specific
+            // where it says that it cannot find the file.
+            assert!(e
+                .to_string()
+                .contains("invalid configuration for 'store_one'"));
+        }
         _ => panic!(),
     }
 
@@ -325,7 +328,7 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     const BAD_14_FASTLY_TOML: &str = r#"
         name = "kv-store-test"
         description = "kv store test"
-        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
