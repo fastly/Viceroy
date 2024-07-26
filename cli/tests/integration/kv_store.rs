@@ -61,6 +61,36 @@ viceroy_test!(object_stores_backward_compat, |is_component| {
     Ok(())
 });
 
+viceroy_test!(kv_store_allows_fetching_of_key_from_file, |is_component| {
+    // This test checks that we can provide a "format" and a "file"
+    // with a JSON dictionary inside it for a KV Store
+    // and have the KV Store populated with it.
+    const FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store.json", format = "json" }
+    "#;
+
+    let resp = Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
+        .using_fastly_toml(FASTLY_TOML)?
+        .against_empty()
+        .await?;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(to_bytes(resp.into_body())
+        .await
+        .expect("can read body")
+        .to_vec()
+        .is_empty());
+
+    Ok(())
+});
+
 viceroy_test!(object_store_backward_compat, |is_component| {
     // Previously the "object_stores" key was named "object_store" and
     // the "file" key was named "path".  This test ensures that both
@@ -230,6 +260,83 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_9_FASTLY_TOML) {
       Err(e) => assert_eq!("invalid configuration for 'store_one': There is an object in the given store that is not a table of keys.", &e.to_string()),
       _ => panic!(),
+    }
+
+    const BAD_10_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store.json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_10_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': When using a top-level 'file' to load data, both 'file' and 'format' must be set.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_11_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_11_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': When using a top-level 'file' to load data, both 'file' and 'format' must be set.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_12_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store.json", format = "INVALID" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_12_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': 'INVALID' is not a valid format for the config store. Supported format(s) are: 'json'.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_13_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/ABSOLUTELY_NOT_A_REAL_PATH", format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_13_FASTLY_TOML) {
+        Err(e) => {
+            // We can't assert on the whole error message here as the next part of the string is platform-specific
+            // where it says that it cannot find the file.
+            assert!(e
+                .to_string()
+                .contains("invalid configuration for 'store_one'"));
+        }
+        _ => panic!(),
+    }
+
+    // Not a valid JSON file
+    const BAD_14_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/kv-store.txt", format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_14_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': The file is of the wrong format. The file is expected to contain a single JSON Object.", &e.to_string()),
+        _ => panic!(),
     }
 
     Ok(())

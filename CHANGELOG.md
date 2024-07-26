@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add support for JSON files in local_server.kv_stores ([#365](https://github.com/fastly/Viceroy/pull/365))
+
 ## 0.10.2 (2024-07-22)
 
 - Add support for supplying client certificates in fastly.toml, through the use of the
