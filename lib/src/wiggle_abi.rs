@@ -65,6 +65,7 @@ mod req_impl;
 mod resp_impl;
 mod secret_store_impl;
 mod uap_impl;
+mod vcpu;
 
 // Expand the `.witx` interface definition into a collection of modules. The `types` module will
 // contain all of the `typename`'s defined in the `witx` file, and other modules will export traits

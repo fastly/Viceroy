@@ -12,6 +12,7 @@ use std::future::Future;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use {
@@ -45,6 +46,8 @@ pub struct Session {
     downstream_client_addr: SocketAddr,
     /// The IP address and port that received this session.
     downstream_server_addr: SocketAddr,
+    /// The amount of time we've spent on this session in ms.
+    pub active_cpu_time_us: Arc<AtomicU64>,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
     downstream_req_handle: RequestHandle,
@@ -143,6 +146,7 @@ impl Session {
         resp_sender: Sender<Response<Body>>,
         server_addr: SocketAddr,
         client_addr: SocketAddr,
+        active_cpu_time_us: Arc<AtomicU64>,
         ctx: &ExecuteCtx,
         backends: Arc<Backends>,
         device_detection: Arc<DeviceDetection>,
@@ -168,6 +172,7 @@ impl Session {
             downstream_req_handle,
             downstream_req_body_handle,
             downstream_req_original_headers,
+            active_cpu_time_us,
             async_items,
             req_parts,
             resp_parts: PrimaryMap::new(),

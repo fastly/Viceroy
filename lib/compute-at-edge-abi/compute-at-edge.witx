@@ -958,3 +958,9 @@
         (result $err (expected (error $fastly_status)))
     )
 )
+
+(module $fastly_vcpu
+    (@interface func (export "get_vcpu_ms")
+        (result $err (expected $vcpu_ms (error $fastly_status)))
+    )
+)    

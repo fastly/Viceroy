@@ -25,3 +25,4 @@ mod upstream;
 mod upstream_async;
 mod upstream_dynamic;
 mod upstream_streaming;
+mod vcpu_time;
