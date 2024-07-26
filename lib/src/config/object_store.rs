@@ -29,7 +29,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
             let file_format = items
                 .as_table()
                 .and_then(|table| table.get("format"))
-                .and_then(|file| file.as_str());
+                .and_then(|format| format.as_str());
 
             let items: Vec<toml::Value> = match (file_path, file_format) {
                 (Some(file_path), Some(file_type)) => {
