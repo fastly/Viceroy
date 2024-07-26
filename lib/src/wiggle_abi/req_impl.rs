@@ -308,23 +308,25 @@ impl FastlyHttpReq for Session {
         region_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        const REGION_NONE: &[u8] = b"none";
-        const REGION_NONE_LEN: u32 = 4;
+        let region = Session::downstream_compliance_region(self);
+        let region_len = region.len();
 
-        if region_max_len < REGION_NONE_LEN {
-            // Let the guest know how much we want to write.
-            memory.write(nwritten_out, REGION_NONE_LEN)?;
+        match u32::try_from(region_len) {
+            Ok(region_len) if region_len <= region_max_len => {
+                memory.copy_from_slice(region, region_out.as_array(region_max_len))?;
+                memory.write(nwritten_out, region_len.try_into().unwrap_or(0))?;
 
-            return Err(Error::BufferLengthError {
-                buf: "region_out",
-                len: "region_max_len",
-            });
+                Ok(())
+            }
+            too_large => {
+                memory.write(nwritten_out, too_large.unwrap_or(0))?;
+
+                Err(Error::BufferLengthError {
+                    buf: "region_out",
+                    len: "region_max_len",
+                })
+            }
         }
-
-        memory.copy_from_slice(REGION_NONE, region_out.as_array(region_max_len))?;
-        memory.write(nwritten_out, REGION_NONE_LEN)?;
-
-        Ok(())
     }
 
     fn framing_headers_mode_set(
