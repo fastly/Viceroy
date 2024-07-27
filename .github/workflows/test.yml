@@ -11,6 +11,9 @@ jobs:
       matrix:
         platform: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, windows-2022, macos-12, macos-13, macos-14]
     runs-on: ${{ matrix.platform }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -27,13 +30,10 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-          test-fixtures/target/
+          ~/.cargo/registry
         key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.5
     - name: Install rustfmt
       run: rustup component add rustfmt
       shell: bash
@@ -54,6 +54,9 @@ jobs:
       matrix:
         platform: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, windows-2022, macos-12, macos-13, macos-14]
     runs-on: ${{ matrix.platform }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -70,13 +73,10 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          cli/tests/trap-test/target/
-          test-fixtures/target/
+          ~/.cargo/registry
         key: ${{ runner.os }}-cargo-trap-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.5
     - name: trap-test
       run: make trap-test-ci
       shell: bash
