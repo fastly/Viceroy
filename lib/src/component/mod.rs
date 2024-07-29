@@ -59,6 +59,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::types::add_to_linker(linker, |x| x.session())?;
     fastly::api::uap::add_to_linker(linker, |x| x.session())?;
     fastly::api::config_store::add_to_linker(linker, |x| x.session())?;
+    fastly::api::vcpu::add_to_linker(linker, |x| x.session())?;
 
     Ok(())
 }
@@ -83,3 +84,4 @@ pub mod purge;
 pub mod secret_store;
 pub mod types;
 pub mod uap;
+pub mod vcpu;
