@@ -39,6 +39,8 @@ use {
     tokio::sync::oneshot::Sender,
 };
 
+const REGION_NONE: &[u8] = b"none";
+
 /// Data specific to an individual request, including any host-side
 /// allocations on behalf of the guest processing the request.
 pub struct Session {
@@ -48,6 +50,11 @@ pub struct Session {
     downstream_server_addr: SocketAddr,
     /// The amount of time we've spent on this session in ms.
     pub active_cpu_time_us: Arc<AtomicU64>,
+    /// The compliance region that this request was received in.
+    ///
+    /// For now this is just always `"none"`, but we place the field in the session
+    /// to make it easier to implement custom configuration values later on.
+    downstream_compliance_region: Vec<u8>,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
     downstream_req_handle: RequestHandle,
@@ -169,6 +176,7 @@ impl Session {
         Session {
             downstream_server_addr: server_addr,
             downstream_client_addr: client_addr,
+            downstream_compliance_region: Vec::from(REGION_NONE),
             downstream_req_handle,
             downstream_req_body_handle,
             downstream_req_original_headers,
@@ -207,6 +215,11 @@ impl Session {
     /// Retrieve the IP address the downstream client connected to for this session.
     pub fn downstream_server_ip(&self) -> IpAddr {
         self.downstream_server_addr.ip()
+    }
+
+    /// Retrieve the compliance region that received the request for this session.
+    pub fn downstream_compliance_region(&self) -> &[u8] {
+        self.downstream_compliance_region.as_slice()
     }
 
     /// Retrieve the handle corresponding to the downstream request.

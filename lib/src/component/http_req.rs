@@ -810,9 +810,15 @@ impl http_req::Host for Session {
 
     async fn downstream_compliance_region(
         &mut self,
-        _max_len: u64,
+        region_max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS JA4 hash").into())
+        let region = Session::downstream_compliance_region(self);
+        let region_len = region.len();
+
+        match u64::try_from(region_len) {
+            Ok(region_len) if region_len <= region_max_len => Ok(region.into()),
+            too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
+        }
     }
 
     async fn original_header_names_get(

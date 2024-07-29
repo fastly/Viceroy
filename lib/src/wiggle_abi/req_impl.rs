@@ -300,6 +300,35 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Client TLS JA4 hash"))
     }
 
+    fn downstream_compliance_region(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        // Must be a 16-byte array:
+        region_out: GuestPtr<u8>,
+        region_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let region = Session::downstream_compliance_region(self);
+        let region_len = region.len();
+
+        match u32::try_from(region_len) {
+            Ok(region_len) if region_len <= region_max_len => {
+                memory.copy_from_slice(region, region_out.as_array(region_max_len))?;
+                memory.write(nwritten_out, region_len.try_into().unwrap_or(0))?;
+
+                Ok(())
+            }
+            too_large => {
+                memory.write(nwritten_out, too_large.unwrap_or(0))?;
+
+                Err(Error::BufferLengthError {
+                    buf: "region_out",
+                    len: "region_max_len",
+                })
+            }
+        }
+    }
+
     fn framing_headers_mode_set(
         &mut self,
         _memory: &mut GuestMemory<'_>,
