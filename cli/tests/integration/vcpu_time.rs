@@ -27,4 +27,3 @@ viceroy_test!(vcpu_time_getter_works, |is_component| {
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
 });
-

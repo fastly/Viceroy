@@ -2346,6 +2346,7 @@ dependencies = [
  "hyper",
  "itertools 0.10.5",
  "lazy_static",
+ "pin-project",
  "regex",
  "rustls",
  "rustls-native-certs",

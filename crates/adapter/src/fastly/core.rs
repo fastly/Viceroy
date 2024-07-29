@@ -275,12 +275,13 @@ pub mod fastly_vcpu {
     pub fn get_vcpu_ms(vcpu_time_ms_out: *mut u64) -> FastlyStatus {
         match crate::bindings::fastly::api::vcpu::get_vcpu_ms() {
             Ok(time) => {
-                unsafe { *vcpu_time_ms_out = time; };
+                unsafe {
+                    *vcpu_time_ms_out = time;
+                };
                 FastlyStatus::OK
             }
 
-            Err(e) =>
-                e.into(),
+            Err(e) => e.into(),
         }
     }
 }
