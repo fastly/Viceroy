@@ -5,7 +5,7 @@ use hex_literal::hex;
 use sha2::{Sha512, Digest};
 use std::time::{Duration, Instant};
 
-#[link(wasm_import_module = "fastly_vcpu")]
+#[link(wasm_import_module = "fastly_compute_runtime")]
 extern "C" {
     #[link_name = "get_vcpu_ms"]
     pub fn get_vcpu_ms(ms_out: *mut u64) -> FastlyStatus;

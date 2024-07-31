@@ -59,7 +59,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::types::add_to_linker(linker, |x| x.session())?;
     fastly::api::uap::add_to_linker(linker, |x| x.session())?;
     fastly::api::config_store::add_to_linker(linker, |x| x.session())?;
-    fastly::api::vcpu::add_to_linker(linker, |x| x.session())?;
+    fastly::api::compute_runtime::add_to_linker(linker, |x| x.session())?;
 
     Ok(())
 }
@@ -67,6 +67,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
 pub mod async_io;
 pub mod backend;
 pub mod cache;
+pub mod compute_runtime;
 pub mod config_store;
 pub mod device_detection;
 pub mod dictionary;
@@ -84,4 +85,3 @@ pub mod purge;
 pub mod secret_store;
 pub mod types;
 pub mod uap;
-pub mod vcpu;

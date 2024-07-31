@@ -966,7 +966,7 @@
     )
 )
 
-(module $fastly_vcpu
+(module $fastly_compute_runtime
     (@interface func (export "get_vcpu_ms")
         (result $err (expected $vcpu_ms (error $fastly_status)))
     )

@@ -51,6 +51,7 @@ macro_rules! multi_value_result {
 mod backend_impl;
 mod body_impl;
 mod cache;
+mod compute_runtime;
 mod config_store;
 mod device_detection_impl;
 mod dictionary_impl;
@@ -65,7 +66,6 @@ mod req_impl;
 mod resp_impl;
 mod secret_store_impl;
 mod uap_impl;
-mod vcpu;
 
 // Expand the `.witx` interface definition into a collection of modules. The `types` module will
 // contain all of the `typename`'s defined in the `witx` file, and other modules will export traits
