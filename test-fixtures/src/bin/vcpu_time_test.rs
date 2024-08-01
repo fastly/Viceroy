@@ -3,7 +3,7 @@ use fastly::{Error, Request, Response};
 use fastly_shared::FastlyStatus;
 use hex_literal::hex;
 use sha2::{Sha512, Digest};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[link(wasm_import_module = "fastly_compute_runtime")]
 extern "C" {
@@ -62,8 +62,8 @@ d41a57a4e18ffd2a07a452cd8175b8f5a4868dd
 fn main() -> Result<(), Error> {
     let client_req = Request::from_client();
 
-    test_that_waiting_for_servers_increases_only_wall_time(client_req);
-    test_that_computing_factorial_increases_vcpu_time();
+    test_that_waiting_for_servers_increases_only_wall_time(client_req)?;
+    test_that_computing_factorial_increases_vcpu_time()?;
 
     Response::from_status(200).send_to_client();
     Ok(())
