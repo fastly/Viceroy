@@ -1086,6 +1086,14 @@ interface reactor {
   serve: func(req: request-handle, body: body-handle) -> result;
 }
 
+interface compute-runtime {
+  use types.{error};
+
+  type vcpu-ms = u64;
+
+  get-vcpu-ms: func() -> result<vcpu-ms, error>;
+}
+
 world compute {
     import wasi:clocks/wall-clock@0.2.0;
     import wasi:clocks/monotonic-clock@0.2.0;
@@ -1101,6 +1109,7 @@ world compute {
     import async-io;
     import backend;
     import cache;
+    import compute-runtime;
     import dictionary;
     import geo;
     import device-detection;

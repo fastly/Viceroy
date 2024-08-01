@@ -18,13 +18,19 @@ use {
         upstream::TlsConfig,
         Error,
     },
+    futures::{
+        task::{Context, Poll},
+        Future,
+    },
     hyper::{Request, Response},
+    pin_project::pin_project,
     std::{
         collections::HashSet,
         fs,
         io::Write,
         net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
+        pin::Pin,
         sync::atomic::{AtomicBool, AtomicU64, Ordering},
         sync::{Arc, Mutex},
         thread::{self, JoinHandle},
@@ -365,13 +371,22 @@ impl ExecuteCtx {
         let req_id = self
             .next_req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
-        let guest_handle = tokio::task::spawn(
-            self.run_guest(req, req_id, sender, local, remote)
-                .instrument(info_span!("request", id = req_id)),
-        );
+        let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
+            active_cpu_time_us.clone(),
+            self.run_guest(
+                req,
+                req_id,
+                sender,
+                local,
+                remote,
+                active_cpu_time_us.clone(),
+            )
+            .instrument(info_span!("request", id = req_id)),
+        ));
 
         let resp = match receiver.await {
             Ok(resp) => (resp, None),
@@ -428,6 +443,7 @@ impl ExecuteCtx {
         sender: Sender<Response<Body>>,
         local: SocketAddr,
         remote: SocketAddr,
+        active_cpu_time_us: Arc<AtomicU64>,
     ) -> Result<(), ExecutionError> {
         info!("handling request {} {}", req.method(), req.uri());
         let start_timestamp = Instant::now();
@@ -437,6 +453,7 @@ impl ExecuteCtx {
             sender,
             local,
             remote,
+            active_cpu_time_us,
             &self,
             self.backends.clone(),
             self.device_detection.clone(),
@@ -586,6 +603,7 @@ impl ExecuteCtx {
         let (sender, receiver) = oneshot::channel();
         let local = (Ipv4Addr::LOCALHOST, 80).into();
         let remote = (Ipv4Addr::LOCALHOST, 0).into();
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         let session = Session::new(
             req_id,
@@ -593,6 +611,7 @@ impl ExecuteCtx {
             sender,
             local,
             remote,
+            active_cpu_time_us.clone(),
             &self,
             self.backends.clone(),
             self.device_detection.clone(),
@@ -637,7 +656,8 @@ impl ExecuteCtx {
             .map_err(ExecutionError::Typechecking)?;
 
         // Invoke the entrypoint function and collect its exit code
-        let result = main_func.call_async(&mut store, ()).await;
+        let result =
+            CpuTimeTracking::new(active_cpu_time_us, main_func.call_async(&mut store, ())).await;
 
         // If we collected a profile, write it to the file
         write_profile(&mut store, self.guest_profile_path.as_ref().as_ref());
@@ -709,4 +729,33 @@ fn configure_wasmtime(
     }
 
     config
+}
+
+#[pin_project]
+struct CpuTimeTracking<F> {
+    #[pin]
+    future: F,
+    time_spent: Arc<AtomicU64>,
+}
+
+impl<F> CpuTimeTracking<F> {
+    fn new(time_spent: Arc<AtomicU64>, future: F) -> Self {
+        CpuTimeTracking { future, time_spent }
+    }
+}
+
+impl<E, F: Future<Output = Result<(), E>>> Future for CpuTimeTracking<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let me = self.project();
+
+        let start = Instant::now();
+        let result = me.future.poll(cx);
+        // 2^64 microseconds is over half a million years, so I'm not terribly
+        // worried about this cast.
+        let runtime = start.elapsed().as_micros() as u64;
+        let _ = me.time_spent.fetch_add(runtime, Ordering::SeqCst);
+        result
+    }
 }

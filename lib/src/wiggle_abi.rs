@@ -51,6 +51,7 @@ macro_rules! multi_value_result {
 mod backend_impl;
 mod body_impl;
 mod cache;
+mod compute_runtime;
 mod config_store;
 mod device_detection_impl;
 mod dictionary_impl;

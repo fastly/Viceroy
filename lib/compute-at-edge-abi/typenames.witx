@@ -358,3 +358,4 @@
 (typename $has u32)
 
 (typename $body_length u64)
+(typename $vcpu_ms u64)
