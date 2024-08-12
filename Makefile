@@ -1,6 +1,7 @@
 # Default to using regular `cargo`. CI targets may override this.
 VICEROY_CARGO=cargo
 
+
 .PHONY: format
 format:
 	$(VICEROY_CARGO) fmt
