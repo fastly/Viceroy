@@ -268,6 +268,24 @@ pub mod fastly_abi {
     }
 }
 
+pub mod fastly_compute_runtime {
+    use super::*;
+
+    #[export_name = "fastly_compute_runtime#get_vcpu_ms"]
+    pub fn get_vcpu_ms(vcpu_time_ms_out: *mut u64) -> FastlyStatus {
+        match crate::bindings::fastly::api::compute_runtime::get_vcpu_ms() {
+            Ok(time) => {
+                unsafe {
+                    *vcpu_time_ms_out = time;
+                };
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+}
+
 pub mod fastly_uap {
     use super::*;
     use crate::bindings::fastly::api::uap;
