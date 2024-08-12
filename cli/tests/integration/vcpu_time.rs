@@ -13,7 +13,7 @@ viceroy_test!(vcpu_time_getter_works, |is_component| {
     let resp = Test::using_fixture("vcpu_time_test.wasm")
         .adapt_component(is_component)
         .backend("slow-server", "/", None, |_| {
-            std::thread::sleep(std::time::Duration::from_millis(3000));
+            std::thread::sleep(std::time::Duration::from_millis(4000));
             Response::builder()
                 .status(StatusCode::OK)
                 .body(vec![])
