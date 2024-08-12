@@ -1,4 +1,4 @@
-use super::fastly::api::{types, compute_runtime};
+use super::fastly::api::{compute_runtime, types};
 use crate::session::Session;
 use std::sync::atomic::Ordering;
 
