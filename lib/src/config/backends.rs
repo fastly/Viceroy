@@ -128,6 +128,10 @@ mod deserialization {
                 .transpose()?
                 .unwrap_or(true);
 
+            let client_cert = toml
+                .remove("client_certificate")
+                .map(TryFrom::try_from)
+                .transpose()?;
             let ca_certs = toml
                 .remove("ca_certificate")
                 .map(parse_ca_cert_section)
@@ -152,9 +156,8 @@ mod deserialization {
                 override_host,
                 cert_host,
                 use_sni,
+                client_cert,
                 grpc,
-                // NOTE: Update when we support client certs in static backends
-                client_cert: None,
                 ca_certs,
             })
         }

@@ -1,4 +1,7 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use base64::engine::{general_purpose, Engine};
 use hyper::http::response;
 use hyper::server::conn::AddrIncoming;
@@ -127,10 +130,8 @@ fn build_server_tls_config() -> ServerConfig {
         .expect("valid server cert")
 }
 
-#[tokio::test(flavor = "multi_thread")]
-#[serial_test::serial]
-async fn custom_ca_works() -> TestResult {
-    let test = Test::using_fixture("mutual-tls.wasm");
+viceroy_test!(custom_ca_works, |is_component| {
+    let test = Test::using_fixture("mutual-tls.wasm").adapt_component(is_component);
     let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
     let incoming = AddrIncoming::bind(&server_addr).expect("bind");
     let bound_port = incoming.local_addr().port();
@@ -197,17 +198,16 @@ async fn custom_ca_works() -> TestResult {
         StatusCode::SERVICE_UNAVAILABLE
     );
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-#[serial_test::serial]
-async fn client_certs_work() -> TestResult {
+viceroy_test!(client_certs_work, |is_component| {
     // Set up the test harness
     std::env::set_var(
         "SSL_CERT_FILE",
         concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem"),
     );
-    let test = Test::using_fixture("mutual-tls.wasm");
+    let test = Test::using_fixture("mutual-tls.wasm").adapt_component(is_component);
+
     let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
     let incoming = AddrIncoming::bind(&server_addr).expect("bind");
     let bound_port = incoming.local_addr().port();
@@ -261,4 +261,4 @@ async fn client_certs_work() -> TestResult {
     std::env::remove_var("SSL_CERT_FILE");
 
     Ok(())
-}
+});

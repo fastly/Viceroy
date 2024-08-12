@@ -1,16 +1,16 @@
-//! A guest program to test that dictionary lookups work properly.
+//! A guest program to test that config-store lookups work properly.
 
 use fastly_shared::FastlyStatus;
 
 fn main() {
     let animals = unsafe {
-        let mut dict_handle = fastly_shared::INVALID_DICTIONARY_HANDLE;
-        let res = fastly_sys::fastly_dictionary::open(
+        let mut dict_handle = fastly_shared::INVALID_CONFIG_STORE_HANDLE;
+        let res = fastly_sys::fastly_config_store::open(
             "animals".as_ptr(),
             "animals".len(),
             &mut dict_handle as *mut _,
         );
-        assert_eq!(res, FastlyStatus::OK, "Failed to open dictionary");
+        assert_eq!(res, FastlyStatus::OK, "Failed to open config-store");
         dict_handle
     };
 
@@ -25,7 +25,7 @@ fn main() {
     let get = |key: &str, buf_len: usize| unsafe {
         let mut value = Vec::with_capacity(buf_len);
         let mut nwritten = 0;
-        let res = fastly_sys::fastly_dictionary::get(
+        let res = fastly_sys::fastly_config_store::get(
             animals,
             key.as_ptr(),
             key.len(),

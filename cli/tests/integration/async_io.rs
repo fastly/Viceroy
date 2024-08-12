@@ -1,4 +1,7 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::{body::HttpBody, Body, Request, Response, StatusCode};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -13,8 +16,7 @@ use tokio::sync::Barrier;
 //
 // https://github.com/fastly/Viceroy/issues/207 tracks the broader issue.
 #[cfg(target_family = "unix")]
-#[tokio::test(flavor = "multi_thread")]
-async fn async_io_methods() -> TestResult {
+viceroy_test!(async_io_methods, |is_component| {
     let request_count = Arc::new(AtomicUsize::new(0));
     let req_count_1 = request_count.clone();
     let req_count_2 = request_count.clone();
@@ -34,6 +36,7 @@ async fn async_io_methods() -> TestResult {
     // total and will behave differently depending on which request # it is
     // processing.
     let test = Test::using_fixture("async_io.wasm")
+        .adapt_component(is_component)
         .async_backend("Simple", "/", None, move |req: Request<Body>| {
             assert_eq!(req.headers()["Host"], "simple.org");
             let req_count_1 = req_count_1.clone();
@@ -206,4 +209,4 @@ async fn async_io_methods() -> TestResult {
     assert_eq!(resp.headers()["Ready-Index"], "timeout");
 
     Ok(())
-}
+});

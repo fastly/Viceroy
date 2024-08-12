@@ -9,7 +9,7 @@ use {
         },
     },
     std::convert::TryFrom,
-    wiggle::GuestPtr,
+    wiggle::{GuestMemory, GuestPtr},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -45,8 +45,12 @@ impl From<&SecretStoreError> for FastlyStatus {
 
 #[wiggle::async_trait]
 impl FastlySecretStore for Session {
-    fn open(&mut self, name: &GuestPtr<str>) -> Result<SecretStoreHandle, Error> {
-        let name = name.as_str()?.ok_or(Error::SharedMemory)?;
+    fn open(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        name: GuestPtr<str>,
+    ) -> Result<SecretStoreHandle, Error> {
+        let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
         self.secret_store_handle(&name)
             .ok_or(Error::SecretStoreError(
                 SecretStoreError::UnknownSecretStore(name.to_string()),
@@ -55,15 +59,16 @@ impl FastlySecretStore for Session {
 
     fn get(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         secret_store_handle: SecretStoreHandle,
-        secret_name: &GuestPtr<str>,
+        secret_name: GuestPtr<str>,
     ) -> Result<SecretHandle, Error> {
         let store_name =
             self.secret_store_name(secret_store_handle)
                 .ok_or(Error::SecretStoreError(
                     SecretStoreError::InvalidSecretStoreHandle(secret_store_handle),
                 ))?;
-        let secret_name = secret_name.as_str()?.ok_or(Error::SharedMemory)?;
+        let secret_name = memory.as_str(secret_name)?.ok_or(Error::SharedMemory)?;
         self.secret_handle(store_name.as_str(), &secret_name)
             .ok_or(Error::SecretStoreError(SecretStoreError::UnknownSecret(
                 secret_name.to_string(),
@@ -72,10 +77,11 @@ impl FastlySecretStore for Session {
 
     fn plaintext(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         secret_handle: SecretHandle,
-        plaintext_buf: &GuestPtr<u8>,
+        plaintext_buf: GuestPtr<u8>,
         plaintext_max_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
         let lookup = self
             .secret_lookup(secret_handle)
@@ -106,7 +112,7 @@ impl FastlySecretStore for Session {
             // Write out the number of bytes necessary to fit the
             // plaintext, so client implementations can adapt their
             // buffer sizes.
-            nwritten_out.write(plaintext.len() as u32)?;
+            memory.write(nwritten_out, plaintext.len() as u32)?;
             return Err(Error::BufferLengthError {
                 buf: "plaintext_buf",
                 len: "plaintext_max_len",
@@ -115,20 +121,19 @@ impl FastlySecretStore for Session {
         let plaintext_len = u32::try_from(plaintext.len())
             .expect("smaller than plaintext_max_len means it must fit");
 
-        plaintext_buf
-            .as_array(plaintext_len)
-            .copy_from_slice(plaintext)?;
-        nwritten_out.write(plaintext_len)?;
+        memory.copy_from_slice(plaintext, plaintext_buf.as_array(plaintext_len))?;
+        memory.write(nwritten_out, plaintext_len)?;
 
         Ok(())
     }
 
     fn from_bytes(
         &mut self,
-        plaintext_buf: &GuestPtr<'_, u8>,
+        memory: &mut GuestMemory<'_>,
+        plaintext_buf: GuestPtr<u8>,
         plaintext_len: u32,
     ) -> Result<SecretHandle, Error> {
-        let plaintext = plaintext_buf.as_array(plaintext_len).to_vec()?;
+        let plaintext = memory.to_vec(plaintext_buf.as_array(plaintext_len))?;
         Ok(self.add_secret(plaintext))
     }
 }

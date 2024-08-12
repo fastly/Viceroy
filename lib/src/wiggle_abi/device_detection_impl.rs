@@ -3,7 +3,7 @@
 use crate::error::Error;
 use crate::wiggle_abi::{fastly_device_detection::FastlyDeviceDetection, FastlyStatus, Session};
 use std::convert::TryFrom;
-use wiggle::GuestPtr;
+use wiggle::{GuestMemory, GuestPtr};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceDetectionError {
@@ -25,15 +25,15 @@ impl DeviceDetectionError {
 impl FastlyDeviceDetection for Session {
     fn lookup(
         &mut self,
-        user_agent: &GuestPtr<str>,
-        buf: &GuestPtr<u8>,
+        memory: &mut GuestMemory<'_>,
+        user_agent: GuestPtr<str>,
+        buf: GuestPtr<u8>,
         buf_len: u32,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
         let result = {
-            let user_agent_slice = user_agent
-                .as_bytes()
-                .as_slice()?
+            let user_agent_slice = memory
+                .as_slice(user_agent.as_bytes())?
                 .ok_or(Error::SharedMemory)?;
             let user_agent_str = std::str::from_utf8(&user_agent_slice)?;
 
@@ -44,7 +44,7 @@ impl FastlyDeviceDetection for Session {
         };
 
         if result.len() > buf_len as usize {
-            nwritten_out.write(u32::try_from(result.len()).unwrap_or(0))?;
+            memory.write(nwritten_out, u32::try_from(result.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "device_detection_lookup",
                 len: "device_detection_lookup_max_len",
@@ -54,10 +54,9 @@ impl FastlyDeviceDetection for Session {
         let result_len =
             u32::try_from(result.len()).expect("smaller than buf_len means it must fit");
 
-        buf.as_array(result_len)
-            .copy_from_slice(result.as_bytes())?;
+        memory.copy_from_slice(result.as_bytes(), buf.as_array(result_len))?;
 
-        nwritten_out.write(result_len)?;
+        memory.write(nwritten_out, result_len)?;
         Ok(())
     }
 }

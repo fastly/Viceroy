@@ -1,8 +1,13 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 
-#[tokio::test]
-async fn env_vars_are_set() -> TestResult {
-    let resp = Test::using_fixture("env-vars.wasm").against_empty().await?;
+viceroy_test!(env_vars_are_set, |is_component| {
+    let resp = Test::using_fixture("env-vars.wasm")
+        .adapt_component(is_component)
+        .against_empty()
+        .await?;
     assert!(resp.status().is_success());
     Ok(())
-}
+});

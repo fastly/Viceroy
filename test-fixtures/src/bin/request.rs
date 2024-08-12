@@ -235,11 +235,13 @@ fn test_header_value_get_and_insert() {
 
         // Test that an attempt to get a too-long header name fails.
         nwritten = 0;
+        let long_header =
+            Vec::from_iter(hdr_name.iter().cycle().take(HEADER_LEN_TOO_LONG).copied());
         assert_eq!(
             header_value_get(
                 req,
-                hdr_name.as_ptr(),
-                HEADER_LEN_TOO_LONG,
+                long_header.as_ptr(),
+                long_header.len(),
                 good_buffer.as_mut_ptr(),
                 good_max,
                 &mut nwritten
@@ -252,8 +254,8 @@ fn test_header_value_get_and_insert() {
         assert_eq!(
             header_insert(
                 req,
-                hdr_name.as_ptr(),
-                HEADER_LEN_TOO_LONG,
+                long_header.as_ptr(),
+                long_header.len(),
                 hdr_val.as_ptr(),
                 hdr_val.len(),
             ),
@@ -299,11 +301,13 @@ fn test_header_append_and_remove() {
         );
 
         // Test that an attempt to append a too-long header name fails.
+        let long_header =
+            Vec::from_iter(hdr_name.iter().cycle().take(HEADER_LEN_TOO_LONG).copied());
         assert_eq!(
             header_append(
                 req,
-                hdr_name.as_ptr(),
-                HEADER_LEN_TOO_LONG,
+                long_header.as_ptr(),
+                long_header.len(),
                 hdr_val.as_ptr(),
                 hdr_val.len(),
             ),
@@ -312,7 +316,7 @@ fn test_header_append_and_remove() {
 
         // Test that an attempt to remove a too-long header name fails.
         assert_eq!(
-            header_remove(req, hdr_name.as_ptr(), HEADER_LEN_TOO_LONG,),
+            header_remove(req, long_header.as_ptr(), long_header.len()),
             FastlyStatus::INVAL
         );
 

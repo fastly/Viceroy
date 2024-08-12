@@ -1,8 +1,10 @@
-use crate::common::{Test, TestResult};
+use crate::{
+    common::{Test, TestResult},
+    viceroy_test,
+};
 use hyper::{body::to_bytes, StatusCode};
 
-#[tokio::test(flavor = "multi_thread")]
-async fn json_device_detection_lookup_works() -> TestResult {
+viceroy_test!(json_device_detection_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "json-device-detection-lookup"
         description = "json device detection lookup test"
@@ -15,6 +17,7 @@ async fn json_device_detection_lookup_works() -> TestResult {
     "#;
 
     let resp = Test::using_fixture("device-detection-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -27,10 +30,9 @@ async fn json_device_detection_lookup_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});
 
-#[tokio::test(flavor = "multi_thread")]
-async fn inline_toml_device_detection_lookup_works() -> TestResult {
+viceroy_test!(inline_toml_device_detection_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
         name = "inline-toml-device-detection-lookup"
         description = "inline toml device detection lookup test"
@@ -51,6 +53,7 @@ async fn inline_toml_device_detection_lookup_works() -> TestResult {
         "#;
 
     let resp = Test::using_fixture("device-detection-lookup.wasm")
+        .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
         .against_empty()
         .await?;
@@ -63,4 +66,4 @@ async fn inline_toml_device_detection_lookup_works() -> TestResult {
         .is_empty());
 
     Ok(())
-}
+});

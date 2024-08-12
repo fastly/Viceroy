@@ -11,7 +11,7 @@ use {
     std::{
         convert::Infallible,
         future::Future,
-        net::{IpAddr, SocketAddr},
+        net::SocketAddr,
         pin::Pin,
         task::{self, Poll},
     },
@@ -54,7 +54,7 @@ impl ViceroyService {
     }
 
     /// An internal helper, create a [`RequestService`](struct.RequestService.html).
-    fn make_service(&self, remote: IpAddr) -> RequestService {
+    fn make_service(&self, remote: &AddrStream) -> RequestService {
         RequestService::new(self.ctx.clone(), remote)
     }
 
@@ -81,7 +81,7 @@ impl<'addr> Service<&'addr AddrStream> for ViceroyService {
     }
 
     fn call(&mut self, addr: &'addr AddrStream) -> Self::Future {
-        future::ok(self.make_service(addr.remote_addr().ip()))
+        future::ok(self.make_service(addr))
     }
 }
 
@@ -102,13 +102,21 @@ impl<'addr> Service<&'addr AddrStream> for ViceroyService {
 #[derive(Clone)]
 pub struct RequestService {
     ctx: ExecuteCtx,
-    remote_addr: IpAddr,
+    local_addr: SocketAddr,
+    remote_addr: SocketAddr,
 }
 
 impl RequestService {
     /// Create a new request service.
-    fn new(ctx: ExecuteCtx, remote_addr: IpAddr) -> Self {
-        Self { ctx, remote_addr }
+    fn new(ctx: ExecuteCtx, addr: &AddrStream) -> Self {
+        let local_addr = addr.local_addr();
+        let remote_addr = addr.remote_addr();
+
+        Self {
+            ctx,
+            local_addr,
+            remote_addr,
+        }
     }
 }
 
@@ -126,9 +134,14 @@ impl Service<Request<hyper::Body>> for RequestService {
     fn call(&mut self, req: Request<hyper::Body>) -> Self::Future {
         // Request handling currently takes ownership of the context, which is cheaply cloneable.
         let ctx = self.ctx.clone();
+        let local = self.local_addr;
         let remote = self.remote_addr;
 
         // Now, use the execution context to handle the request.
-        Box::pin(async move { ctx.handle_request(req, remote).await.map(|result| result.0) })
+        Box::pin(async move {
+            ctx.handle_request(req, local, remote)
+                .await
+                .map(|result| result.0)
+        })
     }
 }
