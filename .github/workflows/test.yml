@@ -31,7 +31,7 @@ jobs:
       with:
         path: |
           ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.platform }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.5
     - name: Install rustfmt
