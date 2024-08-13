@@ -142,7 +142,11 @@ impl cache::Host for Session {
         .into())
     }
 
-    async fn get_user_metadata(&mut self, _handle: cache::Handle) -> Result<String, types::Error> {
+    async fn get_user_metadata(
+        &mut self,
+        _handle: cache::Handle,
+        _max_len: u64,
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
