@@ -48,7 +48,7 @@ impl backend::Host for Session {
         &mut self,
         backend: String,
         max_len: u64,
-    ) -> Result<Option<String>, types::Error> {
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         let backend = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         if let Some(host) = backend.override_host.as_ref() {
             let host = host.to_str()?;
@@ -61,7 +61,7 @@ impl backend::Host for Session {
                 .into());
             }
 
-            Ok(Some(String::from(host)))
+            Ok(Some(host.as_bytes().to_owned()))
         } else {
             Ok(None)
         }
@@ -116,7 +116,7 @@ impl backend::Host for Session {
     async fn get_ssl_min_version(
         &mut self,
         backend: String,
-    ) -> Result<http_types::TlsVersion, types::Error> {
+    ) -> Result<Option<http_types::TlsVersion>, types::Error> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         // health checks are not enabled in Viceroy :(
@@ -129,7 +129,7 @@ impl backend::Host for Session {
     async fn get_ssl_max_version(
         &mut self,
         backend: String,
-    ) -> Result<http_types::TlsVersion, types::Error> {
+    ) -> Result<Option<http_types::TlsVersion>, types::Error> {
         // just doing this to get a different error if the backend doesn't exist
         let _ = self.backend(&backend).ok_or(Error::InvalidArgument)?;
         // health checks are not enabled in Viceroy :(

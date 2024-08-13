@@ -1,5 +1,5 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle};
-use crate::{alloc_result, TrappingUnwrap};
+use crate::{alloc_result_opt, TrappingUnwrap};
 
 pub type CacheHandle = u32;
 
@@ -35,6 +35,7 @@ pub struct CacheWriteOptions {
     pub length: CacheObjectLength,
     pub user_metadata_ptr: *const u8,
     pub user_metadata_len: usize,
+    pub edge_max_age_ns: u64,
 }
 
 bitflags::bitflags! {
@@ -198,6 +199,7 @@ mod cache {
             surrogate_keys: make_vec!(surrogate_keys_ptr, surrogate_keys_len),
             length: (*options).length,
             user_metadata: make_vec!(user_metadata_ptr, user_metadata_len),
+            edge_max_age_ns: (*options).edge_max_age_ns,
         }
     }
 
@@ -345,11 +347,16 @@ mod cache {
         user_metadata_out_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(
+        alloc_result_opt!(
             user_metadata_out_ptr,
             user_metadata_out_len,
             nwritten_out,
-            { cache::get_user_metadata(handle) }
+            {
+                cache::get_user_metadata(
+                    handle,
+                    u64::try_from(user_metadata_out_len).trapping_unwrap(),
+                )
+            }
         )
     }
 
