@@ -657,9 +657,9 @@ interface erl {
 }
 
 /*
- * Fastly KV Store
+ * Fastly Object Store
  */
-interface kv-store {
+interface object-store {
 
   use types.{error};
   use http-types.{body-handle};
@@ -709,6 +709,110 @@ interface kv-store {
   pending-delete-wait: func(
     handle: pending-delete-handle,
   ) -> result<_, error>;
+}
+
+/*
+ * Fastly KV Store
+ */
+interface kv-store {
+
+  use types.{error};
+  use http-types.{body-handle};
+
+  type handle = u32;
+  type lookup-handle = u32;
+  type insert-handle = u32;
+  type delete-handle = u32;
+  type list-handle = u32;
+
+  open: func(name: string) -> result<option<handle>, error>;
+
+  lookup: func(
+    store: handle,
+    key: string,
+  ) -> result<body-handle, error>;
+
+  resource lookup-result {
+    body: func() -> body-handle;
+    metadata: func(max-len: u64) -> result<option<list<u8>>, error>;
+    generation: func() -> u32;
+  }
+
+  lookup-wait: func(
+    handle: lookup-handle,
+  ) -> result<option<lookup-result>, error>;
+
+  enum insert-mode {
+    overwrite,
+    add,
+    append,
+    prepend,
+  }
+
+  flags insert-config-options {
+    reserved,
+    background-fetch,
+    if-generation-match,
+    metadata,
+    time-to-live-sec,
+  }
+
+  record insert-config {
+    mode: insert-mode,
+    if-generation-match: u32,
+    metadata: list<u8>,
+    time-to-live-sec: u32,
+  }
+
+  insert: func(
+    store: handle,
+    key: string,
+    body-handle: body-handle,
+    mask: insert-config-options,
+    config: insert-config,
+  ) -> result<insert-handle, error>;
+
+  insert-wait: func(
+    handle: insert-handle,
+  ) -> result<_, error>;
+
+  delete: func(
+    store: handle,
+    key: string,
+  ) -> result<delete-handle, error>;
+
+  delete-wait: func(
+    handle: delete-handle,
+  ) -> result<_, error>;
+
+  enum list-mode {
+    strong,
+    eventual,
+  }
+
+  flags list-config-options {
+    reserved,
+    cursor,
+    limit,
+    prefix,
+  }
+
+  record list-config {
+    mode: list-mode,
+    cursor: list<u8>,
+    limit: u32,
+    prefix: list<u8>,
+  }
+
+  %list: func(
+    store: handle,
+    mask: list-config-options,
+    options: list-config,
+  ) -> result<list-handle, error>;
+
+  list-wait: func(
+    handle: list-handle,
+  ) -> result<body-handle, error>;
 }
 
 /*
@@ -1144,6 +1248,7 @@ world compute {
     import http-resp;
     import log;
     import kv-store;
+    import object-store;
     import purge;
     import secret-store;
     import config-store;
