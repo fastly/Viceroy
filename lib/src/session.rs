@@ -48,7 +48,7 @@ pub struct Session {
     downstream_client_addr: SocketAddr,
     /// The IP address and port that received this session.
     downstream_server_addr: SocketAddr,
-    /// The amount of time we've spent on this session in ms.
+    /// The amount of time we've spent on this session in microseconds.
     pub active_cpu_time_us: Arc<AtomicU64>,
     /// The compliance region that this request was received in.
     ///
