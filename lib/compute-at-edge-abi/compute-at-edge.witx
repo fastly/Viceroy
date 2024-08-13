@@ -242,7 +242,14 @@
          (param $ja4_max_len (@witx usize))
          (param $nwritten_out (@witx pointer (@witx usize)))
          (result $err (expected (error $fastly_status)))
-     )
+    )
+
+    (@interface func (export "downstream_compliance_region")
+         (param $region_out (@witx pointer (@witx char8)))
+         (param $region_max_len (@witx usize))
+         (param $nwritten_out (@witx pointer (@witx usize)))
+         (result $err (expected (error $fastly_status)))
+    )
 
     (@interface func (export "new")
         (result $err (expected $request_handle (error $fastly_status)))
