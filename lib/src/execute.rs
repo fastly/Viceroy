@@ -31,7 +31,7 @@ use {
         time::{Duration, Instant, SystemTime},
     },
     tokio::sync::oneshot::{self, Sender},
-    tracing::{event, info, info_span, warn, Instrument, Level},
+    tracing::{event, info, info_span, warn, Level},
     wasmtime::{
         component::{self, Component},
         Engine, GuestProfiler, InstancePre, Linker, Module, ProfilingStrategy,
@@ -366,12 +366,12 @@ impl ExecuteCtx {
             .next_req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
+        let span = info_span!("request", id = req_id);
+        let _span = span.enter();
+
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
-        let guest_handle = tokio::task::spawn(
-            self.run_guest(req, req_id, sender, local, remote)
-                .instrument(info_span!("request", id = req_id)),
-        );
+        let guest_handle = tokio::task::spawn(self.run_guest(req, req_id, sender, local, remote));
 
         let resp = match receiver.await {
             Ok(resp) => (resp, None),
@@ -396,6 +396,8 @@ impl ExecuteCtx {
                 Err(e) => panic!("failed to run guest: {}", e),
             },
         };
+
+        info!("response status: {:?}", resp.0.status());
 
         Ok(resp)
     }
