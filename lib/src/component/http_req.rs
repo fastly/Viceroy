@@ -850,4 +850,39 @@ impl http_req::Host for Session {
             .try_into()
             .expect("More than u32::MAX headers"))
     }
+
+    async fn inspect(
+        &mut self,
+        ds_req: http_types::RequestHandle,
+        ds_body: http_types::BodyHandle,
+        info_mask: http_req::InspectConfigOptions,
+        info: http_req::InspectConfig,
+        buf_max_len: u64,
+    ) -> Result<String, types::Error> {
+        use http_req::InspectConfigOptions as Flags;
+
+        // Make sure we're given valid handles, even though we won't use them.
+        let _ = self.request_parts(ds_req.into())?;
+        let _ = self.body(ds_body.into())?;
+
+        // For now, corp and workspace arguments are required to actually generate the hostname,
+        // but in the future the lookaside service will be generated using the customer ID, and
+        // it will be okay for them to be unspecified or empty.
+        if !info_mask.contains(Flags::CORP | Flags::WORKSPACE) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        if info.corp.is_empty() || info.workspace.is_empty() {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        // Return the mock NGWAF response.
+        let ngwaf_resp = self.ngwaf_response();
+        let ngwaf_resp_len = ngwaf_resp.len();
+
+        match u64::try_from(ngwaf_resp_len) {
+            Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_max_len => Ok(ngwaf_resp),
+            too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
+        }
+    }
 }

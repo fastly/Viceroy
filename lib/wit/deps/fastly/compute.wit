@@ -289,6 +289,17 @@ interface http-req {
       error: error,
   }
 
+  flags inspect-config-options {
+    reserved,
+    corp,
+    workspace,
+  }
+
+  record inspect-config {
+    corp: string,
+    workspace: string,
+  }
+
   cache-override-set: func(
     h: request-handle,
     tag: cache-override-tag,
@@ -463,6 +474,13 @@ result<pending-request-handle, error>;
     config: dynamic-backend-config,
   ) -> result<_, error>;
 
+  inspect: func(
+    h: request-handle,
+    b: body-handle,
+    options: inspect-config-options,
+    info: inspect-config,
+    max-len: u64
+  ) -> result<string, error>;
 }
 
 /*

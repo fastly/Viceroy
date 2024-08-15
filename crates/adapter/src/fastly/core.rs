@@ -1689,6 +1689,27 @@ pub mod fastly_http_req {
             encodings.into(),
         ))
     }
+
+    #[export_name = "fastly_http_req#inspect"]
+    pub fn inspect(
+        ds_req: RequestHandle,
+        ds_body: BodyHandle,
+        info_mask: crate::bindings::fastly::api::types::InspectInfoMask,
+        info: *mut crate::bindings::fastly::api::types::InspectInfo,
+        buf: *mut u8,
+        buf_len: usize,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(buf, buf_len, nwritten_out, {
+            fastly::api::http_req::inspect(
+                ds_req,
+                ds_body,
+                info_mask,
+                info,
+                u64::try_from(buf_len).trapping_unwrap(),
+            )
+        })
+    }
 }
 
 pub mod fastly_http_resp {
