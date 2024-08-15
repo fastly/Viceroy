@@ -9,7 +9,7 @@ impl device_detection::Host for Session {
         &mut self,
         user_agent: String,
         max_len: u64,
-    ) -> Result<Option<String>, types::Error> {
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         if let Some(result) = self.device_detection_lookup(&user_agent) {
             if result.len() > max_len as usize {
                 return Err(types::Error::BufferLen(
@@ -17,7 +17,7 @@ impl device_detection::Host for Session {
                 ));
             }
 
-            Ok(Some(result))
+            Ok(Some(result.into_bytes()))
         } else {
             Ok(None)
         }

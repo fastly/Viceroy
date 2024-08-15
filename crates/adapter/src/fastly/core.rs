@@ -1364,16 +1364,17 @@ pub mod fastly_http_req {
 
                 FastlyStatus::OK
             }
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
 
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -1574,16 +1575,17 @@ pub mod fastly_http_req {
 
                 FastlyStatus::OK
             },
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *is_done_out = 0;
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -1632,15 +1634,16 @@ pub mod fastly_http_req {
                 }
                 FastlyStatus::OK
             }
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -1662,15 +1665,16 @@ pub mod fastly_http_req {
 
                 FastlyStatus::OK
             }
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -2672,12 +2676,13 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend_ptr, backend_len) };
         match backend::get_ssl_min_version(backend) {
-            Ok(res) => {
+            Ok(Some(res)) => {
                 unsafe {
                     *value = u32::from(res);
                 }
                 FastlyStatus::OK
             }
+            Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
     }
@@ -2690,12 +2695,13 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend_ptr, backend_len) };
         match backend::get_ssl_max_version(backend) {
-            Ok(res) => {
+            Ok(Some(res)) => {
                 unsafe {
                     *value = u32::from(res);
                 }
                 FastlyStatus::OK
             }
+            Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
     }

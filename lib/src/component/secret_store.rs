@@ -33,7 +33,7 @@ impl secret_store::Host for Session {
         &mut self,
         secret: secret_store::SecretHandle,
         max_len: u64,
-    ) -> Result<Option<String>, types::Error> {
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         let lookup = self
             .secret_lookup(secret.into())
             .ok_or(Error::SecretStoreError(
@@ -67,13 +67,13 @@ impl secret_store::Host for Session {
             .into());
         }
 
-        Ok(Some(String::from(std::str::from_utf8(plaintext)?)))
+        Ok(Some(plaintext.to_owned()))
     }
 
     async fn from_bytes(
         &mut self,
-        plaintext: String,
+        plaintext: Vec<u8>,
     ) -> Result<secret_store::SecretHandle, types::Error> {
-        Ok(self.add_secret(Vec::from(plaintext.as_bytes())).into())
+        Ok(self.add_secret(plaintext).into())
     }
 }

@@ -15,7 +15,7 @@ impl config_store::Host for Session {
         store: config_store::Handle,
         name: String,
         max_len: u64,
-    ) -> Result<Option<String>, types::Error> {
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         let dict = &self.dictionary(store.into())?.contents;
 
         let item = if let Some(item) = dict.get(&name) {
@@ -28,6 +28,6 @@ impl config_store::Host for Session {
             return Err(types::Error::BufferLen(u64::try_from(item.len()).unwrap()));
         }
 
-        Ok(Some(item.clone()))
+        Ok(Some(item.as_bytes().to_owned()))
     }
 }

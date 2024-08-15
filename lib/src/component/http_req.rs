@@ -408,7 +408,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         b: http_types::BodyHandle,
         backend_name: String,
-    ) -> Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)> {
+    ) -> Result<http_types::Response, http_req::ErrorWithDetail> {
         // This initial implementation ignores the error detail field
         self.send(h, b, backend_name)
             .await
@@ -478,8 +478,7 @@ impl http_req::Host for Session {
     async fn pending_req_poll_v2(
         &mut self,
         h: http_types::PendingRequestHandle,
-    ) -> Result<Option<http_types::Response>, (Option<http_req::SendErrorDetail>, types::Error)>
-    {
+    ) -> Result<Option<http_types::Response>, http_req::ErrorWithDetail> {
         self.pending_req_poll(h)
             .await
             .map_err(types::Error::with_empty_detail)
@@ -497,7 +496,7 @@ impl http_req::Host for Session {
     async fn pending_req_wait_v2(
         &mut self,
         h: http_types::PendingRequestHandle,
-    ) -> Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)> {
+    ) -> Result<http_types::Response, http_req::ErrorWithDetail> {
         self.pending_req_wait(h)
             .await
             .map_err(types::Error::with_empty_detail)
@@ -550,8 +549,7 @@ impl http_req::Host for Session {
     async fn pending_req_select_v2(
         &mut self,
         h: Vec<http_types::PendingRequestHandle>,
-    ) -> Result<(u32, http_types::Response), (Option<http_req::SendErrorDetail>, types::Error)>
-    {
+    ) -> Result<(u32, http_types::Response), http_req::ErrorWithDetail> {
         self.pending_req_select(h)
             .await
             .map_err(types::Error::with_empty_detail)

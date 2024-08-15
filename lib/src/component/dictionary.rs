@@ -15,7 +15,7 @@ impl dictionary::Host for Session {
         h: dictionary::Handle,
         key: String,
         max_len: u64,
-    ) -> Result<Option<String>, types::Error> {
+    ) -> Result<Option<Vec<u8>>, types::Error> {
         let dict = &self.dictionary(h.into())?.contents;
 
         let item = if let Some(item) = dict.get(&key) {
@@ -28,6 +28,6 @@ impl dictionary::Host for Session {
             return Err(types::Error::BufferLen(u64::try_from(item.len()).unwrap()));
         }
 
-        Ok(Some(item.clone()))
+        Ok(Some(item.as_bytes().to_owned()))
     }
 }

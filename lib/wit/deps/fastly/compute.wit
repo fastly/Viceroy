@@ -284,6 +284,11 @@ interface http-req {
       tls-alert-id: u8,
   }
 
+  record error-with-detail {
+      detail: option<send-error-detail>,
+      error: error,
+  }
+
   cache-override-set: func(
     h: request-handle,
     tag: cache-override-tag,
@@ -391,7 +396,7 @@ interface http-req {
     h: request-handle,
     b: body-handle,
     backend: string,
-  ) -> result<response, tuple<option<send-error-detail>, error>>;
+  ) -> result<response, error-with-detail>;
 
   send-async: func(h: request-handle, b: body-handle, backend: string) ->
 result<pending-request-handle, error>;
@@ -405,13 +410,13 @@ result<pending-request-handle, error>;
 
   pending-req-poll-v2: func(
     h: pending-request-handle,
-  ) -> result<option<response>, tuple<option<send-error-detail>, error>>;
+  ) -> result<option<response>, error-with-detail>;
 
   pending-req-wait: func(h: pending-request-handle) -> result<response, error>;
 
   pending-req-wait-v2: func(
     h: pending-request-handle
-  ) -> result<response, tuple<option<send-error-detail>, error>>;
+  ) -> result<response, error-with-detail>;
 
   pending-req-select: func(
     h: list<pending-request-handle>
@@ -419,7 +424,7 @@ result<pending-request-handle, error>;
 
   pending-req-select-v2: func(
     h: list<pending-request-handle>
-  ) -> result<tuple<u32, response>, tuple<option<send-error-detail>, error>>;
+  ) -> result<tuple<u32, response>, error-with-detail>;
 
   fastly-key-is-valid: func() -> result<bool, error>;
 
@@ -566,7 +571,7 @@ interface dictionary {
     h: handle,
     key: string,
     max-len: u64,
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 }
 
 /*
@@ -575,7 +580,7 @@ interface dictionary {
 interface geo {
   use types.{error};
 
-  lookup: func(addr-octets: list<u8>, max-len: u64) -> result<string, error>;
+  lookup: func(addr-octets: list<u8>, max-len: u64) -> result<list<u8>, error>;
 }
 
 /*
@@ -584,7 +589,7 @@ interface geo {
 interface device-detection {
   use types.{error};
 
-  lookup: func(user-agent: string, max-len: u64) -> result<option<string>, error>;
+  lookup: func(user-agent: string, max-len: u64) -> result<option<list<u8>>, error>;
 }
 
 /*
@@ -707,9 +712,9 @@ interface secret-store {
   plaintext: func(
     secret: secret-handle,
     max-len: u64
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 
-  from-bytes: func(bytes: string) -> result<secret-handle, error>;
+  from-bytes: func(bytes: list<u8>) -> result<secret-handle, error>;
 }
 
 /*
@@ -742,7 +747,7 @@ interface backend {
   get-override-host: func(
     backend: string,
     max-len: u64,
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 
   /// Get the remote TCP port of the backend connection for the request.
   get-port: func(backend: string) -> result<u16, error>;
@@ -760,10 +765,10 @@ interface backend {
   is-ssl: func(backend: string) -> result<bool, error>;
 
   /// Get the minimum SSL version this backend will use.
-  get-ssl-min-version: func(backend: string) -> result<tls-version, error>;
+  get-ssl-min-version: func(backend: string) -> result<option<tls-version>, error>;
 
   /// Get the maximum SSL version this backend will use.
-  get-ssl-max-version: func(backend: string) -> result<tls-version, error>;
+  get-ssl-max-version: func(backend: string) -> result<option<tls-version>, error>;
 }
 
 /*
@@ -868,6 +873,7 @@ interface cache {
     length,
     user-metadata,
     sensitive-data,
+    edge-max-age-ns,
   }
 
   /// Configuration for several hostcalls that write to the cache:
@@ -894,6 +900,7 @@ interface cache {
     surrogate-keys: string,
     length: object-length,
     user-metadata: list<u8>,
+    edge-max-age-ns: duration-ns,
   }
 
   flags get-body-options-mask {
@@ -1020,9 +1027,9 @@ interface cache {
 
   get-state: func(handle: handle) -> result<lookup-state, error>;
 
-  /// Gets the user metadata of the found object, returning the `optional-none` error if there
-  /// was no found object.
-  get-user-metadata: func(handle: handle) -> result<string, error>;
+  /// Gets the user metadata of the found object, returning None if no object
+  /// was found.
+  get-user-metadata: func(handle: handle, max-len: u64) -> result<option<list<u8>>, error>;
 
   /// Gets a range of the found object body, returning the `optional-none` error if there
   /// was no found object.
@@ -1073,7 +1080,7 @@ interface config-store {
     store: handle,
     key: string,
     max-len: u64,
-  ) -> result<option<string>, error>;
+  ) -> result<option<list<u8>>, error>;
 }
 
 interface reactor {

@@ -15,8 +15,11 @@ use {
 };
 
 impl types::Error {
-    pub fn with_empty_detail(self) -> (Option<http_req::SendErrorDetail>, Self) {
-        (None, self)
+    pub fn with_empty_detail(self) -> http_req::ErrorWithDetail {
+        http_req::ErrorWithDetail {
+            detail: None,
+            error: self,
+        }
     }
 }
 
