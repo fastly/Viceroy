@@ -1737,7 +1737,7 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         // NOTE: this is only really safe because we never mutate the vectors -- we only need
         // vectors to satisfy the interface produced by the InspectConfig record,
-        // `register_dynamic_backend` will never mutate the vectors it's given.
+        // `inspect` will never mutate the vectors it's given.
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
                 unsafe {
