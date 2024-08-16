@@ -252,6 +252,41 @@ impl From<BackendConfigOptions> for crate::bindings::fastly::api::http_types::Ba
     }
 }
 
+bitflags::bitflags! {
+    /// `InspectConfigOptions` codings.
+    #[derive(Default)]
+    #[repr(transparent)]
+    pub struct InspectConfigOptions: u32 {
+        const RESERVED = 1 << 0;
+        const CORP = 1 << 1;
+        const WORKSPACE = 1 << 2;
+    }
+}
+
+impl From<InspectConfigOptions> for crate::bindings::fastly::api::http_req::InspectConfigOptions {
+    fn from(options: InspectConfigOptions) -> Self {
+        let mut flags = Self::empty();
+        flags.set(
+            Self::RESERVED,
+            options.contains(InspectConfigOptions::RESERVED),
+        );
+        flags.set(Self::CORP, options.contains(InspectConfigOptions::CORP));
+        flags.set(
+            Self::WORKSPACE,
+            options.contains(InspectConfigOptions::WORKSPACE),
+        );
+        flags
+    }
+}
+
+#[repr(C)]
+pub struct InspectConfig {
+    pub corp: *const u8,
+    pub corp_len: u32,
+    pub workspace: *const u8,
+    pub workspace_len: u32,
+}
+
 pub mod fastly_abi {
     use super::*;
 
@@ -1706,6 +1741,50 @@ pub mod fastly_http_req {
             req_handle,
             encodings.into(),
         ))
+    }
+
+    #[export_name = "fastly_http_req#inspect"]
+    pub fn inspect(
+        ds_req: RequestHandle,
+        ds_body: BodyHandle,
+        info_mask: InspectConfigOptions,
+        info: *mut InspectConfig,
+        buf: *mut u8,
+        buf_len: usize,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        // NOTE: this is only really safe because we never mutate the vectors -- we only need
+        // vectors to satisfy the interface produced by the InspectConfig record,
+        // `inspect` will never mutate the vectors it's given.
+        macro_rules! make_vec {
+            ($ptr_field:ident, $len_field:ident) => {
+                unsafe {
+                    let len = usize::try_from((*info).$len_field).trapping_unwrap();
+                    Vec::from_raw_parts((*info).$ptr_field as *mut _, len, len)
+                }
+            };
+        }
+
+        let info_mask = http_req::InspectConfigOptions::from(info_mask);
+
+        let info = http_req::InspectConfig {
+            corp: make_vec!(corp, corp_len),
+            workspace: make_vec!(workspace, workspace_len),
+        };
+
+        let res = alloc_result!(buf, buf_len, nwritten_out, {
+            fastly::api::http_req::inspect(
+                ds_req,
+                ds_body,
+                info_mask,
+                &info,
+                u64::try_from(buf_len).trapping_unwrap(),
+            )
+        });
+
+        std::mem::forget(info);
+
+        res
     }
 }
 

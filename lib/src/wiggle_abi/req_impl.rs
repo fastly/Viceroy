@@ -18,8 +18,8 @@ use {
             types::{
                 BackendConfigOptions, BodyHandle, CacheOverrideTag, ClientCertVerifyResult,
                 ContentEncodings, DynamicBackendConfig, FramingHeadersMode, HttpVersion,
-                MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, RequestHandle,
-                ResponseHandle,
+                InspectInfo, InspectInfoMask, MultiValueCursor, MultiValueCursorResult,
+                PendingRequestHandle, RequestHandle, ResponseHandle,
             },
         },
     },
@@ -1007,5 +1007,63 @@ impl FastlyHttpReq for Session {
         }
 
         Ok(())
+    }
+
+    fn inspect(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        ds_req: RequestHandle,
+        ds_body: BodyHandle,
+        info_mask: InspectInfoMask,
+        info: GuestPtr<InspectInfo>,
+        buf: GuestPtr<u8>,
+        buf_len: u32,
+    ) -> Result<u32, Error> {
+        // Make sure we're given valid handles, even though we won't use them.
+        let _ = self.request_parts(ds_req)?;
+        let _ = self.body(ds_body)?;
+
+        // Make sure the InspectInfo looks good, even though we won't use it.
+        let info = memory.read(info)?;
+        let info_string_or_err = |flag, str_field: GuestPtr<u8>, len_field| {
+            if info_mask.contains(flag) {
+                if len_field == 0 {
+                    return Err(Error::InvalidArgument);
+                }
+
+                let byte_vec = memory.to_vec(str_field.as_array(len_field))?;
+                let s = String::from_utf8(byte_vec).map_err(|_| Error::InvalidArgument)?;
+
+                Ok(s)
+            } else {
+                // For now, corp and workspace arguments are required to actually generate the hostname,
+                // but in the future the lookaside service will be generated using the customer ID, and
+                // it will be okay for them to be unspecified or empty.
+                Err(Error::InvalidArgument)
+            }
+        };
+
+        let _ = info_string_or_err(InspectInfoMask::CORP, info.corp, info.corp_len)?;
+        let _ = info_string_or_err(
+            InspectInfoMask::WORKSPACE,
+            info.workspace,
+            info.workspace_len,
+        )?;
+
+        // Return the mock NGWAF response.
+        let ngwaf_resp = self.ngwaf_response();
+        let ngwaf_resp_len = ngwaf_resp.len();
+
+        match u32::try_from(ngwaf_resp_len) {
+            Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_len => {
+                memory.copy_from_slice(ngwaf_resp.as_bytes(), buf.as_array(buf_len))?;
+
+                Ok(ngwaf_resp_len)
+            }
+            _ => Err(Error::BufferLengthError {
+                buf: "buf",
+                len: "buf_len",
+            }),
+        }
     }
 }

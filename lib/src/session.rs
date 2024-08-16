@@ -39,6 +39,7 @@ use {
     tokio::sync::oneshot::Sender,
 };
 
+const NGWAF_ALLOW_VERDICT: &str = "allow";
 const REGION_NONE: &[u8] = b"none";
 
 /// Data specific to an individual request, including any host-side
@@ -98,6 +99,8 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     device_detection: Arc<DeviceDetection>,
+    /// The NGWAF verdict to return when using the `inspect` hostcall.
+    ngwaf_verdict: String,
     /// The Geolocations configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -191,6 +194,7 @@ impl Session {
             backends,
             device_detection,
             geolocation,
+            ngwaf_verdict: NGWAF_ALLOW_VERDICT.to_string(),
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
@@ -662,6 +666,16 @@ impl Session {
 
     pub fn geolocation_lookup(&self, addr: &IpAddr) -> Option<String> {
         self.geolocation.lookup(addr).map(|data| data.to_string())
+    }
+
+    // ----- NGWAF Inspect API -----
+
+    /// Retrieve the compliance region that received the request for this session.
+    pub fn ngwaf_response(&self) -> String {
+        format!(
+            r#"{{"waf_response":200,"redirect_url":"","tags":[],"verdict":"{}","decision_ms":0}}"#,
+            self.ngwaf_verdict
+        )
     }
 
     // ----- Object Store API -----
