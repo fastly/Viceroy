@@ -523,6 +523,18 @@
         (param $backend_configuration (@witx pointer $dynamic_backend_config))
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Hostcall for Fastly Compute guests to inspect request HTTP traffic
+    ;;; using the NGWAF lookaside service.
+    (@interface func (export "inspect")
+        (param $req $request_handle)
+        (param $body $body_handle)
+        (param $insp_info_mask $inspect_info_mask)
+        (param $insp_info (@witx pointer $inspect_info))
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
 )
 
 (module $fastly_http_resp

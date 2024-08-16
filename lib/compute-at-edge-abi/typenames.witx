@@ -358,3 +358,20 @@
 (typename $has u32)
 
 (typename $body_length u64)
+
+(typename $inspect_info_mask
+    (flags (@witx repr u32)
+        $reserved
+        $corp
+        $workspace
+    )
+)
+
+(typename $inspect_info
+    (record
+        (field $corp (@witx pointer (@witx char8)))
+        (field $corp_len u32)
+        (field $workspace (@witx pointer (@witx char8)))
+        (field $workspace_len u32)
+    )
+)
