@@ -1,6 +1,14 @@
 ## Unreleased
 
-- Add support for JSON files in local_server.kv_stores ([#365](https://github.com/fastly/Viceroy/pull/365))
+## 0.11.0 (2024-08-20)
+
+- Add support for JSON files in `local_server.kv_stores` ([#365](https://github.com/fastly/Viceroy/pull/365))
+- Add `get_vcpu_ms` hostcall ([#412](https://github.com/fastly/Viceroy/pull/412))
+- Add `inspect` hostcall ([#417](https://github.com/fastly/Viceroy/pull/417))
+- Add `downstream_compliance_region` hostcall ([#403](https://github.com/fastly/Viceroy/pull/403))
+- Emit the status code for responses, in addition to other stats ([#416](https://github.com/fastly/Viceroy/pull/416))
+- Update `compute.wit` and the adapter for some api fixes ([#414](https://github.com/fastly/Viceroy/pull/414))
+- Use `mozilla-actions/sccache-action` for caching builds ([#411](https://github.com/fastly/Viceroy/pull/411))
 
 ## 0.10.2 (2024-07-22)
 
