@@ -89,6 +89,7 @@ pub enum HttpKeepaliveMode {
 pub type PendingObjectStoreLookupHandle = u32;
 pub type PendingObjectStoreInsertHandle = u32;
 pub type PendingObjectStoreDeleteHandle = u32;
+pub type PendingObjectStoreListHandle = u32;
 pub type BodyHandle = u32;
 pub type PendingRequestHandle = u32;
 pub type RequestHandle = u32;
@@ -2310,9 +2311,9 @@ pub mod fastly_erl {
     }
 }
 
-pub mod fastly_kv_store {
+pub mod fastly_object_store {
     use super::*;
-    use crate::bindings::fastly::api::kv_store;
+    use crate::bindings::fastly::api::object_store;
     use core::slice;
 
     #[export_name = "fastly_object_store#open"]
@@ -2322,7 +2323,7 @@ pub mod fastly_kv_store {
         kv_store_handle_out: *mut KVStoreHandle,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name_ptr, name_len) };
-        match kv_store::open(name) {
+        match object_store::open(name) {
             Ok(None) => {
                 unsafe {
                     *kv_store_handle_out = INVALID_HANDLE;
@@ -2348,7 +2349,7 @@ pub mod fastly_kv_store {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::lookup(kv_store_handle, key) {
+        match object_store::lookup(kv_store_handle, key) {
             Ok(res) => {
                 unsafe {
                     *body_handle_out = res.unwrap_or(INVALID_HANDLE);
@@ -2367,7 +2368,7 @@ pub mod fastly_kv_store {
         pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::lookup_async(kv_store_handle, key) {
+        match object_store::lookup_async(kv_store_handle, key) {
             Ok(res) => {
                 unsafe {
                     *pending_body_handle_out = res;
@@ -2383,7 +2384,7 @@ pub mod fastly_kv_store {
         pending_body_handle: PendingObjectStoreLookupHandle,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match kv_store::pending_lookup_wait(pending_body_handle) {
+        match object_store::pending_lookup_wait(pending_body_handle) {
             Ok(res) => {
                 unsafe {
                     *body_handle_out = res.unwrap_or(INVALID_HANDLE);
@@ -2402,7 +2403,7 @@ pub mod fastly_kv_store {
         body_handle: BodyHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        convert_result(kv_store::insert(kv_store_handle, key, body_handle))
+        convert_result(object_store::insert(kv_store_handle, key, body_handle))
     }
 
     #[export_name = "fastly_object_store#insert_async"]
@@ -2414,7 +2415,7 @@ pub mod fastly_kv_store {
         pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::insert_async(kv_store_handle, key, body_handle) {
+        match object_store::insert_async(kv_store_handle, key, body_handle) {
             Ok(res) => {
                 unsafe {
                     *pending_body_handle_out = res;
@@ -2429,7 +2430,7 @@ pub mod fastly_kv_store {
     pub fn pending_insert_wait(
         pending_body_handle: PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
-        convert_result(kv_store::pending_insert_wait(pending_body_handle))
+        convert_result(object_store::pending_insert_wait(pending_body_handle))
     }
 
     #[export_name = "fastly_object_store#delete_async"]
@@ -2440,7 +2441,7 @@ pub mod fastly_kv_store {
         pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::delete_async(kv_store_handle, key) {
+        match object_store::delete_async(kv_store_handle, key) {
             Ok(res) => {
                 unsafe {
                     *pending_body_handle_out = res;
@@ -2455,7 +2456,510 @@ pub mod fastly_kv_store {
     pub fn pending_delete_wait(
         pending_body_handle: PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
-        convert_result(kv_store::pending_delete_wait(pending_body_handle))
+        convert_result(object_store::pending_delete_wait(pending_body_handle))
+    }
+}
+
+pub mod fastly_kv_store {
+    use super::*;
+    use crate::bindings::fastly::api::kv_store;
+    use core::slice;
+
+    /// Modes of KV Store insertion.
+    ///
+    /// This type serves to facilitate alternative methods of key insertion.
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub enum InsertMode {
+        /// The default method of insertion. Create a key, or overwrite an existing one
+        #[default]
+        Overwrite,
+        /// Only insert if the key does not currently exist
+        Add,
+        /// Append this insertion's body onto a key's value if it exists (or create a new key if there is none)
+        Append,
+        /// Prepend this insertion's body onto a key's value if it exists (or create a new key if there is none)
+        Prepend,
+    }
+
+    impl From<InsertMode> for kv_store::InsertMode {
+        fn from(value: InsertMode) -> Self {
+            match value {
+                InsertMode::Overwrite => Self::Overwrite,
+                InsertMode::Add => Self::Add,
+                InsertMode::Append => Self::Append,
+                InsertMode::Prepend => Self::Prepend,
+            }
+        }
+    }
+
+    #[repr(C)]
+    pub struct InsertConfig {
+        pub mode: InsertMode,
+        pub if_generation_match: u32,
+        pub metadata: *const u8,
+        pub metadata_len: u32,
+        pub time_to_live_sec: u32,
+    }
+
+    impl Default for InsertConfig {
+        fn default() -> Self {
+            InsertConfig {
+                mode: InsertMode::Overwrite,
+                if_generation_match: 0,
+                metadata: std::ptr::null(),
+                metadata_len: 0,
+                time_to_live_sec: 0,
+            }
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Default, Copy, Clone)]
+    pub enum ListModeInternal {
+        #[default]
+        Strong,
+        Eventual,
+    }
+
+    impl From<ListModeInternal> for kv_store::ListMode {
+        fn from(value: ListModeInternal) -> Self {
+            match value {
+                ListModeInternal::Strong => Self::Strong,
+                ListModeInternal::Eventual => Self::Eventual,
+            }
+        }
+    }
+
+    #[repr(C)]
+    pub struct ListConfig {
+        pub mode: ListModeInternal,
+        pub cursor: *const u8,
+        pub cursor_len: u32,
+        pub limit: u32,
+        pub prefix: *const u8,
+        pub prefix_len: u32,
+    }
+
+    impl Default for ListConfig {
+        fn default() -> Self {
+            ListConfig {
+                mode: ListModeInternal::Strong,
+                cursor: std::ptr::null(),
+                cursor_len: 0,
+                limit: 0,
+                prefix: std::ptr::null(),
+                prefix_len: 0,
+            }
+        }
+    }
+
+    #[repr(C)]
+    pub struct LookupConfig {
+        // reserved is just a placeholder,
+        // can be removed when somethin real is added
+        reserved: u32,
+    }
+
+    impl Default for LookupConfig {
+        fn default() -> Self {
+            LookupConfig { reserved: 0 }
+        }
+    }
+
+    #[repr(C)]
+    pub struct DeleteConfig {
+        // reserved is just a placeholder,
+        // can be removed when somethin real is added
+        reserved: u32,
+    }
+
+    impl Default for DeleteConfig {
+        fn default() -> Self {
+            DeleteConfig { reserved: 0 }
+        }
+    }
+
+    bitflags::bitflags! {
+        /// `InsertConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct InsertConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+            const BACKGROUND_FETCH = 1 << 1;
+            const IF_GENERATION_MATCH = 1 << 2;
+            const METADATA = 1 << 3;
+            const TIME_TO_LIVE_SEC = 1 << 4;
+        }
+        /// `ListConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct ListConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+            const CURSOR = 1 << 1;
+            const LIMIT = 1 << 2;
+            const PREFIX = 1 << 3;
+        }
+        /// `LookupConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct LookupConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+        }
+        /// `DeleteConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct DeleteConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+        }
+    }
+
+    impl From<InsertConfigOptions> for kv_store::InsertConfigOptions {
+        fn from(value: InsertConfigOptions) -> Self {
+            let mut res = Self::empty();
+            res.set(
+                Self::RESERVED,
+                value.contains(InsertConfigOptions::RESERVED),
+            );
+            res.set(
+                Self::BACKGROUND_FETCH,
+                value.contains(InsertConfigOptions::BACKGROUND_FETCH),
+            );
+            res.set(
+                Self::IF_GENERATION_MATCH,
+                value.contains(InsertConfigOptions::IF_GENERATION_MATCH),
+            );
+            res.set(
+                Self::METADATA,
+                value.contains(InsertConfigOptions::METADATA),
+            );
+            res.set(
+                Self::TIME_TO_LIVE_SEC,
+                value.contains(InsertConfigOptions::TIME_TO_LIVE_SEC),
+            );
+            res
+        }
+    }
+
+    impl From<ListConfigOptions> for kv_store::ListConfigOptions {
+        fn from(value: ListConfigOptions) -> Self {
+            let mut res = Self::empty();
+            res.set(Self::RESERVED, value.contains(ListConfigOptions::RESERVED));
+            res.set(Self::CURSOR, value.contains(ListConfigOptions::CURSOR));
+            res.set(Self::LIMIT, value.contains(ListConfigOptions::LIMIT));
+            res.set(Self::PREFIX, value.contains(ListConfigOptions::PREFIX));
+            res
+        }
+    }
+
+    #[repr(u32)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum KvError {
+        Uninitialized,
+        Ok,
+        BadRequest,
+        NotFound,
+        PreconditionFailed,
+        PayloadTooLarge,
+        InternalError,
+    }
+
+    #[export_name = "fastly_kv_store#open"]
+    pub fn open_v2(
+        name_ptr: *const u8,
+        name_len: usize,
+        kv_store_handle_out: *mut KVStoreHandle,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(name_ptr, name_len) };
+        match kv_store::open(name) {
+            Ok(None) => {
+                unsafe {
+                    *kv_store_handle_out = INVALID_HANDLE;
+                }
+
+                FastlyStatus::INVALID_ARGUMENT
+            }
+
+            Ok(Some(res)) => {
+                unsafe {
+                    *kv_store_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#lookup"]
+    pub fn lookup_v2(
+        kv_store_handle: KVStoreHandle,
+        key_ptr: *const u8,
+        key_len: usize,
+        //  NOTE: mask and config are ignored in the wit definition while they're empty
+        _lookup_config_mask: LookupConfigOptions,
+        _lookup_config: *const LookupConfig,
+        pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
+    ) -> FastlyStatus {
+        let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+        match kv_store::lookup(kv_store_handle, key) {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#lookup_wait"]
+    pub fn pending_lookup_wait_v2(
+        pending_handle: PendingObjectStoreLookupHandle,
+        body_handle_out: *mut BodyHandle,
+        metadata_out: *mut u8,
+        metadata_len: *mut usize,
+        generation_out: *mut u32,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        let res = match kv_store::lookup_wait(pending_handle) {
+            Ok(Some(res)) => res,
+            Ok(None) => {
+                unsafe {
+                    *kv_error_out = KvError::NotFound;
+                }
+
+                return FastlyStatus::OK;
+            }
+            Err(e) => {
+                unsafe {
+                    // TODO: the wit interface doesn't return any KvError values
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                return e.into();
+            }
+        };
+
+        let max_len = unsafe { *metadata_len };
+
+        with_buffer!(
+            metadata_out,
+            max_len,
+            { res.metadata(u64::try_from(max_len).trapping_unwrap()) },
+            |res| {
+                let buf = handle_buffer_len!(res, metadata_len);
+
+                unsafe {
+                    *metadata_len = buf.as_ref().map(Vec::len).unwrap_or(0);
+                }
+
+                std::mem::forget(buf);
+            }
+        );
+
+        unsafe {
+            *body_handle_out = res.body();
+            *generation_out = res.generation();
+            *kv_error_out = KvError::Ok;
+        }
+
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_kv_store#insert"]
+    pub fn insert_v2(
+        kv_store_handle: KVStoreHandle,
+        key_ptr: *const u8,
+        key_len: usize,
+        body_handle: BodyHandle,
+        insert_config_mask: InsertConfigOptions,
+        insert_config: *const InsertConfig,
+        pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
+    ) -> FastlyStatus {
+        let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+
+        let insert_config_mask = insert_config_mask.into();
+        let insert_config = unsafe {
+            kv_store::InsertConfig {
+                mode: (*insert_config).mode.into(),
+                if_generation_match: (*insert_config).if_generation_match,
+                metadata: {
+                    let len = usize::try_from((*insert_config).metadata_len).trapping_unwrap();
+                    Vec::from_raw_parts((*insert_config).metadata as *mut _, len, len)
+                },
+                time_to_live_sec: (*insert_config).time_to_live_sec,
+            }
+        };
+
+        let res = kv_store::insert(
+            kv_store_handle,
+            key,
+            body_handle,
+            insert_config_mask,
+            &insert_config,
+        );
+
+        // We don't own the memory in metadata, so forget the vector that the insert config holds.
+        std::mem::forget(insert_config);
+
+        match res {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#insert_wait"]
+    pub fn pending_insert_wait_v2(
+        pending_body_handle: PendingObjectStoreInsertHandle,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        match kv_store::insert_wait(pending_body_handle) {
+            Ok(_) => {
+                unsafe {
+                    *kv_error_out = KvError::Ok;
+                }
+
+                FastlyStatus::OK
+            }
+
+            // TODO: the wit interface doesn't return any KvError values
+            Err(e) => {
+                unsafe {
+                    // TODO: the wit interface doesn't return any KvError values
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                e.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_kv_store#delete"]
+    pub fn delete_v2(
+        kv_store_handle: KVStoreHandle,
+        key_ptr: *const u8,
+        key_len: usize,
+        // These are ignored in the wit interface for the time being, as they don't pass any
+        // meaningful values.
+        _delete_config_mask: DeleteConfigOptions,
+        _delete_config: *const DeleteConfig,
+        pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
+    ) -> FastlyStatus {
+        let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+        match kv_store::delete(kv_store_handle, key) {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#delete_wait"]
+    pub fn pending_delete_wait_v2(
+        pending_body_handle: PendingObjectStoreDeleteHandle,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        match kv_store::delete_wait(pending_body_handle) {
+            Ok(_) => {
+                unsafe {
+                    *kv_error_out = KvError::Ok;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => {
+                unsafe {
+                    // TODO: the wit interface doesn't return any KvError values
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                e.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_kv_store#list"]
+    pub fn list_v2(
+        kv_store_handle: KVStoreHandle,
+        list_config_mask: ListConfigOptions,
+        list_config: *const ListConfig,
+        pending_body_handle_out: *mut PendingObjectStoreListHandle,
+    ) -> FastlyStatus {
+        let mask = list_config_mask.into();
+
+        let config = unsafe {
+            kv_store::ListConfig {
+                mode: (*list_config).mode.into(),
+                cursor: {
+                    let len = usize::try_from((*list_config).cursor_len).trapping_unwrap();
+                    Vec::from_raw_parts((*list_config).cursor as *mut _, len, len)
+                },
+                limit: (*list_config).limit,
+                prefix: {
+                    let len = usize::try_from((*list_config).prefix_len).trapping_unwrap();
+                    Vec::from_raw_parts((*list_config).cursor as *mut _, len, len)
+                },
+            }
+        };
+
+        let res = kv_store::list(kv_store_handle, mask, &config);
+
+        std::mem::forget(config);
+
+        match res {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#list_wait"]
+    pub fn pending_list_wait_v2(
+        pending_body_handle: PendingObjectStoreListHandle,
+        body_handle_out: *mut BodyHandle,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        match kv_store::list_wait(pending_body_handle) {
+            Ok(res) => {
+                unsafe {
+                    *kv_error_out = KvError::Ok;
+                    *body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => {
+                unsafe {
+                    // TODO: the wit interface doesn't return any KvError values
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                e.into()
+            }
+        }
     }
 }
 
