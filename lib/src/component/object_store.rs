@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{http_types, kv_store, types},
+    super::fastly::api::{http_types, object_store, types},
     crate::{
         body::Body,
         object_store::{ObjectKey, ObjectStoreError},
@@ -10,8 +10,8 @@ use {
 };
 
 #[async_trait::async_trait]
-impl kv_store::Host for Session {
-    async fn open(&mut self, name: String) -> Result<Option<kv_store::Handle>, types::Error> {
+impl object_store::Host for Session {
+    async fn open(&mut self, name: String) -> Result<Option<object_store::Handle>, types::Error> {
         if self.object_store.store_exists(&name)? {
             let handle = self.obj_store_handle(&name)?;
             Ok(Some(handle.into()))
@@ -22,9 +22,9 @@ impl kv_store::Host for Session {
 
     async fn lookup(
         &mut self,
-        store: kv_store::Handle,
+        store: object_store::Handle,
         key: String,
-    ) -> Result<Option<kv_store::BodyHandle>, types::Error> {
+    ) -> Result<Option<object_store::BodyHandle>, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap();
         let key = ObjectKey::new(&key)?;
         match self.obj_lookup(store, &key) {
@@ -42,9 +42,9 @@ impl kv_store::Host for Session {
 
     async fn lookup_async(
         &mut self,
-        store: kv_store::Handle,
+        store: object_store::Handle,
         key: String,
-    ) -> Result<kv_store::PendingLookupHandle, types::Error> {
+    ) -> Result<object_store::PendingLookupHandle, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap();
         let key = ObjectKey::new(key)?;
         // just create a future that's already ready
@@ -55,8 +55,8 @@ impl kv_store::Host for Session {
 
     async fn pending_lookup_wait(
         &mut self,
-        pending: kv_store::PendingLookupHandle,
-    ) -> Result<Option<kv_store::BodyHandle>, types::Error> {
+        pending: object_store::PendingLookupHandle,
+    ) -> Result<Option<object_store::BodyHandle>, types::Error> {
         let pending_obj = self
             .take_pending_kv_lookup(pending.into())?
             .task()
@@ -72,7 +72,7 @@ impl kv_store::Host for Session {
 
     async fn insert(
         &mut self,
-        store: kv_store::Handle,
+        store: object_store::Handle,
         key: String,
         body_handle: http_types::BodyHandle,
     ) -> Result<(), types::Error> {
@@ -86,10 +86,10 @@ impl kv_store::Host for Session {
 
     async fn insert_async(
         &mut self,
-        store: kv_store::Handle,
+        store: object_store::Handle,
         key: String,
         body_handle: http_types::BodyHandle,
-    ) -> Result<kv_store::PendingInsertHandle, types::Error> {
+    ) -> Result<object_store::PendingInsertHandle, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let bytes = self.take_body(body_handle.into())?.read_into_vec().await?;
@@ -103,7 +103,7 @@ impl kv_store::Host for Session {
 
     async fn pending_insert_wait(
         &mut self,
-        handle: kv_store::PendingInsertHandle,
+        handle: object_store::PendingInsertHandle,
     ) -> Result<(), types::Error> {
         Ok((self
             .take_pending_kv_insert(handle.into())?
@@ -114,9 +114,9 @@ impl kv_store::Host for Session {
 
     async fn delete_async(
         &mut self,
-        store: kv_store::Handle,
+        store: object_store::Handle,
         key: String,
-    ) -> Result<kv_store::PendingDeleteHandle, types::Error> {
+    ) -> Result<object_store::PendingDeleteHandle, types::Error> {
         let store = self.get_obj_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let fut = futures::future::ok(self.obj_delete(store, key));
@@ -129,7 +129,7 @@ impl kv_store::Host for Session {
 
     async fn pending_delete_wait(
         &mut self,
-        handle: kv_store::PendingDeleteHandle,
+        handle: object_store::PendingDeleteHandle,
     ) -> Result<(), types::Error> {
         Ok((self
             .take_pending_kv_delete(handle.into())?
