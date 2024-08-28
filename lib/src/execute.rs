@@ -37,7 +37,7 @@ use {
         time::{Duration, Instant, SystemTime},
     },
     tokio::sync::oneshot::{self, Sender},
-    tracing::{event, info, info_span, warn, Level},
+    tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
         Engine, GuestProfiler, InstancePre, Linker, Module, ProfilingStrategy,
@@ -373,9 +373,6 @@ impl ExecuteCtx {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
-        let span = info_span!("request", id = req_id);
-        let _span = span.enter();
-
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
         let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
@@ -387,10 +384,15 @@ impl ExecuteCtx {
                 local,
                 remote,
                 active_cpu_time_us.clone(),
-            ),
+            )
+            .instrument(info_span!("request", id = req_id)),
         ));
 
-        let resp = match receiver.await {
+        let res = receiver.await;
+        let span = info_span!("request", id = req_id);
+        let _span = span.enter();
+
+        let resp = match res {
             Ok(resp) => (resp, None),
             Err(_) => match guest_handle
                 .await
