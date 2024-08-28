@@ -1,6 +1,7 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle};
 use crate::{alloc_result_opt, TrappingUnwrap};
 
+pub type BusyHandle = u32;
 pub type CacheHandle = u32;
 
 pub type CacheObjectLength = u64;
@@ -253,6 +254,45 @@ mod cache {
         }
     }
 
+    #[export_name = "fastly_cache#transaction_lookup_async"]
+    pub fn transaction_lookup_async(
+        cache_key_ptr: *const u8,
+        cache_key_len: usize,
+        options_mask: CacheLookupOptionsMask,
+        options: *const CacheLookupOptions,
+        cache_handle_out: *mut BusyHandle,
+    ) -> FastlyStatus {
+        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let options_mask = cache::LookupOptionsMask::from(options_mask);
+        let options = unsafe { cache::LookupOptions::from(*options) };
+        match cache::transaction_lookup_async(cache_key, options_mask, options) {
+            Ok(res) => {
+                unsafe {
+                    *cache_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#cache_busy_handle_wait"]
+    pub fn cache_busy_handle_wait(
+        handle: BusyHandle,
+        cache_handle_out: *mut CacheHandle,
+    ) -> FastlyStatus {
+        match cache::cache_busy_handle_wait(handle) {
+            Ok(res) => {
+                unsafe {
+                    *cache_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
     #[export_name = "fastly_cache#transaction_insert"]
     pub fn transaction_insert(
         handle: CacheHandle,
@@ -317,6 +357,11 @@ mod cache {
     #[export_name = "fastly_cache#transaction_cancel"]
     pub fn transaction_cancel(handle: CacheHandle) -> FastlyStatus {
         convert_result(cache::transaction_cancel(handle))
+    }
+
+    #[export_name = "fastly_cache#close_busy"]
+    pub fn close_busy(handle: BusyHandle) -> FastlyStatus {
+        convert_result(cache::close_busy(handle))
     }
 
     #[export_name = "fastly_cache#close"]
