@@ -1,12 +1,12 @@
 use {
     super::fastly::api::{http_body, kv_store, types},
-    crate::session::Session,
+    crate::linking::ComponentCtx,
 };
 
 pub struct LookupResult;
 
 #[async_trait::async_trait]
-impl kv_store::HostLookupResult for Session {
+impl kv_store::HostLookupResult for ComponentCtx {
     async fn body(
         &mut self,
         _self_: wasmtime::component::Resource<kv_store::LookupResult>,
@@ -38,7 +38,7 @@ impl kv_store::HostLookupResult for Session {
 }
 
 #[async_trait::async_trait]
-impl kv_store::Host for Session {
+impl kv_store::Host for ComponentCtx {
     async fn open(&mut self, _name: String) -> Result<Option<kv_store::Handle>, types::Error> {
         todo!()
     }

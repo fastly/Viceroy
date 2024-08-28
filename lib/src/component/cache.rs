@@ -1,10 +1,10 @@
 use {
     super::fastly::api::{cache, http_types, types},
-    crate::{error::Error, session::Session},
+    crate::{error::Error, linking::ComponentCtx},
 };
 
 #[async_trait::async_trait]
-impl cache::Host for Session {
+impl cache::Host for ComponentCtx {
     async fn lookup(
         &mut self,
         _key: String,

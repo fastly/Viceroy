@@ -95,7 +95,7 @@ impl wasmtime::ResourceLimiter for Limiter {
 pub struct ComponentCtx {
     table: wasmtime_wasi::ResourceTable,
     wasi: wasmtime_wasi::WasiCtx,
-    session: Session,
+    pub(crate) session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
     limiter: Limiter,
 }
