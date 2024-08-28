@@ -1,11 +1,11 @@
 use {
     super::fastly::api::{geo, types},
-    crate::{error, session::Session},
+    crate::{error, linking::ComponentCtx},
     std::net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 #[async_trait::async_trait]
-impl geo::Host for Session {
+impl geo::Host for ComponentCtx {
     async fn lookup(&mut self, octets: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
         let ip_addr: IpAddr = match octets.len() {
             4 => IpAddr::V4(Ipv4Addr::from(
@@ -18,6 +18,7 @@ impl geo::Host for Session {
         };
 
         let json = self
+            .session
             .geolocation_lookup(&ip_addr)
             .ok_or(geo::Error::UnknownError)?;
 

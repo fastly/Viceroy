@@ -1,9 +1,9 @@
 use {
     super::fastly::api::{http_types, types},
-    crate::session::Session,
+    crate::linking::ComponentCtx,
 };
 
-impl http_types::Host for Session {}
+impl http_types::Host for ComponentCtx {}
 
 // The http crate's `Version` is a struct that has a bunch of
 // associated constants, not an enum; this is only a partial conversion.
