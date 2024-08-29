@@ -99,13 +99,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "fastly"
-version = "0.10.3"
+name = "elsa"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e154b2ca5f18a5f9d09a6f1b992a0d87a549a3d3ad387e67309522818357a8ec"
+checksum = "d98e71ae4df57d214182a2e5cb90230c0192c6ddfcaa05c36453d46a54713e10"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "fastly"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2afee1dc886cbae0525020cc8e788ac9678744c311399c022913a5e06f19b52f"
 dependencies = [
  "anyhow",
  "bytes",
+ "elsa",
  "fastly-macros",
  "fastly-shared",
  "fastly-sys",
@@ -116,6 +126,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sha2 0.9.9",
+ "smallvec",
  "thiserror",
  "time",
  "url",
@@ -123,9 +134,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-macros"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79bc80908a6372725a4b1f213cec21c574606dbd23871848e52165913270602e"
+checksum = "372765a9863aaeaac2faed544b364387f6500be423f384b6e7e30dc1e7ca65ce"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -134,9 +145,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-shared"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b46a88123dbaed2b245ed9a49a3f2e78e627136b8760511298c799be8d6f8e"
+checksum = "00c7cd62059abdcc8d2565e9c1e63c195a7cd0fddd4851148265c6c428471b0d"
 dependencies = [
  "bitflags",
  "http",
@@ -144,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-sys"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "430408d9fc9ed37b6b718bd69cc8b3e79148ed0c685174b2220ee8637afafc17"
+checksum = "b3810e682832f22d7ec021dab9262d2157e09980bd4d509ee60aa485761cfc5e"
 dependencies = [
  "bitflags",
  "fastly-shared",
@@ -358,6 +369,18 @@ dependencies = [
  "cpufeatures",
  "digest 0.10.7",
 ]
+
+[[package]]
+name = "smallvec"
+version = "1.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "syn"
