@@ -12,6 +12,7 @@ mod env_vars;
 mod geolocation_lookup;
 mod grpc;
 mod http_semantics;
+mod inspect;
 mod kv_store;
 mod logging;
 mod memory;

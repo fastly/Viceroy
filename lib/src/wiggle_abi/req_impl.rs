@@ -1056,7 +1056,7 @@ impl FastlyHttpReq for Session {
 
         match u32::try_from(ngwaf_resp_len) {
             Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_len => {
-                memory.copy_from_slice(ngwaf_resp.as_bytes(), buf.as_array(buf_len))?;
+                memory.copy_from_slice(ngwaf_resp.as_bytes(), buf.as_array(ngwaf_resp_len))?;
 
                 Ok(ngwaf_resp_len)
             }
