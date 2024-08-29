@@ -92,6 +92,23 @@ impl ObjectStores {
 
         Ok(())
     }
+
+    pub fn list(&self, obj_store_key: &ObjectStoreKey) -> Result<Vec<Vec<u8>>, ObjectStoreError> {
+        match self
+            .stores
+            .read()
+            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .get(obj_store_key)
+        {
+            None => Err(ObjectStoreError::UnknownObjectStore(
+                obj_store_key.0.clone(),
+            )),
+            Some(s) => Ok(s
+                .into_iter()
+                .map(|(k, _)| k.0.as_bytes().to_vec())
+                .collect()),
+        }
+    }
 }
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone, Default)]

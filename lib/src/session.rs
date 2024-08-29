@@ -4,7 +4,8 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
+    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
+    PendingKvLookupTask,
 };
 
 use std::collections::HashMap;
@@ -28,8 +29,9 @@ use {
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle,
-            PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
+            ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
+            PendingKvLookupHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
+            SecretHandle, SecretStoreHandle,
         },
         ExecuteCtx,
     },
@@ -851,6 +853,56 @@ impl Session {
             .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
     }
 
+    pub fn obj_list(
+        &self,
+        obj_store_key: &ObjectStoreKey,
+    ) -> Result<Vec<Vec<u8>>, ObjectStoreError> {
+        self.object_store.list(obj_store_key)
+    }
+
+    /// Insert a [`PendingList`] into the session.
+    ///
+    /// This method returns a new [`PendingKvListHandle`], which can then be used to access
+    /// and mutate the pending list.
+    pub fn insert_pending_kv_list(&mut self, pending: PendingKvListTask) -> PendingKvListHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingKvList(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingList`], given its [`PendingKvListHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending list in the
+    /// session.
+    pub fn take_pending_kv_list(
+        &mut self,
+        handle: PendingKvListHandle,
+    ) -> Result<PendingKvListTask, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_kv_list(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_kv_list)
+            .ok_or(HandleError::InvalidPendingKvListHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingList`], given its [`PendingKvListHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a list in the
+    /// session.
+    pub fn pending_kv_list(
+        &self,
+        handle: PendingKvListHandle,
+    ) -> Result<&PendingKvListTask, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_kv_list)
+            .ok_or(HandleError::InvalidPendingKvListHandle(handle))
+    }
+
     // ----- Secret Store API -----
 
     pub fn secret_store_handle(&mut self, name: &str) -> Option<SecretStoreHandle> {
@@ -1163,5 +1215,17 @@ impl From<PendingKvDeleteHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvDeleteHandle {
     fn from(h: AsyncItemHandle) -> PendingKvDeleteHandle {
         PendingKvDeleteHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingKvListHandle> for AsyncItemHandle {
+    fn from(h: PendingKvListHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingKvListHandle {
+    fn from(h: AsyncItemHandle) -> PendingKvListHandle {
+        PendingKvListHandle::from(h.as_u32())
     }
 }

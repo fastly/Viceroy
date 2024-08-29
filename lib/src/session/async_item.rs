@@ -39,6 +39,17 @@ impl PendingKvDeleteTask {
     }
 }
 
+#[derive(Debug)]
+pub struct PendingKvListTask(PeekableTask<Result<(), ObjectStoreError>>);
+impl PendingKvListTask {
+    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvListTask {
+        PendingKvListTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+        self.0
+    }
+}
+
 /// Represents either a full body, or the write end of a streaming body.
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
@@ -51,6 +62,7 @@ pub enum AsyncItem {
     PendingKvLookup(PendingKvLookupTask),
     PendingKvInsert(PendingKvInsertTask),
     PendingKvDelete(PendingKvDeleteTask),
+    PendingKvList(PendingKvListTask),
 }
 
 impl AsyncItem {
@@ -149,6 +161,20 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_pending_kv_list(&self) -> Option<&PendingKvListTask> {
+        match self {
+            Self::PendingKvList(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_list(self) -> Option<PendingKvListTask> {
+        match self {
+            Self::PendingKvList(req) => Some(req),
+            _ => None,
+        }
+    }
+
     pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
@@ -178,6 +204,7 @@ impl AsyncItem {
             Self::PendingKvLookup(req) => req.0.await_ready().await,
             Self::PendingKvInsert(req) => req.0.await_ready().await,
             Self::PendingKvDelete(req) => req.0.await_ready().await,
+            Self::PendingKvList(req) => req.0.await_ready().await,
         }
     }
 
@@ -207,6 +234,12 @@ impl From<PendingKvInsertTask> for AsyncItem {
 impl From<PendingKvDeleteTask> for AsyncItem {
     fn from(task: PendingKvDeleteTask) -> Self {
         Self::PendingKvDelete(task)
+    }
+}
+
+impl From<PendingKvListTask> for AsyncItem {
+    fn from(task: PendingKvListTask) -> Self {
+        Self::PendingKvList(task)
     }
 }
 

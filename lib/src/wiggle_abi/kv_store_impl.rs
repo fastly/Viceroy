@@ -15,20 +15,20 @@ use {
         object_store::{ObjectKey, ObjectStoreError},
         session::Session,
         wiggle_abi::{
-            fastly_object_store::FastlyObjectStore,
-            types::{BodyHandle, ObjectStoreHandle},
+            fastly_kv_store::FastlyKvStore,
+            types::{BodyHandle, KvStoreHandle},
         },
     },
     wiggle::{GuestMemory, GuestPtr},
 };
 
 #[wiggle::async_trait]
-impl FastlyObjectStore for Session {
+impl FastlyKvStore for Session {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,
         name: GuestPtr<str>,
-    ) -> Result<ObjectStoreHandle, Error> {
+    ) -> Result<KvStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
         if self.object_store.store_exists(&name)? {
             self.obj_store_handle(&name)
@@ -39,30 +39,7 @@ impl FastlyObjectStore for Session {
         }
     }
 
-    fn lookup(
-        &mut self,
-        memory: &mut GuestMemory<'_>,
-        store: ObjectStoreHandle,
-        key: GuestPtr<str>,
-        opt_body_handle_out: GuestPtr<BodyHandle>,
-    ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap();
-        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
-        match self.obj_lookup(store, &key) {
-            Ok(obj) => {
-                let new_handle = self.insert_body(Body::from(obj));
-                memory.write(opt_body_handle_out, new_handle)?;
-                Ok(())
-            }
-            // Don't write to the invalid handle as the SDK will return Ok(None)
-            // if the object does not exist. We need to return `Ok(())` here to
-            // make sure Viceroy does not crash
-            Err(ObjectStoreError::MissingObject) => Ok(()),
-            Err(err) => Err(err.into()),
-        }
-    }
-
-    async fn lookup_async(
+    async fn lookup(
         &mut self,
         memory: &mut GuestMemory<'_>,
         store: ObjectStoreHandle,
@@ -81,7 +58,7 @@ impl FastlyObjectStore for Session {
         Ok(())
     }
 
-    async fn pending_lookup_wait(
+    async fn lookup_wait(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         pending_body_handle: PendingKvLookupHandle,
@@ -106,21 +83,6 @@ impl FastlyObjectStore for Session {
 
     async fn insert(
         &mut self,
-        memory: &mut wiggle::GuestMemory<'_>,
-        store: ObjectStoreHandle,
-        key: GuestPtr<str>,
-        body_handle: BodyHandle,
-    ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap().clone();
-        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
-        let bytes = self.take_body(body_handle)?.read_into_vec().await?;
-        self.obj_insert(store, key, bytes)?;
-
-        Ok(())
-    }
-
-    async fn insert_async(
-        &mut self,
         memory: &mut GuestMemory<'_>,
         store: ObjectStoreHandle,
         key: GuestPtr<str>,
@@ -139,7 +101,7 @@ impl FastlyObjectStore for Session {
         Ok(())
     }
 
-    async fn pending_insert_wait(
+    async fn insert_wait(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         pending_insert_handle: PendingKvInsertHandle,
@@ -151,7 +113,7 @@ impl FastlyObjectStore for Session {
             .await?)?)
     }
 
-    async fn delete_async(
+    async fn delete(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         store: ObjectStoreHandle,
@@ -169,7 +131,7 @@ impl FastlyObjectStore for Session {
         Ok(())
     }
 
-    async fn pending_delete_wait(
+    async fn delete_wait(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         pending_delete_handle: PendingKvDeleteHandle,
@@ -179,5 +141,46 @@ impl FastlyObjectStore for Session {
             .task()
             .recv()
             .await?)?)
+    }
+
+    async fn list(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        store: ObjectStoreHandle,
+        opt_pending_body_handle_out: GuestPtr<PendingKvLookupHandle>,
+    ) -> Result<(), Error> {
+        let store = self.get_obj_store_key(store).unwrap();
+        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
+        // just create a future that's already ready
+        let fut = futures::future::ok(self.obj_lookup(store, &key));
+        let task = PeekableTask::spawn(fut).await;
+        memory.write(
+            opt_pending_body_handle_out,
+            self.insert_pending_kv_lookup(PendingKvLookupTask::new(task)),
+        )?;
+        Ok(())
+    }
+
+    async fn list_wait(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        pending_body_handle: PendingKvLookupHandle,
+        opt_body_handle_out: GuestPtr<BodyHandle>,
+    ) -> Result<(), Error> {
+        let pending_obj = self
+            .take_pending_kv_lookup(pending_body_handle)?
+            .task()
+            .recv()
+            .await?;
+        // proceed with the normal match from lookup()
+        match pending_obj {
+            Ok(obj) => {
+                let new_handle = self.insert_body(Body::from(obj));
+                memory.write(opt_body_handle_out, new_handle)?;
+                Ok(())
+            }
+            Err(ObjectStoreError::MissingObject) => Ok(()),
+            Err(err) => Err(err.into()),
+        }
     }
 }
