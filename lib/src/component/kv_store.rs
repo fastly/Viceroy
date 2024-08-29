@@ -1,39 +1,55 @@
 use {
     super::fastly::api::{http_body, kv_store, types},
+    super::types::TrappableError,
     crate::linking::ComponentCtx,
+    wasmtime_wasi::WasiView,
 };
 
-pub struct LookupResult;
+pub struct LookupResult {
+    body: http_body::BodyHandle,
+    metadata: Option<Vec<u8>>,
+    generation: u32,
+}
 
 #[async_trait::async_trait]
 impl kv_store::HostLookupResult for ComponentCtx {
     async fn body(
         &mut self,
-        _self_: wasmtime::component::Resource<kv_store::LookupResult>,
-    ) -> http_body::BodyHandle {
-        todo!()
+        rep: wasmtime::component::Resource<kv_store::LookupResult>,
+        ) -> wasmtime::Result<http_body::BodyHandle> {
+        Ok(self.table().get(&rep)?.body)
     }
 
     async fn metadata(
         &mut self,
-        _self_: wasmtime::component::Resource<kv_store::LookupResult>,
-        _max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
-        todo!()
+        rep: wasmtime::component::Resource<kv_store::LookupResult>,
+        max_len: u64,
+    ) -> Result<Option<Vec<u8>>, TrappableError> {
+        let res = self.table().get(&rep)?;
+        let Some(md) = res.metadata.as_ref() else {
+            return Ok(None);
+        };
+
+        if md.len() > max_len as usize {
+            return Err(types::Error::BufferLen(md.len() as u64).into());
+        }
+
+        Ok(self.table().get_mut(&rep)?.metadata.take())
     }
 
     async fn generation(
         &mut self,
-        _self_: wasmtime::component::Resource<kv_store::LookupResult>,
-    ) -> u32 {
-        todo!()
+        rep: wasmtime::component::Resource<kv_store::LookupResult>,
+    ) -> wasmtime::Result<u32> {
+        Ok(self.table().get(&rep)?.generation)
     }
 
     fn drop(
         &mut self,
-        _rep: wasmtime::component::Resource<kv_store::LookupResult>,
+        rep: wasmtime::component::Resource<kv_store::LookupResult>,
     ) -> wasmtime::Result<()> {
-        todo!()
+        self.table().delete(rep)?;
+        Ok(())
     }
 }
 
