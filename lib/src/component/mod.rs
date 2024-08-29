@@ -20,9 +20,9 @@ component::bindgen!({
 
     trappable_imports: [
         "header-values-get",
-        "body",
-        "metadata",
-        "generation"
+        "[method]lookup-result.body",
+        "[method]lookup-result.metadata",
+        "[method]lookup-result.generation"
     ],
 });
 
