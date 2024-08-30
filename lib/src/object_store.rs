@@ -1,15 +1,25 @@
 use {
-    crate::wiggle_abi::types::FastlyStatus,
+    crate::wiggle_abi::types::{FastlyStatus, KvInsertMode},
     std::{
         collections::BTreeMap,
         sync::{Arc, RwLock},
     },
 };
 
+#[derive(Debug, Clone)]
+pub struct ObjectValue {
+    pub body: Vec<u8>,
+    // these two replace an Option<String> so we can
+    // derive Copy
+    pub metadata: Vec<u8>,
+    pub metadata_len: usize,
+    pub generation: u32,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ObjectStores {
     #[allow(clippy::type_complexity)]
-    stores: Arc<RwLock<BTreeMap<ObjectStoreKey, BTreeMap<ObjectKey, Vec<u8>>>>>,
+    stores: Arc<RwLock<BTreeMap<ObjectStoreKey, BTreeMap<ObjectKey, ObjectValue>>>>,
 }
 
 impl ObjectStores {
@@ -32,7 +42,7 @@ impl ObjectStores {
         &self,
         obj_store_key: &ObjectStoreKey,
         obj_key: &ObjectKey,
-    ) -> Result<Vec<u8>, ObjectStoreError> {
+    ) -> Result<ObjectValue, ObjectStoreError> {
         self.stores
             .read()
             .map_err(|_| ObjectStoreError::PoisonedLock)?
@@ -60,17 +70,40 @@ impl ObjectStores {
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
         obj: Vec<u8>,
+        mode: KvInsertMode,
+        generation: Option<u32>,
+        metadata: Option<Vec<u8>>,
     ) -> Result<(), ObjectStoreError> {
+        // todo, handle mode and generation here
+        // change ObjectStoreError to KvError, and impl into
+
+        use std::time::SystemTime;
+
+        let mut obj_val = ObjectValue {
+            body: obj,
+            metadata: vec![],
+            metadata_len: 0,
+            generation: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u32,
+        };
+
+        if let Some(m) = metadata {
+            obj_val.metadata_len = m.len();
+            obj_val.metadata = m;
+        }
+
         self.stores
             .write()
             .map_err(|_| ObjectStoreError::PoisonedLock)?
             .entry(obj_store_key)
             .and_modify(|store| {
-                store.insert(obj_key.clone(), obj.clone());
+                store.insert(obj_key.clone(), obj_val.clone());
             })
             .or_insert_with(|| {
                 let mut store = BTreeMap::new();
-                store.insert(obj_key, obj);
+                store.insert(obj_key, obj_val);
                 store
             });
 

@@ -23,13 +23,13 @@ use {
         config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
         error::{Error, HandleError},
         logging::LogEndpoint,
-        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
+        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores, ObjectValue},
         secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
+            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, KvInsertMode,
+            KvStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
             PendingKvLookupHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
             SecretHandle, SecretStoreHandle,
         },
@@ -124,11 +124,11 @@ pub struct Session {
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) object_store: ObjectStores,
+    pub(crate) kv_store: ObjectStores,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
-    object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
+    kv_store_by_name: PrimaryMap<KvStoreHandle, ObjectStoreKey>,
     /// The secret stores configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -166,7 +166,7 @@ impl Session {
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
-        object_store: ObjectStores,
+        kv_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
     ) -> Session {
         let (parts, body) = req.into_parts();
@@ -201,8 +201,8 @@ impl Session {
             tls_config,
             dictionaries,
             loaded_dictionaries: PrimaryMap::new(),
-            object_store,
-            object_store_by_name: PrimaryMap::new(),
+            kv_store,
+            kv_store_by_name: PrimaryMap::new(),
             secret_stores,
             secret_stores_by_name: PrimaryMap::new(),
             secrets_by_name: PrimaryMap::new(),
@@ -680,23 +680,32 @@ impl Session {
         )
     }
 
-    // ----- Object Store API -----
-    pub fn obj_store_handle(&mut self, key: &str) -> Result<ObjectStoreHandle, Error> {
+    // ----- KV Store API -----
+    pub fn kv_store_handle(&mut self, key: &str) -> Result<KvStoreHandle, Error> {
         let obj_key = ObjectStoreKey::new(key);
-        Ok(self.object_store_by_name.push(obj_key))
+        Ok(self.kv_store_by_name.push(obj_key))
     }
 
-    pub fn get_obj_store_key(&self, handle: ObjectStoreHandle) -> Option<&ObjectStoreKey> {
-        self.object_store_by_name.get(handle)
+    pub fn get_kv_store_key(&self, handle: KvStoreHandle) -> Option<&ObjectStoreKey> {
+        self.kv_store_by_name.get(handle)
     }
 
-    pub fn obj_insert(
+    pub fn kv_insert(
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
         obj: Vec<u8>,
+        mode: Option<KvInsertMode>,
+        generation: Option<u32>,
+        metadata: Option<Vec<u8>>,
     ) -> Result<(), ObjectStoreError> {
-        self.object_store.insert(obj_store_key, obj_key, obj)
+        let mode = match mode {
+            None => KvInsertMode::Overwrite,
+            Some(m) => m,
+        };
+
+        self.kv_store
+            .insert(obj_store_key, obj_key, obj, mode, generation, metadata)
     }
 
     /// Insert a [`PendingKvInsert`] into the session.
@@ -745,12 +754,12 @@ impl Session {
             .ok_or(HandleError::InvalidPendingKvInsertHandle(handle))
     }
 
-    pub fn obj_delete(
+    pub fn kv_delete(
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
     ) -> Result<(), ObjectStoreError> {
-        self.object_store.delete(obj_store_key, obj_key)
+        self.kv_store.delete(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingKvDelete`] into the session.
@@ -803,8 +812,8 @@ impl Session {
         &self,
         obj_store_key: &ObjectStoreKey,
         obj_key: &ObjectKey,
-    ) -> Result<Vec<u8>, ObjectStoreError> {
-        self.object_store.lookup(obj_store_key, obj_key)
+    ) -> Result<ObjectValue, ObjectStoreError> {
+        self.kv_store.lookup(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingLookup`] into the session.
@@ -857,7 +866,7 @@ impl Session {
         &self,
         obj_store_key: &ObjectStoreKey,
     ) -> Result<Vec<Vec<u8>>, ObjectStoreError> {
-        self.object_store.list(obj_store_key)
+        self.kv_store.list(obj_store_key)
     }
 
     /// Insert a [`PendingList`] into the session.

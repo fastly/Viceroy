@@ -11,8 +11,8 @@ use {
 #[async_trait::async_trait]
 impl object_store::Host for ComponentCtx {
     async fn open(&mut self, name: String) -> Result<Option<object_store::Handle>, types::Error> {
-        if self.session.object_store.store_exists(&name)? {
-            let handle = self.session.obj_store_handle(&name)?;
+        if self.session.kv_store.store_exists(&name)? {
+            let handle = self.session.kv_store_handle(&name)?;
             Ok(Some(handle.into()))
         } else {
             Ok(None)
@@ -24,11 +24,11 @@ impl object_store::Host for ComponentCtx {
         store: object_store::Handle,
         key: String,
     ) -> Result<Option<object_store::BodyHandle>, types::Error> {
-        let store = self.session.get_obj_store_key(store.into()).unwrap();
+        let store = self.session.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(&key)?;
         match self.session.obj_lookup(store, &key) {
             Ok(obj) => {
-                let new_handle = self.session.insert_body(Body::from(obj));
+                let new_handle = self.session.insert_body(Body::from(obj.body));
                 Ok(Some(new_handle.into()))
             }
             // Don't write to the invalid handle as the SDK will return Ok(None)
@@ -44,7 +44,7 @@ impl object_store::Host for ComponentCtx {
         store: object_store::Handle,
         key: String,
     ) -> Result<object_store::PendingLookupHandle, types::Error> {
-        let store = self.session.get_obj_store_key(store.into()).unwrap();
+        let store = self.session.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(key)?;
         // just create a future that's already ready
         let fut = futures::future::ok(self.session.obj_lookup(store, &key));
@@ -64,7 +64,7 @@ impl object_store::Host for ComponentCtx {
             .await?;
         // proceed with the normal match from lookup()
         match pending_obj {
-            Ok(obj) => Ok(Some(self.session.insert_body(Body::from(obj)).into())),
+            Ok(obj) => Ok(Some(self.session.insert_body(Body::from(obj.body)).into())),
             Err(ObjectStoreError::MissingObject) => Ok(None),
             Err(err) => Err(err.into()),
         }
@@ -76,18 +76,15 @@ impl object_store::Host for ComponentCtx {
         key: String,
         body_handle: http_types::BodyHandle,
     ) -> Result<(), types::Error> {
-        let store = self
-            .session
-            .get_obj_store_key(store.into())
-            .unwrap()
-            .clone();
+        let store = self.session.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let bytes = self
             .session
             .take_body(body_handle.into())?
             .read_into_vec()
             .await?;
-        self.session.obj_insert(store, key, bytes)?;
+        self.session
+            .kv_insert(store, key, bytes, None, None, None)?;
 
         Ok(())
     }
@@ -98,18 +95,14 @@ impl object_store::Host for ComponentCtx {
         key: String,
         body_handle: http_types::BodyHandle,
     ) -> Result<object_store::PendingInsertHandle, types::Error> {
-        let store = self
-            .session
-            .get_obj_store_key(store.into())
-            .unwrap()
-            .clone();
+        let store = self.session.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
         let bytes = self
             .session
             .take_body(body_handle.into())?
             .read_into_vec()
             .await?;
-        let fut = futures::future::ok(self.session.obj_insert(store, key, bytes));
+        let fut = futures::future::ok(self.session.kv_insert(store, key, bytes, None, None, None));
         let task = PeekableTask::spawn(fut).await;
 
         Ok(self
@@ -135,13 +128,9 @@ impl object_store::Host for ComponentCtx {
         store: object_store::Handle,
         key: String,
     ) -> Result<object_store::PendingDeleteHandle, types::Error> {
-        let store = self
-            .session
-            .get_obj_store_key(store.into())
-            .unwrap()
-            .clone();
+        let store = self.session.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(&key)?;
-        let fut = futures::future::ok(self.session.obj_delete(store, key));
+        let fut = futures::future::ok(self.session.kv_delete(store, key));
         let task = PeekableTask::spawn(fut).await;
 
         Ok(self

@@ -1,12 +1,8 @@
 //! fastly_obj_store` hostcall implementations.
 
-use super::types::{
-    PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle, PendingKvLookupHandle,
-};
+use super::types::{PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle};
 use crate::session::PeekableTask;
-use crate::session::{
-    PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
-};
+use crate::session::{PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask};
 
 use {
     crate::{
@@ -30,8 +26,11 @@ impl FastlyObjectStore for Session {
         name: GuestPtr<str>,
     ) -> Result<ObjectStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
-        if self.object_store.store_exists(&name)? {
-            self.obj_store_handle(&name)
+        if self.kv_store.store_exists(&name)? {
+            match self.kv_store_handle(&name) {
+                Ok(h) => Ok(h.into()),
+                Err(e) => Err(e),
+            }
         } else {
             Err(Error::ObjectStoreError(
                 ObjectStoreError::UnknownObjectStore(name.to_owned()),
@@ -46,11 +45,11 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         opt_body_handle_out: GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap();
+        let store = self.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         match self.obj_lookup(store, &key) {
             Ok(obj) => {
-                let new_handle = self.insert_body(Body::from(obj));
+                let new_handle = self.insert_body(Body::from(obj.body));
                 memory.write(opt_body_handle_out, new_handle)?;
                 Ok(())
             }
@@ -69,7 +68,7 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         opt_pending_body_handle_out: GuestPtr<PendingKvLookupHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap();
+        let store = self.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         // just create a future that's already ready
         let fut = futures::future::ok(self.obj_lookup(store, &key));
@@ -95,7 +94,7 @@ impl FastlyObjectStore for Session {
         // proceed with the normal match from lookup()
         match pending_obj {
             Ok(obj) => {
-                let new_handle = self.insert_body(Body::from(obj));
+                let new_handle = self.insert_body(Body::from(obj.body));
                 memory.write(opt_body_handle_out, new_handle)?;
                 Ok(())
             }
@@ -111,10 +110,10 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         body_handle: BodyHandle,
     ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap().clone();
+        let store = self.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
-        self.obj_insert(store, key, bytes)?;
+        self.kv_insert(store, key, bytes, None, None, None)?;
 
         Ok(())
     }
@@ -127,10 +126,10 @@ impl FastlyObjectStore for Session {
         body_handle: BodyHandle,
         opt_pending_body_handle_out: GuestPtr<PendingKvInsertHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap().clone();
+        let store = self.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
-        let fut = futures::future::ok(self.obj_insert(store, key, bytes));
+        let fut = futures::future::ok(self.kv_insert(store, key, bytes, None, None, None));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             opt_pending_body_handle_out,
@@ -158,9 +157,9 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         opt_pending_delete_handle_out: GuestPtr<PendingKvDeleteHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_obj_store_key(store).unwrap().clone();
+        let store = self.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
-        let fut = futures::future::ok(self.obj_delete(store, key));
+        let fut = futures::future::ok(self.kv_delete(store, key));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             opt_pending_delete_handle_out,

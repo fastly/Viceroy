@@ -16,7 +16,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
     async fn body(
         &mut self,
         rep: wasmtime::component::Resource<kv_store::LookupResult>,
-        ) -> wasmtime::Result<http_body::BodyHandle> {
+    ) -> wasmtime::Result<http_body::BodyHandle> {
         Ok(self.table().get(&rep)?.body)
     }
 

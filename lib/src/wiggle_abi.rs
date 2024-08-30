@@ -76,6 +76,7 @@ wiggle::from_witx!({
     async: {
         fastly_async_io::{select},
         fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
+        fastly_kv_store::{lookup, lookup_wait, insert, insert_wait, delete, delete_wait, list, list_wait},
         fastly_http_body::{append, read, write},
         fastly_http_req::{
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
@@ -83,6 +84,30 @@ wiggle::from_witx!({
         },
     }
 });
+
+impl From<types::ObjectStoreHandle> for types::KvStoreHandle {
+    fn from(h: types::ObjectStoreHandle) -> types::KvStoreHandle {
+        h.into()
+    }
+}
+
+impl From<types::KvStoreHandle> for types::ObjectStoreHandle {
+    fn from(h: types::KvStoreHandle) -> types::ObjectStoreHandle {
+        h.into()
+    }
+}
+
+impl From<types::KvStoreLookupHandle> for types::PendingKvLookupHandle {
+    fn from(h: types::KvStoreLookupHandle) -> types::PendingKvLookupHandle {
+        h.into()
+    }
+}
+
+impl From<types::PendingKvLookupHandle> for types::KvStoreLookupHandle {
+    fn from(h: types::PendingKvLookupHandle) -> types::KvStoreLookupHandle {
+        h.into()
+    }
+}
 
 impl From<types::HttpVersion> for http::version::Version {
     fn from(v: types::HttpVersion) -> http::version::Version {
