@@ -62,7 +62,8 @@ impl FastlyKvStore for Session {
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             handle_out,
-            self.insert_pending_kv_lookup(PendingKvLookupTask::new(task).into()).into(),
+            self.insert_pending_kv_lookup(PendingKvLookupTask::new(task).into())
+                .into(),
         )?;
         Ok(())
     }
@@ -91,10 +92,12 @@ impl FastlyKvStore for Session {
                 match value.metadata_len {
                     0 => memory.write(metadata_len, 0)?,
                     len => {
-                        let meta_len_u32 = u32::try_from(len)
-                            .expect("metadata len is outside the bounds of u32");
-                        memory
-                            .copy_from_slice(&value.metadata, metadata_out.as_array(meta_len_u32))?;
+                        let meta_len_u32 =
+                            u32::try_from(len).expect("metadata len is outside the bounds of u32");
+                        memory.copy_from_slice(
+                            &value.metadata,
+                            metadata_out.as_array(meta_len_u32),
+                        )?;
                         memory.write(metadata_len, meta_len_u32)?
                     }
                 }
@@ -134,18 +137,13 @@ impl FastlyKvStore for Session {
 
         let config = memory.read(insert_configuration)?;
 
-        let config_string_or_none = |flag, str_field: GuestPtr<u8>, len_field| {
+        let config_str_or_none = |flag, str_field: GuestPtr<u8>, len_field| {
             if insert_config_mask.contains(flag) {
                 if len_field == 0 {
                     return Err(Error::InvalidArgument);
                 }
 
-                let byte_vec = memory.to_vec(str_field.as_array(len_field))?;
-
-                match String::from_utf8(byte_vec) {
-                    Err(_) => Err(Error::InvalidArgument),
-                    Ok(s) => Ok(Some(s))
-                }
+                Ok(Some(memory.to_vec(str_field.as_array(len_field))?))
             } else {
                 Ok(None)
             }
@@ -162,7 +160,7 @@ impl FastlyKvStore for Session {
             None
         };
 
-        let meta = config_string_or_none(
+        let meta = config_str_or_none(
             KvInsertConfigOptions::METADATA,
             config.metadata,
             config.metadata_len,
@@ -175,10 +173,7 @@ impl FastlyKvStore for Session {
         //     None
         // };
 
-
-
-
-        let fut = futures::future::ok(self.kv_insert(store, key, body, mode, igm, meta));
+        let fut = futures::future::ok(self.kv_insert(store, key, body, Some(mode), igm, meta));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             pending_handle_out,

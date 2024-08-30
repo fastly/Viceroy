@@ -29,7 +29,8 @@ use {
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
             self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, KvInsertMode,
-            KvStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
+            KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle, KvStoreListHandle,
+            KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
             PendingKvLookupHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
             SecretHandle, SecretStoreHandle,
         },
@@ -715,7 +716,7 @@ impl Session {
     pub fn insert_pending_kv_insert(
         &mut self,
         pending: PendingKvInsertTask,
-    ) -> PendingKvInsertHandle {
+    ) -> KvStoreInsertHandle {
         self.async_items
             .push(Some(AsyncItem::PendingKvInsert(pending)))
             .into()
@@ -1236,5 +1237,53 @@ impl From<PendingKvListHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvListHandle {
     fn from(h: AsyncItemHandle) -> PendingKvListHandle {
         PendingKvListHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreLookupHandle> for AsyncItemHandle {
+    fn from(h: KvStoreLookupHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreLookupHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreLookupHandle {
+        KvStoreLookupHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreInsertHandle> for AsyncItemHandle {
+    fn from(h: KvStoreInsertHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreInsertHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreInsertHandle {
+        KvStoreInsertHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreDeleteHandle> for AsyncItemHandle {
+    fn from(h: KvStoreDeleteHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreDeleteHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreDeleteHandle {
+        KvStoreDeleteHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreListHandle> for AsyncItemHandle {
+    fn from(h: KvStoreListHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreListHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreListHandle {
+        KvStoreListHandle::from(h.as_u32())
     }
 }

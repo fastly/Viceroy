@@ -60,6 +60,7 @@ mod erl_impl;
 mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
+mod kv_store_impl;
 mod log_impl;
 mod obj_store_impl;
 mod req_impl;
@@ -105,6 +106,42 @@ impl From<types::KvStoreLookupHandle> for types::PendingKvLookupHandle {
 
 impl From<types::PendingKvLookupHandle> for types::KvStoreLookupHandle {
     fn from(h: types::PendingKvLookupHandle) -> types::KvStoreLookupHandle {
+        h.into()
+    }
+}
+
+impl From<types::KvStoreInsertHandle> for types::PendingKvInsertHandle {
+    fn from(h: types::KvStoreInsertHandle) -> types::PendingKvInsertHandle {
+        h.into()
+    }
+}
+
+impl From<types::PendingKvInsertHandle> for types::KvStoreInsertHandle {
+    fn from(h: types::PendingKvInsertHandle) -> types::KvStoreInsertHandle {
+        h.into()
+    }
+}
+
+impl From<types::KvStoreDeleteHandle> for types::PendingKvDeleteHandle {
+    fn from(h: types::KvStoreDeleteHandle) -> types::PendingKvDeleteHandle {
+        h.into()
+    }
+}
+
+impl From<types::PendingKvDeleteHandle> for types::KvStoreDeleteHandle {
+    fn from(h: types::PendingKvDeleteHandle) -> types::KvStoreDeleteHandle {
+        h.into()
+    }
+}
+
+impl From<types::KvStoreListHandle> for types::PendingKvListHandle {
+    fn from(h: types::KvStoreListHandle) -> types::PendingKvListHandle {
+        h.into()
+    }
+}
+
+impl From<types::PendingKvListHandle> for types::KvStoreListHandle {
+    fn from(h: types::PendingKvListHandle) -> types::KvStoreListHandle {
         h.into()
     }
 }

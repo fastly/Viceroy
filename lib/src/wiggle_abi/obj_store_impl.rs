@@ -133,7 +133,8 @@ impl FastlyObjectStore for Session {
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             opt_pending_body_handle_out,
-            self.insert_pending_kv_insert(PendingKvInsertTask::new(task)),
+            self.insert_pending_kv_insert(PendingKvInsertTask::new(task))
+                .into(),
         )?;
         Ok(())
     }
