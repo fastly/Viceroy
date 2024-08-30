@@ -122,6 +122,11 @@ pub struct DynamicBackendConfig {
     pub client_certificate: *const u8,
     pub client_certificate_len: u32,
     pub client_key: SecretHandle,
+    pub http_keepalive_time_ms: u32,
+    pub tcp_keepalive_enable: u32,
+    pub tcp_keepalive_interval_secs: u32,
+    pub tcp_keepalive_probes: u32,
+    pub tcp_keepalive_time_secs: u32,
 }
 
 impl Default for DynamicBackendConfig {
@@ -145,6 +150,11 @@ impl Default for DynamicBackendConfig {
             client_certificate: std::ptr::null(),
             client_certificate_len: 0,
             client_key: 0,
+            http_keepalive_time_ms: 0,
+            tcp_keepalive_enable: 0,
+            tcp_keepalive_interval_secs: 0,
+            tcp_keepalive_probes: 0,
+            tcp_keepalive_time_secs: 0,
         }
     }
 }
@@ -186,6 +196,7 @@ bitflags::bitflags! {
         const DONT_POOL = 1 << 12;
         const CLIENT_CERT = 1 << 13;
         const GRPC = 1 << 14;
+        const KEEPALIVE = 1 << 15;
     }
 }
 
@@ -249,6 +260,10 @@ impl From<BackendConfigOptions> for crate::bindings::fastly::api::http_types::Ba
             options.contains(BackendConfigOptions::CLIENT_CERT),
         );
         flags.set(Self::GRPC, options.contains(BackendConfigOptions::GRPC));
+        flags.set(
+            Self::KEEPALIVE,
+            options.contains(BackendConfigOptions::KEEPALIVE),
+        );
         flags
     }
 }

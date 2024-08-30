@@ -177,6 +177,51 @@ impl FastlyBackend for Session {
         Err(Error::NotAvailable("SSL version information"))
     }
 
+    fn get_http_keepalive_time(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<u32, Error> {
+        // Viceroy doesn't support pooling:
+        lookup_backend_definition(self, memory, backend).map(|_| 0)
+    }
+
+    fn get_tcp_keepalive_enable(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<u32, Error> {
+        // Viceroy doesn't support TCP keepalives:
+        lookup_backend_definition(self, memory, backend).map(|_| 0)
+    }
+
+    fn get_tcp_keepalive_interval(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<u32, Error> {
+        // Viceroy doesn't currently support TCP keepalives:
+        lookup_backend_definition(self, memory, backend).map(|_| 0)
+    }
+
+    fn get_tcp_keepalive_probes(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<u32, Error> {
+        // Viceroy doesn't currently support TCP keepalives:
+        lookup_backend_definition(self, memory, backend).map(|_| 0)
+    }
+
+    fn get_tcp_keepalive_time(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        backend: wiggle::GuestPtr<str>,
+    ) -> Result<u32, Error> {
+        // Viceroy doesn't currently support TCP keepalives:
+        lookup_backend_definition(self, memory, backend).map(|_| 0)
+    }
+
     fn is_ssl(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
