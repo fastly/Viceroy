@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.12.0 (2024-09-03)
 
 - Add ReplaceHandle hostcall stubs for upcoming SDK release ([#424](https://github.com/fastly/Viceroy/pull/424))
