@@ -108,6 +108,7 @@ interface http-types {
     dont-pool,
     client-cert,
     grpc,
+    keepalive,
   }
 
   /// Create a backend for later use

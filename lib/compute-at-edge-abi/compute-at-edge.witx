@@ -920,6 +920,49 @@
                 (error $fastly_status)))
     )
 
+    ;; Get the idle timeout for HTTP keepalive connections to the backend.
+    (@interface func (export "get_http_keepalive_time")
+        (param $backend string)
+        (result $err (expected
+                $timeout_ms
+                (error $fastly_status)))
+    )
+
+    ;; Get whether TCP keepalives have been enabled on the backend.
+    (@interface func (export "get_tcp_keepalive_enable")
+        (param $backend string)
+        (result $err (expected
+                $is_keepalive
+                (error $fastly_status)))
+    )
+
+    ;; Get how long to wait between sending each TCP keepalive probe to the
+    ;; backend.
+    (@interface func (export "get_tcp_keepalive_interval")
+        (param $backend string)
+        (result $err (expected
+                $timeout_secs
+                (error $fastly_status)))
+    )
+
+    ;; Get how long to wait after sending the last data before starting to send
+    ;; TCP keepalives to the backend.
+    (@interface func (export "get_tcp_keepalive_probes")
+        (param $backend string)
+        (result $err (expected
+                $probe_count
+                (error $fastly_status)))
+    )
+
+    ;; Get how long to wait after sending the last data before starting to send
+    ;; TCP keepalives to the backend.
+    (@interface func (export "get_tcp_keepalive_time")
+        (param $backend string)
+        (result $err (expected
+                $timeout_secs
+                (error $fastly_status)))
+    )
+
     ;; Returns 1 if the backend is configured to use SSL.
     (@interface func (export "is_ssl")
         (param $backend string)
@@ -982,4 +1025,4 @@
     (@interface func (export "get_vcpu_ms")
         (result $err (expected $vcpu_ms (error $fastly_status)))
     )
-)    
+)

@@ -140,8 +140,11 @@
 
 (typename $port u16)
 (typename $timeout_ms u32)
+(typename $timeout_secs u32)
+(typename $probe_count u32)
 (typename $backend_exists u32)
 (typename $is_dynamic u32)
+(typename $is_keepalive u32)
 (typename $is_ssl u32)
 (typename $backend_health
     (enum (@witx tag u32)
@@ -187,6 +190,7 @@
        $dont_pool
        $client_cert
        $grpc
+       $keepalive
        ))
 
 (typename $dynamic_backend_config
@@ -209,6 +213,11 @@
     (field $client_certificate (@witx pointer (@witx char8)))
     (field $client_certificate_len u32)
     (field $client_key $secret_handle)
+    (field $http_keepalive_time_ms $timeout_ms)
+    (field $tcp_keepalive_enable u32)
+    (field $tcp_keepalive_interval_secs $timeout_secs)
+    (field $tcp_keepalive_probes $probe_count)
+    (field $tcp_keepalive_time_secs $timeout_secs)
     ))
 
 ;;; TLS client certificate verified result from downstream.
