@@ -25,6 +25,95 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
+    fn replace(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_key: wiggle::GuestPtr<[u8]>,
+        options_mask: types::CacheReplaceOptionsMask,
+        abi_options: wiggle::GuestPtr<types::CacheReplaceOptions>,
+    ) -> Result<types::CacheReplaceHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_age_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_body(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+        options_mask: types::CacheGetBodyOptionsMask,
+        options: &types::CacheGetBodyOptions,
+    ) -> Result<types::BodyHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_hits(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<u64, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_length(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<u64, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_max_age_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_stale_while_revalidate_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_state(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheLookupState, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_user_metadata(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+        out_ptr: wiggle::GuestPtr<u8>,
+        out_len: u32,
+        nwritten_out: wiggle::GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_insert(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+        options_mask: types::CacheWriteOptionsMask,
+        abi_options: wiggle::GuestPtr<types::CacheWriteOptions>,
+    ) -> Result<types::BodyHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
     fn transaction_lookup<'a>(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,

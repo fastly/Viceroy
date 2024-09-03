@@ -3,6 +3,7 @@ use crate::{alloc_result_opt, TrappingUnwrap};
 
 pub type BusyHandle = u32;
 pub type CacheHandle = u32;
+pub type ReplaceHandle = u32;
 
 pub type CacheObjectLength = u64;
 pub type CacheDurationNs = u64;
@@ -51,7 +52,24 @@ bitflags::bitflags! {
         const LENGTH = 1 << 6;
         const USER_METADATA = 1 << 7;
         const SENSITIVE_DATA = 1 << 8;
+        const EDGE_MAX_AGE_NS = 1 << 9;
     }
+}
+
+bitflags::bitflags! {
+    #[repr(transparent)]
+    pub struct CacheReplaceOptionsMask: u32 {
+        const _RESERVED = 1 << 0;
+        const REQUEST_HEADERS = 1 << 1;
+        const REPLACE_STRATEGY = 1 << 2;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct CacheReplaceOptions {
+    pub request_headers: RequestHandle,
+    pub replace_strategy: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +122,21 @@ mod cache {
         }
     }
 
+    impl From<CacheReplaceOptionsMask> for cache::ReplaceOptionsMask {
+        fn from(value: CacheReplaceOptionsMask) -> Self {
+            let mut flags = Self::empty();
+            flags.set(
+                Self::REQUEST_HEADERS,
+                value.contains(CacheReplaceOptionsMask::REQUEST_HEADERS),
+            );
+            flags.set(
+                Self::REPLACE_STRATEGY,
+                value.contains(CacheReplaceOptionsMask::REPLACE_STRATEGY),
+            );
+            flags
+        }
+    }
+
     impl From<CacheWriteOptionsMask> for cache::WriteOptionsMask {
         fn from(value: CacheWriteOptionsMask) -> Self {
             let mut flags = Self::empty();
@@ -139,6 +172,10 @@ mod cache {
             flags.set(
                 Self::SENSITIVE_DATA,
                 value.contains(CacheWriteOptionsMask::SENSITIVE_DATA),
+            );
+            flags.set(
+                Self::EDGE_MAX_AGE_NS,
+                value.contains(CacheWriteOptionsMask::EDGE_MAX_AGE_NS),
             );
             flags
         }
@@ -218,6 +255,196 @@ mod cache {
         let options = unsafe { write_options(options) };
 
         let res = cache::insert(cache_key, options_mask, &options);
+
+        std::mem::forget(options);
+
+        match res {
+            Ok(res) => {
+                unsafe {
+                    *body_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace"]
+    fn replace(
+        cache_key_ptr: *const u8,
+        cache_key_len: usize,
+        options_mask: CacheReplaceOptionsMask,
+        options: *const CacheReplaceOptions,
+        replace_handle_out: *mut ReplaceHandle,
+    ) -> FastlyStatus {
+        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let options_mask = cache::ReplaceOptionsMask::from(options_mask);
+
+        let options = unsafe {
+            cache::ReplaceOptions {
+                request_headers: (*options).request_headers,
+                replace_strategy: (*options).replace_strategy,
+            }
+        };
+
+        let res = cache::replace(cache_key, options_mask, options);
+
+        match res {
+            Ok(res) => {
+                unsafe {
+                    *replace_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_age_ns"]
+    fn replace_get_age_ns(
+        handle: ReplaceHandle,
+        duration_out: *mut CacheDurationNs,
+    ) -> FastlyStatus {
+        match cache::replace_get_age_ns(handle) {
+            Ok(res) => {
+                unsafe {
+                    *duration_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_body"]
+    fn replace_get_body(
+        handle: ReplaceHandle,
+        options_mask: CacheGetBodyOptionsMask,
+        options: *const CacheGetBodyOptions,
+        body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let options_mask = cache::GetBodyOptionsMask::from(options_mask);
+        let options = unsafe { cache::GetBodyOptions::from(*options) };
+        match cache::replace_get_body(handle, options_mask, options) {
+            Ok(res) => {
+                unsafe {
+                    *body_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_hits"]
+    fn replace_get_hits(handle: ReplaceHandle, hits_out: *mut CacheHitCount) -> FastlyStatus {
+        match cache::replace_get_hits(handle) {
+            Ok(res) => {
+                unsafe {
+                    *hits_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_length"]
+    fn replace_get_length(
+        handle: ReplaceHandle,
+        length_out: *mut CacheObjectLength,
+    ) -> FastlyStatus {
+        match cache::replace_get_length(handle) {
+            Ok(res) => {
+                unsafe {
+                    *length_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_max_age_ns"]
+    fn replace_get_max_age_ns(
+        handle: ReplaceHandle,
+        duration_out: *mut CacheDurationNs,
+    ) -> FastlyStatus {
+        match cache::replace_get_max_age_ns(handle) {
+            Ok(res) => {
+                unsafe {
+                    *duration_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_stale_while_revalidate_ns"]
+    fn replace_get_stale_while_revalidate_ns(
+        handle: ReplaceHandle,
+        duration_out: *mut CacheDurationNs,
+    ) -> FastlyStatus {
+        match cache::replace_get_stale_while_revalidate_ns(handle) {
+            Ok(res) => {
+                unsafe {
+                    *duration_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_state"]
+    fn replace_get_state(
+        handle: ReplaceHandle,
+        cache_lookup_state_out: *mut CacheLookupState,
+    ) -> FastlyStatus {
+        match cache::replace_get_state(handle) {
+            Ok(res) => {
+                unsafe {
+                    *cache_lookup_state_out = res.into();
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_cache#replace_get_user_metadata"]
+    fn replace_get_user_metadata(
+        handle: ReplaceHandle,
+        user_metadata_out_ptr: *mut u8,
+        user_metadata_out_len: usize,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result_opt!(
+            user_metadata_out_ptr,
+            user_metadata_out_len,
+            nwritten_out,
+            {
+                cache::replace_get_user_metadata(
+                    handle,
+                    u64::try_from(user_metadata_out_len).trapping_unwrap(),
+                )
+            }
+        )
+    }
+
+    #[export_name = "fastly_cache#replace_insert"]
+    fn replace_insert(
+        handle: ReplaceHandle,
+        options_mask: CacheWriteOptionsMask,
+        options: *const CacheWriteOptions,
+        body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let options_mask = cache::WriteOptionsMask::from(options_mask);
+
+        let options = unsafe { write_options(options) };
+
+        let res = cache::replace_insert(handle, options_mask, &options);
 
         std::mem::forget(options);
 
