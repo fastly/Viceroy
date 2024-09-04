@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
+use crate::wiggle_abi::types::KvError;
+
 use {
     self::downstream::DownstreamResponse,
     crate::{
@@ -699,7 +701,7 @@ impl Session {
         mode: Option<KvInsertMode>,
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
-    ) -> Result<(), ObjectStoreError> {
+    ) -> Result<(), KvError> {
         let mode = match mode {
             None => KvInsertMode::Overwrite,
             Some(m) => m,

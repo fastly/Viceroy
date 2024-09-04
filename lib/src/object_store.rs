@@ -1,5 +1,5 @@
 use {
-    crate::wiggle_abi::types::{FastlyStatus, KvInsertMode},
+    crate::wiggle_abi::types::{FastlyStatus, KvError, KvInsertMode},
     std::{
         collections::BTreeMap,
         sync::{Arc, RwLock},
@@ -73,14 +73,58 @@ impl ObjectStores {
         mode: KvInsertMode,
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
-    ) -> Result<(), ObjectStoreError> {
+    ) -> Result<(), KvError> {
         // todo, handle mode and generation here
         // change ObjectStoreError to KvError, and impl into
 
         use std::time::SystemTime;
 
+        let out_obj = match mode {
+            KvInsertMode::Overwrite => {
+                obj
+            },
+            KvInsertMode::Add => {
+                let existing = self.lookup(&obj_store_key, &obj_key);
+                if existing.is_ok() {
+                    // key exists, add fails
+                    return Err(KvError::PreconditionFailed)
+                }
+                obj
+            },
+            KvInsertMode::Append => {
+                let existing = self.lookup(&obj_store_key, &obj_key);
+                let mut out_obj;
+                match existing {
+                    Err(ObjectStoreError::MissingObject) => {
+                        out_obj = obj;
+                    },
+                    Err(_) => return Err(KvError::InternalError),
+                    Ok(mut v) => {
+                        out_obj = obj;
+                        out_obj.append(&mut v.body);
+                    }
+                }
+                out_obj
+            },
+            KvInsertMode::Prepend => {
+                let existing = self.lookup(&obj_store_key, &obj_key);
+                let mut out_obj;
+                match existing {
+                    Err(ObjectStoreError::MissingObject) => {
+                        out_obj = obj;
+                    },
+                    Err(_) => return Err(KvError::InternalError),
+                    Ok(v) => {
+                        out_obj = v.body;
+                        out_obj.append(&mut obj.clone());
+                    }
+                }
+                out_obj
+            }
+        };
+
         let mut obj_val = ObjectValue {
-            body: obj,
+            body: out_obj,
             metadata: vec![],
             metadata_len: 0,
             generation: SystemTime::now()
@@ -96,7 +140,7 @@ impl ObjectStores {
 
         self.stores
             .write()
-            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .map_err(|_| KvError::InternalError)?
             .entry(obj_store_key)
             .and_modify(|store| {
                 store.insert(obj_key.clone(), obj_val.clone());
@@ -178,6 +222,39 @@ pub enum ObjectStoreError {
 impl From<&ObjectStoreError> for FastlyStatus {
     fn from(e: &ObjectStoreError) -> Self {
         use ObjectStoreError::*;
+        match e {
+            MissingObject => FastlyStatus::None,
+            PoisonedLock => panic!("{}", e),
+            UnknownObjectStore(_) => FastlyStatus::Inval,
+        }
+    }
+}
+
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, thiserror::Error)]
+pub enum KvStoreError {
+    #[error("The object was not in the store")]
+    MissingObject,
+    #[error("Viceroy's ObjectStore lock was poisoned")]
+    PoisonedLock,
+    /// An Object Store with the given name was not found.
+    #[error("Unknown object-store: {0}")]
+    UnknownObjectStore(String),
+}
+
+impl From<&KvStoreError> for ObjectStoreError {
+    fn from(e: &KvStoreError) -> Self {
+        use ObjectStoreError::*;
+        match e {
+            MissingObject        ,
+            PoisonedLock         ,
+            UnknownObjectStore(_),
+        }
+    }
+}
+
+impl From<&KvStoreError> for FastlyStatus {
+    fn from(e: &KvStoreError) -> Self {
+        use KvStoreError::*;
         match e {
             MissingObject => FastlyStatus::None,
             PoisonedLock => panic!("{}", e),

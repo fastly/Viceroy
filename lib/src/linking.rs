@@ -298,6 +298,7 @@ pub fn link_host_functions(
     wiggle_abi::fastly_http_resp::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_log::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_kv_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_purge::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::session)?;
