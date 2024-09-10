@@ -1,4 +1,4 @@
-use crate::object_store::{ObjectStoreError, ObjectValue};
+use crate::object_store::{KvStoreError, ObjectStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
 use futures::Future;
@@ -18,12 +18,12 @@ impl PendingKvLookupTask {
 }
 
 #[derive(Debug)]
-pub struct PendingKvInsertTask(PeekableTask<Result<(), ObjectStoreError>>);
+pub struct PendingKvInsertTask(PeekableTask<Result<(), KvStoreError>>);
 impl PendingKvInsertTask {
-    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvInsertTask {
+    pub fn new(t: PeekableTask<Result<(), KvStoreError>>) -> PendingKvInsertTask {
         PendingKvInsertTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<(), KvStoreError>> {
         self.0
     }
 }

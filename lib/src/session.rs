@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
+use crate::object_store::KvStoreError;
 use crate::wiggle_abi::types::KvError;
 
 use {
@@ -701,7 +702,7 @@ impl Session {
         mode: Option<KvInsertMode>,
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
-    ) -> Result<(), KvError> {
+    ) -> Result<(), KvStoreError> {
         let mode = match mode {
             None => KvInsertMode::Overwrite,
             Some(m) => m,

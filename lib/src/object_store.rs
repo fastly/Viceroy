@@ -73,47 +73,44 @@ impl ObjectStores {
         mode: KvInsertMode,
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
-    ) -> Result<(), KvError> {
+    ) -> Result<(), KvStoreError> {
         // todo, handle mode and generation here
-        // change ObjectStoreError to KvError, and impl into
 
         use std::time::SystemTime;
 
         let out_obj = match mode {
-            KvInsertMode::Overwrite => {
-                obj
-            },
+            KvInsertMode::Overwrite => obj,
             KvInsertMode::Add => {
                 let existing = self.lookup(&obj_store_key, &obj_key);
                 if existing.is_ok() {
                     // key exists, add fails
-                    return Err(KvError::PreconditionFailed)
+                    return Err(KvStoreError::PreconditionFailed);
                 }
                 obj
-            },
+            }
             KvInsertMode::Append => {
                 let existing = self.lookup(&obj_store_key, &obj_key);
                 let mut out_obj;
                 match existing {
                     Err(ObjectStoreError::MissingObject) => {
                         out_obj = obj;
-                    },
-                    Err(_) => return Err(KvError::InternalError),
+                    }
+                    Err(_) => return Err(KvStoreError::InternalError),
                     Ok(mut v) => {
                         out_obj = obj;
                         out_obj.append(&mut v.body);
                     }
                 }
                 out_obj
-            },
+            }
             KvInsertMode::Prepend => {
                 let existing = self.lookup(&obj_store_key, &obj_key);
                 let mut out_obj;
                 match existing {
                     Err(ObjectStoreError::MissingObject) => {
                         out_obj = obj;
-                    },
-                    Err(_) => return Err(KvError::InternalError),
+                    }
+                    Err(_) => return Err(KvStoreError::InternalError),
                     Ok(v) => {
                         out_obj = v.body;
                         out_obj.append(&mut obj.clone());
@@ -140,7 +137,7 @@ impl ObjectStores {
 
         self.stores
             .write()
-            .map_err(|_| KvError::InternalError)?
+            .map_err(|_| KvStoreError::InternalError)?
             .entry(obj_store_key)
             .and_modify(|store| {
                 store.insert(obj_key.clone(), obj_val.clone());
@@ -232,33 +229,75 @@ impl From<&ObjectStoreError> for FastlyStatus {
 
 #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, thiserror::Error)]
 pub enum KvStoreError {
-    #[error("The object was not in the store")]
-    MissingObject,
-    #[error("Viceroy's ObjectStore lock was poisoned")]
-    PoisonedLock,
-    /// An Object Store with the given name was not found.
-    #[error("Unknown object-store: {0}")]
-    UnknownObjectStore(String),
+    #[error("The error was not set")]
+    Uninitialized,
+    #[error("There was no error")]
+    Ok,
+    #[error("KV store cannot or will not process the request due to something that is perceived to be a client error")]
+    BadRequest,
+    #[error("KV store cannot find the requested resource")]
+    NotFound,
+    #[error("KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)")]
+    PreconditionFailed,
+    #[error("The size limit for a KV store key was exceeded")]
+    PayloadTooLarge,
+    #[error("The system encountered an unexpected internal error")]
+    InternalError,
+    #[error("Too many requests have been made to the KV store")]
+    TooManyRequests,
+}
+
+impl From<&KvError> for KvStoreError {
+    fn from(e: &KvError) -> Self {
+        match e {
+            KvError::Uninitialized => KvStoreError::Uninitialized,
+            KvError::Ok => KvStoreError::Ok,
+            KvError::BadRequest => KvStoreError::BadRequest,
+            KvError::NotFound => KvStoreError::NotFound,
+            KvError::PreconditionFailed => KvStoreError::PreconditionFailed,
+            KvError::PayloadTooLarge => KvStoreError::PayloadTooLarge,
+            KvError::InternalError => KvStoreError::InternalError,
+            KvError::TooManyRequests => KvStoreError::TooManyRequests,
+        }
+    }
+}
+
+impl From<&KvStoreError> for KvError {
+    fn from(e: &KvStoreError) -> Self {
+        match e {
+            KvStoreError::Uninitialized => KvError::Uninitialized,
+            KvStoreError::Ok => KvError::Ok,
+            KvStoreError::BadRequest => KvError::BadRequest,
+            KvStoreError::NotFound => KvError::NotFound,
+            KvStoreError::PreconditionFailed => KvError::PreconditionFailed,
+            KvStoreError::PayloadTooLarge => KvError::PayloadTooLarge,
+            KvStoreError::InternalError => KvError::InternalError,
+            KvStoreError::TooManyRequests => KvError::TooManyRequests,
+        }
+    }
 }
 
 impl From<&KvStoreError> for ObjectStoreError {
     fn from(e: &KvStoreError) -> Self {
-        use ObjectStoreError::*;
         match e {
-            MissingObject        ,
-            PoisonedLock         ,
-            UnknownObjectStore(_),
+            // the only real one
+            KvStoreError::NotFound => ObjectStoreError::MissingObject,
+            _ => ObjectStoreError::UnknownObjectStore("".to_string()),
         }
     }
 }
 
 impl From<&KvStoreError> for FastlyStatus {
     fn from(e: &KvStoreError) -> Self {
-        use KvStoreError::*;
         match e {
-            MissingObject => FastlyStatus::None,
-            PoisonedLock => panic!("{}", e),
-            UnknownObjectStore(_) => FastlyStatus::Inval,
+            KvStoreError::Uninitialized => panic!("{}", e),
+            KvStoreError::Ok => FastlyStatus::Ok,
+            KvStoreError::BadRequest => FastlyStatus::Inval,
+            KvStoreError::NotFound => FastlyStatus::None,
+            KvStoreError::PreconditionFailed => FastlyStatus::Inval,
+            KvStoreError::PayloadTooLarge => FastlyStatus::Inval,
+            KvStoreError::InternalError => FastlyStatus::Inval,
+            KvStoreError::TooManyRequests => FastlyStatus::Inval,
         }
     }
 }

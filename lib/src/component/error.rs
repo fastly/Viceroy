@@ -3,7 +3,7 @@ use {
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
-        object_store::{KeyValidationError, ObjectStoreError},
+        object_store::{KeyValidationError, KvStoreError, ObjectStoreError},
         wiggle_abi::{DictionaryError, SecretStoreError},
     },
     http::{
@@ -130,6 +130,22 @@ impl From<ObjectStoreError> for types::Error {
     }
 }
 
+impl From<KvStoreError> for types::Error {
+    fn from(err: KvStoreError) -> Self {
+        use KvStoreError::*;
+        match err {
+            Uninitialized => panic!("{}", err),
+            Ok => panic!("{}", err),
+            BadRequest => types::Error::InvalidArgument,
+            NotFound => types::Error::OptionalNone,
+            PreconditionFailed => types::Error::InvalidArgument,
+            PayloadTooLarge => types::Error::InvalidArgument,
+            InternalError => types::Error::InvalidArgument,
+            TooManyRequests => types::Error::InvalidArgument,
+        }
+    }
+}
+
 impl From<KeyValidationError> for types::Error {
     fn from(_: KeyValidationError) -> Self {
         types::Error::GenericError
@@ -177,6 +193,7 @@ impl From<error::Error> for types::Error {
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.into(),
             Error::ObjectStoreError(e) => e.into(),
+            Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
