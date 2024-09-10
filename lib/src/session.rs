@@ -762,7 +762,7 @@ impl Session {
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<(), ObjectStoreError> {
+    ) -> Result<(), KvStoreError> {
         self.kv_store.delete(obj_store_key, obj_key)
     }
 

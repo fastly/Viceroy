@@ -234,11 +234,22 @@ impl FastlyKvStore for Session {
         pending_delete_handle: KvStoreDeleteHandle,
         kv_error_out: GuestPtr<KvError>,
     ) -> Result<(), Error> {
-        Ok((self
+        let resp = self
             .take_pending_kv_delete(pending_delete_handle.into())?
             .task()
             .recv()
-            .await?)?)
+            .await?;
+
+        match resp {
+            Ok(_) => {
+                memory.write(kv_error_out, KvError::Ok)?;
+                Ok(())
+            }
+            Err(e) => {
+                memory.write(kv_error_out, (&e).into())?;
+                Ok(())
+            }
+        }
     }
 
     async fn list(

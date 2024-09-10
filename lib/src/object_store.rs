@@ -155,16 +155,24 @@ impl ObjectStores {
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<(), ObjectStoreError> {
+    ) -> Result<(), KvStoreError> {
+        let mut res = Ok(());
+
         self.stores
             .write()
-            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .map_err(|_| KvStoreError::InternalError)?
             .entry(obj_store_key)
-            .and_modify(|store| {
-                store.remove(&obj_key);
+            .and_modify(|store| match store.get(&obj_key) {
+                // 404 if the key doesn't exist, otherwise delete
+                Some(_) => {
+                    store.remove(&obj_key);
+                }
+                None => {
+                    res = Err(KvStoreError::NotFound);
+                }
             });
 
-        Ok(())
+        res
     }
 
     pub fn list(&self, obj_store_key: &ObjectStoreKey) -> Result<Vec<Vec<u8>>, ObjectStoreError> {
