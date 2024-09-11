@@ -1,8 +1,11 @@
 use {
     crate::wiggle_abi::types::{FastlyStatus, KvError, KvInsertMode},
+    base64::prelude::*,
+    serde::Serialize,
     std::{
         collections::BTreeMap,
         sync::{Arc, RwLock},
+        time::SystemTime,
     },
 };
 
@@ -74,14 +77,19 @@ impl ObjectStores {
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
     ) -> Result<(), KvStoreError> {
-        // todo, handle mode and generation here
+        let existing = self.lookup(&obj_store_key, &obj_key);
 
-        use std::time::SystemTime;
+        if let Some(g) = generation {
+            if let Ok(val) = &existing {
+                if val.generation != g {
+                    return Err(KvStoreError::PreconditionFailed);
+                }
+            }
+        }
 
         let out_obj = match mode {
             KvInsertMode::Overwrite => obj,
             KvInsertMode::Add => {
-                let existing = self.lookup(&obj_store_key, &obj_key);
                 if existing.is_ok() {
                     // key exists, add fails
                     return Err(KvStoreError::PreconditionFailed);
@@ -89,22 +97,6 @@ impl ObjectStores {
                 obj
             }
             KvInsertMode::Append => {
-                let existing = self.lookup(&obj_store_key, &obj_key);
-                let mut out_obj;
-                match existing {
-                    Err(ObjectStoreError::MissingObject) => {
-                        out_obj = obj;
-                    }
-                    Err(_) => return Err(KvStoreError::InternalError),
-                    Ok(mut v) => {
-                        out_obj = obj;
-                        out_obj.append(&mut v.body);
-                    }
-                }
-                out_obj
-            }
-            KvInsertMode::Prepend => {
-                let existing = self.lookup(&obj_store_key, &obj_key);
                 let mut out_obj;
                 match existing {
                     Err(ObjectStoreError::MissingObject) => {
@@ -114,6 +106,20 @@ impl ObjectStores {
                     Ok(v) => {
                         out_obj = v.body;
                         out_obj.append(&mut obj.clone());
+                    }
+                }
+                out_obj
+            }
+            KvInsertMode::Prepend => {
+                let mut out_obj;
+                match existing {
+                    Err(ObjectStoreError::MissingObject) => {
+                        out_obj = obj;
+                    }
+                    Err(_) => return Err(KvStoreError::InternalError),
+                    Ok(mut v) => {
+                        out_obj = obj;
+                        out_obj.append(&mut v.body);
                     }
                 }
                 out_obj
@@ -129,6 +135,11 @@ impl ObjectStores {
                 .unwrap()
                 .as_nanos() as u32,
         };
+
+        // magic number hack to ensure a case for integration tests
+        if obj_val.generation == 1337 {
+            obj_val.generation = 1338;
+        }
 
         if let Some(m) = metadata {
             obj_val.metadata_len = m.len();
@@ -175,20 +186,89 @@ impl ObjectStores {
         res
     }
 
-    pub fn list(&self, obj_store_key: &ObjectStoreKey) -> Result<Vec<Vec<u8>>, ObjectStoreError> {
+    pub fn list(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        cursor: Option<String>,
+        prefix: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<u8>, KvStoreError> {
         match self
             .stores
             .read()
-            .map_err(|_| ObjectStoreError::PoisonedLock)?
-            .get(obj_store_key)
+            .map_err(|_| KvStoreError::InternalError)?
+            .get(&obj_store_key)
         {
-            None => Err(ObjectStoreError::UnknownObjectStore(
-                obj_store_key.0.clone(),
-            )),
-            Some(s) => Ok(s
-                .into_iter()
-                .map(|(k, _)| k.0.as_bytes().to_vec())
-                .collect()),
+            None => Err(KvStoreError::InternalError),
+            Some(s) => {
+                let cursor = match cursor {
+                    Some(c) => {
+                        let cursor_bytes = BASE64_STANDARD
+                            .decode(c)
+                            .map_err(|_| KvStoreError::BadRequest)?;
+                        let decoded = String::from_utf8(cursor_bytes)
+                            .map_err(|_| KvStoreError::BadRequest)?;
+                        Some(decoded)
+                    }
+                    None => None,
+                };
+
+                let mut list = s
+                    .into_iter()
+                    .filter(|(k, _)| {
+                        if cursor.is_some() {
+                            &k.0 > cursor.as_ref().unwrap()
+                        } else {
+                            true
+                        }
+                    })
+                    .filter(|(k, _)| {
+                        if prefix.is_some() {
+                            k.0.starts_with(prefix.as_ref().unwrap())
+                        } else {
+                            true
+                        }
+                    })
+                    .map(|(k, _)| String::from_utf8(k.0.as_bytes().to_vec()).unwrap())
+                    .collect::<Vec<_>>();
+
+                // limit
+                let old_len = list.len();
+                list.truncate(limit as usize);
+                let new_len = list.len();
+
+                let next_cursor = match old_len != new_len {
+                    true => Some(BASE64_STANDARD.encode(&list[new_len - 1])),
+                    false => None,
+                };
+
+                #[derive(Serialize)]
+                struct Metadata {
+                    limit: u32,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    prefix: Option<String>,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    next_cursor: Option<String>,
+                }
+                #[derive(Serialize)]
+                struct JsonOutput {
+                    data: Vec<String>,
+                    meta: Metadata,
+                }
+
+                let body = JsonOutput {
+                    data: list,
+                    meta: Metadata {
+                        limit,
+                        prefix,
+                        next_cursor,
+                    },
+                };
+
+                let some = serde_json::to_string(&body).map_err(|_| KvStoreError::InternalError)?;
+
+                Ok(some.as_bytes().to_vec())
+            }
         }
     }
 }

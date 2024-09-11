@@ -40,12 +40,12 @@ impl PendingKvDeleteTask {
 }
 
 #[derive(Debug)]
-pub struct PendingKvListTask(PeekableTask<Result<(), ObjectStoreError>>);
+pub struct PendingKvListTask(PeekableTask<Result<Vec<u8>, KvStoreError>>);
 impl PendingKvListTask {
-    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvListTask {
+    pub fn new(t: PeekableTask<Result<Vec<u8>, KvStoreError>>) -> PendingKvListTask {
         PendingKvListTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<Vec<u8>, KvStoreError>> {
         self.0
     }
 }

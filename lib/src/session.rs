@@ -866,11 +866,19 @@ impl Session {
             .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
     }
 
-    pub fn obj_list(
+    pub fn kv_list(
         &self,
-        obj_store_key: &ObjectStoreKey,
-    ) -> Result<Vec<Vec<u8>>, ObjectStoreError> {
-        self.kv_store.list(obj_store_key)
+        obj_store_key: ObjectStoreKey,
+        cursor: Option<String>,
+        prefix: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<Vec<u8>, KvStoreError> {
+        let limit = match limit {
+            Some(l) => l,
+            None => 1000,
+        };
+
+        self.kv_store.list(obj_store_key, cursor, prefix, limit)
     }
 
     /// Insert a [`PendingList`] into the session.

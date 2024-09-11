@@ -129,11 +129,7 @@ impl FastlyKvStore for Session {
     ) -> Result<(), Error> {
         let store = self.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
-        // let logical_key = xqd_load_object_stores::LogicalKey::try_from_str(key)
-        //     .ok_or(XqdHostcallError::InvalidArgument)?;
         let body = self.take_body(body_handle)?.read_into_vec().await?;
-        // let sess = self.session();
-        // let runtime_handle = sess.runtime_handle();
 
         let config = memory.read(insert_configuration)?;
 
@@ -260,17 +256,51 @@ impl FastlyKvStore for Session {
         list_configuration: GuestPtr<KvListConfig>,
         pending_handle_out: GuestPtr<KvStoreListHandle>,
     ) -> Result<(), Error> {
-        //     let store = self.get_obj_store_key(store).unwrap();
-        //     let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
-        //     // just create a future that's already ready
-        //     let fut = futures::future::ok(self.obj_lookup(store, &key));
-        //     let task = PeekableTask::spawn(fut).await;
-        //     memory.write(
-        //         opt_pending_body_handle_out,
-        //         self.insert_pending_kv_lookup(PendingKvLookupTask::new(task)),
-        //     )?;
-        //     Ok(())
-        todo!()
+        let store = self.get_kv_store_key(store).unwrap().clone();
+
+        let config = memory.read(list_configuration)?;
+
+        let config_string_or_none = |flag, str_field: GuestPtr<u8>, len_field| {
+            if list_config_mask.contains(flag) {
+                if len_field == 0 {
+                    return Err(Error::InvalidArgument);
+                }
+
+                let byte_vec = memory.to_vec(str_field.as_array(len_field))?;
+
+                Ok(Some(
+                    String::from_utf8(byte_vec).map_err(|_| Error::InvalidArgument)?,
+                ))
+            } else {
+                Ok(None)
+            }
+        };
+
+        let cursor = config_string_or_none(
+            KvListConfigOptions::CURSOR,
+            config.cursor,
+            config.cursor_len,
+        )?;
+
+        let prefix = config_string_or_none(
+            KvListConfigOptions::PREFIX,
+            config.prefix,
+            config.prefix_len,
+        )?;
+
+        let limit = match list_config_mask.contains(KvListConfigOptions::LIMIT) {
+            true => Some(config.limit),
+            false => None,
+        };
+
+        let fut = futures::future::ok(self.kv_list(store, cursor, prefix, limit));
+        let task = PeekableTask::spawn(fut).await;
+        memory.write(
+            pending_handle_out,
+            self.insert_pending_kv_list(PendingKvListTask::new(task))
+                .into(),
+        )?;
+        Ok(())
     }
 
     async fn list_wait(
@@ -280,21 +310,25 @@ impl FastlyKvStore for Session {
         body_handle_out: GuestPtr<BodyHandle>,
         kv_error_out: GuestPtr<KvError>,
     ) -> Result<(), Error> {
-        //     let pending_obj = self
-        //         .take_pending_kv_lookup(pending_body_handle)?
-        //         .task()
-        //         .recv()
-        //         .await?;
-        //     // proceed with the normal match from lookup()
-        //     match pending_obj {
-        //         Ok(obj) => {
-        //             let new_handle = self.insert_body(Body::from(obj));
-        //             memory.write(opt_body_handle_out, new_handle)?;
-        //             Ok(())
-        //         }
-        //         Err(ObjectStoreError::MissingObject) => Ok(()),
-        //         Err(err) => Err(err.into()),
-        //     }
-        todo!()
+        let resp = self
+            .take_pending_kv_list(pending_kv_list_handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(value) => {
+                let body_handle = self.insert_body(value.into()).into();
+
+                memory.write(body_handle_out, body_handle)?;
+
+                memory.write(kv_error_out, KvError::Ok)?;
+                Ok(())
+            }
+            Err(e) => {
+                memory.write(kv_error_out, (&e).into())?;
+                Ok(())
+            }
+        }
     }
 }
