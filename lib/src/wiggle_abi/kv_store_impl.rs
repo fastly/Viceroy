@@ -1,10 +1,6 @@
 //! fastly_obj_store` hostcall implementations.
 
-use std::io::Read;
-
-use super::types::{
-    PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle, PendingKvLookupHandle,
-};
+use crate::object_store::KvStoreError;
 use crate::session::PeekableTask;
 use crate::session::{
     PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
@@ -12,9 +8,8 @@ use crate::session::{
 
 use {
     crate::{
-        body::Body,
         error::Error,
-        object_store::{KvStoreError, ObjectKey, ObjectStoreError},
+        object_store::{ObjectKey, ObjectStoreError},
         session::Session,
         wiggle_abi::{
             fastly_kv_store::FastlyKvStore,
@@ -56,7 +51,8 @@ impl FastlyKvStore for Session {
         handle_out: GuestPtr<KvStoreLookupHandle>,
     ) -> Result<(), Error> {
         let store = self.get_kv_store_key(store).unwrap();
-        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
+        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
+            .map_err(|_| KvStoreError::BadRequest)?;
         // just create a future that's already ready
         let fut = futures::future::ok(self.obj_lookup(store, &key));
         let task = PeekableTask::spawn(fut).await;
@@ -106,12 +102,7 @@ impl FastlyKvStore for Session {
                 Ok(())
             }
             Err(e) => {
-                let kv_err = match e {
-                    ObjectStoreError::MissingObject => KvError::NotFound,
-                    ObjectStoreError::UnknownObjectStore(_) => KvError::NotFound,
-                    ObjectStoreError::PoisonedLock => KvError::InternalError,
-                };
-                memory.write(kv_error_out, kv_err)?;
+                memory.write(kv_error_out, (&e).into())?;
                 Ok(())
             }
         }
@@ -128,7 +119,8 @@ impl FastlyKvStore for Session {
         pending_handle_out: GuestPtr<KvStoreInsertHandle>,
     ) -> Result<(), Error> {
         let store = self.get_kv_store_key(store.into()).unwrap().clone();
-        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
+        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
+            .map_err(|_| KvStoreError::BadRequest)?;
         let body = self.take_body(body_handle)?.read_into_vec().await?;
 
         let config = memory.read(insert_configuration)?;
@@ -162,14 +154,15 @@ impl FastlyKvStore for Session {
             config.metadata_len,
         )?;
 
-        // todo, skipping ttl for now
-        // let ttl = if insert_config_mask.contains(KvInsertConfigOptions::TIME_TO_LIVE_SEC) {
-        //     Some(config.time_to_live_sec)
-        // } else {
-        //     None
-        // };
+        let ttl = if insert_config_mask.contains(KvInsertConfigOptions::TIME_TO_LIVE_SEC) {
+            Some(std::time::Duration::from_secs(
+                config.time_to_live_sec as u64,
+            ))
+        } else {
+            None
+        };
 
-        let fut = futures::future::ok(self.kv_insert(store, key, body, Some(mode), igm, meta));
+        let fut = futures::future::ok(self.kv_insert(store, key, body, Some(mode), igm, meta, ttl));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             pending_handle_out,
@@ -213,7 +206,8 @@ impl FastlyKvStore for Session {
         pending_handle_out: GuestPtr<KvStoreDeleteHandle>,
     ) -> Result<(), Error> {
         let store = self.get_kv_store_key(store).unwrap().clone();
-        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
+        let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
+            .map_err(|_| KvStoreError::BadRequest)?;
         let fut = futures::future::ok(self.kv_delete(store, key));
         let task = PeekableTask::spawn(fut).await;
         memory.write(

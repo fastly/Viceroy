@@ -15,9 +15,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::KvError;
 
 use {
     self::downstream::DownstreamResponse,
@@ -26,7 +26,7 @@ use {
         config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
         error::{Error, HandleError},
         logging::LogEndpoint,
-        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores, ObjectValue},
+        object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
         secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
@@ -702,6 +702,7 @@ impl Session {
         mode: Option<KvInsertMode>,
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
+        ttl: Option<Duration>,
     ) -> Result<(), KvStoreError> {
         let mode = match mode {
             None => KvInsertMode::Overwrite,
@@ -709,7 +710,7 @@ impl Session {
         };
 
         self.kv_store
-            .insert(obj_store_key, obj_key, obj, mode, generation, metadata)
+            .insert(obj_store_key, obj_key, obj, mode, generation, metadata, ttl)
     }
 
     /// Insert a [`PendingKvInsert`] into the session.
@@ -816,7 +817,7 @@ impl Session {
         &self,
         obj_store_key: &ObjectStoreKey,
         obj_key: &ObjectKey,
-    ) -> Result<ObjectValue, ObjectStoreError> {
+    ) -> Result<ObjectValue, KvStoreError> {
         self.kv_store.lookup(obj_store_key, obj_key)
     }
 

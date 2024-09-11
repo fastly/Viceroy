@@ -171,6 +171,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         KvInsertMode::Overwrite,
                         None,
                         None,
+                        None,
                     )
                     .expect("Lock was not poisoned");
             }

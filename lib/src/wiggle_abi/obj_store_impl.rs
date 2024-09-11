@@ -8,7 +8,7 @@ use {
     crate::{
         body::Body,
         error::Error,
-        object_store::{ObjectKey, ObjectStoreError},
+        object_store::{KvStoreError, ObjectKey, ObjectStoreError},
         session::Session,
         wiggle_abi::{
             fastly_object_store::FastlyObjectStore,
@@ -56,7 +56,7 @@ impl FastlyObjectStore for Session {
             // Don't write to the invalid handle as the SDK will return Ok(None)
             // if the object does not exist. We need to return `Ok(())` here to
             // make sure Viceroy does not crash
-            Err(ObjectStoreError::MissingObject) => Ok(()),
+            Err(KvStoreError::NotFound) => Ok(()),
             Err(err) => Err(err.into()),
         }
     }
@@ -98,7 +98,7 @@ impl FastlyObjectStore for Session {
                 memory.write(opt_body_handle_out, new_handle)?;
                 Ok(())
             }
-            Err(ObjectStoreError::MissingObject) => Ok(()),
+            Err(KvStoreError::NotFound) => Ok(()),
             Err(err) => Err(err.into()),
         }
     }
@@ -113,7 +113,7 @@ impl FastlyObjectStore for Session {
         let store = self.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
-        self.kv_insert(store, key, bytes, None, None, None)?;
+        self.kv_insert(store, key, bytes, None, None, None, None)?;
 
         Ok(())
     }
@@ -129,7 +129,7 @@ impl FastlyObjectStore for Session {
         let store = self.get_kv_store_key(store.into()).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
-        let fut = futures::future::ok(self.kv_insert(store, key, bytes, None, None, None));
+        let fut = futures::future::ok(self.kv_insert(store, key, bytes, None, None, None, None));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             opt_pending_body_handle_out,

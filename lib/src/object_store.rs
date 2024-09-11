@@ -17,6 +17,7 @@ pub struct ObjectValue {
     pub metadata: Vec<u8>,
     pub metadata_len: usize,
     pub generation: u32,
+    pub expiration: Option<SystemTime>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -45,13 +46,27 @@ impl ObjectStores {
         &self,
         obj_store_key: &ObjectStoreKey,
         obj_key: &ObjectKey,
-    ) -> Result<ObjectValue, ObjectStoreError> {
-        self.stores
+    ) -> Result<ObjectValue, KvStoreError> {
+        let res = self
+            .stores
             .read()
-            .map_err(|_| ObjectStoreError::PoisonedLock)?
+            .map_err(|_| KvStoreError::InternalError)?
             .get(obj_store_key)
-            .and_then(|map| map.get(obj_key).cloned())
-            .ok_or(ObjectStoreError::MissingObject)
+            .and_then(|map| map.get(obj_key).cloned());
+
+        // manage ttl
+        match res {
+            Some(val) => {
+                if let Some(exp) = val.expiration {
+                    if SystemTime::now() >= exp {
+                        self.delete(obj_store_key.clone(), obj_key.clone())?;
+                        return Err(KvStoreError::NotFound);
+                    }
+                }
+                Ok(val)
+            }
+            None => Err(KvStoreError::NotFound),
+        }
     }
 
     pub(crate) fn insert_empty_store(
@@ -76,7 +91,9 @@ impl ObjectStores {
         mode: KvInsertMode,
         generation: Option<u32>,
         metadata: Option<Vec<u8>>,
+        ttl: Option<std::time::Duration>,
     ) -> Result<(), KvStoreError> {
+        // manages ttl
         let existing = self.lookup(&obj_store_key, &obj_key);
 
         if let Some(g) = generation {
@@ -99,7 +116,7 @@ impl ObjectStores {
             KvInsertMode::Append => {
                 let mut out_obj;
                 match existing {
-                    Err(ObjectStoreError::MissingObject) => {
+                    Err(KvStoreError::NotFound) => {
                         out_obj = obj;
                     }
                     Err(_) => return Err(KvStoreError::InternalError),
@@ -113,7 +130,7 @@ impl ObjectStores {
             KvInsertMode::Prepend => {
                 let mut out_obj;
                 match existing {
-                    Err(ObjectStoreError::MissingObject) => {
+                    Err(KvStoreError::NotFound) => {
                         out_obj = obj;
                     }
                     Err(_) => return Err(KvStoreError::InternalError),
@@ -126,6 +143,11 @@ impl ObjectStores {
             }
         };
 
+        let exp = match ttl {
+            Some(t) => Some(SystemTime::now() + t),
+            None => None,
+        };
+
         let mut obj_val = ObjectValue {
             body: out_obj,
             metadata: vec![],
@@ -134,6 +156,7 @@ impl ObjectStores {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos() as u32,
+            expiration: exp,
         };
 
         // magic number hack to ensure a case for integration tests
@@ -168,6 +191,9 @@ impl ObjectStores {
         obj_key: ObjectKey,
     ) -> Result<(), KvStoreError> {
         let mut res = Ok(());
+
+        // manages ttl
+        // let _ = self.lookup(&obj_store_key, &obj_key);
 
         self.stores
             .write()
@@ -212,6 +238,12 @@ impl ObjectStores {
                     }
                     None => None,
                 };
+
+                // manages ttl, a bit wasteful doing this iteration through the list a whole time
+                // before we do it again, but doing it in a filter like cursor or prefix below causes
+                // a segfault
+                let ttl_list = s.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+                let _ = ttl_list.into_iter().map(|k| self.lookup(&obj_store_key, k));
 
                 let mut list = s
                     .into_iter()

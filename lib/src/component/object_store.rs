@@ -3,7 +3,7 @@ use {
     crate::{
         body::Body,
         linking::ComponentCtx,
-        object_store::{ObjectKey, ObjectStoreError},
+        object_store::{KvStoreError, ObjectKey},
         session::{PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask},
     },
 };
@@ -34,7 +34,7 @@ impl object_store::Host for ComponentCtx {
             // Don't write to the invalid handle as the SDK will return Ok(None)
             // if the object does not exist. We need to return `Ok(())` here to
             // make sure Viceroy does not crash
-            Err(ObjectStoreError::MissingObject) => Ok(None),
+            Err(KvStoreError::NotFound) => Ok(None),
             Err(err) => Err(err.into()),
         }
     }
@@ -65,7 +65,7 @@ impl object_store::Host for ComponentCtx {
         // proceed with the normal match from lookup()
         match pending_obj {
             Ok(obj) => Ok(Some(self.session.insert_body(Body::from(obj.body)).into())),
-            Err(ObjectStoreError::MissingObject) => Ok(None),
+            Err(KvStoreError::NotFound) => Ok(None),
             Err(err) => Err(err.into()),
         }
     }
@@ -84,7 +84,7 @@ impl object_store::Host for ComponentCtx {
             .read_into_vec()
             .await?;
         self.session
-            .kv_insert(store, key, bytes, None, None, None)?;
+            .kv_insert(store, key, bytes, None, None, None, None)?;
 
         Ok(())
     }
@@ -102,7 +102,10 @@ impl object_store::Host for ComponentCtx {
             .take_body(body_handle.into())?
             .read_into_vec()
             .await?;
-        let fut = futures::future::ok(self.session.kv_insert(store, key, bytes, None, None, None));
+        let fut = futures::future::ok(
+            self.session
+                .kv_insert(store, key, bytes, None, None, None, None),
+        );
         let task = PeekableTask::spawn(fut).await;
 
         Ok(self
