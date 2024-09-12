@@ -82,7 +82,7 @@ impl FastlyKvStore for Session {
 
         match resp {
             Ok(value) => {
-                let body_handle = self.insert_body(value.body.into()).into();
+                let body_handle = self.insert_body(value.body.into());
 
                 memory.write(body_handle_out, body_handle)?;
                 match value.metadata_len {
@@ -118,7 +118,7 @@ impl FastlyKvStore for Session {
         insert_configuration: GuestPtr<KvInsertConfig>,
         pending_handle_out: GuestPtr<KvStoreInsertHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store.into()).unwrap().clone();
+        let store = self.get_kv_store_key(store).unwrap().clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
             .map_err(|_| KvStoreError::BadRequest)?;
         let body = self.take_body(body_handle)?.read_into_vec().await?;

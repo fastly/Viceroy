@@ -874,10 +874,7 @@ impl Session {
         prefix: Option<String>,
         limit: Option<u32>,
     ) -> Result<Vec<u8>, KvStoreError> {
-        let limit = match limit {
-            Some(l) => l,
-            None => 1000,
-        };
+        let limit = limit.unwrap_or(1000);
 
         self.kv_store.list(obj_store_key, cursor, prefix, limit)
     }

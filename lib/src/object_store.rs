@@ -146,10 +146,7 @@ impl ObjectStores {
             }
         };
 
-        let exp = match ttl {
-            Some(t) => Some(SystemTime::now() + t),
-            None => None,
-        };
+        let exp = ttl.map(|t| SystemTime::now() + t);
 
         let mut obj_val = ObjectValue {
             body: out_obj,
@@ -247,10 +244,7 @@ impl ObjectStores {
                 // manages ttl
                 // a bit wasteful to run this loop twice, but we need mutable access to store,
                 // and it's already claimed in the filters below
-                let ttl_list = store
-                    .into_iter()
-                    .map(|(k, _)| k.clone())
-                    .collect::<Vec<_>>();
+                let ttl_list = store.iter_mut().map(|(k, _)| k.clone()).collect::<Vec<_>>();
                 ttl_list.into_iter().for_each(|k| {
                     let val = store.get(&k);
                     if let Some(v) = val {
@@ -263,17 +257,17 @@ impl ObjectStores {
                 });
 
                 let mut list = store
-                    .into_iter()
+                    .iter_mut()
                     .filter(|(k, _)| {
-                        if cursor.is_some() {
-                            &k.0 > cursor.as_ref().unwrap()
+                        if let Some(c) = &cursor {
+                            &k.0 > c
                         } else {
                             true
                         }
                     })
                     .filter(|(k, _)| {
-                        if prefix.is_some() {
-                            k.0.starts_with(prefix.as_ref().unwrap())
+                        if let Some(p) = &prefix {
+                            k.0.starts_with(p)
                         } else {
                             true
                         }
