@@ -1,5 +1,15 @@
 ## Unreleased
 
+## 0.12.0 (2024-09-03)
+
+- Add ReplaceHandle hostcall stubs for upcoming SDK release ([#424](https://github.com/fastly/Viceroy/pull/424))
+- Add keepalive options for dynamic backends ([#423](https://github.com/fastly/Viceroy/pull/423))
+- Fix bug in `inspect` implementation and add a test ([#422](https://github.com/fastly/Viceroy/pull/422))
+- Add the missing adapter calls for new cache operations ([#419](https://github.com/fastly/Viceroy/pull/419))
+- Implement component traits on ComponentCtx ([#421](https://github.com/fastly/Viceroy/pull/421))
+- Split info spans when logging request IDs ([#420](https://github.com/fastly/Viceroy/pull/420))
+- Rename the kv-store interface to object-store in compute.wit ([#415](https://github.com/fastly/Viceroy/pull/415))
+
 ## 0.11.0 (2024-08-20)
 
 - Add support for JSON files in `local_server.kv_stores` ([#365](https://github.com/fastly/Viceroy/pull/365))

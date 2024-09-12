@@ -108,6 +108,7 @@ interface http-types {
     dont-pool,
     client-cert,
     grpc,
+    keepalive,
   }
 
   /// Create a backend for later use
@@ -969,9 +970,13 @@ interface cache {
   type handle = u32;
   /// Handle that can be used to check whether or not a cache lookup is waiting on another client.
   type busy-handle = u32;
+  /// Handle for an in-progress Replace operation
+  type replace-handle = u32;
+
   type object-length = u64;
   type duration-ns = u64;
   type cache-hit-count = u64;
+  type cache-replace-strategy = u32;
 
   flags lookup-options-mask {
     request-headers,
@@ -983,6 +988,19 @@ interface cache {
      * A full request handle, but used only for its headers
      */
     request-headers: request-handle,
+  }
+
+  flags replace-options-mask {
+    request-headers,
+    replace-strategy,
+  }
+
+  record replace-options {
+    /**
+     * A full request handle, but used only for its headers
+     */
+    request-headers: request-handle,
+    replace-strategy: cache-replace-strategy,
   }
 
   flags write-options-mask {
@@ -1004,7 +1022,7 @@ interface cache {
   /// - `transaction-insert-and-stream-back`
   /// - `transaction-update`
   ///
-  /// Some options are only allowed for certain of these hostcalls; see `cache-write-options-mask`.
+  /// Some options are only allowed for certain of these hostcalls; see `write-options-mask`.
   record write-options {
     /// this is a required field; there's no flag for it
     max-age-ns: duration-ns,
@@ -1066,6 +1084,81 @@ interface cache {
     options-mask: write-options-mask,
     options: write-options,
   ) -> result<body-handle, error>;
+
+  /// The entrypoint to the replace API.
+  ///
+  /// This operation always participates in request collapsing and may return stale objects.
+  replace: func(
+    key: string,
+    options-mask: replace-options-mask,
+    options: replace-options,
+  ) -> result<replace-handle, error>;
+
+  /// Replace an object in the cache with the given metadata
+  ///
+  /// The returned handle is to a streaming body that is used for writing the object into
+  /// the cache.
+  replace-insert: func(
+    handle: replace-handle,
+    options-mask: write-options-mask,
+    options: write-options,
+  ) -> result<body-handle, error>;
+
+  /// Gets the age of the existing object during replace, returning the
+  /// `$none` error if there was no object.
+  replace-get-age-ns: func(
+    handle: replace-handle,
+  ) -> result<duration-ns, error>;
+
+  /// Gets a range of the existing object body, returning the `$none` error if there
+  /// was no existing object.
+  ///
+  /// The returned `body_handle` must be closed before calling this function
+  /// again on the same `cache_replace_handle`.
+  replace-get-body: func(
+    handle: replace-handle,
+    options-mask: get-body-options-mask,
+    options: get-body-options,
+  ) -> result<body-handle, error>;
+
+  /// Gets the number of cache hits for the existing object during replace,
+  /// returning the `$none` error if there was no object.
+  replace-get-hits: func(
+    handle: replace-handle,
+  ) -> result<cache-hit-count, error>;
+
+  /// Gets the content length of the existing object during replace,
+  /// returning the `$none` error if there was no object, or no content
+  /// length was provided.
+  replace-get-length: func(
+    handle: replace-handle,
+  ) -> result<object-length, error>;
+
+  /// Gets the configured max age of the existing object during replace,
+  /// returning the `$none` error if there was no object.
+  replace-get-max-age-ns: func(
+    handle: replace-handle,
+  ) -> result<duration-ns, error>;
+
+  /// Gets the configured stale-while-revalidate period of the existing
+  /// object during replace, returning the `$none` error if there was no
+  /// object.
+  replace-get-stale-while-revalidate-ns: func(
+    handle: replace-handle,
+  ) -> result<duration-ns, error>;
+
+  /// Gets the lookup state of the existing object during replace, returning
+  /// the `$none` error if there was no object.
+  replace-get-state: func(
+    handle: replace-handle,
+  ) -> result<lookup-state, error>;
+
+  /// Gets the user metadata of the existing object during replace, returning
+  /// the `$none` error if there was no object.
+  replace-get-user-metadata: func(
+    handle: replace-handle,
+    max-len: u64,
+  ) -> result<option<list<u8>>, error>;
 
   /// The entrypoint to the request-collapsing cache transaction API.
   ///
