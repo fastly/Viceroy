@@ -88,13 +88,17 @@ wiggle::from_witx!({
 
 impl From<types::ObjectStoreHandle> for types::KvStoreHandle {
     fn from(h: types::ObjectStoreHandle) -> types::KvStoreHandle {
-        h.into()
+        // h.into() was doing infinite recursion
+        let s = unsafe { h.inner() };
+        s.into()
     }
 }
 
 impl From<types::KvStoreHandle> for types::ObjectStoreHandle {
     fn from(h: types::KvStoreHandle) -> types::ObjectStoreHandle {
-        h.into()
+        // h.into() was doing infinite recursion
+        let s = unsafe { h.inner() };
+        s.into()
     }
 }
 
