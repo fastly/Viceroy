@@ -44,29 +44,32 @@ impl ObjectStores {
 
     pub fn lookup(
         &self,
-        obj_store_key: &ObjectStoreKey,
-        obj_key: &ObjectKey,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
     ) -> Result<ObjectValue, KvStoreError> {
-        let res = self
-            .stores
-            .read()
-            .map_err(|_| KvStoreError::InternalError)?
-            .get(obj_store_key)
-            .and_then(|map| map.get(obj_key).cloned());
+        let mut res = Err(KvStoreError::InternalError);
 
-        // manage ttl
-        match res {
-            Some(val) => {
-                if let Some(exp) = val.expiration {
-                    if SystemTime::now() >= exp {
-                        self.delete(obj_store_key.clone(), obj_key.clone())?;
-                        return Err(KvStoreError::NotFound);
+        self.stores
+            .write()
+            .map_err(|_| KvStoreError::InternalError)?
+            .entry(obj_store_key)
+            .and_modify(|store| match store.get(&obj_key) {
+                Some(val) => {
+                    res = Ok(val.clone());
+                    // manages ttl
+                    if let Some(exp) = val.expiration {
+                        if SystemTime::now() >= exp {
+                            store.remove(&obj_key);
+                            res = Err(KvStoreError::NotFound);
+                        }
                     }
                 }
-                Ok(val)
-            }
-            None => Err(KvStoreError::NotFound),
-        }
+                None => {
+                    res = Err(KvStoreError::NotFound);
+                }
+            });
+
+        res
     }
 
     pub(crate) fn insert_empty_store(
@@ -94,7 +97,7 @@ impl ObjectStores {
         ttl: Option<std::time::Duration>,
     ) -> Result<(), KvStoreError> {
         // manages ttl
-        let existing = self.lookup(&obj_store_key, &obj_key);
+        let existing = self.lookup(obj_store_key.clone(), obj_key.clone());
 
         if let Some(g) = generation {
             if let Ok(val) = &existing {
@@ -192,16 +195,19 @@ impl ObjectStores {
     ) -> Result<(), KvStoreError> {
         let mut res = Ok(());
 
-        // manages ttl
-        // let _ = self.lookup(&obj_store_key, &obj_key);
-
         self.stores
             .write()
             .map_err(|_| KvStoreError::InternalError)?
             .entry(obj_store_key)
             .and_modify(|store| match store.get(&obj_key) {
                 // 404 if the key doesn't exist, otherwise delete
-                Some(_) => {
+                Some(val) => {
+                    // manages ttl
+                    if let Some(exp) = val.expiration {
+                        if SystemTime::now() >= exp {
+                            res = Err(KvStoreError::NotFound);
+                        }
+                    }
                     store.remove(&obj_key);
                 }
                 None => {
@@ -219,33 +225,44 @@ impl ObjectStores {
         prefix: Option<String>,
         limit: u32,
     ) -> Result<Vec<u8>, KvStoreError> {
-        match self
-            .stores
-            .read()
+        let mut res = Err(KvStoreError::InternalError);
+
+        let cursor = match cursor {
+            Some(c) => {
+                let cursor_bytes = BASE64_STANDARD
+                    .decode(c)
+                    .map_err(|_| KvStoreError::BadRequest)?;
+                let decoded =
+                    String::from_utf8(cursor_bytes).map_err(|_| KvStoreError::BadRequest)?;
+                Some(decoded)
+            }
+            None => None,
+        };
+
+        self.stores
+            .write()
             .map_err(|_| KvStoreError::InternalError)?
-            .get(&obj_store_key)
-        {
-            None => Err(KvStoreError::InternalError),
-            Some(s) => {
-                let cursor = match cursor {
-                    Some(c) => {
-                        let cursor_bytes = BASE64_STANDARD
-                            .decode(c)
-                            .map_err(|_| KvStoreError::BadRequest)?;
-                        let decoded = String::from_utf8(cursor_bytes)
-                            .map_err(|_| KvStoreError::BadRequest)?;
-                        Some(decoded)
+            .entry(obj_store_key.clone())
+            .and_modify(|store| {
+                // manages ttl
+                // a bit wasteful to run this loop twice, but we need mutable access to store,
+                // and it's already claimed in the filters below
+                let ttl_list = store
+                    .into_iter()
+                    .map(|(k, _)| k.clone())
+                    .collect::<Vec<_>>();
+                ttl_list.into_iter().for_each(|k| {
+                    let val = store.get(&k);
+                    if let Some(v) = val {
+                        if let Some(exp) = v.expiration {
+                            if SystemTime::now() >= exp {
+                                store.remove(&k);
+                            }
+                        }
                     }
-                    None => None,
-                };
+                });
 
-                // manages ttl, a bit wasteful doing this iteration through the list a whole time
-                // before we do it again, but doing it in a filter like cursor or prefix below causes
-                // a segfault
-                let ttl_list = s.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
-                let _ = ttl_list.into_iter().map(|k| self.lookup(&obj_store_key, k));
-
-                let mut list = s
+                let mut list = store
                     .into_iter()
                     .filter(|(k, _)| {
                         if cursor.is_some() {
@@ -297,11 +314,12 @@ impl ObjectStores {
                     },
                 };
 
-                let some = serde_json::to_string(&body).map_err(|_| KvStoreError::InternalError)?;
-
-                Ok(some.as_bytes().to_vec())
-            }
-        }
+                match serde_json::to_string(&body).map_err(|_| KvStoreError::InternalError) {
+                    Ok(s) => res = Ok(s.as_bytes().to_vec()),
+                    Err(e) => res = Err(e),
+                };
+            });
+        res
     }
 }
 

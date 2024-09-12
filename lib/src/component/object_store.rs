@@ -26,7 +26,7 @@ impl object_store::Host for ComponentCtx {
     ) -> Result<Option<object_store::BodyHandle>, types::Error> {
         let store = self.session.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(&key)?;
-        match self.session.obj_lookup(store, &key) {
+        match self.session.obj_lookup(store.clone(), key) {
             Ok(obj) => {
                 let new_handle = self.session.insert_body(Body::from(obj.body));
                 Ok(Some(new_handle.into()))
@@ -47,7 +47,7 @@ impl object_store::Host for ComponentCtx {
         let store = self.session.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(key)?;
         // just create a future that's already ready
-        let fut = futures::future::ok(self.session.obj_lookup(store, &key));
+        let fut = futures::future::ok(self.session.obj_lookup(store.clone(), key));
         let task = PendingKvLookupTask::new(PeekableTask::spawn(fut).await);
         Ok(self.session.insert_pending_kv_lookup(task).into())
     }

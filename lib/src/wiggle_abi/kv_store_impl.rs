@@ -54,7 +54,7 @@ impl FastlyKvStore for Session {
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
             .map_err(|_| KvStoreError::BadRequest)?;
         // just create a future that's already ready
-        let fut = futures::future::ok(self.obj_lookup(store, &key));
+        let fut = futures::future::ok(self.obj_lookup(store.clone(), key));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             handle_out,

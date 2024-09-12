@@ -815,8 +815,8 @@ impl Session {
 
     pub fn obj_lookup(
         &self,
-        obj_store_key: &ObjectStoreKey,
-        obj_key: &ObjectKey,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
     ) -> Result<ObjectValue, KvStoreError> {
         self.kv_store.lookup(obj_store_key, obj_key)
     }

@@ -47,7 +47,7 @@ impl FastlyObjectStore for Session {
     ) -> Result<(), Error> {
         let store = self.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
-        match self.obj_lookup(store, &key) {
+        match self.obj_lookup(store.clone(), key) {
             Ok(obj) => {
                 let new_handle = self.insert_body(Body::from(obj.body));
                 memory.write(opt_body_handle_out, new_handle)?;
@@ -71,7 +71,7 @@ impl FastlyObjectStore for Session {
         let store = self.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         // just create a future that's already ready
-        let fut = futures::future::ok(self.obj_lookup(store, &key));
+        let fut = futures::future::ok(self.obj_lookup(store.clone(), key));
         let task = PeekableTask::spawn(fut).await;
         memory.write(
             opt_pending_body_handle_out,
