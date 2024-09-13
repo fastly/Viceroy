@@ -91,6 +91,7 @@ impl FastlyKvStore for Session {
                     len => {
                         let meta_len_u32 =
                             u32::try_from(len).expect("metadata len is outside the bounds of u32");
+                        memory.write(nwritten_out, meta_len_u32)?;
                         if meta_len_u32 > metadata_buf_len {
                             return Err(Error::BufferLengthError {
                                 buf: "metadata",
@@ -101,7 +102,6 @@ impl FastlyKvStore for Session {
                             &value.metadata,
                             metadata_buf.as_array(meta_len_u32),
                         )?;
-                        memory.write(nwritten_out, meta_len_u32)?
                     }
                 }
                 memory.write(generation_out, value.generation)?;
