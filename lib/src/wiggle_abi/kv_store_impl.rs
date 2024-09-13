@@ -69,8 +69,9 @@ impl FastlyKvStore for Session {
         memory: &mut GuestMemory<'_>,
         pending_kv_lookup_handle: KvStoreLookupHandle,
         body_handle_out: GuestPtr<BodyHandle>,
-        metadata_out: GuestPtr<u8>,
-        metadata_len: GuestPtr<u32>,
+        metadata_buf: GuestPtr<u8>,
+        metadata_buf_len: u32,
+        nwritten_out: GuestPtr<u32>,
         generation_out: GuestPtr<u32>,
         kv_error_out: GuestPtr<KvError>,
     ) -> Result<(), Error> {
@@ -86,15 +87,21 @@ impl FastlyKvStore for Session {
 
                 memory.write(body_handle_out, body_handle)?;
                 match value.metadata_len {
-                    0 => memory.write(metadata_len, 0)?,
+                    0 => memory.write(nwritten_out, 0)?,
                     len => {
                         let meta_len_u32 =
                             u32::try_from(len).expect("metadata len is outside the bounds of u32");
+                        if meta_len_u32 > metadata_buf_len {
+                            return Err(Error::BufferLengthError {
+                                buf: "metadata",
+                                len: "specified length",
+                            });
+                        }
                         memory.copy_from_slice(
                             &value.metadata,
-                            metadata_out.as_array(meta_len_u32),
+                            metadata_buf.as_array(meta_len_u32),
                         )?;
-                        memory.write(metadata_len, meta_len_u32)?
+                        memory.write(nwritten_out, meta_len_u32)?
                     }
                 }
                 memory.write(generation_out, value.generation)?;
