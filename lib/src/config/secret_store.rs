@@ -23,10 +23,10 @@ impl TryFrom<Table> for SecretStoreConfig {
                 });
             }
 
-            // Either the items here is from a top-level file with
+            // Either the items here are from a top-level file with
             // "file" and "format" keys or it's an inline array.
             // We try to parse either one of them to the same Vec<toml::Value>
-            // to allow them to run through the same validation path futher down
+            // to allow them to run through the same validation path further down.
             let file_path = items
                 .as_table()
                 .and_then(|table| table.get("file"))
