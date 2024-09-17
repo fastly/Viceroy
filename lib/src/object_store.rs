@@ -12,8 +12,6 @@ use {
 #[derive(Debug, Clone)]
 pub struct ObjectValue {
     pub body: Vec<u8>,
-    // these two replace an Option<String> so we can
-    // derive Copy
     pub metadata: Vec<u8>,
     pub metadata_len: usize,
     pub generation: u32,
@@ -47,7 +45,7 @@ impl ObjectStores {
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
     ) -> Result<ObjectValue, KvStoreError> {
-        let mut res = Err(KvStoreError::InternalError);
+        let mut res = Err(KvStoreError::Uninitialized);
 
         self.stores
             .write()

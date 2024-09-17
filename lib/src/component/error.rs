@@ -135,7 +135,7 @@ impl From<KvStoreError> for types::Error {
         use KvStoreError::*;
         match err {
             Uninitialized => panic!("{}", err),
-            Ok => panic!("{}", err),
+            Ok => panic!("{err} should never be converted to an error"),
             BadRequest => types::Error::InvalidArgument,
             NotFound => types::Error::OptionalNone,
             PreconditionFailed => types::Error::InvalidArgument,
