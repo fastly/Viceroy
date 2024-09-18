@@ -489,3 +489,460 @@ pub enum KeyValidationError {
     #[error("Keys for objects cannot contain a `{0}`")]
     Contains(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const STORE_NAME: &'static str = "test_store";
+
+    #[test]
+    fn test_kv_store_exists() {
+        let stores = ObjectStores::default();
+        stores
+            .insert_empty_store(ObjectStoreKey(STORE_NAME.to_string()))
+            .unwrap();
+
+        let res = stores.store_exists(STORE_NAME);
+        match res {
+            Ok(true) => {}
+            _ => panic!("should have been OK(true)"),
+        }
+    }
+
+    #[test]
+    fn test_kv_store_basics() {
+        let stores = ObjectStores::default();
+        stores
+            .insert_empty_store(ObjectStoreKey(STORE_NAME.to_string()))
+            .unwrap();
+
+        let key = "insert_key".to_string();
+        let val1 = "val1".to_string();
+
+        // insert
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+
+        // lookup
+        let res = stores.lookup(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+        );
+        match res {
+            Ok(ov) => {
+                assert_eq!(ov.body, val1.as_bytes().to_vec())
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // list
+        let limit = 1000;
+        let res = stores.list(ObjectStoreKey(STORE_NAME.to_string()), None, None, limit);
+        match res {
+            Ok(ov) => {
+                let val = format!(r#"{{"data":["{key}"],"meta":{{"limit":{limit}}}}}"#);
+                assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // delete
+        let res = stores.delete(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+        );
+        match res {
+            Ok(_) => {}
+            Err(_) => panic!("should have been OK"),
+        }
+    }
+
+    #[test]
+    fn test_kv_store_item_404s() {
+        let stores = ObjectStores::default();
+        stores
+            .insert_empty_store(ObjectStoreKey(STORE_NAME.to_string()))
+            .unwrap();
+
+        let res = stores.lookup(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey("bad_key".to_string()),
+        );
+        match res {
+            Ok(_) => panic!("should not have been OK"),
+            Err(e) => assert_eq!(e, KvStoreError::NotFound),
+        }
+
+        let res = stores.delete(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey("bad_key".to_string()),
+        );
+        match res {
+            Ok(_) => panic!("should not have been OK"),
+            Err(e) => assert_eq!(e, KvStoreError::NotFound),
+        }
+    }
+
+    #[test]
+    fn test_kv_store_item_insert_modes() {
+        let stores = ObjectStores::default();
+        stores
+            .insert_empty_store(ObjectStoreKey(STORE_NAME.to_string()))
+            .unwrap();
+
+        let key = "insert_key".to_string();
+        let val1 = "val1".to_string();
+        let val2 = "val2".to_string();
+        let val3 = "val3".to_string();
+
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Add,
+            None,
+            None,
+            None,
+        );
+        assert!(res.is_ok());
+        // fail on Add, because key already exists
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Add,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Ok(_) => panic!("should not have been OK"),
+            Err(e) => assert_eq!(e, KvStoreError::PreconditionFailed),
+        }
+        // prepend val2
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val2.clone().into(),
+            KvInsertMode::Prepend,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+        // append val3
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val3.clone().into(),
+            KvInsertMode::Append,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+        let res = stores.lookup(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+        );
+        match res {
+            Ok(ov) => {
+                let val = format!("{val2}{val1}{val3}");
+                assert_eq!(ov.body, val.as_bytes().to_vec())
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // overwrite val3
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val3.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            Some(val2.as_bytes().to_vec()),
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+
+        // test overwrite
+        let res = stores.lookup(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+        );
+        match res {
+            Ok(ov) => {
+                assert_eq!(ov.body, val3.as_bytes().to_vec());
+                assert_eq!(ov.metadata, val2.as_bytes().to_vec());
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+    }
+
+    #[test]
+    fn test_kv_store_item_insert_generation() {
+        let stores = ObjectStores::default();
+        stores
+            .insert_empty_store(ObjectStoreKey(STORE_NAME.to_string()))
+            .unwrap();
+
+        let key = "insert_key".to_string();
+        let val1 = "val1".to_string();
+
+        // insert val1
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+
+        // test overwrite, get gen
+        let generation;
+        let res = stores.lookup(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+        );
+        match res {
+            Ok(ov) => {
+                assert_eq!(ov.body, val1.as_bytes().to_vec());
+                generation = ov.generation;
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // test generation match failure
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Overwrite,
+            Some(1337),
+            None,
+            None,
+        );
+        match res {
+            Err(KvStoreError::PreconditionFailed) => {}
+            _ => panic!("should have been Err(KvStoreError::PreconditionFailed)"),
+        }
+
+        // test generation match positive
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Overwrite,
+            Some(generation),
+            None,
+            None,
+        );
+        match res {
+            Ok(_) => {}
+            _ => panic!("should have been OK"),
+        }
+
+        // check result
+        let res = stores.lookup(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+        );
+        match res {
+            Ok(ov) => {
+                assert_eq!(ov.body, val1.as_bytes().to_vec());
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+    }
+
+    #[test]
+    fn test_kv_store_item_list_advanced() {
+        let stores = ObjectStores::default();
+        stores
+            .insert_empty_store(ObjectStoreKey(STORE_NAME.to_string()))
+            .unwrap();
+
+        let key = "insert_key".to_string();
+        let prefix = "key".to_string();
+        let key1 = format!("{prefix}1").to_string();
+        let key2 = format!("{prefix}2").to_string();
+        let key3 = format!("{prefix}3").to_string();
+        let val1 = "val1".to_string();
+        let val2 = "val2".to_string();
+        let val3 = "val3".to_string();
+
+        // insert insert_key
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key.clone()),
+            val1.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+
+        // insert val1
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key1.clone()),
+            val1.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+        // insert val2
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key2.clone()),
+            val2.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+        // insert val3
+        let res = stores.insert(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            ObjectKey(key3.clone()),
+            val3.clone().into(),
+            KvInsertMode::Overwrite,
+            None,
+            None,
+            None,
+        );
+        match res {
+            Err(_) => panic!("should have been OK"),
+            _ => {}
+        }
+
+        // list
+        let limit = 1000;
+        let res = stores.list(ObjectStoreKey(STORE_NAME.to_string()), None, None, limit);
+        match res {
+            Ok(ov) => {
+                let val = format!(
+                    r#"{{"data":["{key}","{key1}","{key2}","{key3}"],"meta":{{"limit":{limit}}}}}"#
+                );
+                assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // list w/prefix
+        let limit = 1000;
+        let res = stores.list(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            None,
+            Some(prefix.clone()),
+            limit,
+        );
+        match res {
+            Ok(ov) => {
+                let val = format!(
+                    r#"{{"data":["{key1}","{key2}","{key3}"],"meta":{{"limit":{limit},"prefix":"{prefix}"}}}}"#
+                );
+                assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // list w/prefix&limit
+        let limit = 1;
+        let res = stores.list(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            None,
+            Some(prefix.clone()),
+            limit,
+        );
+        match res {
+            Ok(ov) => {
+                let next_cursor = BASE64_STANDARD.encode(key1.clone());
+                let val = format!(
+                    r#"{{"data":["{key1}"],"meta":{{"limit":{limit},"prefix":"{prefix}","next_cursor":"{next_cursor}"}}}}"#
+                );
+                assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // list w/prefix&limit&cursor
+        let limit = 1;
+        let last_cursor = BASE64_STANDARD.encode(key1.clone());
+        let res = stores.list(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            Some(last_cursor),
+            Some(prefix.clone()),
+            limit,
+        );
+        match res {
+            Ok(ov) => {
+                let next_cursor = BASE64_STANDARD.encode(key2.clone());
+                let val = format!(
+                    r#"{{"data":["{key2}"],"meta":{{"limit":{limit},"prefix":"{prefix}","next_cursor":"{next_cursor}"}}}}"#
+                );
+                assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+
+        // list w/prefix&limit&cursor
+        let limit = 1;
+        let last_cursor = BASE64_STANDARD.encode(key2.clone());
+        let res = stores.list(
+            ObjectStoreKey(STORE_NAME.to_string()),
+            Some(last_cursor),
+            Some(prefix.clone()),
+            limit,
+        );
+        match res {
+            Ok(ov) => {
+                let val = format!(
+                    r#"{{"data":["{key3}"],"meta":{{"limit":{limit},"prefix":"{prefix}"}}}}"#
+                );
+                assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
+            }
+            Err(_) => panic!("should have been OK"),
+        }
+    }
+}
