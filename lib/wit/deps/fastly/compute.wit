@@ -726,12 +726,22 @@ interface kv-store {
   type delete-handle = u32;
   type list-handle = u32;
 
-  open: func(name: string) -> result<option<handle>, error>;
+  enum kv-status {
+    ok,
+    bad-request,
+    not-found,
+    precondition-failed,
+    payload-too-large,
+    internal-error,
+    too-many-requests,
+  }
+
+  open: func(name: list<u8>) -> result<option<handle>, error>;
 
   lookup: func(
     store: handle,
-    key: string,
-  ) -> result<body-handle, error>;
+    key: list<u8>,
+  ) -> result<lookup-handle, error>;
 
   resource lookup-result {
     body: func() -> body-handle;
@@ -741,7 +751,7 @@ interface kv-store {
 
   lookup-wait: func(
     handle: lookup-handle,
-  ) -> result<option<lookup-result>, error>;
+  ) -> result<tuple<option<lookup-result>, kv-status>, error>;
 
   enum insert-mode {
     overwrite,
@@ -767,7 +777,7 @@ interface kv-store {
 
   insert: func(
     store: handle,
-    key: string,
+    key: list<u8>,
     body-handle: body-handle,
     mask: insert-config-options,
     config: insert-config,
@@ -775,16 +785,16 @@ interface kv-store {
 
   insert-wait: func(
     handle: insert-handle,
-  ) -> result<_, error>;
+  ) -> result<kv-status, error>;
 
   delete: func(
     store: handle,
-    key: string,
+    key: list<u8>,
   ) -> result<delete-handle, error>;
 
   delete-wait: func(
     handle: delete-handle,
-  ) -> result<_, error>;
+  ) -> result<kv-status, error>;
 
   enum list-mode {
     strong,
@@ -813,7 +823,7 @@ interface kv-store {
 
   list-wait: func(
     handle: list-handle,
-  ) -> result<body-handle, error>;
+  ) -> result<tuple<option<body-handle>, kv-status>, error>;
 }
 
 /*

@@ -95,6 +95,12 @@ impl From<http::Error> for types::Error {
     }
 }
 
+impl From<std::string::FromUtf8Error> for types::Error {
+    fn from(_: std::string::FromUtf8Error) -> Self {
+        types::Error::InvalidArgument
+    }
+}
+
 impl From<wiggle::GuestError> for types::Error {
     fn from(err: wiggle::GuestError) -> Self {
         use wiggle::GuestError::*;

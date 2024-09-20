@@ -2677,6 +2677,21 @@ pub mod fastly_kv_store {
         PreconditionFailed,
         PayloadTooLarge,
         InternalError,
+        TooManyRequests,
+    }
+
+    impl From<kv_store::KvStatus> for KvError {
+        fn from(value: kv_store::KvStatus) -> Self {
+            match value {
+                kv_store::KvStatus::Ok => Self::Ok,
+                kv_store::KvStatus::BadRequest => Self::BadRequest,
+                kv_store::KvStatus::NotFound => Self::NotFound,
+                kv_store::KvStatus::PreconditionFailed => Self::PreconditionFailed,
+                kv_store::KvStatus::PayloadTooLarge => Self::PayloadTooLarge,
+                kv_store::KvStatus::InternalError => Self::InternalError,
+                kv_store::KvStatus::TooManyRequests => Self::TooManyRequests,
+            }
+        }
     }
 
     #[export_name = "fastly_kv_store#open"]
@@ -2735,22 +2750,25 @@ pub mod fastly_kv_store {
         pending_handle: PendingObjectStoreLookupHandle,
         body_handle_out: *mut BodyHandle,
         metadata_out: *mut u8,
-        metadata_len: *mut usize,
+        metadata_len: usize,
+        nwritten_out: *mut usize,
         generation_out: *mut u32,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
         let res = match kv_store::lookup_wait(pending_handle) {
-            Ok(Some(res)) => res,
-            Ok(None) => {
+            Ok((res, status)) => {
                 unsafe {
-                    *kv_error_out = KvError::NotFound;
+                    *kv_error_out = status.into();
                 }
 
-                return FastlyStatus::OK;
+                let Some(res) = res else {
+                    return FastlyStatus::OK;
+                };
+
+                res
             }
             Err(e) => {
                 unsafe {
-                    // TODO: the wit interface doesn't return any KvError values
                     *kv_error_out = KvError::Uninitialized;
                 }
 
@@ -2758,27 +2776,27 @@ pub mod fastly_kv_store {
             }
         };
 
-        let max_len = unsafe { *metadata_len };
-
         with_buffer!(
             metadata_out,
-            max_len,
-            { res.metadata(u64::try_from(max_len).trapping_unwrap()) },
+            metadata_len,
+            { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
             |res| {
-                let buf = handle_buffer_len!(res, metadata_len);
+                let buf = handle_buffer_len!(res, nwritten_out);
 
                 unsafe {
-                    *metadata_len = buf.as_ref().map(Vec::len).unwrap_or(0);
+                    *nwritten_out = buf.as_ref().map(Vec::len).unwrap_or(0);
                 }
 
                 std::mem::forget(buf);
             }
         );
 
+        let body = res.body();
+        let generation = res.generation();
+
         unsafe {
-            *body_handle_out = res.body();
-            *generation_out = res.generation();
-            *kv_error_out = KvError::Ok;
+            *body_handle_out = body;
+            *generation_out = generation;
         }
 
         FastlyStatus::OK
@@ -2839,18 +2857,16 @@ pub mod fastly_kv_store {
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
         match kv_store::insert_wait(pending_body_handle) {
-            Ok(_) => {
+            Ok(status) => {
                 unsafe {
-                    *kv_error_out = KvError::Ok;
+                    *kv_error_out = status.into();
                 }
 
                 FastlyStatus::OK
             }
 
-            // TODO: the wit interface doesn't return any KvError values
             Err(e) => {
                 unsafe {
-                    // TODO: the wit interface doesn't return any KvError values
                     *kv_error_out = KvError::Uninitialized;
                 }
 
@@ -2890,9 +2906,9 @@ pub mod fastly_kv_store {
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
         match kv_store::delete_wait(pending_body_handle) {
-            Ok(_) => {
+            Ok(status) => {
                 unsafe {
-                    *kv_error_out = KvError::Ok;
+                    *kv_error_out = status.into();
                 }
 
                 FastlyStatus::OK
@@ -2900,7 +2916,6 @@ pub mod fastly_kv_store {
 
             Err(e) => {
                 unsafe {
-                    // TODO: the wit interface doesn't return any KvError values
                     *kv_error_out = KvError::Uninitialized;
                 }
 
@@ -2916,19 +2931,27 @@ pub mod fastly_kv_store {
         list_config: *const ListConfig,
         pending_body_handle_out: *mut PendingObjectStoreListHandle,
     ) -> FastlyStatus {
-        let mask = list_config_mask.into();
+        let mask = kv_store::ListConfigOptions::from(list_config_mask);
 
         let config = unsafe {
             kv_store::ListConfig {
                 mode: (*list_config).mode.into(),
-                cursor: {
+                cursor: if mask.contains(kv_store::ListConfigOptions::CURSOR) {
                     let len = usize::try_from((*list_config).cursor_len).trapping_unwrap();
                     Vec::from_raw_parts((*list_config).cursor as *mut _, len, len)
+                } else {
+                    Vec::new()
                 },
-                limit: (*list_config).limit,
-                prefix: {
+                limit: if mask.contains(kv_store::ListConfigOptions::LIMIT) {
+                    (*list_config).limit
+                } else {
+                    0
+                },
+                prefix: if mask.contains(kv_store::ListConfigOptions::PREFIX) {
                     let len = usize::try_from((*list_config).prefix_len).trapping_unwrap();
-                    Vec::from_raw_parts((*list_config).cursor as *mut _, len, len)
+                    Vec::from_raw_parts((*list_config).prefix as *mut _, len, len)
+                } else {
+                    Vec::new()
                 },
             }
         };
@@ -2957,10 +2980,10 @@ pub mod fastly_kv_store {
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
         match kv_store::list_wait(pending_body_handle) {
-            Ok(res) => {
+            Ok((res, status)) => {
                 unsafe {
-                    *kv_error_out = KvError::Ok;
-                    *body_handle_out = res;
+                    *kv_error_out = status.into();
+                    *body_handle_out = res.unwrap_or(INVALID_HANDLE);
                 }
 
                 FastlyStatus::OK
@@ -2968,8 +2991,8 @@ pub mod fastly_kv_store {
 
             Err(e) => {
                 unsafe {
-                    // TODO: the wit interface doesn't return any KvError values
                     *kv_error_out = KvError::Uninitialized;
+                    *body_handle_out = INVALID_HANDLE;
                 }
 
                 e.into()
