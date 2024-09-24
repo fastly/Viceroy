@@ -119,6 +119,9 @@ pub enum Error {
     #[error(transparent)]
     HttpError(#[from] http::Error),
 
+    #[error("Invalid Url")]
+    InvalidBackendUrl,
+
     #[error("Object Store '{0}' does not exist")]
     UnknownObjectStore(String),
 
@@ -184,6 +187,7 @@ impl Error {
             Error::ObjectStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
+            Error::InvalidBackendUrl => FastlyStatus::Httpinvalid,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
