@@ -2,7 +2,7 @@ use {
     super::fastly::api::{http_body, kv_store, types},
     super::types::TrappableError,
     crate::linking::ComponentCtx,
-    crate::object_store::{ObjectKey, ObjectStoreError},
+    crate::object_store::{KvStoreError, ObjectKey, ObjectStoreError},
     crate::session::{
         PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
         PendingKvLookupTask,
@@ -89,7 +89,7 @@ impl kv_store::Host for ComponentCtx {
 
     async fn lookup_wait(
         &mut self,
-        _handle: kv_store::LookupHandle,
+        handle: kv_store::LookupHandle,
     ) -> Result<
         (
             Option<wasmtime::component::Resource<kv_store::LookupResult>>,
@@ -97,7 +97,30 @@ impl kv_store::Host for ComponentCtx {
         ),
         types::Error,
     > {
-        todo!()
+        let resp = self
+            .session
+            .take_pending_kv_lookup(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(value) => {
+                let lr = kv_store::LookupResult {
+                    body: self.session.insert_body(value.body.into()).into(),
+                    metadata: match value.metadata_len {
+                        0 => None,
+                        _ => Some(value.metadata),
+                    },
+                    generation: value.generation,
+                };
+
+                let res = self.table().push(lr)?;
+
+                Ok((Some(res), kv_store::KvStatus::Ok))
+            }
+            Err(e) => Ok((None, e.into())),
+        }
     }
 
     async fn insert(
