@@ -1,11 +1,20 @@
 use {
-    super::fastly::api::{http_body, kv_store, types},
-    super::types::TrappableError,
-    crate::linking::ComponentCtx,
-    crate::object_store::{KvStoreError, ObjectKey, ObjectStoreError},
-    crate::session::{
-        PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
-        PendingKvLookupTask,
+    super::{
+        fastly::api::{
+            http_body,
+            kv_store::{self, InsertMode},
+            types,
+        },
+        types::TrappableError,
+    },
+    crate::{
+        linking::ComponentCtx,
+        object_store::{KvStoreError, ObjectKey, ObjectStoreError},
+        session::{
+            PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
+            PendingKvLookupTask,
+        },
+        wiggle_abi::types::KvInsertMode,
     },
     wasmtime_wasi::WasiView,
 };
@@ -125,35 +134,111 @@ impl kv_store::Host for ComponentCtx {
 
     async fn insert(
         &mut self,
-        _store: kv_store::Handle,
-        _key: Vec<u8>,
-        _body_handle: kv_store::BodyHandle,
-        _mask: kv_store::InsertConfigOptions,
-        _config: kv_store::InsertConfig,
+        store: kv_store::Handle,
+        key: Vec<u8>,
+        body_handle: kv_store::BodyHandle,
+        mask: kv_store::InsertConfigOptions,
+        config: kv_store::InsertConfig,
     ) -> Result<kv_store::InsertHandle, types::Error> {
-        todo!()
+        let body = self
+            .session
+            .take_body(body_handle.into())?
+            .read_into_vec()
+            .await?;
+        let store = self.session.get_kv_store_key(store.into()).unwrap();
+        let key = String::from_utf8(key)?;
+
+        let mode = match config.mode {
+            InsertMode::Overwrite => KvInsertMode::Overwrite,
+            InsertMode::Add => KvInsertMode::Add,
+            InsertMode::Append => KvInsertMode::Append,
+            InsertMode::Prepend => KvInsertMode::Prepend,
+        };
+
+        let meta = if mask.contains(kv_store::InsertConfigOptions::METADATA) {
+            Some(config.metadata)
+        } else {
+            None
+        };
+
+        let igm = if mask.contains(kv_store::InsertConfigOptions::IF_GENERATION_MATCH) {
+            Some(config.if_generation_match)
+        } else {
+            None
+        };
+
+        let ttl = if mask.contains(kv_store::InsertConfigOptions::TIME_TO_LIVE_SEC) {
+            Some(std::time::Duration::from_secs(
+                config.time_to_live_sec as u64,
+            ))
+        } else {
+            None
+        };
+
+        let fut = futures::future::ok(self.session.kv_insert(
+            store.clone(),
+            ObjectKey::new(key)?,
+            body,
+            Some(mode),
+            igm,
+            meta,
+            ttl,
+        ));
+        let task = PeekableTask::spawn(fut).await;
+        let handle = self
+            .session
+            .insert_pending_kv_insert(PendingKvInsertTask::new(task));
+        Ok(handle.into())
     }
 
     async fn insert_wait(
         &mut self,
-        _handle: kv_store::InsertHandle,
+        handle: kv_store::InsertHandle,
     ) -> Result<kv_store::KvStatus, types::Error> {
-        todo!()
+        let resp = self
+            .session
+            .take_pending_kv_insert(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(()) => Ok(kv_store::KvStatus::Ok),
+            Err(e) => Ok(e.into()),
+        }
     }
 
     async fn delete(
         &mut self,
-        _store: kv_store::Handle,
-        _key: Vec<u8>,
+        store: kv_store::Handle,
+        key: Vec<u8>,
     ) -> Result<kv_store::DeleteHandle, types::Error> {
-        todo!()
+        let store = self.session.get_kv_store_key(store.into()).unwrap();
+        let key = String::from_utf8(key)?;
+        // just create a future that's already ready
+        let fut = futures::future::ok(self.session.kv_delete(store.clone(), ObjectKey::new(key)?));
+        let task = PeekableTask::spawn(fut).await;
+        let lh = self
+            .session
+            .insert_pending_kv_delete(PendingKvDeleteTask::new(task));
+        Ok(lh.into())
     }
 
     async fn delete_wait(
         &mut self,
-        _handle: kv_store::DeleteHandle,
+        handle: kv_store::DeleteHandle,
     ) -> Result<kv_store::KvStatus, types::Error> {
-        todo!()
+        let resp = self
+            .session
+            .take_pending_kv_delete(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(()) => Ok(kv_store::KvStatus::Ok),
+            Err(e) => Ok(e.into()),
+        }
     }
 
     async fn list(
