@@ -9,7 +9,7 @@ use {
     },
     crate::{
         linking::ComponentCtx,
-        object_store::{KvStoreError, ObjectKey, ObjectStoreError},
+        object_store::{ObjectKey, ObjectStoreError},
         session::{
             PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
             PendingKvLookupTask,
@@ -243,17 +243,55 @@ impl kv_store::Host for ComponentCtx {
 
     async fn list(
         &mut self,
-        _store: kv_store::Handle,
-        _mask: kv_store::ListConfigOptions,
-        _options: kv_store::ListConfig,
+        store: kv_store::Handle,
+        mask: kv_store::ListConfigOptions,
+        options: kv_store::ListConfig,
     ) -> Result<kv_store::ListHandle, types::Error> {
-        todo!()
+        let store = self.session.get_kv_store_key(store.into()).unwrap();
+
+        let cursor = if mask.contains(kv_store::ListConfigOptions::CURSOR) {
+            Some(String::from_utf8(options.cursor)?)
+        } else {
+            None
+        };
+
+        let prefix = if mask.contains(kv_store::ListConfigOptions::PREFIX) {
+            Some(String::from_utf8(options.prefix)?)
+        } else {
+            None
+        };
+
+        let limit = if mask.contains(kv_store::ListConfigOptions::LIMIT) {
+            Some(options.limit)
+        } else {
+            None
+        };
+
+        let fut = futures::future::ok(self.session.kv_list(store.clone(), cursor, prefix, limit));
+        let task = PeekableTask::spawn(fut).await;
+        let handle = self
+            .session
+            .insert_pending_kv_list(PendingKvListTask::new(task));
+        Ok(handle.into())
     }
 
     async fn list_wait(
         &mut self,
-        _handle: kv_store::ListHandle,
+        handle: kv_store::ListHandle,
     ) -> Result<(Option<kv_store::BodyHandle>, kv_store::KvStatus), types::Error> {
-        todo!()
+        let resp = self
+            .session
+            .take_pending_kv_list(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(value) => Ok((
+                Some(self.session.insert_body(value.into()).into()),
+                kv_store::KvStatus::Ok,
+            )),
+            Err(e) => Ok((None, e.into())),
+        }
     }
 }
