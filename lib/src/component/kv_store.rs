@@ -29,7 +29,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
         todo!()
     }
 
-    fn drop(
+    async fn drop(
         &mut self,
         _rep: wasmtime::component::Resource<kv_store::LookupResult>,
     ) -> wasmtime::Result<()> {

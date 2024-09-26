@@ -49,7 +49,7 @@ pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
-    Component(component::InstancePre<ComponentCtx>),
+    Component(compute::ComputePre<ComponentCtx>),
 }
 
 impl Instance {
@@ -171,7 +171,7 @@ impl ExecuteCtx {
                 Component::from_binary(&engine, &input)?
             };
             let instance_pre = linker.instantiate_pre(&component)?;
-            Instance::Component(instance_pre)
+            Instance::Component(compute::ComputePre::new(instance_pre)?)
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
@@ -493,10 +493,10 @@ impl ExecuteCtx {
                 })
                 .map_err(ExecutionError::Context)?;
 
-                let (compute, _instance) =
-                    compute::Compute::instantiate_pre(&mut store, instance_pre)
-                        .await
-                        .map_err(ExecutionError::Instantiation)?;
+                let compute = instance_pre
+                    .instantiate_async(&mut store)
+                    .await
+                    .map_err(ExecutionError::Instantiation)?;
 
                 let result = compute
                     .fastly_api_reactor()

@@ -8,7 +8,7 @@ use {
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
     wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
-    wasmtime_wasi_nn::WasiNnCtx,
+    wasmtime_wasi_nn::witx::WasiNnCtx,
 };
 
 pub struct Limiter {
