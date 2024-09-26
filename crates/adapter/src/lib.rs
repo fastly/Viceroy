@@ -33,6 +33,8 @@ pub mod bindings {
         runtime_path: "crate::bindings::wit_bindgen_rt_shim",
         disable_run_ctors_once_workaround: true,
         skip: ["poll"],
+        generate_all,
+        disable_custom_section_link_helpers: true,
     });
 
     pub mod wit_bindgen_rt_shim {

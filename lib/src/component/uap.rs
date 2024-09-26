@@ -41,7 +41,7 @@ impl uap::HostUserAgent for ComponentCtx {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 
-    fn drop(&mut self, _agent: Resource<UserAgent>) -> wasmtime::Result<()> {
+    async fn drop(&mut self, _agent: Resource<UserAgent>) -> wasmtime::Result<()> {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 }
