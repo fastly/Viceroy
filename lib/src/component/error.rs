@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{http_req, types},
+    super::fastly::api::{http_req, kv_store::KvStatus, types},
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
@@ -12,6 +12,7 @@ use {
         status::InvalidStatusCode,
         uri::InvalidUri,
     },
+    wasmtime_wasi::ResourceTableError,
 };
 
 impl types::Error {
@@ -95,6 +96,12 @@ impl From<http::Error> for types::Error {
     }
 }
 
+impl From<std::string::FromUtf8Error> for types::Error {
+    fn from(_: std::string::FromUtf8Error) -> Self {
+        types::Error::InvalidArgument
+    }
+}
+
 impl From<wiggle::GuestError> for types::Error {
     fn from(err: wiggle::GuestError) -> Self {
         use wiggle::GuestError::*;
@@ -142,6 +149,30 @@ impl From<KvStoreError> for types::Error {
             PayloadTooLarge => types::Error::InvalidArgument,
             InternalError => types::Error::InvalidArgument,
             TooManyRequests => types::Error::InvalidArgument,
+        }
+    }
+}
+
+impl From<ResourceTableError> for types::Error {
+    fn from(err: ResourceTableError) -> Self {
+        match err {
+            _ => panic!("{}", err),
+        }
+    }
+}
+
+impl From<KvStoreError> for KvStatus {
+    fn from(err: KvStoreError) -> Self {
+        use KvStoreError::*;
+        match err {
+            Uninitialized => panic!("{}", err),
+            Ok => KvStatus::Ok,
+            BadRequest => KvStatus::BadRequest,
+            NotFound => KvStatus::NotFound,
+            PreconditionFailed => KvStatus::PreconditionFailed,
+            PayloadTooLarge => KvStatus::PayloadTooLarge,
+            InternalError => KvStatus::InternalError,
+            TooManyRequests => KvStatus::TooManyRequests,
         }
     }
 }
