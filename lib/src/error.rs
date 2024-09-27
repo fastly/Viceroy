@@ -676,6 +676,14 @@ pub enum SecretStoreConfigError {
     #[error(transparent)]
     IoError(std::io::Error),
 
+    #[error("'{0}' is not a valid format for the secret store. Supported format(s) are: 'json'.")]
+    InvalidFileFormat(String),
+    #[error("When using a top-level 'file' to load data, both 'file' and 'format' must be set.")]
+    OnlyOneFormatOrFileSet,
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON object."
+    )]
+    FileWrongFormat,
     #[error("The `file` and `data` keys for the object `{0}` are set. Only one can be used.")]
     FileAndData(String),
     #[error("The `file` or `data` key for the object `{0}` is not set. One must be used.")]

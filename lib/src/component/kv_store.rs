@@ -58,7 +58,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
         Ok(self.table().get(&rep)?.generation)
     }
 
-    fn drop(
+    async fn drop(
         &mut self,
         rep: wasmtime::component::Resource<kv_store::LookupResult>,
     ) -> wasmtime::Result<()> {
