@@ -6,6 +6,7 @@ component::bindgen!({
     async: true,
     with: {
         "fastly:api/uap/user-agent": uap::UserAgent,
+        "fastly:api/kv-store/lookup-result": kv_store::LookupResult,
 
         "wasi:clocks": wasmtime_wasi::bindings::clocks,
         "wasi:random": wasmtime_wasi::bindings::random,
@@ -18,7 +19,10 @@ component::bindgen!({
     },
 
     trappable_imports: [
-        "header-values-get"
+        "header-values-get",
+        "[method]lookup-result.body",
+        "[method]lookup-result.metadata",
+        "[method]lookup-result.generation"
     ],
 });
 

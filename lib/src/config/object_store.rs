@@ -5,6 +5,7 @@ use {
     crate::{
         error::{FastlyConfigError, ObjectStoreConfigError},
         object_store::{ObjectKey, ObjectStoreKey, ObjectStores},
+        wiggle_abi::types::KvInsertMode,
     },
     std::fs,
     toml::value::Table,
@@ -167,6 +168,10 @@ impl TryFrom<Table> for ObjectStoreConfig {
                             }
                         })?,
                         bytes,
+                        KvInsertMode::Overwrite,
+                        None,
+                        None,
+                        None,
                     )
                     .expect("Lock was not poisoned");
             }

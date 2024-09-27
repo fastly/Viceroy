@@ -4,7 +4,8 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
+    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
+    PendingKvLookupTask,
 };
 
 use std::collections::HashMap;
@@ -14,6 +15,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use crate::object_store::KvStoreError;
 
 use {
     self::downstream::DownstreamResponse,
@@ -22,14 +26,16 @@ use {
         config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
         error::{Error, HandleError},
         logging::LogEndpoint,
-        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
+        object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
         secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle,
-            PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
+            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, KvInsertMode,
+            KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle, KvStoreListHandle,
+            KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
+            PendingKvLookupHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
+            SecretHandle, SecretStoreHandle,
         },
         ExecuteCtx,
     },
@@ -122,11 +128,11 @@ pub struct Session {
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) object_store: ObjectStores,
+    pub(crate) kv_store: ObjectStores,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
-    object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
+    kv_store_by_name: PrimaryMap<KvStoreHandle, ObjectStoreKey>,
     /// The secret stores configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -164,7 +170,7 @@ impl Session {
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
-        object_store: ObjectStores,
+        kv_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
     ) -> Session {
         let (parts, body) = req.into_parts();
@@ -199,8 +205,8 @@ impl Session {
             tls_config,
             dictionaries,
             loaded_dictionaries: PrimaryMap::new(),
-            object_store,
-            object_store_by_name: PrimaryMap::new(),
+            kv_store,
+            kv_store_by_name: PrimaryMap::new(),
             secret_stores,
             secret_stores_by_name: PrimaryMap::new(),
             secrets_by_name: PrimaryMap::new(),
@@ -678,23 +684,33 @@ impl Session {
         )
     }
 
-    // ----- Object Store API -----
-    pub fn obj_store_handle(&mut self, key: &str) -> Result<ObjectStoreHandle, Error> {
+    // ----- KV Store API -----
+    pub fn kv_store_handle(&mut self, key: &str) -> Result<KvStoreHandle, Error> {
         let obj_key = ObjectStoreKey::new(key);
-        Ok(self.object_store_by_name.push(obj_key))
+        Ok(self.kv_store_by_name.push(obj_key))
     }
 
-    pub fn get_obj_store_key(&self, handle: ObjectStoreHandle) -> Option<&ObjectStoreKey> {
-        self.object_store_by_name.get(handle)
+    pub fn get_kv_store_key(&self, handle: KvStoreHandle) -> Option<&ObjectStoreKey> {
+        self.kv_store_by_name.get(handle)
     }
 
-    pub fn obj_insert(
+    pub fn kv_insert(
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
         obj: Vec<u8>,
-    ) -> Result<(), ObjectStoreError> {
-        self.object_store.insert(obj_store_key, obj_key, obj)
+        mode: Option<KvInsertMode>,
+        generation: Option<u32>,
+        metadata: Option<Vec<u8>>,
+        ttl: Option<Duration>,
+    ) -> Result<(), KvStoreError> {
+        let mode = match mode {
+            None => KvInsertMode::Overwrite,
+            Some(m) => m,
+        };
+
+        self.kv_store
+            .insert(obj_store_key, obj_key, obj, mode, generation, metadata, ttl)
     }
 
     /// Insert a [`PendingKvInsert`] into the session.
@@ -704,7 +720,7 @@ impl Session {
     pub fn insert_pending_kv_insert(
         &mut self,
         pending: PendingKvInsertTask,
-    ) -> PendingKvInsertHandle {
+    ) -> KvStoreInsertHandle {
         self.async_items
             .push(Some(AsyncItem::PendingKvInsert(pending)))
             .into()
@@ -743,12 +759,12 @@ impl Session {
             .ok_or(HandleError::InvalidPendingKvInsertHandle(handle))
     }
 
-    pub fn obj_delete(
+    pub fn kv_delete(
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<(), ObjectStoreError> {
-        self.object_store.delete(obj_store_key, obj_key)
+    ) -> Result<(), KvStoreError> {
+        self.kv_store.delete(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingKvDelete`] into the session.
@@ -799,10 +815,10 @@ impl Session {
 
     pub fn obj_lookup(
         &self,
-        obj_store_key: &ObjectStoreKey,
-        obj_key: &ObjectKey,
-    ) -> Result<Vec<u8>, ObjectStoreError> {
-        self.object_store.lookup(obj_store_key, obj_key)
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+    ) -> Result<ObjectValue, KvStoreError> {
+        self.kv_store.lookup(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingLookup`] into the session.
@@ -849,6 +865,61 @@ impl Session {
             .and_then(Option::as_ref)
             .and_then(AsyncItem::as_pending_kv_lookup)
             .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
+    }
+
+    pub fn kv_list(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        cursor: Option<String>,
+        prefix: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<Vec<u8>, KvStoreError> {
+        let limit = limit.unwrap_or(1000);
+
+        self.kv_store.list(obj_store_key, cursor, prefix, limit)
+    }
+
+    /// Insert a [`PendingList`] into the session.
+    ///
+    /// This method returns a new [`PendingKvListHandle`], which can then be used to access
+    /// and mutate the pending list.
+    pub fn insert_pending_kv_list(&mut self, pending: PendingKvListTask) -> PendingKvListHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingKvList(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingList`], given its [`PendingKvListHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending list in the
+    /// session.
+    pub fn take_pending_kv_list(
+        &mut self,
+        handle: PendingKvListHandle,
+    ) -> Result<PendingKvListTask, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_kv_list(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_kv_list)
+            .ok_or(HandleError::InvalidPendingKvListHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingList`], given its [`PendingKvListHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a list in the
+    /// session.
+    pub fn pending_kv_list(
+        &self,
+        handle: PendingKvListHandle,
+    ) -> Result<&PendingKvListTask, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_kv_list)
+            .ok_or(HandleError::InvalidPendingKvListHandle(handle))
     }
 
     // ----- Secret Store API -----
@@ -1163,5 +1234,65 @@ impl From<PendingKvDeleteHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvDeleteHandle {
     fn from(h: AsyncItemHandle) -> PendingKvDeleteHandle {
         PendingKvDeleteHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingKvListHandle> for AsyncItemHandle {
+    fn from(h: PendingKvListHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingKvListHandle {
+    fn from(h: AsyncItemHandle) -> PendingKvListHandle {
+        PendingKvListHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreLookupHandle> for AsyncItemHandle {
+    fn from(h: KvStoreLookupHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreLookupHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreLookupHandle {
+        KvStoreLookupHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreInsertHandle> for AsyncItemHandle {
+    fn from(h: KvStoreInsertHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreInsertHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreInsertHandle {
+        KvStoreInsertHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreDeleteHandle> for AsyncItemHandle {
+    fn from(h: KvStoreDeleteHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreDeleteHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreDeleteHandle {
+        KvStoreDeleteHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreListHandle> for AsyncItemHandle {
+    fn from(h: KvStoreListHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreListHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreListHandle {
+        KvStoreListHandle::from(h.as_u32())
     }
 }

@@ -21,6 +21,12 @@ impl types::Host for ComponentCtx {
     }
 }
 
+impl From<wasmtime::component::ResourceTableError> for TrappableError {
+    fn from(e: wasmtime::component::ResourceTableError) -> Self {
+        Self::Trap(e.into())
+    }
+}
+
 impl From<types::Error> for TrappableError {
     fn from(e: types::Error) -> Self {
         Self::Error(e)

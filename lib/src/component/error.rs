@@ -1,9 +1,9 @@
 use {
-    super::fastly::api::{http_req, types},
+    super::fastly::api::{http_req, kv_store::KvStatus, types},
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
-        object_store::{KeyValidationError, ObjectStoreError},
+        object_store::{KeyValidationError, KvStoreError, ObjectStoreError},
         wiggle_abi::{DictionaryError, SecretStoreError},
     },
     http::{
@@ -12,6 +12,7 @@ use {
         status::InvalidStatusCode,
         uri::InvalidUri,
     },
+    wasmtime_wasi::ResourceTableError,
 };
 
 impl types::Error {
@@ -95,6 +96,12 @@ impl From<http::Error> for types::Error {
     }
 }
 
+impl From<std::string::FromUtf8Error> for types::Error {
+    fn from(_: std::string::FromUtf8Error) -> Self {
+        types::Error::InvalidArgument
+    }
+}
+
 impl From<wiggle::GuestError> for types::Error {
     fn from(err: wiggle::GuestError) -> Self {
         use wiggle::GuestError::*;
@@ -126,6 +133,46 @@ impl From<ObjectStoreError> for types::Error {
             MissingObject => types::Error::OptionalNone,
             PoisonedLock => panic!("{}", err),
             UnknownObjectStore(_) => types::Error::InvalidArgument,
+        }
+    }
+}
+
+impl From<KvStoreError> for types::Error {
+    fn from(err: KvStoreError) -> Self {
+        use KvStoreError::*;
+        match err {
+            Uninitialized => panic!("{}", err),
+            Ok => panic!("{err} should never be converted to an error"),
+            BadRequest => types::Error::InvalidArgument,
+            NotFound => types::Error::OptionalNone,
+            PreconditionFailed => types::Error::InvalidArgument,
+            PayloadTooLarge => types::Error::InvalidArgument,
+            InternalError => types::Error::InvalidArgument,
+            TooManyRequests => types::Error::InvalidArgument,
+        }
+    }
+}
+
+impl From<ResourceTableError> for types::Error {
+    fn from(err: ResourceTableError) -> Self {
+        match err {
+            _ => panic!("{}", err),
+        }
+    }
+}
+
+impl From<KvStoreError> for KvStatus {
+    fn from(err: KvStoreError) -> Self {
+        use KvStoreError::*;
+        match err {
+            Uninitialized => panic!("{}", err),
+            Ok => KvStatus::Ok,
+            BadRequest => KvStatus::BadRequest,
+            NotFound => KvStatus::NotFound,
+            PreconditionFailed => KvStatus::PreconditionFailed,
+            PayloadTooLarge => KvStatus::PayloadTooLarge,
+            InternalError => KvStatus::InternalError,
+            TooManyRequests => KvStatus::TooManyRequests,
         }
     }
 }
@@ -177,6 +224,7 @@ impl From<error::Error> for types::Error {
             // We delegate to some error types' own implementation of `to_fastly_status`.
             Error::DictionaryError(e) => e.into(),
             Error::ObjectStoreError(e) => e.into(),
+            Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch

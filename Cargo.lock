@@ -2431,6 +2431,7 @@ version = "0.12.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "bytes",
  "bytesize",
  "cfg-if",

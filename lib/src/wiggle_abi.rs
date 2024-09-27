@@ -60,6 +60,7 @@ mod erl_impl;
 mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
+mod kv_store_impl;
 mod log_impl;
 mod obj_store_impl;
 mod req_impl;
@@ -75,7 +76,8 @@ wiggle::from_witx!({
     errors: { fastly_status => Error },
     async: {
         fastly_async_io::{select},
-        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait},
+        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
+        fastly_kv_store::{lookup, lookup_wait, insert, insert_wait, delete, delete_wait, list, list_wait},
         fastly_http_body::{append, read, write},
         fastly_http_req::{
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
@@ -83,6 +85,76 @@ wiggle::from_witx!({
         },
     }
 });
+
+impl From<types::ObjectStoreHandle> for types::KvStoreHandle {
+    fn from(h: types::ObjectStoreHandle) -> types::KvStoreHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreHandle> for types::ObjectStoreHandle {
+    fn from(h: types::KvStoreHandle) -> types::ObjectStoreHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreLookupHandle> for types::PendingKvLookupHandle {
+    fn from(h: types::KvStoreLookupHandle) -> types::PendingKvLookupHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvLookupHandle> for types::KvStoreLookupHandle {
+    fn from(h: types::PendingKvLookupHandle) -> types::KvStoreLookupHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreInsertHandle> for types::PendingKvInsertHandle {
+    fn from(h: types::KvStoreInsertHandle) -> types::PendingKvInsertHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvInsertHandle> for types::KvStoreInsertHandle {
+    fn from(h: types::PendingKvInsertHandle) -> types::KvStoreInsertHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreDeleteHandle> for types::PendingKvDeleteHandle {
+    fn from(h: types::KvStoreDeleteHandle) -> types::PendingKvDeleteHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvDeleteHandle> for types::KvStoreDeleteHandle {
+    fn from(h: types::PendingKvDeleteHandle) -> types::KvStoreDeleteHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreListHandle> for types::PendingKvListHandle {
+    fn from(h: types::KvStoreListHandle) -> types::PendingKvListHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvListHandle> for types::KvStoreListHandle {
+    fn from(h: types::PendingKvListHandle) -> types::KvStoreListHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
 
 impl From<types::HttpVersion> for http::version::Version {
     fn from(v: types::HttpVersion) -> http::version::Version {

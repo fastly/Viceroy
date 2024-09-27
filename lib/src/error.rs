@@ -96,6 +96,9 @@ pub enum Error {
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 
     #[error(transparent)]
+    KvStoreError(#[from] crate::object_store::KvStoreError),
+
+    #[error(transparent)]
     SecretStoreError(#[from] crate::wiggle_abi::SecretStoreError),
 
     #[error{"Expected UTF-8"}]
@@ -182,6 +185,7 @@ impl Error {
             Error::DictionaryError(e) => e.to_fastly_status(),
             Error::DeviceDetectionError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
+            Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
             // All other hostcall errors map to a generic `ERROR` value.
@@ -271,6 +275,10 @@ pub enum HandleError {
     /// A delete handle was not valid.
     #[error("Invalid pending KV delete handle: {0}")]
     InvalidPendingKvDeleteHandle(crate::wiggle_abi::types::PendingKvDeleteHandle),
+
+    /// A list handle was not valid.
+    #[error("Invalid pending KV list handle: {0}")]
+    InvalidPendingKvListHandle(crate::wiggle_abi::types::PendingKvListHandle),
 
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
@@ -645,6 +653,8 @@ pub enum ObjectStoreConfigError {
     NotATable,
     #[error("There was an error when manipulating the ObjectStore: {0}.")]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
+    #[error("There was an error when manipulating the KvStore: {0}.")]
+    KvStoreError(#[from] crate::object_store::KvStoreError),
     #[error("Invalid `key` value used: {0}.")]
     KeyValidationError(#[from] crate::object_store::KeyValidationError),
     #[error("'{0}' is not a valid format for the config store. Supported format(s) are: 'json'.")]

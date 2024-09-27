@@ -1,4 +1,4 @@
-use crate::object_store::ObjectStoreError;
+use crate::object_store::{KvStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
 use futures::Future;
@@ -7,34 +7,45 @@ use http::Response;
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
-pub struct PendingKvLookupTask(PeekableTask<Result<Vec<u8>, ObjectStoreError>>);
+pub struct PendingKvLookupTask(PeekableTask<Result<ObjectValue, KvStoreError>>);
 impl PendingKvLookupTask {
-    pub fn new(t: PeekableTask<Result<Vec<u8>, ObjectStoreError>>) -> PendingKvLookupTask {
+    pub fn new(t: PeekableTask<Result<ObjectValue, KvStoreError>>) -> PendingKvLookupTask {
         PendingKvLookupTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<Vec<u8>, ObjectStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<ObjectValue, KvStoreError>> {
         self.0
     }
 }
 
 #[derive(Debug)]
-pub struct PendingKvInsertTask(PeekableTask<Result<(), ObjectStoreError>>);
+pub struct PendingKvInsertTask(PeekableTask<Result<(), KvStoreError>>);
 impl PendingKvInsertTask {
-    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvInsertTask {
+    pub fn new(t: PeekableTask<Result<(), KvStoreError>>) -> PendingKvInsertTask {
         PendingKvInsertTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<(), KvStoreError>> {
         self.0
     }
 }
 
 #[derive(Debug)]
-pub struct PendingKvDeleteTask(PeekableTask<Result<(), ObjectStoreError>>);
+pub struct PendingKvDeleteTask(PeekableTask<Result<(), KvStoreError>>);
 impl PendingKvDeleteTask {
-    pub fn new(t: PeekableTask<Result<(), ObjectStoreError>>) -> PendingKvDeleteTask {
+    pub fn new(t: PeekableTask<Result<(), KvStoreError>>) -> PendingKvDeleteTask {
         PendingKvDeleteTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<(), ObjectStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<(), KvStoreError>> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct PendingKvListTask(PeekableTask<Result<Vec<u8>, KvStoreError>>);
+impl PendingKvListTask {
+    pub fn new(t: PeekableTask<Result<Vec<u8>, KvStoreError>>) -> PendingKvListTask {
+        PendingKvListTask(t)
+    }
+    pub fn task(self) -> PeekableTask<Result<Vec<u8>, KvStoreError>> {
         self.0
     }
 }
@@ -51,6 +62,7 @@ pub enum AsyncItem {
     PendingKvLookup(PendingKvLookupTask),
     PendingKvInsert(PendingKvInsertTask),
     PendingKvDelete(PendingKvDeleteTask),
+    PendingKvList(PendingKvListTask),
 }
 
 impl AsyncItem {
@@ -149,6 +161,20 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_pending_kv_list(&self) -> Option<&PendingKvListTask> {
+        match self {
+            Self::PendingKvList(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_kv_list(self) -> Option<PendingKvListTask> {
+        match self {
+            Self::PendingKvList(req) => Some(req),
+            _ => None,
+        }
+    }
+
     pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
@@ -178,6 +204,7 @@ impl AsyncItem {
             Self::PendingKvLookup(req) => req.0.await_ready().await,
             Self::PendingKvInsert(req) => req.0.await_ready().await,
             Self::PendingKvDelete(req) => req.0.await_ready().await,
+            Self::PendingKvList(req) => req.0.await_ready().await,
         }
     }
 
@@ -207,6 +234,12 @@ impl From<PendingKvInsertTask> for AsyncItem {
 impl From<PendingKvDeleteTask> for AsyncItem {
     fn from(task: PendingKvDeleteTask) -> Self {
         Self::PendingKvDelete(task)
+    }
+}
+
+impl From<PendingKvListTask> for AsyncItem {
+    fn from(task: PendingKvListTask) -> Self {
+        Self::PendingKvList(task)
     }
 }
 
