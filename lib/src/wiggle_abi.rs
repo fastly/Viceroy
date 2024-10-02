@@ -60,6 +60,7 @@ mod erl_impl;
 mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
+mod http_cache;
 mod kv_store_impl;
 mod log_impl;
 mod obj_store_impl;
@@ -79,9 +80,10 @@ wiggle::from_witx!({
         fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
         fastly_kv_store::{lookup, lookup_wait, insert, insert_wait, delete, delete_wait, list, list_wait},
         fastly_http_body::{append, read, write},
+        fastly_http_cache::{lookup, transaction_lookup, insert, transaction_insert, transaction_insert_and_stream_back, transaction_update, transaction_update_and_return_fresh, transaction_record_not_cacheable, transaction_abandon, found, close, get_suggested_backend_request, get_suggested_cache_options, prepare_response_for_storage, get_found_response, get_state, get_length, get_max_age_ns, get_stale_while_revalidate_ns, get_age_ns, get_hits, get_sensitive_data, get_surrogate_keys, get_vary_rule},
         fastly_http_req::{
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
-            pending_req_wait, pending_req_wait_v2, send, send_v2, send_async, send_async_streaming
+            pending_req_wait, pending_req_wait_v2, send, send_v2, send_v3, send_async, send_async_v2, send_async_streaming
         },
     }
 });

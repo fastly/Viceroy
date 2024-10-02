@@ -796,6 +796,18 @@ impl FastlyHttpReq for Session {
             .await
     }
 
+    async fn send_v3(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend_bytes: GuestPtr<str>,
+        error_detail: GuestPtr<SendErrorDetail>,
+    ) -> Result<(ResponseHandle, BodyHandle), Error> {
+        self.send_v2(memory, req_handle, body_handle, backend_bytes, error_detail)
+            .await
+    }
+
     async fn send_async(
         &mut self,
         memory: &mut GuestMemory<'_>,
@@ -822,6 +834,23 @@ impl FastlyHttpReq for Session {
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))
+    }
+
+    async fn send_async_v2(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend_bytes: GuestPtr<str>,
+        streaming: u32,
+    ) -> Result<PendingRequestHandle, Error> {
+        if streaming == 1 {
+            self.send_async_streaming(memory, req_handle, body_handle, backend_bytes)
+                .await
+        } else {
+            self.send_async(memory, req_handle, body_handle, backend_bytes)
+                .await
+        }
     }
 
     async fn send_async_streaming(
