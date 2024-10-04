@@ -1,6 +1,7 @@
 (use "typenames.witx")
 (use "cache.witx")
 (use "config-store.witx")
+(use "http-cache.witx")
 
 (module $fastly_abi
     (@interface func (export "init")
@@ -396,10 +397,51 @@
                 (error $fastly_status)))
     )
 
+    ;; Like `send_v2`, but does NOT provide caching of any form, and does not set `X-Cache` or
+    ;; similar.
+    ;;
+    ;; This hostcall is intended to ultimately replace `send_v2` as HTTP caching becomes managed
+    ;; explicitly at the SDK level.
+    ;;
+    ;; Any cache override setting on the request is ignored.
+    ;;
+    ;; Making this a distinct hostcall, rather than a cache override variant, may make it easier
+    ;; to tell when support for old styles of send can be safely dropped.
+    (@interface func (export "send_v3")
+        (param $h $request_handle)
+        (param $b $body_handle)
+        (param $backend string)
+        (param $error_detail (@witx pointer $send_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
+    )
+
     (@interface func (export "send_async")
         (param $h $request_handle)
         (param $b $body_handle)
         (param $backend string)
+        (result $err (expected $pending_request_handle
+                (error $fastly_status)))
+    )
+
+    ;; Like `send_async`, but does NOT provide caching of any form, and does not set `X-Cache` or
+    ;; similar.
+    ;;
+    ;; Also encompasses `send_async_streaming` by including a streaming flag.
+    ;;
+    ;; This hostcall is intended to ultimately replace `send_async{_streaming}` as HTTP
+    ;; caching becomes managed explicitly at the SDK level.
+    ;;
+    ;; Any cache override setting on the request is ignored.
+    ;;
+    ;; Making this a distinct hostcall, rather than a cache override variant, may make it easier
+    ;; to tell when support for old styles of send can be safely dropped.
+    (@interface func (export "send_async_v2")
+        (param $h $request_handle)
+        (param $b $body_handle)
+        (param $backend string)
+        (param $streaming u32)
         (result $err (expected $pending_request_handle
                 (error $fastly_status)))
     )
@@ -787,7 +829,7 @@
         (param $body_handle_out (@witx pointer $body_handle))
         (result $err (expected (error $fastly_status)))
     )
-    
+
     (@interface func (export "insert")
         (param $store $object_store_handle)
         (param $key string)
