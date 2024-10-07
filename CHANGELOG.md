@@ -1,5 +1,11 @@
 ## Unreleased
 
+## 0.12.1 (2024-10-04)
+
+- Stub new HTTP cache hostcalls ([#433](https://github.com/fastly/Viceroy/pull/433))
+- Add support for reading secrets from a JSON file ([#428](https://github.com/fastly/Viceroy/pull/428))
+- Added hostcalls for the new builder api hostcalls ([#427](https://github.com/fastly/Viceroy/pull/427))
+
 ## 0.12.0 (2024-09-03)
 
 - Add ReplaceHandle hostcall stubs for upcoming SDK release ([#424](https://github.com/fastly/Viceroy/pull/424))
