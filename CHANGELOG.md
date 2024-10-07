@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.12.1 (2024-10-04)
 
 - Stub new HTTP cache hostcalls ([#433](https://github.com/fastly/Viceroy/pull/433))
