@@ -97,7 +97,7 @@ pub struct SharedArgs {
     ///     --profile=guest[,path[,interval]]
     ///
     /// where `path` is the directory or filename to write the profile(s) to
-    /// and `interval` is the duration between samples.
+    /// and `interval` is the duration in milliseconds between samples.
     #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
     profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
