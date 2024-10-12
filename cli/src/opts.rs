@@ -338,10 +338,21 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
         ["jitdump"] => Ok(Profile::Native(ProfilingStrategy::JitDump)),
         ["perfmap"] => Ok(Profile::Native(ProfilingStrategy::PerfMap)),
         ["vtune"] => Ok(Profile::Native(ProfilingStrategy::VTune)),
-        ["guest"] => Ok(Profile::Guest { path: None }),
+        ["guest"] => Ok(Profile::Guest {
+            path: None,
+            interval: None,
+        }),
         ["guest", path] => Ok(Profile::Guest {
             path: Some(path.to_string()),
+            interval: None,
         }),
+        ["guest", path, interval] => {
+            let interval_ms = interval.parse().map_err(|_| Error::ProfilingStrategy)?;
+            Ok(Profile::Guest {
+                path: Some(path.to_string()),
+                interval: Some(Duration::from_millis(interval_ms)),
+            })
+        }
         _ => Err(Error::ProfilingStrategy),
     }
 }
