@@ -175,12 +175,21 @@ impl RunArgs {
 
     /// The path to write a guest profile to
     pub fn profile_guest(&self) -> Option<PathBuf> {
-        if let Some(Profile::Guest { path }) = &self.shared.profile {
+        if let Some(Profile::Guest { path, .. }) = &self.shared.profile {
             Some(
                 path.clone()
                     .unwrap_or_else(|| "guest-profile.json".to_string())
                     .into(),
             )
+        } else {
+            None
+        }
+    }
+
+    /// The interval for guest profiling
+    pub fn profile_guest_interval(&self) -> Option<Duration> {
+        if let Some(Profile::Guest { interval, .. }) = &self.shared.profile {
+            *interval
         } else {
             None
         }
