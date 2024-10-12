@@ -1,5 +1,7 @@
 //! Command line arguments.
 
+use std::time::Duration;
+
 use viceroy_lib::config::UnknownImportBehavior;
 
 use {
@@ -92,9 +94,10 @@ pub struct SharedArgs {
     ///
     /// The `guest` option can be additionally configured as:
     ///
-    ///     --profile=guest[,path]
+    ///     --profile=guest[,path[,interval]]
     ///
-    /// where `path` is the directory or filename to write the profile(s) to.
+    /// where `path` is the directory or filename to write the profile(s) to
+    /// and `interval` is the duration between samples.
     #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
     profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
@@ -120,7 +123,10 @@ pub struct SharedArgs {
 #[derive(Debug, Clone)]
 enum Profile {
     Native(ProfilingStrategy),
-    Guest { path: Option<String> },
+    Guest {
+        path: Option<String>,
+        interval: Option<Duration>,
+    },
 }
 
 impl ServeArgs {
@@ -132,12 +138,21 @@ impl ServeArgs {
 
     /// The path to write guest profiles to
     pub fn profile_guest(&self) -> Option<PathBuf> {
-        if let Some(Profile::Guest { path }) = &self.shared.profile {
+        if let Some(Profile::Guest { path, .. }) = &self.shared.profile {
             Some(
                 path.clone()
                     .unwrap_or_else(|| "guest-profiles".to_string())
                     .into(),
             )
+        } else {
+            None
+        }
+    }
+
+    /// The interval for guest profiling
+    pub fn profile_guest_interval(&self) -> Option<Duration> {
+        if let Some(Profile::Guest { interval, .. }) = &self.shared.profile {
+            *interval
         } else {
             None
         }
