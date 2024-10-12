@@ -20,6 +20,7 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
         ProfilingStrategy::None,
         HashSet::new(),
         None,
+        None,
         viceroy_lib::config::UnknownImportBehavior::LinkError,
         adapt_core_wasm,
     )?;
