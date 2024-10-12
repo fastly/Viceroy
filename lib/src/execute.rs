@@ -356,7 +356,7 @@ impl ExecuteCtx {
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
     /// let adapt_core_wasm = false;
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, None, Default::default(), adapt_core_wasm)?;
     /// let local = "127.0.0.1:80".parse().unwrap();
     /// let remote = "127.0.0.1:0".parse().unwrap();
     /// let resp = ctx.handle_request(req, local, remote).await?;
