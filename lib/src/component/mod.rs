@@ -45,9 +45,12 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::cli::stdout::add_to_linker_get_host(linker, wrap)?;
     wasmtime_wasi::bindings::cli::stderr::add_to_linker_get_host(linker, wrap)?;
 
+    fastly::api::acl::add_to_linker(linker, |x| x)?;
     fastly::api::async_io::add_to_linker(linker, |x| x)?;
     fastly::api::backend::add_to_linker(linker, |x| x)?;
     fastly::api::cache::add_to_linker(linker, |x| x)?;
+    fastly::api::compute_runtime::add_to_linker(linker, |x| x)?;
+    fastly::api::config_store::add_to_linker(linker, |x| x)?;
     fastly::api::device_detection::add_to_linker(linker, |x| x)?;
     fastly::api::dictionary::add_to_linker(linker, |x| x)?;
     fastly::api::erl::add_to_linker(linker, |x| x)?;
@@ -56,19 +59,18 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::http_req::add_to_linker(linker, |x| x)?;
     fastly::api::http_resp::add_to_linker(linker, |x| x)?;
     fastly::api::http_types::add_to_linker(linker, |x| x)?;
+    fastly::api::kv_store::add_to_linker(linker, |x| x)?;
     fastly::api::log::add_to_linker(linker, |x| x)?;
     fastly::api::object_store::add_to_linker(linker, |x| x)?;
-    fastly::api::kv_store::add_to_linker(linker, |x| x)?;
     fastly::api::purge::add_to_linker(linker, |x| x)?;
     fastly::api::secret_store::add_to_linker(linker, |x| x)?;
     fastly::api::types::add_to_linker(linker, |x| x)?;
     fastly::api::uap::add_to_linker(linker, |x| x)?;
-    fastly::api::config_store::add_to_linker(linker, |x| x)?;
-    fastly::api::compute_runtime::add_to_linker(linker, |x| x)?;
 
     Ok(())
 }
 
+pub mod acl;
 pub mod async_io;
 pub mod backend;
 pub mod cache;

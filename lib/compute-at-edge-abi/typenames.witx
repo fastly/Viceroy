@@ -115,6 +115,8 @@
 (typename $secret_store_handle (handle))
 ;;; A handle to an individual secret.
 (typename $secret_handle (handle))
+;;; A handle to an ACL.
+(typename $acl_handle (handle))
 ;;; A handle to an object supporting generic async operations.
 ;;; Can be either a `body_handle` or a `pending_request_handle`.
 ;;;
@@ -489,5 +491,19 @@
         $internal_error
         ;;; Too many requests have been made to the KV store.
         ;;; This will map to the api's 429 codes
+        $too_many_requests
+        ))
+
+(typename $acl_error
+    (enum (@witx tag u32)
+        ;;; The $acl_error has not been initialized.
+        $uninitialized
+        ;;; There was no error.
+        $ok
+        ;;; This will map to the api's 204 code.
+        ;;; It indicates that the request succeeded, yet returned nothing.
+        $no_content
+        ;;; This will map to the api's 429 code.
+        ;;; Too many requests have been made.
         $too_many_requests
         ))

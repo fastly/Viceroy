@@ -1142,3 +1142,19 @@
         (result $err (expected $vcpu_ms (error $fastly_status)))
     )
 )
+
+(module $fastly_acl
+    (@interface func (export "open")
+        (param $name string)
+        (result $err (expected $acl_handle (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup")
+        (param $acl $acl_handle)
+        (param $ip_octets (@witx const_pointer (@witx char8)))
+        (param $ip_len (@witx usize))
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $acl_error_out (@witx pointer $acl_error))
+        (result $err (expected (error $fastly_status)))
+    )
+)

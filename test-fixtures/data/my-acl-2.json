@@ -1,0 +1,6 @@
+{
+  "entries": [
+    { "prefix": "2000::/24", "action": "BLOCK" },
+    { "prefix": "FACE::/16", "action": "ALLOW" }
+  ]
+}
