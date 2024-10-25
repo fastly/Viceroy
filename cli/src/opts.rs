@@ -1,6 +1,6 @@
 //! Command line arguments.
 
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 
 use viceroy_lib::config::UnknownImportBehavior;
 
@@ -356,14 +356,26 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
             interval: None,
         }),
         ["guest", path, interval] => {
-            let interval_ms = interval.parse().map_err(|_| Error::ProfilingStrategy)?;
+            let interval_duration = parse_duration(interval)?;
             Ok(Profile::Guest {
                 path: Some(path.to_string()),
-                interval: Some(Duration::from_millis(interval_ms)),
+                interval: Some(interval_duration),
             })
         }
         _ => Err(Error::ProfilingStrategy),
     }
+}
+
+/// Parse duration from either a string slice as with a duration unit (e.g. 100ms)
+/// or without (e.g. 100) and default to milliseconds.
+fn parse_duration(dur: &str) -> Result<Duration, Error> {
+    if let Ok(duration) = humantime::Duration::from_str(dur) {
+        return Ok(duration.into());
+    }
+    if let Ok(millis) = dur.parse::<u64>() {
+        return Ok(std::time::Duration::from_millis(millis));
+    }
+    Err(Error::ProfilingStrategy)
 }
 
 /// A collection of unit tests for our CLI argument parsing.
