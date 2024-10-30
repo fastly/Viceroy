@@ -422,9 +422,11 @@
     (flags (@witx repr u32)
        $reserved
        $background_fetch
-       $if_generation_match
+       ;; reserved_2 was previously if_generation_match (u32)
+       $reserved_2
        $metadata
        $time_to_live_sec
+       $if_generation_match
        ))
 
 (typename $kv_insert_mode
@@ -437,10 +439,11 @@
 (typename $kv_insert_config
   (record
     (field $mode $kv_insert_mode)
-    (field $if_generation_match u32)
+    (field $unused u32)
     (field $metadata (@witx pointer (@witx char8)))
     (field $metadata_len u32)
     (field $time_to_live_sec u32)
+    (field $if_generation_match u64)
     ))
 
 (typename $kv_list_config_options

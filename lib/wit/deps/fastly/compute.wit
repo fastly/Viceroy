@@ -746,7 +746,7 @@ interface kv-store {
   resource lookup-result {
     body: func() -> body-handle;
     metadata: func(max-len: u64) -> result<option<list<u8>>, error>;
-    generation: func() -> u32;
+    generation: func() -> u64;
   }
 
   lookup-wait: func(
@@ -770,7 +770,7 @@ interface kv-store {
 
   record insert-config {
     mode: insert-mode,
-    if-generation-match: u32,
+    if-generation-match: u64,
     metadata: list<u8>,
     time-to-live-sec: u32,
   }

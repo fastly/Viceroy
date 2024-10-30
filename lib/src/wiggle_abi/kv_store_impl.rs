@@ -104,6 +104,57 @@ impl FastlyKvStore for Session {
                         )?;
                     }
                 }
+                memory.write(generation_out, 0)?;
+                memory.write(kv_error_out, KvError::Ok)?;
+                Ok(())
+            }
+            Err(e) => {
+                memory.write(kv_error_out, (&e).into())?;
+                Ok(())
+            }
+        }
+    }
+
+    async fn lookup_wait_v2(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        pending_kv_lookup_handle: KvStoreLookupHandle,
+        body_handle_out: GuestPtr<BodyHandle>,
+        metadata_buf: GuestPtr<u8>,
+        metadata_buf_len: u32,
+        nwritten_out: GuestPtr<u32>,
+        generation_out: GuestPtr<u64>,
+        kv_error_out: GuestPtr<KvError>,
+    ) -> Result<(), Error> {
+        let resp = self
+            .take_pending_kv_lookup(pending_kv_lookup_handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(value) => {
+                let body_handle = self.insert_body(value.body.into());
+
+                memory.write(body_handle_out, body_handle)?;
+                match value.metadata_len {
+                    0 => memory.write(nwritten_out, 0)?,
+                    len => {
+                        let meta_len_u32 =
+                            u32::try_from(len).expect("metadata len is outside the bounds of u32");
+                        memory.write(nwritten_out, meta_len_u32)?;
+                        if meta_len_u32 > metadata_buf_len {
+                            return Err(Error::BufferLengthError {
+                                buf: "metadata",
+                                len: "specified length",
+                            });
+                        }
+                        memory.copy_from_slice(
+                            &value.metadata,
+                            metadata_buf.as_array(meta_len_u32),
+                        )?;
+                    }
+                }
                 memory.write(generation_out, value.generation)?;
                 memory.write(kv_error_out, KvError::Ok)?;
                 Ok(())

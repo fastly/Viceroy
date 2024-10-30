@@ -14,7 +14,7 @@ pub struct ObjectValue {
     pub body: Vec<u8>,
     pub metadata: Vec<u8>,
     pub metadata_len: usize,
-    pub generation: u32,
+    pub generation: u64,
     pub expiration: Option<SystemTime>,
 }
 
@@ -90,7 +90,7 @@ impl ObjectStores {
         obj_key: ObjectKey,
         obj: Vec<u8>,
         mode: KvInsertMode,
-        generation: Option<u32>,
+        generation: Option<u64>,
         metadata: Option<Vec<u8>>,
         ttl: Option<std::time::Duration>,
     ) -> Result<(), KvStoreError> {
@@ -153,7 +153,7 @@ impl ObjectStores {
             generation: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos() as u32,
+                .as_nanos() as u64,
             expiration: exp,
         };
 

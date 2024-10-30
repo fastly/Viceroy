@@ -22,7 +22,7 @@ use {
 pub struct LookupResult {
     body: http_body::BodyHandle,
     metadata: Option<Vec<u8>>,
-    generation: u32,
+    generation: u64,
 }
 
 #[async_trait::async_trait]
@@ -54,7 +54,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
     async fn generation(
         &mut self,
         rep: wasmtime::component::Resource<kv_store::LookupResult>,
-    ) -> wasmtime::Result<u32> {
+    ) -> wasmtime::Result<u64> {
         Ok(self.table().get(&rep)?.generation)
     }
 
