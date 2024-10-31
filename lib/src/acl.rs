@@ -27,6 +27,22 @@ impl Acls {
 }
 
 /// An acl is a collection of acl entries.
+///
+/// The JSON representation of this struct intentionally matches the JSON
+/// format used to create/update ACLs via api.fastly.com. The goal being
+/// to allow users to use the same JSON in Viceroy as in production.
+///
+/// Example:
+///
+/// ```json
+///    { "entries": [
+///        { "op": "create", "prefix": "1.2.3.0/24", "action": "BLOCK" },
+///        { "op": "create", "prefix": "23.23.23.23/32", "action": "ALLOW" },
+///        { "op": "update", "prefix": "FACE::/32", "action": "ALLOW" }
+///    ]}
+/// ```
+///
+/// Note that, in Viceroy, the `op` field is ignored.
 #[derive(Debug, Default, Deserialize)]
 pub struct Acl {
     pub(crate) entries: Vec<Entry>,
@@ -273,6 +289,9 @@ fn acl_lookup() {
 
 #[test]
 fn acl_json_parse() {
+    // In the following JSON, the `op` field should be ignored. It's included
+    // to assert that the JSON format used with api.fastly.com to create/modify
+    // ACLs can be used in Viceroy as well.
     let input = r#"
     { "entries": [
         { "op": "create", "prefix": "1.2.3.0/24", "action": "BLOCK" },
