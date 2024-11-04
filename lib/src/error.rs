@@ -299,6 +299,10 @@ pub enum HandleError {
     /// An async item handle was not valid.
     #[error("Invalid async item handle: {0}")]
     InvalidAsyncItemHandle(crate::wiggle_abi::types::AsyncItemHandle),
+
+    /// An acl handle was not valid.
+    #[error("Invalid acl handle: {0}")]
+    InvalidAclHandle(crate::wiggle_abi::types::AclHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.
@@ -357,6 +361,13 @@ pub enum FastlyConfigError {
     },
 
     #[error("invalid configuration for '{name}': {err}")]
+    InvalidAclDefinition {
+        name: String,
+        #[source]
+        err: AclConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
     InvalidBackendDefinition {
         name: String,
         #[source]
@@ -398,6 +409,24 @@ pub enum FastlyConfigError {
     /// [parse-errors]: https://docs.rs/semver/latest/semver/struct.Version.html#errors
     #[error("invalid manifest version: {0}")]
     InvalidManifestVersion(#[from] semver::SemVerError),
+}
+
+/// Errors that may occur while validating acl configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum AclConfigError {
+    /// An I/O error that occurred while processing a file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    /// An error occurred parsing JSON.
+    #[error(transparent)]
+    JsonError(serde_json::error::Error),
+
+    #[error("acl must be a TOML table or string")]
+    InvalidType,
+
+    #[error("missing 'file' field")]
+    MissingFile,
 }
 
 /// Errors that may occur while validating backend configurations.

@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        acl::Acls,
         adapt,
         body::Body,
         component as compute,
@@ -72,6 +73,8 @@ pub struct ExecuteCtx {
     engine: Engine,
     /// An almost-linked Instance: each import function is linked, just needs a Store
     instance_pre: Arc<Instance>,
+    /// The acls for this execution.
+    acls: Arc<Acls>,
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// The device detection mappings for this execution.
@@ -208,6 +211,7 @@ impl ExecuteCtx {
         Ok(Self {
             engine,
             instance_pre: Arc::new(instance_pre),
+            acls: Arc::new(Acls::new()),
             backends: Arc::new(Backends::default()),
             device_detection: Arc::new(DeviceDetection::default()),
             geolocation: Arc::new(Geolocation::default()),
@@ -229,6 +233,17 @@ impl ExecuteCtx {
     /// Get the engine for this execution context.
     pub fn engine(&self) -> &Engine {
         &self.engine
+    }
+
+    /// Get the acls for this execution context.
+    pub fn acls(&self) -> &Acls {
+        &self.acls
+    }
+
+    /// Set the acls for this execution context.
+    pub fn with_acls(mut self, acls: Acls) -> Self {
+        self.acls = Arc::new(acls);
+        self
     }
 
     /// Get the backends for this execution context.
@@ -461,6 +476,7 @@ impl ExecuteCtx {
             remote,
             active_cpu_time_us,
             &self,
+            self.acls.clone(),
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),
@@ -619,6 +635,7 @@ impl ExecuteCtx {
             remote,
             active_cpu_time_us.clone(),
             &self,
+            self.acls.clone(),
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),

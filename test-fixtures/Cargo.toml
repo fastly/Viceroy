@@ -7,6 +7,11 @@ edition = "2021"
 license = "Apache-2.0 WITH LLVM-exception"
 publish = false
 
+[features]
+# Temporary feature used until the fastly SDK is updated
+# to a version which contains the fastly_acl hostcalls.
+acl_hostcalls = []
+
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.21.2"
