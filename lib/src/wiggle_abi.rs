@@ -48,6 +48,7 @@ macro_rules! multi_value_result {
     }};
 }
 
+mod acl;
 mod backend_impl;
 mod body_impl;
 mod cache;
@@ -76,6 +77,7 @@ wiggle::from_witx!({
     witx: ["$CARGO_MANIFEST_DIR/compute-at-edge-abi/compute-at-edge.witx"],
     errors: { fastly_status => Error },
     async: {
+        fastly_acl::lookup,
         fastly_async_io::{select},
         fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
         fastly_kv_store::{lookup, lookup_wait, lookup_wait_v2, insert, insert_wait, delete, delete_wait, list, list_wait},

@@ -21,6 +21,7 @@ pub mod error;
 pub mod logging;
 pub mod session;
 
+mod acl;
 mod async_io;
 pub mod component;
 mod downstream;

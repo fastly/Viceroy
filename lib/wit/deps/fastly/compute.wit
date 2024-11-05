@@ -851,6 +851,32 @@ interface secret-store {
 }
 
 /*
+ * Fastly ACL
+ */
+interface acl {
+
+  use types.{error};
+  use http-types.{body-handle};
+
+  type acl-handle = u32;
+
+  enum acl-error {
+    uninitialized,
+    ok,
+    no-content,
+    too-many-requests,
+  }
+
+  open: func(name: list<u8>) -> result<acl-handle, error>;
+
+  lookup: func(
+    acl: acl-handle,
+    ip-octets: list<u8>,
+    ip-len: u64,
+  ) -> result<tuple<option<body-handle>, acl-error>, error>;
+}
+
+/*
  * Fastly backend
  */
 interface backend {
@@ -1338,6 +1364,7 @@ world compute {
     import wasi:cli/stderr@0.2.0;
     import wasi:cli/stdin@0.2.0;
 
+    import acl;
     import async-io;
     import backend;
     import cache;

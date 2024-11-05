@@ -3,7 +3,7 @@
 //! [ref]: https://docs.rs/cranelift-entity/latest/cranelift_entity/trait.EntityRef.html
 
 use super::types::{
-    AsyncItemHandle, BodyHandle, DictionaryHandle, EndpointHandle, KvStoreHandle,
+    AclHandle, AsyncItemHandle, BodyHandle, DictionaryHandle, EndpointHandle, KvStoreHandle,
     ObjectStoreHandle, PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle,
     SecretStoreHandle,
 };
@@ -40,14 +40,15 @@ macro_rules! wiggle_entity {
     };
 }
 
+wiggle_entity!(AclHandle);
+wiggle_entity!(AsyncItemHandle);
 wiggle_entity!(BodyHandle);
+wiggle_entity!(DictionaryHandle);
+wiggle_entity!(EndpointHandle);
+wiggle_entity!(KvStoreHandle);
+wiggle_entity!(ObjectStoreHandle);
+wiggle_entity!(PendingRequestHandle);
 wiggle_entity!(RequestHandle);
 wiggle_entity!(ResponseHandle);
-wiggle_entity!(EndpointHandle);
-wiggle_entity!(PendingRequestHandle);
-wiggle_entity!(DictionaryHandle);
-wiggle_entity!(ObjectStoreHandle);
-wiggle_entity!(KvStoreHandle);
-wiggle_entity!(SecretStoreHandle);
 wiggle_entity!(SecretHandle);
-wiggle_entity!(AsyncItemHandle);
+wiggle_entity!(SecretStoreHandle);

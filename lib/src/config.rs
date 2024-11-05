@@ -2,7 +2,7 @@
 
 use {
     self::{
-        backends::BackendsConfig, dictionaries::DictionariesConfig,
+        acl::AclConfig, backends::BackendsConfig, dictionaries::DictionariesConfig,
         object_store::ObjectStoreConfig, secret_store::SecretStoreConfig,
     },
     crate::error::FastlyConfigError,
@@ -24,6 +24,10 @@ mod dictionaries;
 pub use self::dictionaries::{Dictionary, LoadedDictionary};
 
 pub type Dictionaries = HashMap<String, Dictionary>;
+
+/// Types and deserializers for acl configuration settings.
+mod acl;
+pub use crate::acl::Acls;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;
@@ -82,6 +86,11 @@ impl FastlyConfig {
     /// Get a reference to the package language.
     pub fn language(&self) -> &str {
         self.language.as_str()
+    }
+
+    /// Get the acl configuration.
+    pub fn acls(&self) -> &Acls {
+        &self.local_server.acls.0
     }
 
     /// Get the backend configuration.
@@ -191,6 +200,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 /// may be added in the future.
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
+    acls: AclConfig,
     backends: BackendsConfig,
     device_detection: DeviceDetection,
     geolocation: Geolocation,
@@ -211,6 +221,7 @@ pub enum ExperimentalModule {
 /// a [`LocalServerConfig`] with [`TryInto::try_into`].
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
+    acls: Option<Table>,
     backends: Option<Table>,
     device_detection: Option<Table>,
     geolocation: Option<Table>,
@@ -225,6 +236,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     type Error = FastlyConfigError;
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
+            acls,
             backends,
             device_detection,
             geolocation,
@@ -232,6 +244,11 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             object_stores,
             secret_stores,
         } = self;
+        let acls = if let Some(acls) = acls {
+            acls.try_into()?
+        } else {
+            AclConfig::default()
+        };
         let backends = if let Some(backends) = backends {
             backends.try_into()?
         } else {
@@ -264,6 +281,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         };
 
         Ok(LocalServerConfig {
+            acls,
             backends,
             device_detection,
             geolocation,

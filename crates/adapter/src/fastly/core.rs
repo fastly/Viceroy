@@ -86,19 +86,20 @@ pub enum HttpKeepaliveMode {
     NoKeepalive = 1,
 }
 
-pub type PendingObjectStoreLookupHandle = u32;
-pub type PendingObjectStoreInsertHandle = u32;
-pub type PendingObjectStoreDeleteHandle = u32;
-pub type PendingObjectStoreListHandle = u32;
+pub type AclHandle = u32;
+pub type AsyncItemHandle = u32;
 pub type BodyHandle = u32;
+pub type DictionaryHandle = u32;
+pub type KVStoreHandle = u32;
+pub type PendingObjectStoreDeleteHandle = u32;
+pub type PendingObjectStoreInsertHandle = u32;
+pub type PendingObjectStoreListHandle = u32;
+pub type PendingObjectStoreLookupHandle = u32;
 pub type PendingRequestHandle = u32;
 pub type RequestHandle = u32;
 pub type ResponseHandle = u32;
-pub type DictionaryHandle = u32;
-pub type KVStoreHandle = u32;
-pub type SecretStoreHandle = u32;
 pub type SecretHandle = u32;
-pub type AsyncItemHandle = u32;
+pub type SecretStoreHandle = u32;
 
 const INVALID_HANDLE: u32 = u32::MAX - 1;
 
@@ -301,6 +302,57 @@ pub struct InspectConfig {
     pub corp_len: u32,
     pub workspace: *const u8,
     pub workspace_len: u32,
+}
+
+pub mod fastly_acl {
+    use super::*;
+    use crate::bindings::fastly::api::acl;
+    use core::slice;
+
+    #[export_name = "fastly_acl#open"]
+    pub fn open(
+        acl_name_ptr: *const u8,
+        acl_name_len: usize,
+        acl_handle_out: *mut AclHandle,
+    ) -> FastlyStatus {
+        let acl_name = unsafe { slice::from_raw_parts(acl_name_ptr, acl_name_len) };
+        match acl::open(acl_name) {
+            Ok(res) => {
+                unsafe {
+                    *acl_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_acl#lookup"]
+    pub fn lookup(
+        acl_handle: acl::AclHandle,
+        ip_octets: *const u8,
+        ip_len: usize,
+        body_handle_out: *mut BodyHandle,
+        acl_error_out: *mut acl::AclError,
+    ) -> FastlyStatus {
+        let ip = unsafe { slice::from_raw_parts(ip_octets, ip_len) };
+        match acl::lookup(acl_handle, ip, u64::try_from(ip_len).trapping_unwrap()) {
+            Ok((Some(body_handle), acl_error)) => {
+                unsafe {
+                    *body_handle_out = body_handle;
+                    *acl_error_out = acl_error;
+                }
+                FastlyStatus::OK
+            }
+            Ok((None, acl_error)) => {
+                unsafe {
+                    *acl_error_out = acl_error;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
 }
 
 pub mod fastly_abi {

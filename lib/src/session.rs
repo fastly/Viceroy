@@ -22,6 +22,7 @@ use crate::object_store::KvStoreError;
 use {
     self::downstream::DownstreamResponse,
     crate::{
+        acl::{Acl, Acls},
         body::Body,
         config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
         error::{Error, HandleError},
@@ -31,11 +32,11 @@ use {
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle, KvInsertMode,
-            KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle, KvStoreListHandle,
-            KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvListHandle,
-            PendingKvLookupHandle, PendingRequestHandle, RequestHandle, ResponseHandle,
-            SecretHandle, SecretStoreHandle,
+            self, AclHandle, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
+            KvInsertMode, KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle,
+            KvStoreListHandle, KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle,
+            PendingKvListHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
+            ResponseHandle, SecretHandle, SecretStoreHandle,
         },
         ExecuteCtx,
     },
@@ -97,6 +98,12 @@ pub struct Session {
     log_endpoints: PrimaryMap<EndpointHandle, LogEndpoint>,
     /// A by-name map for logging endpoints.
     log_endpoints_by_name: HashMap<Vec<u8>, EndpointHandle>,
+    /// The ACLs configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    acls: Arc<Acls>,
+    /// Active ACL handles.
+    acl_handles: PrimaryMap<AclHandle, Arc<Acl>>,
     /// The backends configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -164,6 +171,7 @@ impl Session {
         client_addr: SocketAddr,
         active_cpu_time_us: Arc<AtomicU64>,
         ctx: &ExecuteCtx,
+        acls: Arc<Acls>,
         backends: Arc<Backends>,
         device_detection: Arc<DeviceDetection>,
         geolocation: Arc<Geolocation>,
@@ -197,6 +205,8 @@ impl Session {
             capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
+            acls,
+            acl_handles: PrimaryMap::new(),
             backends,
             device_detection,
             geolocation,
@@ -589,6 +599,17 @@ impl Session {
         self.log_endpoints
             .get(handle)
             .ok_or(HandleError::InvalidEndpointHandle(handle))
+    }
+
+    // ----- ACLs API -----
+
+    pub fn acl_handle_by_name(&mut self, name: &str) -> Option<AclHandle> {
+        let acl = self.acls.get_acl(name)?;
+        Some(self.acl_handles.push(acl.clone()))
+    }
+
+    pub fn acl_by_handle(&self, handle: AclHandle) -> Option<Arc<Acl>> {
+        self.acl_handles.get(handle).map(Arc::clone)
     }
 
     // ----- Backends API -----
