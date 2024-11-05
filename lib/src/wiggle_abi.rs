@@ -80,7 +80,7 @@ wiggle::from_witx!({
         fastly_acl::lookup,
         fastly_async_io::{select},
         fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
-        fastly_kv_store::{lookup, lookup_wait, insert, insert_wait, delete, delete_wait, list, list_wait},
+        fastly_kv_store::{lookup, lookup_wait, lookup_wait_v2, insert, insert_wait, delete, delete_wait, list, list_wait},
         fastly_http_body::{append, read, write},
         fastly_http_cache::{lookup, transaction_lookup, insert, transaction_insert, transaction_insert_and_stream_back, transaction_update, transaction_update_and_return_fresh, transaction_record_not_cacheable, transaction_abandon, found, close, get_suggested_backend_request, get_suggested_cache_options, prepare_response_for_storage, get_found_response, get_state, get_length, get_max_age_ns, get_stale_while_revalidate_ns, get_age_ns, get_hits, get_sensitive_data, get_surrogate_keys, get_vary_rule},
         fastly_http_req::{

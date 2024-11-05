@@ -2563,7 +2563,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct InsertConfig {
         pub mode: InsertMode,
-        pub if_generation_match: u32,
+        pub if_generation_match: u64,
         pub metadata: *const u8,
         pub metadata_len: u32,
         pub time_to_live_sec: u32,
@@ -2654,9 +2654,10 @@ pub mod fastly_kv_store {
         pub struct InsertConfigOptions: u32 {
             const RESERVED = 1 << 0;
             const BACKGROUND_FETCH = 1 << 1;
-            const IF_GENERATION_MATCH = 1 << 2;
+            const RESERVED_2 = 1 << 2;
             const METADATA = 1 << 3;
             const TIME_TO_LIVE_SEC = 1 << 4;
+            const IF_GENERATION_MATCH = 1 << 5;
         }
         /// `ListConfigOptions` codings.
         #[derive(Default)]
@@ -2805,6 +2806,63 @@ pub mod fastly_kv_store {
         metadata_len: usize,
         nwritten_out: *mut usize,
         generation_out: *mut u32,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        let res = match kv_store::lookup_wait(pending_handle) {
+            Ok((res, status)) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                }
+
+                let Some(res) = res else {
+                    return FastlyStatus::OK;
+                };
+
+                res
+            }
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                return e.into();
+            }
+        };
+
+        with_buffer!(
+            metadata_out,
+            metadata_len,
+            { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
+            |res| {
+                let buf = handle_buffer_len!(res, nwritten_out);
+
+                unsafe {
+                    *nwritten_out = buf.as_ref().map(Vec::len).unwrap_or(0);
+                }
+
+                std::mem::forget(buf);
+            }
+        );
+
+        let body = res.body();
+        let generation = 0;
+
+        unsafe {
+            *body_handle_out = body;
+            *generation_out = generation;
+        }
+
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_kv_store#lookup_wait_v2"]
+    pub fn lookup_wait_v2(
+        pending_handle: PendingObjectStoreLookupHandle,
+        body_handle_out: *mut BodyHandle,
+        metadata_out: *mut u8,
+        metadata_len: usize,
+        nwritten_out: *mut usize,
+        generation_out: *mut u64,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
         let res = match kv_store::lookup_wait(pending_handle) {

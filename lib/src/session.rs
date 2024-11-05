@@ -721,7 +721,7 @@ impl Session {
         obj_key: ObjectKey,
         obj: Vec<u8>,
         mode: Option<KvInsertMode>,
-        generation: Option<u32>,
+        generation: Option<u64>,
         metadata: Option<Vec<u8>>,
         ttl: Option<Duration>,
     ) -> Result<(), KvStoreError> {
