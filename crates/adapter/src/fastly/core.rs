@@ -3547,3 +3547,164 @@ pub mod fastly_purge {
         )
     }
 }
+
+pub mod fastly_shielding {
+    use super::*;
+    use crate::bindings::fastly::api::{shielding as host, types};
+    use std::slice;
+
+    bitflags::bitflags! {
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct ShieldBackendOptions: u32 {
+            const RESERVED = 1 << 0;
+            const CACHE_KEY = 1 << 1;
+        }
+    }
+
+    #[repr(C)]
+    pub struct ShieldBackendConfig {
+        pub cache_key: *const u8,
+        pub cache_key_len: u32,
+    }
+
+    impl Default for ShieldBackendConfig {
+        fn default() -> Self {
+            ShieldBackendConfig {
+                cache_key: std::ptr::null(),
+                cache_key_len: 0,
+            }
+        }
+    }
+
+    #[export_name = "fastly_shielding#shield_info"]
+    pub fn shield_info(
+        name: *const u8,
+        name_len: usize,
+        info_block: *mut u8,
+        info_block_len: usize,
+        nwritten_out: *mut u32,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(name, name_len) };
+        with_buffer!(
+            info_block,
+            info_block_len,
+            { host::shield_info(name, u64::try_from(info_block_len).trapping_unwrap()) },
+            |res| {
+                match res {
+                    Ok(res) => {
+                        unsafe {
+                            *nwritten_out = u32::try_from(res.len()).unwrap_or(0);
+                        }
+                        std::mem::forget(res);
+                    }
+
+                    Err(e) => {
+                        if let types::Error::BufferLen(needed) = e {
+                            unsafe {
+                                *nwritten_out = u32::try_from(needed).unwrap_or(0);
+                            }
+                        }
+
+                        return Err(e.into());
+                    }
+                }
+            }
+        )
+    }
+
+    impl From<ShieldBackendOptions> for host::ShieldBackendOptionsMask {
+        fn from(value: ShieldBackendOptions) -> Self {
+            let mut flags = Self::empty();
+
+            flags.set(
+                Self::RESERVED,
+                value.contains(ShieldBackendOptions::RESERVED),
+            );
+            flags.set(
+                Self::CACHE_KEY,
+                value.contains(ShieldBackendOptions::CACHE_KEY),
+            );
+
+            flags
+        }
+    }
+
+    fn shield_backend_options(
+        mask: ShieldBackendOptions,
+        options: *const ShieldBackendConfig,
+    ) -> (host::ShieldBackendOptionsMask, host::ShieldBackendOptions) {
+        let mask = host::ShieldBackendOptionsMask::from(mask);
+
+        // NOTE: this is only really safe because we never mutate the vectors -- we only need
+        // vectors to satisfy the interface produced by the DynamicBackendConfig record,
+        // `register_dynamic_backend` will never mutate the vectors it's given.
+        macro_rules! make_vec {
+            ($ptr_field:ident, $len_field:ident) => {
+                unsafe {
+                    let len = usize::try_from((*options).$len_field).trapping_unwrap();
+                    Vec::from_raw_parts((*options).$ptr_field as *mut _, len, len)
+                }
+            };
+        }
+
+        let options = host::ShieldBackendOptions {
+            cache_key: if mask.contains(host::ShieldBackendOptionsMask::CACHE_KEY) {
+                make_vec!(cache_key, cache_key_len)
+            } else {
+                Vec::new()
+            },
+        };
+
+        (mask, options)
+    }
+
+    /// Turn a pop name into a backend that we can send requests to.
+    #[export_name = "fastly_shielding#backend_for_shield"]
+    pub fn backend_for_shield(
+        name: *const u8,
+        name_len: usize,
+        options_mask: ShieldBackendOptions,
+        options: *const ShieldBackendConfig,
+        backend_name: *mut u8,
+        backend_name_len: usize,
+        nwritten_out: *mut u32,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let (mask, options) = shield_backend_options(options_mask, options);
+        with_buffer!(
+            backend_name,
+            backend_name_len,
+            {
+                let res = host::backend_for_shield(
+                    name,
+                    mask,
+                    &options,
+                    u64::try_from(backend_name_len).trapping_unwrap(),
+                );
+                std::mem::forget(options);
+                res
+            },
+            |res| {
+                match res {
+                    Ok(res) => {
+                        unsafe {
+                            *nwritten_out = u32::try_from(res.len()).unwrap_or(0);
+                        }
+                        std::mem::forget(res);
+                    }
+
+                    Err(e) => {
+                        if let types::Error::BufferLen(needed) = e {
+                            unsafe {
+                                *nwritten_out = u32::try_from(needed).unwrap_or(0);
+                            }
+                        }
+
+                        return Err(e.into());
+                    }
+                }
+            }
+        )
+    }
+}
