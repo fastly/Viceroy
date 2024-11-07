@@ -482,6 +482,11 @@ result<pending-request-handle, error>;
     info: inspect-config,
     max-len: u64
   ) -> result<string, error>;
+
+  on-behalf-of: func(
+    h: request-handle,
+    service: list<u8>,
+  ) -> result<_, error>;
 }
 
 /*

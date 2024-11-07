@@ -1095,4 +1095,15 @@ impl FastlyHttpReq for Session {
             }),
         }
     }
+
+    fn on_behalf_of(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        _ds_req: RequestHandle,
+        _service: GuestPtr<str>,
+    ) -> Result<(), Error> {
+        Err(Error::Unsupported {
+            msg: "on_behalf_of is not supported in Viceroy",
+        })
+    }
 }

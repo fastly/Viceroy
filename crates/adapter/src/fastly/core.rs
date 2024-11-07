@@ -1854,6 +1854,11 @@ pub mod fastly_http_req {
 
         res
     }
+
+    #[export_name = "fastly_http_req#on_behalf_of"]
+    pub fn on_behalf_of(_: RequestHandle, _: *const u8, _: usize) -> FastlyStatus {
+        FastlyStatus::UNKNOWN_ERROR
+    }
 }
 
 pub mod fastly_http_resp {
