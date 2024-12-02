@@ -50,6 +50,7 @@ wat = "^1.0.38"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 libc = "^0.2.139"
+humantime = "2.1.0"
 
 [dev-dependencies]
 anyhow = { workspace = true }
