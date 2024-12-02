@@ -901,4 +901,12 @@ impl http_req::Host for ComponentCtx {
             too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
         }
     }
+
+    async fn on_behalf_of(
+        &mut self,
+        _: http_req::RequestHandle,
+        _: Vec<u8>,
+    ) -> Result<(), types::Error> {
+        Err(types::Error::Unsupported)
+    }
 }
