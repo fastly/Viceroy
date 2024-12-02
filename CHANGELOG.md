@@ -1,4 +1,8 @@
-## Unreleased
+## 0.12.2 (2024-12-02)
+
+- Add support for the `on_behalf_of` hostcalls ([#440](https://github.com/fastly/Viceroy/pull/440))
+- Add new `lookup_wait_v2` to fix generation parsing bug ([#439](https://github.com/fastly/Viceroy/pull/439))
+- Add `fastly_acl` hostcalls ([#438](https://github.com/fastly/Viceroy/pull/438))
 
 ## 0.12.1 (2024-10-04)
 
