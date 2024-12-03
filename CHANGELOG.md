@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.12.2 (2024-12-02)
 
 - Add support for the `on_behalf_of` hostcalls ([#440](https://github.com/fastly/Viceroy/pull/440))

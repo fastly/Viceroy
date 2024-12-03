@@ -2544,7 +2544,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "viceroy"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -2584,7 +2584,7 @@ dependencies = [
 
 [[package]]
 name = "viceroy-lib"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2721,12 +2721,12 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.221.1"
+version = "0.221.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9beee8eb3e414ad135b301de9f1996d39cda02fd1d309bb948d6f913fadc6548"
+checksum = "c17a3bd88f2155da63a1f2fcb8a56377a24f0b6dfed12733bb5f544e86f690c5"
 dependencies = [
  "leb128",
- "wasmparser 0.221.1",
+ "wasmparser 0.221.2",
 ]
 
 [[package]]
@@ -2761,9 +2761,9 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.221.1"
+version = "0.221.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70fa5f08576e62eeb741c917d9ef0ce41ada2660f39658dec6207546bcc76542"
+checksum = "9845c470a2e10b61dd42c385839cdd6496363ed63b5c9e420b5488b77bd22083"
 dependencies = [
  "bitflags 2.6.0",
  "indexmap",
@@ -3096,24 +3096,24 @@ dependencies = [
 
 [[package]]
 name = "wast"
-version = "221.0.1"
+version = "221.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3633ed1bb65295aefe73f60a13a3c8085d8cb3475ce070dd81078dcf6e098b6"
+checksum = "fcc4470b9de917ba199157d1f0ae104f2ae362be728c43e68c571c7715bd629e"
 dependencies = [
  "bumpalo",
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.221.1",
+ "wasm-encoder 0.221.2",
 ]
 
 [[package]]
 name = "wat"
-version = "1.221.1"
+version = "1.221.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06c1bb3088232cd0d304949e1e66b0d9168f769f7b14071c2c7485e6139014b"
+checksum = "6b1f3c6d82af47286494c6caea1d332037f5cbeeac82bbf5ef59cb8c201c466e"
 dependencies = [
- "wast 221.0.1",
+ "wast 221.0.2",
 ]
 
 [[package]]
