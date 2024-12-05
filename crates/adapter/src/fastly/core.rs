@@ -1482,6 +1482,42 @@ pub mod fastly_http_req {
         }
     }
 
+    #[export_name = "fastly_http_req#send_v3"]
+    pub fn send_v3(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend: *const u8,
+        backend_len: usize,
+        error_detail: *mut SendErrorDetail,
+        resp_handle_out: *mut ResponseHandle,
+        resp_body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
+        match fastly::api::http_req::send_v3(req_handle, body_handle, backend) {
+            Ok((resp_handle, resp_body_handle)) => {
+                unsafe {
+                    *error_detail = http_req::SendErrorDetailTag::Ok.into();
+                    *resp_handle_out = resp_handle;
+                    *resp_body_handle_out = resp_body_handle;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(err) => {
+                unsafe {
+                    *error_detail = err
+                        .detail
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
+                        .into();
+                    *resp_handle_out = INVALID_HANDLE;
+                    *resp_body_handle_out = INVALID_HANDLE;
+                }
+
+                err.error.into()
+            }
+        }
+    }
+
     #[export_name = "fastly_http_req#send_async"]
     pub fn send_async(
         req_handle: RequestHandle,
@@ -1492,6 +1528,28 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
         match http_req::send_async(req_handle, body_handle, backend) {
+            Ok(res) => {
+                unsafe {
+                    *pending_req_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_req#send_async_v2"]
+    pub fn send_async_v2(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend: *const u8,
+        backend_len: usize,
+        pending_req_handle_out: *mut PendingRequestHandle,
+        streaming: bool,
+    ) -> FastlyStatus {
+        let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
+        match http_req::send_async_v2(req_handle, body_handle, backend, streaming) {
             Ok(res) => {
                 unsafe {
                     *pending_req_handle_out = res;
