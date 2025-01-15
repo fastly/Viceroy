@@ -410,8 +410,21 @@ interface http-req {
     backend: string,
   ) -> result<response, error-with-detail>;
 
+  send-v3: func(
+    h: request-handle,
+    b: body-handle,
+    backend: string,
+  ) -> result<response, error-with-detail>;
+
   send-async: func(h: request-handle, b: body-handle, backend: string) ->
 result<pending-request-handle, error>;
+
+  send-async-v2: func(
+    h: request-handle,
+    b: body-handle,
+    backend: string,
+    streaming: bool,
+  ) -> result<pending-request-handle, error>;
 
   send-async-streaming: func(h: request-handle, b: body-handle, backend: string)
 -> result<pending-request-handle, error>;
@@ -482,6 +495,11 @@ result<pending-request-handle, error>;
     info: inspect-config,
     max-len: u64
   ) -> result<string, error>;
+
+  on-behalf-of: func(
+    h: request-handle,
+    service: list<u8>,
+  ) -> result<_, error>;
 }
 
 /*

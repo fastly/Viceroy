@@ -417,6 +417,16 @@ impl http_req::Host for ComponentCtx {
             .map_err(types::Error::with_empty_detail)
     }
 
+    async fn send_v3(
+        &mut self,
+        h: http_types::RequestHandle,
+        b: http_types::BodyHandle,
+        backend_name: String,
+    ) -> Result<http_types::Response, http_req::ErrorWithDetail> {
+        // This initial implementation ignores the error detail field
+        self.send_v2(h, b, backend_name).await
+    }
+
     async fn send_async(
         &mut self,
         h: http_types::RequestHandle,
@@ -442,6 +452,21 @@ impl http_req::Host for ComponentCtx {
 
         // return a handle to the pending request
         Ok(self.session.insert_pending_request(task).into())
+    }
+
+    async fn send_async_v2(
+        &mut self,
+        h: http_types::RequestHandle,
+        b: http_types::BodyHandle,
+        backend_name: String,
+        streaming: bool,
+    ) -> Result<http_types::PendingRequestHandle, types::Error> {
+        if streaming {
+            self.send_async_streaming(h, b, backend_name)
+        } else {
+            self.send_async(h, b, backend_name)
+        }
+        .await
     }
 
     async fn send_async_streaming(
@@ -900,5 +925,13 @@ impl http_req::Host for ComponentCtx {
             Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_max_len => Ok(ngwaf_resp),
             too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
         }
+    }
+
+    async fn on_behalf_of(
+        &mut self,
+        _: http_req::RequestHandle,
+        _: Vec<u8>,
+    ) -> Result<(), types::Error> {
+        Err(types::Error::Unsupported)
     }
 }
