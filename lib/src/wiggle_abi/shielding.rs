@@ -7,16 +7,29 @@ impl fastly_shielding::FastlyShielding for Session {
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         name: wiggle::GuestPtr<str>,
-        _out_buffer: wiggle::GuestPtr<u8>,
+        out_buffer: wiggle::GuestPtr<u8>,
         _out_buffer_max_len: u32,
     ) -> Result<u32, Error> {
         // Validate the input name and then return the unsupported error.
         let name_bytes = memory.to_vec(name.as_bytes())?;
-        let _name = String::from_utf8(name_bytes).map_err(|_| Error::InvalidArgument)?;
+        let name = String::from_utf8(name_bytes).map_err(|_| Error::InvalidArgument)?;
 
-        Err(Error::Unsupported {
-            msg: "shielding hostcalls are not supported",
-        })
+        let mut shield_config = name.split('-');
+
+        let first = shield_config.next().expect("first is required");
+        let second = shield_config.next().expect("second is required");
+        let _third = shield_config.next().expect("third is required");
+
+        let first = first.as_bytes();
+        let second = second.as_bytes();
+
+        let shield_props: Vec<u8> = [first, &[0x0], second, &[0x0]].concat();
+
+        let shield_props_len = shield_props.len().try_into().expect("shield_props.len() must fit in u32");
+
+        memory.copy_from_slice(&shield_props, out_buffer.as_array(shield_props_len))?;
+
+        Ok(shield_props_len)
     }
 
     fn backend_for_shield(
@@ -46,8 +59,6 @@ impl fastly_shielding::FastlyShielding for Session {
             }
         }
 
-        Err(Error::Unsupported {
-            msg: "shielding hostcalls are not supported",
-        })
+        Ok(0)
     }
 }
