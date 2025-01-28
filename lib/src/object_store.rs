@@ -439,6 +439,8 @@ impl From<&KvStoreError> for FastlyStatus {
 ///   * Keys cannot contain Carriage Return or Line Feed characters.
 ///   * Keys cannot start with `.well-known/acme-challenge/`.
 ///   * Keys cannot be named `.` or `..`.
+///   * Keys cannot use Unicode characters 0 through 32, 65534 and 65535 as
+///     single-character key names.  (0x0 through 0x20, 0xFFFE and 0xFFFF)
 fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
     let len = key.as_bytes().len();
     if len < 1 {
@@ -459,16 +461,29 @@ fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
         return Err(KeyValidationError::Contains("\r".to_owned()));
     } else if key.contains('\n') {
         return Err(KeyValidationError::Contains("\n".to_owned()));
-    } else if key.contains('[') {
-        return Err(KeyValidationError::Contains("[".to_owned()));
-    } else if key.contains(']') {
-        return Err(KeyValidationError::Contains("]".to_owned()));
-    } else if key.contains('*') {
-        return Err(KeyValidationError::Contains("*".to_owned()));
-    } else if key.contains('?') {
-        return Err(KeyValidationError::Contains("?".to_owned()));
     } else if key.contains('#') {
         return Err(KeyValidationError::Contains("#".to_owned()));
+    } else if key.contains(';') {
+        return Err(KeyValidationError::Contains(";".to_owned()));
+    } else if key.contains('?') {
+        return Err(KeyValidationError::Contains("?".to_owned()));
+    } else if key.contains('^') {
+        return Err(KeyValidationError::Contains("^".to_owned()));
+    } else if key.contains('|') {
+        return Err(KeyValidationError::Contains("|".to_owned()));
+    }
+
+    if key.len() == 1 {
+        let k = key.chars().next().unwrap();
+        match k {
+            '\u{0}'..='\u{20}' => {
+                return Err(KeyValidationError::Contains(k.escape_unicode().to_string()));
+            }
+            '\u{FFFE}'..='\u{FFFF}' => {
+                return Err(KeyValidationError::Contains(k.escape_unicode().to_string()));
+            }
+            _ => {}
+        }
     }
 
     Ok(())

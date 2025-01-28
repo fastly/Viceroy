@@ -1,4 +1,5 @@
 **/target/
 publish
+vendor/
 verify-publishable/
 .vscode
