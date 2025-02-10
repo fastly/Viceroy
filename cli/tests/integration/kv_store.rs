@@ -446,10 +446,10 @@ viceroy_test!(kv_store_bad_key_values, |is_component| {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        kv_stores.store_one = [{key = "howdy[", data = "This is some data"}]
+        kv_stores.store_one = [{key = "howdy#", data = "This is some data"}]
     "#;
     match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_8_FASTLY_TOML) {
-        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `[`.", &e.to_string()),
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `#`.", &e.to_string()),
         _ => panic!(),
     }
 
@@ -459,10 +459,10 @@ viceroy_test!(kv_store_bad_key_values, |is_component| {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        kv_stores.store_one = [{key = "hello]", data = "This is some data"}]
+        kv_stores.store_one = [{key = "hello;", data = "This is some data"}]
     "#;
     match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_9_FASTLY_TOML) {
-        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `]`.", &e.to_string()),
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `;`.", &e.to_string()),
         _ => panic!(),
     }
 
@@ -472,10 +472,10 @@ viceroy_test!(kv_store_bad_key_values, |is_component| {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        kv_stores.store_one = [{key = "yoohoo*", data = "This is some data"}]
+        kv_stores.store_one = [{key = "yoohoo?", data = "This is some data"}]
     "#;
     match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_10_FASTLY_TOML) {
-        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `*`.", &e.to_string()),
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `?`.", &e.to_string()),
         _ => panic!(),
     }
 
@@ -485,10 +485,10 @@ viceroy_test!(kv_store_bad_key_values, |is_component| {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        kv_stores.store_one = [{key = "hey?", data = "This is some data"}]
+        kv_stores.store_one = [{key = "hey^", data = "This is some data"}]
     "#;
     match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_11_FASTLY_TOML) {
-        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `?`.", &e.to_string()),
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `^`.", &e.to_string()),
         _ => panic!(),
     }
 
@@ -498,10 +498,23 @@ viceroy_test!(kv_store_bad_key_values, |is_component| {
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        kv_stores.store_one = [{key = "ello ello#", data = "This is some data"}]
+        kv_stores.store_one = [{key = "ello ello|", data = "This is some data"}]
     "#;
     match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_12_FASTLY_TOML) {
-        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `#`.", &e.to_string()),
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `|`.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_13_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        kv_stores.store_one = [{key = " ", data = "This is some data"}]
+    "#;
+    match Test::using_fixture("kv_store.wasm").adapt_component(is_component).using_fastly_toml(BAD_13_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Invalid `key` value used: Keys for objects cannot contain a `\\u{20}`.", &e.to_string()),
         _ => panic!(),
     }
 
