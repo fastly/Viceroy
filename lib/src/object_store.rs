@@ -453,9 +453,9 @@ fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
         return Err(KeyValidationError::StartsWithWellKnown);
     }
 
-    if key.eq("..") {
+    if key.eq("..") || key.contains("../") || key.ends_with("/..") {
         return Err(KeyValidationError::ContainsDotDot);
-    } else if key.eq(".") {
+    } else if key.eq(".") || key.contains("./") || key.ends_with("/.") {
         return Err(KeyValidationError::ContainsDot);
     } else if key.contains('\r') {
         return Err(KeyValidationError::Contains("\r".to_owned()));
