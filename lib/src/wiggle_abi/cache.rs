@@ -4,8 +4,9 @@ use super::fastly_cache::FastlyCache;
 use super::{types, Error};
 
 #[allow(unused_variables)]
+#[wiggle::async_trait]
 impl FastlyCache for Session {
-    fn lookup<'a>(
+    async fn lookup(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_key: wiggle::GuestPtr<[u8]>,
@@ -15,7 +16,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn insert<'a>(
+    async fn insert(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_key: wiggle::GuestPtr<[u8]>,
@@ -25,7 +26,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace(
+    async fn replace(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_key: wiggle::GuestPtr<[u8]>,
@@ -35,7 +36,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_age_ns(
+    async fn replace_get_age_ns(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -43,7 +44,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_body(
+    async fn replace_get_body(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -53,7 +54,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_hits(
+    async fn replace_get_hits(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -61,7 +62,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_length(
+    async fn replace_get_length(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -69,7 +70,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_max_age_ns(
+    async fn replace_get_max_age_ns(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -77,7 +78,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_stale_while_revalidate_ns(
+    async fn replace_get_stale_while_revalidate_ns(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -85,7 +86,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_state(
+    async fn replace_get_state(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -93,7 +94,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_get_user_metadata(
+    async fn replace_get_user_metadata(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -104,7 +105,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn replace_insert(
+    async fn replace_insert(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
@@ -114,7 +115,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_lookup<'a>(
+    async fn transaction_lookup(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_key: wiggle::GuestPtr<[u8]>,
@@ -124,7 +125,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_lookup_async<'a>(
+    async fn transaction_lookup_async(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         cache_key: wiggle::GuestPtr<[u8]>,
@@ -134,7 +135,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn cache_busy_handle_wait(
+    async fn cache_busy_handle_wait(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheBusyHandle,
@@ -142,7 +143,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_insert<'a>(
+    async fn transaction_insert(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -152,7 +153,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_insert_and_stream_back<'a>(
+    async fn transaction_insert_and_stream_back(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -162,7 +163,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_update<'a>(
+    async fn transaction_update(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -172,7 +173,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_cancel(
+    async fn transaction_cancel(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -180,7 +181,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn close_busy(
+    async fn close_busy(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheBusyHandle,
@@ -188,7 +189,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn close(
+    async fn close(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -196,7 +197,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_state(
+    async fn get_state(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -204,7 +205,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_user_metadata<'a>(
+    async fn get_user_metadata(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -215,7 +216,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_body(
+    async fn get_body(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -225,7 +226,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_length(
+    async fn get_length(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -233,7 +234,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_max_age_ns(
+    async fn get_max_age_ns(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -241,7 +242,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_stale_while_revalidate_ns(
+    async fn get_stale_while_revalidate_ns(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -249,7 +250,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_age_ns(
+    async fn get_age_ns(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
@@ -257,7 +258,7 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_hits(
+    async fn get_hits(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
