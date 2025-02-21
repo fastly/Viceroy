@@ -18,7 +18,7 @@ test: test-crates trap-test
 
 .PHONY: test-crates
 test-crates: fix-build
-	$(VICEROY_CARGO) test --all
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
 
 .PHONY: fix-build
 fix-build:
@@ -26,7 +26,7 @@ fix-build:
 
 .PHONY: trap-test
 trap-test: fix-build
-	cd cli/tests/trap-test && $(VICEROY_CARGO) test fatal_error_traps -- --nocapture
+	cd cli/tests/trap-test && RUST_BACKTRACE=1 $(VICEROY_CARGO) test fatal_error_traps -- --nocapture
 
 # The `trap-test` is its own top-level target for CI in order to achieve better build parallelism.
 .PHONY: trap-test-ci
