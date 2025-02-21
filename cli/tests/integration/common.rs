@@ -56,7 +56,7 @@ macro_rules! viceroy_test {
 /// ```
 /// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
 /// ```
-pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/";
+pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasip1/debug/";
 
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///

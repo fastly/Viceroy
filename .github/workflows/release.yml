@@ -9,7 +9,7 @@ jobs:
   build:
     strategy:
       matrix:
-        rust-toolchain: [stable]
+        rust-toolchain: ["1.83"]
         os: [ubuntu-20.04, macos-14, windows-2022]
         arch: [amd64, arm64]
         exclude:

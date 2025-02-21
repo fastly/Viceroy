@@ -23,6 +23,8 @@ include = [
     "compute-at-edge-abi/**/*.witx",
     "data/*.wasm",
 ]
+# MSRV: 1.82 for is_none_or
+rust-version = "1.82"
 
 [dependencies]
 anyhow = { workspace = true }
