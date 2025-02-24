@@ -329,6 +329,7 @@ impl Test {
             ProfilingStrategy::None,
             HashSet::new(),
             None,
+            None,
             self.unknown_import_behavior,
             self.adapt_component,
         )?
