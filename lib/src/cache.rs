@@ -8,6 +8,39 @@ use http::HeaderValue;
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CacheKey(Vec<u8>);
 
+impl CacheKey {
+    /// The maximum size of a cache key is 4KiB.
+    pub const MAX_LENGTH: usize = 4096;
+}
+
+impl TryFrom<&Vec<u8>> for CacheKey {
+    type Error = FastlyStatus;
+
+    fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
+        value.as_slice().try_into()
+    }
+}
+
+impl TryFrom<&[u8]> for CacheKey {
+    type Error = FastlyStatus;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() > CacheKey::MAX_LENGTH {
+            Err(FastlyStatus::BUFLEN)
+        } else {
+            Ok(CacheKey(value.to_owned()))
+        }
+    }
+}
+
+impl TryFrom<&str> for CacheKey {
+    type Error = FastlyStatus;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.as_bytes().try_into()
+    }
+}
+
 mod store;
 
 use store::{CacheData, CacheKeyObjects};
@@ -135,5 +168,31 @@ impl CacheOverride {
                 surrogate_key,
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn reject_cache_key_too_long(l in 4097usize..5000) {
+            let mut v : Vec<u8> = Vec::new();
+            v.resize(l, 0);
+            CacheKey::try_from(&v).unwrap_err();
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn accept_valid_cache_key_len(l in 0usize..4096) {
+            let mut v : Vec<u8> = Vec::new();
+            v.resize(l, 0);
+            let _ = CacheKey::try_from(&v).unwrap();
+        }
     }
 }
