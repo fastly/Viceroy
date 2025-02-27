@@ -255,6 +255,8 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> WasiCtxBuilder {
         .env("FASTLY_SERVICE_VERSION", "0")
         // signal that we're in a local testing environment
         .env("FASTLY_HOSTNAME", "localhost")
+        // ...which is not the staging environment
+        .env("FASTLY_IS_STAGING", "0")
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()));
 
