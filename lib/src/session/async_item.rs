@@ -1,3 +1,4 @@
+use crate::cache::CacheEntry;
 use crate::object_store::{KvStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
@@ -50,6 +51,18 @@ impl PendingKvListTask {
     }
 }
 
+/// An async item, waiting for a cache lookup to complete.
+#[derive(Debug)]
+pub struct PendingCacheTask(PeekableTask<CacheEntry>);
+impl PendingCacheTask {
+    pub fn new(t: PeekableTask<CacheEntry>) -> PendingCacheTask {
+        PendingCacheTask(t)
+    }
+    pub fn task(self) -> PeekableTask<CacheEntry> {
+        self.0
+    }
+}
+
 /// Represents either a full body, or the write end of a streaming body.
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
@@ -63,6 +76,7 @@ pub enum AsyncItem {
     PendingKvInsert(PendingKvInsertTask),
     PendingKvDelete(PendingKvDeleteTask),
     PendingKvList(PendingKvListTask),
+    PendingCache(PendingCacheTask),
 }
 
 impl AsyncItem {
@@ -205,6 +219,7 @@ impl AsyncItem {
             Self::PendingKvInsert(req) => req.0.await_ready().await,
             Self::PendingKvDelete(req) => req.0.await_ready().await,
             Self::PendingKvList(req) => req.0.await_ready().await,
+            Self::PendingCache(req) => req.0.await_ready().await,
         }
     }
 
@@ -240,6 +255,12 @@ impl From<PendingKvDeleteTask> for AsyncItem {
 impl From<PendingKvListTask> for AsyncItem {
     fn from(task: PendingKvListTask) -> Self {
         Self::PendingKvList(task)
+    }
+}
+
+impl From<PendingCacheTask> for AsyncItem {
+    fn from(task: PendingCacheTask) -> Self {
+        Self::PendingCache(task)
     }
 }
 

@@ -1,7 +1,20 @@
-use crate::session::Session;
+use std::sync::Arc;
+
+use crate::body::Body;
+use crate::cache::CacheKey;
+use crate::session::{PeekableTask, PendingCacheTask, Session};
 
 use super::fastly_cache::FastlyCache;
 use super::{types, Error};
+
+fn load_cache_key(
+    memory: &wiggle::GuestMemory<'_>,
+    cache_key: wiggle::GuestPtr<[u8]>,
+) -> Result<CacheKey, Error> {
+    let bytes = memory.as_slice(cache_key)?.ok_or(Error::SharedMemory)?;
+    let key: CacheKey = bytes.try_into().map_err(|_| Error::InvalidArgument)?;
+    Ok(key)
+}
 
 #[allow(unused_variables)]
 #[wiggle::async_trait]
@@ -13,7 +26,14 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let key = load_cache_key(memory, cache_key)?;
+        let cache = Arc::clone(self.cache());
+
+        // TODO: cceckman - handle options
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
+        let task = PendingCacheTask::new(task);
+        let handle = self.insert_cache_op(task);
+        Ok(handle)
     }
 
     async fn insert(
@@ -23,7 +43,23 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let key = load_cache_key(memory, cache_key)?;
+        let cache = Arc::clone(self.cache());
+
+        // TODO: cceckman - handle options
+        let handle = self.insert_body(Body::empty());
+        let read_body = self.begin_streaming(handle)?;
+        tokio::task::spawn(Box::pin(async move {
+            // TODO: cceckman -- handle streaming state
+            let Ok(data) = read_body
+                .read_into_vec()
+                .await
+                .inspect_err(|e| tracing::warn!("unexpected incomplete body: {e}"))
+            else {
+                return;
+            };
+        }));
+        Ok(handle)
     }
 
     async fn replace(

@@ -2,6 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::{session::Session, wiggle_abi::types::CacheHandle};
+
+use super::CacheKey;
+
 /// Object(s) indexed by a CacheKey.
 #[derive(Default)]
 pub struct CacheKeyObjects(Mutex<CacheKeyObjectsInner>);
@@ -102,4 +106,12 @@ pub struct CacheData {
     // - response headers
     // - surrogate keys
     body: Vec<u8>,
+}
+
+impl std::fmt::Debug for CacheData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheData")
+            .field("body", &format!("[{} bytes]", self.body.len()))
+            .finish()
+    }
 }

@@ -4,7 +4,13 @@ use crate::wiggle_abi::types::CacheOverrideTag;
 use fastly_shared::FastlyStatus;
 use http::HeaderValue;
 
+mod store;
+
+use store::{CacheData, CacheKeyObjects};
+
 /// Primary cache key: an up-to-4KiB buffer.
+///
+// TODO: cceckman: use an inline-vec to make this cheaper to pass around
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CacheKey(Vec<u8>);
 
@@ -41,12 +47,10 @@ impl TryFrom<&str> for CacheKey {
     }
 }
 
-mod store;
-
-use store::{CacheData, CacheKeyObjects};
-
 /// The result of a lookup: the object (if found), or an obligation to get it (if not).
+#[derive(Debug)]
 pub struct CacheEntry {
+    key: CacheKey,
     found: Option<Found>,
     // TODO: cceckman-at-fastly 2025-02-26: GoGet
 }
@@ -54,6 +58,7 @@ pub struct CacheEntry {
 /// A successful retrieval of an item from the cache.
 ///
 // TODO: cceckman-at-fastly 2025-02-26: Streaming
+#[derive(Debug)]
 struct Found {
     data: Arc<CacheData>,
 }
@@ -89,7 +94,10 @@ impl Cache {
             .await
             .get()
             .map(|data| Found { data });
-        CacheEntry { found }
+        CacheEntry {
+            key: key.clone(),
+            found,
+        }
     }
 
     /// Perform a non-transactional lookup for the given cache key.
