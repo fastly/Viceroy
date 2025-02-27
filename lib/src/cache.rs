@@ -1,5 +1,76 @@
+use std::sync::Arc;
+
 use crate::wiggle_abi::types::CacheOverrideTag;
+use fastly_shared::FastlyStatus;
 use http::HeaderValue;
+
+/// Primary cache key: an up-to-4KiB buffer.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CacheKey(Vec<u8>);
+
+mod store;
+
+use store::{CacheData, CacheKeyObjects};
+
+/// The result of a lookup: the object (if found), or an obligation to get it (if not).
+pub struct CacheEntry {
+    found: Option<Found>,
+    // TODO: cceckman-at-fastly 2025-02-26: GoGet
+}
+
+/// A successful retrieval of an item from the cache.
+///
+// TODO: cceckman-at-fastly 2025-02-26: Streaming
+struct Found {
+    data: Arc<CacheData>,
+}
+
+/// Cache for a service.
+///
+// TODO: cceckman-at-fastly 2025-02-26
+// Explain some about how this works:
+// - Request-keyed vs. response-keyed items; variance
+// - Request collapsing
+// - Stale-while-revalidate
+pub struct Cache {
+    inner: moka::future::Cache<CacheKey, Arc<CacheKeyObjects>>,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        // TODO: cceckman-at-fastly 2025-02-26
+        // Weight by size, allow a cap on max size?
+        let inner = moka::future::Cache::builder().build();
+        Cache { inner }
+    }
+}
+
+impl Cache {
+    /// Perform a non-transactional lookup for the given cache key.
+    // TODO: cceckman-at-fastly 2025-02-26:
+    // - use request headers; vary_by
+    pub async fn lookup(&self, key: &CacheKey) -> CacheEntry {
+        let found = self
+            .inner
+            .get_with_by_ref(&key, async { Default::default() })
+            .await
+            .get()
+            .map(|data| Found { data });
+        CacheEntry { found }
+    }
+
+    /// Perform a non-transactional lookup for the given cache key.
+    /// Note: races with other insertions, including transactional insertions.
+    /// Last writer wins!
+    // TODO: cceckman-at-fastly 2025-02-26:
+    // - use request headers; vary_by; streaming body
+    pub async fn insert(&self, key: &CacheKey, body: &[u8]) {
+        self.inner
+            .get_with_by_ref(&key, async { Default::default() })
+            .await
+            .insert(body);
+    }
+}
 
 /// Optional override for response caching behavior.
 #[derive(Clone, Debug, Default)]
