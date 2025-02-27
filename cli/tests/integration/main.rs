@@ -2,6 +2,7 @@ mod acl;
 mod args;
 mod async_io;
 mod body;
+mod cache;
 mod client_certs;
 mod common;
 mod config_store_lookup;
