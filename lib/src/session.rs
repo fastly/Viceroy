@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::cache::Cache;
+use crate::cache::{Cache, CacheEntry};
 use crate::object_store::KvStoreError;
 use crate::wiggle_abi::types::CacheHandle;
 
@@ -1059,7 +1059,8 @@ impl Session {
         Ok(())
     }
 
-    // !------ Core Cache API -----!
+    // ------- Core Cache API ------
+
     /// Insert a pending cache operation.
     pub fn insert_cache_op(&mut self, task: PendingCacheTask) -> CacheHandle {
         self.async_items
@@ -1067,12 +1068,48 @@ impl Session {
             .into()
     }
 
+    /// Get mutable access to a cache entry, which may require blocking until the entry is
+    /// available.
+    pub(crate) async fn cache_entry_mut(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<&mut CacheEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_cache_mut)
+            .map(PendingCacheTask::as_mut)
+            .ok_or(HandleError::InvalidCacheHandle(handle))?
+            .await
+            .as_mut()
+            .map_err(|e| {
+                // TODO: cceckman-at-fastly: Can we pull the error type out of PeekableTask?
+                // I don't think the cache-lookup path can generate errors.
+                tracing::error!("in completion of cache lookup: {e}");
+                HandleError::InvalidCacheHandle(handle)
+            })
+    }
+
+    /// Take ownership of a `CacheEntry` given its handle.
+    ///
+    /// Returns a `HandleError` if the handle is not associated with a cache lookup.
+    pub(crate) fn take_cache_entry(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<PendingCacheTask, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_cache)
+            .ok_or(HandleError::InvalidCacheHandle(handle))
+    }
+
     /// Access the cache.
     pub fn cache(&self) -> &Arc<Cache> {
         &self.cache
     }
 
-    // !------- Scheduling APIs ---------!
+    // -------- Scheduling APIs ----------
 
     /// Take ownership of multiple AsyncItems in preparation for a `select`.
     ///
@@ -1342,5 +1379,11 @@ impl From<AsyncItemHandle> for KvStoreListHandle {
 impl From<AsyncItemHandle> for CacheHandle {
     fn from(h: AsyncItemHandle) -> CacheHandle {
         CacheHandle::from(h.as_u32())
+    }
+}
+
+impl From<CacheHandle> for AsyncItemHandle {
+    fn from(h: CacheHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
     }
 }

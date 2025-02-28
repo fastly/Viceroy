@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::wiggle_abi::types::CacheOverrideTag;
+use crate::{body::Body, wiggle_abi::types::CacheOverrideTag};
 use fastly_shared::FastlyStatus;
 use http::HeaderValue;
 
@@ -80,7 +81,12 @@ pub struct Found {
     data: Arc<CacheData>,
 }
 
-impl Found {}
+impl Found {
+    /// Access the body of the cached object.
+    pub fn body(&self) -> Body {
+        self.data.as_ref().body.clone().into()
+    }
+}
 
 /// Cache for a service.
 ///
@@ -97,7 +103,11 @@ impl Default for Cache {
     fn default() -> Self {
         // TODO: cceckman-at-fastly 2025-02-26
         // Weight by size, allow a cap on max size?
-        let inner = moka::future::Cache::builder().build();
+        let inner = moka::future::Cache::builder()
+            .eviction_listener(|key, _value, cause| {
+                tracing::info!("cache eviction of {key:?}: {cause:?}")
+            })
+            .build();
         Cache { inner }
     }
 }
@@ -124,11 +134,11 @@ impl Cache {
     /// Last writer wins!
     // TODO: cceckman-at-fastly 2025-02-26:
     // - use request headers; vary_by; streaming body
-    pub async fn insert(&self, key: &CacheKey, body: &[u8]) {
+    pub async fn insert(&self, key: &CacheKey, data: Bytes) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(body);
+            .insert(data);
     }
 }
 
@@ -233,7 +243,7 @@ mod tests {
                 assert!(empty.found().is_none());
                 // TODO: cceckman -- check GoGet
 
-                cache.insert(&key, &value).await;
+                cache.insert(&key, value.clone().into()).await;
 
                 let nonempty = cache.lookup(&key).await;
                 let found = nonempty.found().expect("should have found inserted key");

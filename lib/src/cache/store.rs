@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use bytes::Bytes;
 use fastly_shared::FastlyStatus;
 
 /// Object(s) indexed by a CacheKey.
@@ -32,16 +33,14 @@ impl CacheKeyObjects {
     /// Insert into the given CacheData.
     // TODO: cceckman-at-fastly 2025-02-26:
     // Implement vary_by here
-    pub fn insert(&self, data: &[u8]) {
+    pub fn insert(&self, body: Bytes) {
         let key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
         let mut response_object = key_objects
             .object
             .inner
             .lock()
             .expect("failed to lock ResponseKeyObjects");
-        response_object.transactional = TransactionState::Present(Arc::new(CacheData {
-            body: data.to_owned(),
-        }));
+        response_object.transactional = TransactionState::Present(Arc::new(CacheData { body }));
         response_object.generation += 1;
 
         // TODO: cceckman-at-fastly, 2025-02-26:
@@ -96,21 +95,21 @@ enum TransactionState {
 }
 
 /// The data stored in cache for a metadata-complete entry.
-pub struct CacheData {
+pub(crate) struct CacheData {
     // TODO: cceckman-at-fastly 2025-02-26
     // - streaming body
     // - vary rule
     // - age; use to compute Expiry
     // - response headers
     // - surrogate keys
-    body: Vec<u8>,
+    pub(crate) body: Bytes,
 }
 
 #[cfg(test)]
 impl CacheData {
     // TODO: cceckman-at-fastly: Testonly, until we have a more proper streaming body
-    pub(crate) async fn collect_body(&self) -> Result<&[u8], FastlyStatus> {
-        Ok(&self.body)
+    pub(crate) async fn collect_body(&self) -> Result<Bytes, FastlyStatus> {
+        Ok(self.body.clone())
     }
 }
 

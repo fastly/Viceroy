@@ -58,6 +58,7 @@ impl FastlyCache for Session {
             else {
                 return;
             };
+            cache.insert(&key, data.into()).await;
         }));
         Ok(handle)
     }
@@ -225,12 +226,14 @@ impl FastlyCache for Session {
         Err(Error::NotAvailable("Cache API primitives"))
     }
 
+    /// Wait for the lookup to be complete, then discard the results.
     async fn close(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let _ = self.take_cache_entry(handle)?.task().recv().await?;
+        Ok(())
     }
 
     async fn get_state(
@@ -238,7 +241,16 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheLookupState, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+
+        let mut state = types::CacheLookupState::empty();
+        if entry.found().is_some() {
+            state |= types::CacheLookupState::FOUND;
+            // TODO: cceckman-at-fastly: stale vs. usable, go_get obligation
+            state |= types::CacheLookupState::USABLE;
+        }
+
+        Ok(state)
     }
 
     async fn get_user_metadata(
@@ -259,7 +271,15 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        // TODO: cceckman-at-fastly ; options
+        let entry = self.cache_entry_mut(handle).await?;
+
+        let Some(found) = entry.found() else {
+            return Err(Error::CacheError("key was not found in cache".to_owned()));
+        };
+        let body = found.body();
+
+        Ok(self.insert_body(body))
     }
 
     async fn get_length(

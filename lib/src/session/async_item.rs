@@ -61,6 +61,14 @@ impl PendingCacheTask {
     pub fn task(self) -> PeekableTask<CacheEntry> {
         self.0
     }
+
+    /// Get a mutable reference to the CacheEntry, possibly blocking until it becomes available.
+    pub async fn as_mut(&mut self) -> &mut Result<CacheEntry, Error> {
+        self.0.await_ready().await;
+        self.0
+            .get_mut()
+            .expect("internal error: PeekableTask was not ready after AwaitReady")
+    }
 }
 
 /// Represents either a full body, or the write end of a streaming body.
@@ -199,6 +207,27 @@ impl AsyncItem {
     pub fn as_pending_req_mut(&mut self) -> Option<&mut PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_cache(&self) -> Option<&PendingCacheTask> {
+        match self {
+            Self::PendingCache(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_cache_mut(&mut self) -> Option<&mut PendingCacheTask> {
+        match self {
+            Self::PendingCache(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_cache(self) -> Option<PendingCacheTask> {
+        match self {
+            Self::PendingCache(op) => Some(op),
             _ => None,
         }
     }
