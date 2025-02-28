@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
 use crate::wiggle_abi::types::CacheOverrideTag;
 use fastly_shared::FastlyStatus;
 use http::HeaderValue;
@@ -12,7 +15,10 @@ use store::{CacheData, CacheKeyObjects};
 ///
 // TODO: cceckman: use an inline-vec to make this cheaper to pass around
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CacheKey(Vec<u8>);
+#[cfg_attr(test, derive(Arbitrary))]
+pub struct CacheKey(
+    #[cfg_attr(test, proptest(filter = "|f| f.len() <= CacheKey::MAX_LENGTH"))] Vec<u8>,
+);
 
 impl CacheKey {
     /// The maximum size of a cache key is 4KiB.
@@ -55,13 +61,26 @@ pub struct CacheEntry {
     // TODO: cceckman-at-fastly 2025-02-26: GoGet
 }
 
+impl CacheEntry {
+    /// Returns the key used to generate this CacheEntry.
+    pub fn key(&self) -> &CacheKey {
+        &self.key
+    }
+    /// Returns the data found in the cache, if any was present.
+    pub fn found(&self) -> Option<&Found> {
+        self.found.as_ref()
+    }
+}
+
 /// A successful retrieval of an item from the cache.
 ///
 // TODO: cceckman-at-fastly 2025-02-26: Streaming
 #[derive(Debug)]
-struct Found {
+pub struct Found {
     data: Arc<CacheData>,
 }
+
+impl Found {}
 
 /// Cache for a service.
 ///
@@ -181,7 +200,6 @@ impl CacheOverride {
 
 #[cfg(test)]
 mod tests {
-
     use proptest::prelude::*;
 
     use super::*;
@@ -201,6 +219,27 @@ mod tests {
             let mut v : Vec<u8> = Vec::new();
             v.resize(l, 0);
             let _ = CacheKey::try_from(&v).unwrap();
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn nontransactional_insert_lookup(key in any::<CacheKey>(), value in any::<Vec<u8>>()) {
+            let cache = Cache::default();
+
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            rt.block_on(async {
+                let empty = cache.lookup(&key).await;
+                assert!(empty.found().is_none());
+                // TODO: cceckman -- check GoGet
+
+                cache.insert(&key, &value).await;
+
+                let nonempty = cache.lookup(&key).await;
+                let found = nonempty.found().expect("should have found inserted key");
+                let got = found.data.collect_body().await.unwrap();
+                assert_eq!(got, &value);
+            });
         }
     }
 }

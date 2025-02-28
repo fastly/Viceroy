@@ -2,9 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::{session::Session, wiggle_abi::types::CacheHandle};
-
-use super::CacheKey;
+use fastly_shared::FastlyStatus;
 
 /// Object(s) indexed by a CacheKey.
 #[derive(Default)]
@@ -106,6 +104,14 @@ pub struct CacheData {
     // - response headers
     // - surrogate keys
     body: Vec<u8>,
+}
+
+#[cfg(test)]
+impl CacheData {
+    // TODO: cceckman-at-fastly: Testonly, until we have a more proper streaming body
+    pub(crate) async fn collect_body(&self) -> Result<&[u8], FastlyStatus> {
+        Ok(&self.body)
+    }
 }
 
 impl std::fmt::Debug for CacheData {
