@@ -31,4 +31,7 @@ fn main() {
 
     let host_name = env::var("FASTLY_HOSTNAME").expect("host name available");
     assert_eq!(host_name, "localhost");
+
+    let is_staging = env::var("FASTLY_IS_STAGING").expect("staging variable set");
+    assert!(is_staging == "0" || is_staging == "1");
 }
