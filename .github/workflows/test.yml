@@ -9,7 +9,7 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
+        platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
     runs-on: ${{ matrix.platform }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -52,7 +52,7 @@ jobs:
   trap-test:
     strategy:
       matrix:
-        platform: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
+        platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
     runs-on: ${{ matrix.platform }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -82,7 +82,7 @@ jobs:
       shell: bash
 
   package-check:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v3
