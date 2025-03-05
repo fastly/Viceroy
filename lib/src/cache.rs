@@ -34,6 +34,18 @@ impl TryFrom<&Vec<u8>> for CacheKey {
     }
 }
 
+impl TryFrom<Vec<u8>> for CacheKey {
+    type Error = FastlyStatus;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        if value.len() > Self::MAX_LENGTH {
+            Err(FastlyStatus::BUFLEN)
+        } else {
+            Ok(CacheKey(value))
+        }
+    }
+}
+
 impl TryFrom<&[u8]> for CacheKey {
     type Error = FastlyStatus;
 
