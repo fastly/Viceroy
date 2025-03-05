@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
+#[cfg(test)]
 use fastly_shared::FastlyStatus;
 
 /// Object(s) indexed by a CacheKey.

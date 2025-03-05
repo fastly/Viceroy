@@ -29,7 +29,7 @@ impl FastlyCache for Session {
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        // TODO: cceckman - handle options
+        // TODO: cceckman-at-fastly - handle options
         let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
@@ -46,11 +46,11 @@ impl FastlyCache for Session {
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        // TODO: cceckman - handle options
+        // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
         tokio::task::spawn(Box::pin(async move {
-            // TODO: cceckman -- handle streaming state
+            // TODO: cceckman-at-fastly -- handle streaming state
             let Ok(data) = read_body
                 .read_into_vec()
                 .await
