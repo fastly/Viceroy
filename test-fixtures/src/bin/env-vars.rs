@@ -32,5 +32,6 @@ fn main() {
     assert_eq!(host_name, "localhost");
 
     let is_staging = env::var("FASTLY_IS_STAGING").expect("staging variable set");
+
     assert!(is_staging == "0" || is_staging == "1");
 }
