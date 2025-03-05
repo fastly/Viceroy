@@ -7,7 +7,7 @@ use {
 impl cache::Host for ComponentCtx {
     async fn lookup(
         &mut self,
-        _key: String,
+        _key: Vec<u8>,
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
@@ -19,7 +19,7 @@ impl cache::Host for ComponentCtx {
 
     async fn insert(
         &mut self,
-        _key: String,
+        _key: Vec<u8>,
         _options_mask: cache::WriteOptionsMask,
         _options: cache::WriteOptions,
     ) -> Result<cache::BodyHandle, types::Error> {
@@ -31,7 +31,7 @@ impl cache::Host for ComponentCtx {
 
     async fn replace(
         &mut self,
-        _key: String,
+        _key: Vec<u8>,
         _options_mask: cache::ReplaceOptionsMask,
         _options: cache::ReplaceOptions,
     ) -> Result<cache::ReplaceHandle, types::Error> {
@@ -150,7 +150,7 @@ impl cache::Host for ComponentCtx {
 
     async fn transaction_lookup(
         &mut self,
-        _key: String,
+        _key: Vec<u8>,
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
@@ -162,7 +162,7 @@ impl cache::Host for ComponentCtx {
 
     async fn transaction_lookup_async(
         &mut self,
-        _key: String,
+        _key: Vec<u8>,
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::BusyHandle, types::Error> {

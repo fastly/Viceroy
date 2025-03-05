@@ -1124,7 +1124,7 @@ interface cache {
   ///
   /// Returns a result without waiting for any request collapsing that may be ongoing.
   lookup: func(
-    key: string,
+    key: list<u8>,
     mask: lookup-options-mask,
     options: lookup-options,
   ) -> result<handle, error>;
@@ -1134,7 +1134,7 @@ interface cache {
   /// The returned handle is to a streaming body that is used for writing the object into
   /// the cache.
   insert: func(
-    key: string,
+    key: list<u8>,
     options-mask: write-options-mask,
     options: write-options,
   ) -> result<body-handle, error>;
@@ -1143,7 +1143,7 @@ interface cache {
   ///
   /// This operation always participates in request collapsing and may return stale objects.
   replace: func(
-    key: string,
+    key: list<u8>,
     options-mask: replace-options-mask,
     options: replace-options,
   ) -> result<replace-handle, error>;
@@ -1219,7 +1219,7 @@ interface cache {
   /// This operation always participates in request collapsing and may return stale objects. To bypass
   /// request collapsing, use `lookup` and `insert` instead.
   transaction-lookup: func(
-    key: string,
+    key: list<u8>,
     mask: lookup-options-mask,
     options: lookup-options,
   ) -> result<handle, error>;
@@ -1229,7 +1229,7 @@ interface cache {
   /// This operation always participates in request collapsing and may return stale objects. To bypass
   /// request collapsing, use `lookup` and `insert` instead.
   transaction-lookup-async: func(
-    key: string,
+    key: list<u8>,
     mask: lookup-options-mask,
     options: lookup-options,
   ) -> result<busy-handle, error>;
