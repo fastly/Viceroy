@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::{body::Body, wiggle_abi::types::CacheOverrideTag};
+use crate::{body::Body, wiggle_abi::types::CacheOverrideTag, Error};
 use fastly_shared::FastlyStatus;
 use http::HeaderValue;
 
@@ -95,14 +94,14 @@ pub struct Found {
 
 impl Found {
     /// Access the body of the cached object.
-    pub fn body(&self) -> Body {
-        self.data.as_ref().body.clone().into()
+    pub fn body(&self) -> Result<Body, Error> {
+        self.data.as_ref().get_body()
     }
 }
 
 /// Cache for a service.
 ///
-// TODO: cceckman-at-fastly 2025-02-26
+// TODO: cceckman-at-fastly:
 // Explain some about how this works:
 // - Request-keyed vs. response-keyed items; variance
 // - Request collapsing
@@ -113,7 +112,7 @@ pub struct Cache {
 
 impl Default for Cache {
     fn default() -> Self {
-        // TODO: cceckman-at-fastly 2025-02-26
+        // TODO: cceckman-at-fastly:
         // Weight by size, allow a cap on max size?
         let inner = moka::future::Cache::builder()
             .eviction_listener(|key, _value, cause| {
@@ -126,7 +125,7 @@ impl Default for Cache {
 
 impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
-    // TODO: cceckman-at-fastly 2025-02-26:
+    // TODO: cceckman-at-fastly:
     // - use request headers; vary_by
     pub async fn lookup(&self, key: &CacheKey) -> CacheEntry {
         let found = self
@@ -146,11 +145,11 @@ impl Cache {
     /// Last writer wins!
     // TODO: cceckman-at-fastly 2025-02-26:
     // - use request headers; vary_by; streaming body
-    pub async fn insert(&self, key: &CacheKey, data: Bytes) {
+    pub async fn insert(&self, key: &CacheKey, body: Body) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(data);
+            .insert(body);
     }
 }
 
@@ -259,8 +258,8 @@ mod tests {
 
                 let nonempty = cache.lookup(&key).await;
                 let found = nonempty.found().expect("should have found inserted key");
-                let got = found.data.collect_body().await.unwrap();
-                assert_eq!(got, &value);
+                let got = found.body().unwrap().read_into_vec().await.unwrap();
+                assert_eq!(got, value);
             });
         }
     }

@@ -2,9 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use bytes::Bytes;
-#[cfg(test)]
-use fastly_shared::FastlyStatus;
+use crate::{body::Body, collecting_body::CollectingBody, Error};
 
 /// Object(s) indexed by a CacheKey.
 #[derive(Default)]
@@ -32,15 +30,16 @@ impl CacheKeyObjects {
     // get_or_obligate
 
     /// Insert into the given CacheData.
-    // TODO: cceckman-at-fastly 2025-02-26:
+    // TODO: cceckman-at-fastly:
     // Implement vary_by here
-    pub fn insert(&self, body: Bytes) {
+    pub fn insert(&self, body: Body) {
         let key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
         let mut response_object = key_objects
             .object
             .inner
             .lock()
             .expect("failed to lock ResponseKeyObjects");
+        let body = CollectingBody::new(body);
         response_object.transactional = TransactionState::Present(Arc::new(CacheData { body }));
         response_object.generation += 1;
 
@@ -87,37 +86,25 @@ enum TransactionState {
     /// No data, no obligation to fetch
     #[default]
     Missing,
-    /// Some session is obligated to fetch;
-    /// the predicted response key is this entry's key.
-    Obligated,
     /// The metadata is present in the cache; the content is available, possibly only as streaming
     /// content.
     Present(Arc<CacheData>),
 }
 
 /// The data stored in cache for a metadata-complete entry.
+#[derive(Debug)]
 pub(crate) struct CacheData {
-    // TODO: cceckman-at-fastly 2025-02-26
-    // - streaming body
+    // TODO: cceckman-at-fastly
     // - vary rule
     // - age; use to compute Expiry
     // - response headers
     // - surrogate keys
-    pub(crate) body: Bytes,
+    body: CollectingBody,
 }
 
-#[cfg(test)]
 impl CacheData {
-    // TODO: cceckman-at-fastly: Testonly, until we have a more proper streaming body
-    pub(crate) async fn collect_body(&self) -> Result<Bytes, FastlyStatus> {
-        Ok(self.body.clone())
-    }
-}
-
-impl std::fmt::Debug for CacheData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CacheData")
-            .field("body", &format!("[{} bytes]", self.body.len()))
-            .finish()
+    /// Get a Body to read the cached object with.
+    pub(crate) fn get_body(&self) -> Result<Body, Error> {
+        self.body.read()
     }
 }
