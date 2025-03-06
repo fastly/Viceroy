@@ -47,17 +47,7 @@ impl cache::Host for ComponentCtx {
         // TODO: cceckman-at-fastly - handle options
         let handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(handle)?;
-        tokio::task::spawn(Box::pin(async move {
-            // TODO: cceckman-at-fastly -- handle streaming state
-            let Ok(data) = read_body
-                .read_into_vec()
-                .await
-                .inspect_err(|e| tracing::warn!("unexpected incomplete body: {e}"))
-            else {
-                return;
-            };
-            cache.insert(&key, data.into()).await;
-        }));
+        cache.insert(&key, read_body).await;
         Ok(handle.into())
     }
 
@@ -181,7 +171,7 @@ impl cache::Host for ComponentCtx {
         let Some(found) = entry.found() else {
             return Err(Error::CacheError("key was not found in cache".to_owned()).into());
         };
-        let body = found.body();
+        let body = found.body()?;
 
         Ok(self.session.insert_body(body).into())
     }
