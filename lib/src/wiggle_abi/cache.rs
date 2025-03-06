@@ -49,17 +49,7 @@ impl FastlyCache for Session {
         // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
-        tokio::task::spawn(Box::pin(async move {
-            // TODO: cceckman-at-fastly -- handle streaming state
-            let Ok(data) = read_body
-                .read_into_vec()
-                .await
-                .inspect_err(|e| tracing::warn!("unexpected incomplete body: {e}"))
-            else {
-                return;
-            };
-            cache.insert(&key, data.into()).await;
-        }));
+        cache.insert(&key, read_body).await;
         Ok(handle)
     }
 
@@ -277,7 +267,7 @@ impl FastlyCache for Session {
         let Some(found) = entry.found() else {
             return Err(Error::CacheError("key was not found in cache".to_owned()));
         };
-        let body = found.body();
+        let body = found.body()?;
 
         Ok(self.insert_body(body))
     }
