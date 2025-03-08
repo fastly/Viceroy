@@ -1,5 +1,7 @@
 //! Command line arguments.
 
+use std::{str::FromStr, time::Duration};
+
 use viceroy_lib::config::UnknownImportBehavior;
 
 use {
@@ -92,9 +94,10 @@ pub struct SharedArgs {
     ///
     /// The `guest` option can be additionally configured as:
     ///
-    ///     --profile=guest[,path]
+    ///     --profile=guest[,path[,interval]]
     ///
-    /// where `path` is the directory or filename to write the profile(s) to.
+    /// where `path` is the directory or filename to write the profile(s) to
+    /// and `interval` is the duration in milliseconds between samples.
     #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
     profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
@@ -120,7 +123,10 @@ pub struct SharedArgs {
 #[derive(Debug, Clone)]
 enum Profile {
     Native(ProfilingStrategy),
-    Guest { path: Option<String> },
+    Guest {
+        path: Option<String>,
+        interval: Option<Duration>,
+    },
 }
 
 impl ServeArgs {
@@ -132,12 +138,21 @@ impl ServeArgs {
 
     /// The path to write guest profiles to
     pub fn profile_guest(&self) -> Option<PathBuf> {
-        if let Some(Profile::Guest { path }) = &self.shared.profile {
+        if let Some(Profile::Guest { path, .. }) = &self.shared.profile {
             Some(
                 path.clone()
                     .unwrap_or_else(|| "guest-profiles".to_string())
                     .into(),
             )
+        } else {
+            None
+        }
+    }
+
+    /// The interval for guest profiling
+    pub fn profile_guest_interval(&self) -> Option<Duration> {
+        if let Some(Profile::Guest { interval, .. }) = &self.shared.profile {
+            *interval
         } else {
             None
         }
@@ -160,12 +175,21 @@ impl RunArgs {
 
     /// The path to write a guest profile to
     pub fn profile_guest(&self) -> Option<PathBuf> {
-        if let Some(Profile::Guest { path }) = &self.shared.profile {
+        if let Some(Profile::Guest { path, .. }) = &self.shared.profile {
             Some(
                 path.clone()
                     .unwrap_or_else(|| "guest-profile.json".to_string())
                     .into(),
             )
+        } else {
+            None
+        }
+    }
+
+    /// The interval for guest profiling
+    pub fn profile_guest_interval(&self) -> Option<Duration> {
+        if let Some(Profile::Guest { interval, .. }) = &self.shared.profile {
+            *interval
         } else {
             None
         }
@@ -323,12 +347,35 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
         ["jitdump"] => Ok(Profile::Native(ProfilingStrategy::JitDump)),
         ["perfmap"] => Ok(Profile::Native(ProfilingStrategy::PerfMap)),
         ["vtune"] => Ok(Profile::Native(ProfilingStrategy::VTune)),
-        ["guest"] => Ok(Profile::Guest { path: None }),
+        ["guest"] => Ok(Profile::Guest {
+            path: None,
+            interval: None,
+        }),
         ["guest", path] => Ok(Profile::Guest {
             path: Some(path.to_string()),
+            interval: None,
         }),
+        ["guest", path, interval] => {
+            let interval_duration = parse_duration(interval)?;
+            Ok(Profile::Guest {
+                path: Some(path.to_string()),
+                interval: Some(interval_duration),
+            })
+        }
         _ => Err(Error::ProfilingStrategy),
     }
+}
+
+/// Parse duration from either a string slice as with a duration unit (e.g. 100ms)
+/// or without (e.g. 100) and default to milliseconds.
+fn parse_duration(dur: &str) -> Result<Duration, Error> {
+    if let Ok(duration) = humantime::Duration::from_str(dur) {
+        return Ok(duration.into());
+    }
+    if let Ok(millis) = dur.parse::<u64>() {
+        return Ok(std::time::Duration::from_millis(millis));
+    }
+    Err(Error::ProfilingStrategy)
 }
 
 /// A collection of unit tests for our CLI argument parsing.
