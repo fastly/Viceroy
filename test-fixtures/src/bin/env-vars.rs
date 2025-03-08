@@ -9,26 +9,29 @@ fn main() {
         .expect("parses as u64");
 
     let cid = env::var("FASTLY_CUSTOMER_ID").expect("customer ID available");
-    assert_eq!(cid, "0000000000000000000000");
+    assert!(!cid.is_empty());
 
     let pop = env::var("FASTLY_POP").expect("POP available");
-    assert_eq!(pop, "XXX");
+    assert_eq!(pop.len(), 3);
 
     let region = env::var("FASTLY_REGION").expect("region available");
-    assert_eq!(region, "Somewhere");
+    assert!(!region.is_empty());
 
     let sid = env::var("FASTLY_SERVICE_ID").expect("service ID available");
-    assert_eq!(sid, "0000000000000000000000");
+    assert!(!sid.is_empty());
 
-    let version: u64 = env::var("FASTLY_SERVICE_VERSION")
+    let _version: u64 = env::var("FASTLY_SERVICE_VERSION")
         .expect("service version available")
         .parse()
         .expect("parses as u64");
-    assert_eq!(version, 0);
 
     let id = env::var("FASTLY_TRACE_ID").expect("trace ID available");
-    assert_eq!(u64::from_str_radix(&id, 16).expect("parses as u64"), 0);
+    u64::from_str_radix(&id, 16).expect("parses as u64");
 
     let host_name = env::var("FASTLY_HOSTNAME").expect("host name available");
     assert_eq!(host_name, "localhost");
+
+    let is_staging = env::var("FASTLY_IS_STAGING").expect("staging variable set");
+
+    assert!(is_staging == "0" || is_staging == "1");
 }

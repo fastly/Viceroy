@@ -5,7 +5,7 @@ use {
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
-const RUST_FIXTURE_PATH: &str = "../../../test-fixtures/target/wasm32-wasi/debug/";
+const RUST_FIXTURE_PATH: &str = "../../../test-fixtures/target/wasm32-wasip1/debug/";
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

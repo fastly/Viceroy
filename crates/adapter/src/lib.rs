@@ -28,7 +28,6 @@ pub mod bindings {
     wit_bindgen_rust_macro::generate!({
         path: "../../lib/wit",
         world: "fastly:api/compute",
-        std_feature,
         raw_strings,
         runtime_path: "crate::bindings::wit_bindgen_rt_shim",
         disable_run_ctors_once_workaround: true,

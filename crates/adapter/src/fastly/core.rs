@@ -86,19 +86,20 @@ pub enum HttpKeepaliveMode {
     NoKeepalive = 1,
 }
 
-pub type PendingObjectStoreLookupHandle = u32;
-pub type PendingObjectStoreInsertHandle = u32;
-pub type PendingObjectStoreDeleteHandle = u32;
-pub type PendingObjectStoreListHandle = u32;
+pub type AclHandle = u32;
+pub type AsyncItemHandle = u32;
 pub type BodyHandle = u32;
+pub type DictionaryHandle = u32;
+pub type KVStoreHandle = u32;
+pub type PendingObjectStoreDeleteHandle = u32;
+pub type PendingObjectStoreInsertHandle = u32;
+pub type PendingObjectStoreListHandle = u32;
+pub type PendingObjectStoreLookupHandle = u32;
 pub type PendingRequestHandle = u32;
 pub type RequestHandle = u32;
 pub type ResponseHandle = u32;
-pub type DictionaryHandle = u32;
-pub type KVStoreHandle = u32;
-pub type SecretStoreHandle = u32;
 pub type SecretHandle = u32;
-pub type AsyncItemHandle = u32;
+pub type SecretStoreHandle = u32;
 
 const INVALID_HANDLE: u32 = u32::MAX - 1;
 
@@ -301,6 +302,57 @@ pub struct InspectConfig {
     pub corp_len: u32,
     pub workspace: *const u8,
     pub workspace_len: u32,
+}
+
+pub mod fastly_acl {
+    use super::*;
+    use crate::bindings::fastly::api::acl;
+    use core::slice;
+
+    #[export_name = "fastly_acl#open"]
+    pub fn open(
+        acl_name_ptr: *const u8,
+        acl_name_len: usize,
+        acl_handle_out: *mut AclHandle,
+    ) -> FastlyStatus {
+        let acl_name = unsafe { slice::from_raw_parts(acl_name_ptr, acl_name_len) };
+        match acl::open(acl_name) {
+            Ok(res) => {
+                unsafe {
+                    *acl_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_acl#lookup"]
+    pub fn lookup(
+        acl_handle: acl::AclHandle,
+        ip_octets: *const u8,
+        ip_len: usize,
+        body_handle_out: *mut BodyHandle,
+        acl_error_out: *mut acl::AclError,
+    ) -> FastlyStatus {
+        let ip = unsafe { slice::from_raw_parts(ip_octets, ip_len) };
+        match acl::lookup(acl_handle, ip, u64::try_from(ip_len).trapping_unwrap()) {
+            Ok((Some(body_handle), acl_error)) => {
+                unsafe {
+                    *body_handle_out = body_handle;
+                    *acl_error_out = acl_error;
+                }
+                FastlyStatus::OK
+            }
+            Ok((None, acl_error)) => {
+                unsafe {
+                    *acl_error_out = acl_error;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
 }
 
 pub mod fastly_abi {
@@ -1430,6 +1482,42 @@ pub mod fastly_http_req {
         }
     }
 
+    #[export_name = "fastly_http_req#send_v3"]
+    pub fn send_v3(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend: *const u8,
+        backend_len: usize,
+        error_detail: *mut SendErrorDetail,
+        resp_handle_out: *mut ResponseHandle,
+        resp_body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
+        match fastly::api::http_req::send_v3(req_handle, body_handle, backend) {
+            Ok((resp_handle, resp_body_handle)) => {
+                unsafe {
+                    *error_detail = http_req::SendErrorDetailTag::Ok.into();
+                    *resp_handle_out = resp_handle;
+                    *resp_body_handle_out = resp_body_handle;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(err) => {
+                unsafe {
+                    *error_detail = err
+                        .detail
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
+                        .into();
+                    *resp_handle_out = INVALID_HANDLE;
+                    *resp_body_handle_out = INVALID_HANDLE;
+                }
+
+                err.error.into()
+            }
+        }
+    }
+
     #[export_name = "fastly_http_req#send_async"]
     pub fn send_async(
         req_handle: RequestHandle,
@@ -1440,6 +1528,28 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
         match http_req::send_async(req_handle, body_handle, backend) {
+            Ok(res) => {
+                unsafe {
+                    *pending_req_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_req#send_async_v2"]
+    pub fn send_async_v2(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend: *const u8,
+        backend_len: usize,
+        pending_req_handle_out: *mut PendingRequestHandle,
+        streaming: bool,
+    ) -> FastlyStatus {
+        let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
+        match http_req::send_async_v2(req_handle, body_handle, backend, streaming) {
             Ok(res) => {
                 unsafe {
                     *pending_req_handle_out = res;
@@ -1801,6 +1911,11 @@ pub mod fastly_http_req {
         std::mem::forget(info);
 
         res
+    }
+
+    #[export_name = "fastly_http_req#on_behalf_of"]
+    pub fn on_behalf_of(_: RequestHandle, _: *const u8, _: usize) -> FastlyStatus {
+        FastlyStatus::UNKNOWN_ERROR
     }
 }
 
@@ -2511,7 +2626,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct InsertConfig {
         pub mode: InsertMode,
-        pub if_generation_match: u32,
+        pub if_generation_match: u64,
         pub metadata: *const u8,
         pub metadata_len: u32,
         pub time_to_live_sec: u32,
@@ -2602,9 +2717,10 @@ pub mod fastly_kv_store {
         pub struct InsertConfigOptions: u32 {
             const RESERVED = 1 << 0;
             const BACKGROUND_FETCH = 1 << 1;
-            const IF_GENERATION_MATCH = 1 << 2;
+            const RESERVED_2 = 1 << 2;
             const METADATA = 1 << 3;
             const TIME_TO_LIVE_SEC = 1 << 4;
+            const IF_GENERATION_MATCH = 1 << 5;
         }
         /// `ListConfigOptions` codings.
         #[derive(Default)]
@@ -2753,6 +2869,63 @@ pub mod fastly_kv_store {
         metadata_len: usize,
         nwritten_out: *mut usize,
         generation_out: *mut u32,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        let res = match kv_store::lookup_wait(pending_handle) {
+            Ok((res, status)) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                }
+
+                let Some(res) = res else {
+                    return FastlyStatus::OK;
+                };
+
+                res
+            }
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                return e.into();
+            }
+        };
+
+        with_buffer!(
+            metadata_out,
+            metadata_len,
+            { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
+            |res| {
+                let buf = handle_buffer_len!(res, nwritten_out);
+
+                unsafe {
+                    *nwritten_out = buf.as_ref().map(Vec::len).unwrap_or(0);
+                }
+
+                std::mem::forget(buf);
+            }
+        );
+
+        let body = res.body();
+        let generation = 0;
+
+        unsafe {
+            *body_handle_out = body;
+            *generation_out = generation;
+        }
+
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_kv_store#lookup_wait_v2"]
+    pub fn lookup_wait_v2(
+        pending_handle: PendingObjectStoreLookupHandle,
+        body_handle_out: *mut BodyHandle,
+        metadata_out: *mut u8,
+        metadata_len: usize,
+        nwritten_out: *mut usize,
+        generation_out: *mut u64,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
         let res = match kv_store::lookup_wait(pending_handle) {

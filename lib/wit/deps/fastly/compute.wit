@@ -410,8 +410,21 @@ interface http-req {
     backend: string,
   ) -> result<response, error-with-detail>;
 
+  send-v3: func(
+    h: request-handle,
+    b: body-handle,
+    backend: string,
+  ) -> result<response, error-with-detail>;
+
   send-async: func(h: request-handle, b: body-handle, backend: string) ->
 result<pending-request-handle, error>;
+
+  send-async-v2: func(
+    h: request-handle,
+    b: body-handle,
+    backend: string,
+    streaming: bool,
+  ) -> result<pending-request-handle, error>;
 
   send-async-streaming: func(h: request-handle, b: body-handle, backend: string)
 -> result<pending-request-handle, error>;
@@ -482,6 +495,11 @@ result<pending-request-handle, error>;
     info: inspect-config,
     max-len: u64
   ) -> result<string, error>;
+
+  on-behalf-of: func(
+    h: request-handle,
+    service: list<u8>,
+  ) -> result<_, error>;
 }
 
 /*
@@ -746,7 +764,7 @@ interface kv-store {
   resource lookup-result {
     body: func() -> body-handle;
     metadata: func(max-len: u64) -> result<option<list<u8>>, error>;
-    generation: func() -> u32;
+    generation: func() -> u64;
   }
 
   lookup-wait: func(
@@ -770,7 +788,7 @@ interface kv-store {
 
   record insert-config {
     mode: insert-mode,
-    if-generation-match: u32,
+    if-generation-match: u64,
     metadata: list<u8>,
     time-to-live-sec: u32,
   }
@@ -848,6 +866,32 @@ interface secret-store {
   ) -> result<option<list<u8>>, error>;
 
   from-bytes: func(bytes: list<u8>) -> result<secret-handle, error>;
+}
+
+/*
+ * Fastly ACL
+ */
+interface acl {
+
+  use types.{error};
+  use http-types.{body-handle};
+
+  type acl-handle = u32;
+
+  enum acl-error {
+    uninitialized,
+    ok,
+    no-content,
+    too-many-requests,
+  }
+
+  open: func(name: list<u8>) -> result<acl-handle, error>;
+
+  lookup: func(
+    acl: acl-handle,
+    ip-octets: list<u8>,
+    ip-len: u64,
+  ) -> result<tuple<option<body-handle>, acl-error>, error>;
 }
 
 /*
@@ -1338,6 +1382,7 @@ world compute {
     import wasi:cli/stderr@0.2.0;
     import wasi:cli/stdin@0.2.0;
 
+    import acl;
     import async-io;
     import backend;
     import cache;

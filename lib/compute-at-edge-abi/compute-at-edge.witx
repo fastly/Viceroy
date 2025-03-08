@@ -577,6 +577,14 @@
         (param $buf_len (@witx usize))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
+
+    ;;; Instead of having this request cache in this service's space, use the
+    ;;; cache of the named service
+    (@interface func (export "on_behalf_of")
+        (param $req $request_handle)
+        (param $service string)
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_http_resp
@@ -878,6 +886,8 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; deprecated, generation always returns 0
+    ;; via a failed u32::parse of a u64
     (@interface func (export "lookup_wait")
         (param $handle $kv_store_lookup_handle)
         (param $body_handle_out (@witx pointer $body_handle))
@@ -885,6 +895,17 @@
         (param $metadata_buf_len (@witx usize))
         (param $nwritten_out (@witx pointer (@witx usize)))
         (param $generation_out (@witx pointer u32))
+        (param $kv_error_out (@witx pointer $kv_error))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup_wait_v2")
+        (param $handle $kv_store_lookup_handle)
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $metadata_buf (@witx pointer (@witx char8)))
+        (param $metadata_buf_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (param $generation_out (@witx pointer u64))
         (param $kv_error_out (@witx pointer $kv_error))
         (result $err (expected (error $fastly_status)))
     )
@@ -1140,5 +1161,21 @@
 (module $fastly_compute_runtime
     (@interface func (export "get_vcpu_ms")
         (result $err (expected $vcpu_ms (error $fastly_status)))
+    )
+)
+
+(module $fastly_acl
+    (@interface func (export "open")
+        (param $name string)
+        (result $err (expected $acl_handle (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup")
+        (param $acl $acl_handle)
+        (param $ip_octets (@witx const_pointer (@witx char8)))
+        (param $ip_len (@witx usize))
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $acl_error_out (@witx pointer $acl_error))
+        (result $err (expected (error $fastly_status)))
     )
 )

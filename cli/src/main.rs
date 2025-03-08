@@ -325,6 +325,7 @@ async fn create_execution_context(
 
     if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
+        let acls = config.acls();
         let backends = config.backends();
         let device_detection = config.device_detection();
         let geolocation = config.geolocation();
@@ -334,6 +335,7 @@ async fn create_execution_context(
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
+            .with_acls(acls.clone())
             .with_backends(backends.clone())
             .with_device_detection(device_detection.clone())
             .with_geolocation(geolocation.clone())

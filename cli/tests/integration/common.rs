@@ -16,7 +16,7 @@ use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
     body::Body,
     config::{
-        DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
+        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
     },
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
@@ -56,7 +56,7 @@ macro_rules! viceroy_test {
 /// ```
 /// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
 /// ```
-pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/";
+pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasip1/debug/";
 
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///
@@ -77,6 +77,7 @@ pub type TestResult = Result<(), Error>;
 /// A builder for running individual requests through a wasm fixture.
 pub struct Test {
     module_path: PathBuf,
+    acls: Acls,
     backends: TestBackends,
     device_detection: DeviceDetection,
     dictionaries: Dictionaries,
@@ -99,6 +100,7 @@ impl Test {
 
         Self {
             module_path,
+            acls: Acls::new(),
             backends: TestBackends::new(),
             device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
@@ -121,6 +123,7 @@ impl Test {
 
         Self {
             module_path,
+            acls: Acls::new(),
             backends: TestBackends::new(),
             device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
@@ -140,6 +143,7 @@ impl Test {
     pub fn using_fastly_toml(self, fastly_toml: &str) -> Result<Self, Error> {
         let config = fastly_toml.parse::<FastlyConfig>()?;
         Ok(Self {
+            acls: config.acls().to_owned(),
             backends: TestBackends::from_backend_configs(config.backends()),
             device_detection: config.device_detection().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
@@ -329,6 +333,7 @@ impl Test {
             self.unknown_import_behavior,
             self.adapt_component,
         )?
+        .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())
         .with_device_detection(self.device_detection.clone())
