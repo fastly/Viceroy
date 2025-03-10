@@ -24,10 +24,15 @@ impl cache::Host for ComponentCtx {
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
+        }
+
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
 
-        // TODO: cceckman-at-fastly - handle options
         let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
         let task = PendingCacheTask::new(task);
         let handle = self.session.insert_cache_op(task);
@@ -40,11 +45,15 @@ impl cache::Host for ComponentCtx {
         _options_mask: cache::WriteOptionsMask,
         _options: cache::WriteOptions,
     ) -> Result<cache::BodyHandle, types::Error> {
-        let key: CacheKey = get_key(key)?;
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
+        }
 
+        let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
 
-        // TODO: cceckman-at-fastly - handle options
         let handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(handle)?;
         cache.insert(&key, read_body).await;

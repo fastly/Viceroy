@@ -26,10 +26,15 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives"));
+        }
+
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        // TODO: cceckman-at-fastly - handle options
         let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
@@ -43,6 +48,12 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives"));
+        }
+
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
