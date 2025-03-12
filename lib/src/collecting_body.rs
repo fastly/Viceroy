@@ -61,9 +61,7 @@ impl CollectingBody {
     /// start late, as they always can eventually read the state.
     async fn tee(mut rx: Body, tx: watch::Sender<CollectingBodyInner>) {
         // IMPORTANT IMPLEMENTATION NOTE:
-        //
-        // Make sure every path out of this function results in either state.errors.is_some() or
-        // state.trailers.is_some().
+        // This should always exit with the watched state as Error or Complete.
 
         // Read data first:
         while let Some(chunk) = rx.data().await {
