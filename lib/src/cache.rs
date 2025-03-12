@@ -248,11 +248,13 @@ mod tests {
         fn nontransactional_insert_lookup(key in any::<CacheKey>(), value in any::<Vec<u8>>()) {
             let cache = Cache::default();
 
+            // We can't use tokio::test and proptest! together; both alter the signature of the
+            // test function, and are not aware of each other enough for it to pass.
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
             rt.block_on(async {
                 let empty = cache.lookup(&key).await;
                 assert!(empty.found().is_none());
-                // TODO: cceckman -- check GoGet
+                // TODO: cceckman-at-fastly -- check GoGet
 
                 cache.insert(&key, value.clone().into()).await;
 
