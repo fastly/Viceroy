@@ -68,6 +68,7 @@ mod obj_store_impl;
 mod req_impl;
 mod resp_impl;
 mod secret_store_impl;
+mod shielding;
 mod uap_impl;
 
 // Expand the `.witx` interface definition into a collection of modules. The `types` module will
