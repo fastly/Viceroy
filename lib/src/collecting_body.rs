@@ -18,12 +18,6 @@ use crate::{
 
 /// CollectingBody is a body for caching and request collapsing.
 /// It allows writing a body while concurrently\* reading it, from multiple readers.
-#[derive(Debug)]
-pub struct CollectingBody {
-    inner: watch::Receiver<CollectedBody>,
-}
-
-/// Body consisting strictly of Byte chunks, with concurrent readying and writing.
 ///
 /// CollectingBody primarily exists to implement the cache APIs. Cache APIs allow three things to
 /// happen concurrently:
@@ -35,17 +29,15 @@ pub struct CollectingBody {
 /// CollectingBody provides a place for this to happen. It accepts a `Body` as a source of data,
 /// e.g. one from a `StreamingBody` or an origin response; stores the data for future retrieval;
 /// and can return new `Body`s from `::read` that produce the full content.
-///
-/// A CollectingBody is finished when either error.is_some() or trailers.is_some().
-/// Until then, more chunks may be added!
-#[derive(Default, Debug)]
-struct CollectedBody {
-    // We preserve "multiple Byte chunks" here to avoid additional copies-
-    // the Byte type uses a shared buffer under the hood.
-    // TODO: cceckman-at-fastly: consider SmallVec
-    chunks: Vec<Bytes>,
-    error: Option<Error>,
-    trailers: Option<HeaderMap>,
+#[derive(Debug)]
+pub struct CollectingBody {
+    inner: watch::Receiver<CollectingBodyInner>,
+}
+
+impl Default for CollectingBodyInner {
+    fn default() -> Self {
+        CollectingBodyInner::Streaming(Vec::default())
+    }
 }
 
 impl CollectingBody {
@@ -55,7 +47,7 @@ impl CollectingBody {
     /// CollectingBody.
     // TODO: Expected length?
     pub fn new(from: Body) -> CollectingBody {
-        let (tx, rx) = watch::channel(CollectedBody::default());
+        let (tx, rx) = watch::channel(CollectingBodyInner::default());
         let body = CollectingBody { inner: rx };
         tokio::task::spawn(Self::tee(from, tx));
         body
@@ -67,7 +59,7 @@ impl CollectingBody {
     /// into a `tokio::sync::watch` channel, which (a) accumulates the body + trailers and (b)
     /// notifies any subscribed readers of the updates. The readers can safely miss updates or
     /// start late, as they always can eventually read the state.
-    async fn tee(mut rx: Body, tx: watch::Sender<CollectedBody>) {
+    async fn tee(mut rx: Body, tx: watch::Sender<CollectingBodyInner>) {
         // IMPORTANT IMPLEMENTATION NOTE:
         //
         // Make sure every path out of this function results in either state.errors.is_some() or
@@ -78,13 +70,17 @@ impl CollectingBody {
             match chunk {
                 Ok(data) => {
                     tx.send_modify(move |state| {
-                        state.chunks.push(data);
+                        if let CollectingBodyInner::Streaming(ref mut chunks) = state {
+                            chunks.push(data);
+                        } else {
+                            panic!("received data after CollectingBody is complete");
+                        }
                     });
                 }
                 Err(Error::Again) => continue,
                 Err(e) => {
                     tx.send_modify(move |state| {
-                        state.error = Some(e);
+                        *state = CollectingBodyInner::Error(e);
                     });
                     return;
                 }
@@ -94,8 +90,18 @@ impl CollectingBody {
         // Then wait for trailers (if any) to be present:
         let trailers = rx.trailers().await;
         tx.send_modify(move |state| match trailers {
-            Ok(v) => state.trailers = Some(v.unwrap_or_default()),
-            Err(e) => state.error = Some(e),
+            Ok(trailers) => {
+                let CollectingBodyInner::Streaming(chunks) = state else {
+                    panic!("received trailers after CollectingBody is complete")
+                };
+                let mut body = Vec::new();
+                std::mem::swap(&mut body, chunks);
+                *state = CollectingBodyInner::Complete {
+                    body,
+                    trailers: trailers.unwrap_or_default(),
+                }
+            }
+            Err(e) => *state = CollectingBodyInner::Error(e),
         });
     }
 
@@ -106,39 +112,36 @@ impl CollectingBody {
         tokio::task::spawn(async move {
             let mut next_chunk = 0;
 
-            loop {
-                // We can't hold current_value across an await point,
-                // and borrowck doesn't undersand drop() enough for us to use it in a branch.
-                // Queue up our work, then do it.
-                let send_chunks: Vec<Bytes>;
-                let trailers: Option<HeaderMap>;
-                let error: Option<String>;
-                if let Ok(current_value) = upstream
-                    .wait_for(|v| {
-                        v.trailers.is_some() || v.error.is_some() || v.chunks.len() > next_chunk
-                    })
-                    .await
-                {
-                    send_chunks = (&current_value.chunks[next_chunk..])
-                        .iter()
-                        .cloned()
-                        .collect();
-                    trailers = current_value.trailers.clone();
-                    // The Error type is not Clone, so we can't get at it directly.
-                    // But we can get a stringification of it.
-                    error = current_value.error.as_ref().map(|e| e.to_string());
-                } else {
-                    // Channel is closed.
-                    //
-                    // This should only happen if the sender has hung up, i.e. if the object has
-                    // been evicted from the cache *and* the writer is done. In which case:
-                    // - If the writer shut down cleanly, great, we've already shut down cleanly
-                    //      too.
-                    // - If the writer didn't, we don't either.
-                    return;
-                }
+            while upstream.changed().await.is_ok() {
+                // If there's an error, the Channel is closed.
+                //
+                // This should only happen if the sender has hung up, i.e. if the object has
+                // been evicted from the cache *and* the writer is done. In which case:
+                // - If the writer shut down cleanly, great, we've already shut down cleanly
+                //      too.
+                // - If the writer didn't, we don't either.
 
-                // OK, we have some data. Forward it. In order,
+                // We'll need to .await to send chunks, but we can't do that while holding a read
+                // lock on the watch channel.
+                // Open a new scope for the lock, copy out the work we need to do, then release the
+                // lock at the end of the scope.
+                let (send_chunks, trailers) = {
+                    // Acquire the read lock:
+                    let current_value = upstream.borrow_and_update();
+                    let send_chunks: Vec<Bytes> = current_value
+                        .chunks()
+                        .map(|v| v.iter().cloned().collect())
+                        .unwrap_or_default();
+                    let trailers = current_value.trailers().cloned();
+                    if current_value.is_error() {
+                        // To trigger a guest error, it is sufficient to
+                        // TODO: cceckman-at-fastly: Do we need to do something with the error message?
+                        // To trigger a guest error, it appears sufficient to not .finish() the StreamingBody.
+                        return;
+                    }
+                    (send_chunks, trailers)
+                };
+
                 // Good data:
                 for chunk in send_chunks {
                     if tx.send_chunk(chunk).await.is_err() {
@@ -158,16 +161,44 @@ impl CollectingBody {
                     let _ = tx.finish();
                     return;
                 }
-                // Explicit error:
-                if error.is_some() {
-                    // Terminate without finish()ing.
-                    return;
-                }
             }
         });
         let c: Chunk = rx.into();
         let b: Body = c.into();
         Ok(b)
+    }
+}
+
+/// The state of a CollectingBody, within the pubsub (watch) channel.
+#[derive(Debug)]
+enum CollectingBodyInner {
+    // TODO: cceckman-at-fastly: consider SmallVec, optimizing for the "there is a single chunk"
+    // case
+    Streaming(Vec<Bytes>),
+    Complete {
+        body: Vec<Bytes>,
+        trailers: HeaderMap,
+    },
+    Error(Error),
+}
+
+impl CollectingBodyInner {
+    fn chunks(&self) -> Option<&Vec<Bytes>> {
+        match self {
+            CollectingBodyInner::Streaming(body) | CollectingBodyInner::Complete { body, .. } => {
+                Some(body)
+            }
+            _ => None,
+        }
+    }
+    fn trailers(&self) -> Option<&HeaderMap> {
+        match self {
+            CollectingBodyInner::Complete { trailers, .. } => Some(trailers),
+            _ => None,
+        }
+    }
+    fn is_error(&self) -> bool {
+        matches!(self, CollectingBodyInner::Error(_))
     }
 }
 
