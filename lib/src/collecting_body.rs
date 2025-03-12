@@ -126,10 +126,7 @@ impl CollectingBody {
                 let (send_chunks, trailers) = {
                     // Acquire the read lock:
                     let current_value = upstream.borrow_and_update();
-                    let send_chunks: Vec<Bytes> = current_value
-                        .chunks()
-                        .map(|v| v.iter().cloned().collect())
-                        .unwrap_or_default();
+                    let send_chunks: Vec<Bytes> = current_value.chunks().skip(next_chunk).collect();
                     let trailers = current_value.trailers().cloned();
                     if current_value.is_error() {
                         // To trigger a guest error, it is sufficient to
@@ -181,12 +178,13 @@ enum CollectingBodyInner {
 }
 
 impl CollectingBodyInner {
-    fn chunks(&self) -> Option<&Vec<Bytes>> {
+    fn chunks(&self) -> impl Iterator<Item = Bytes> + use<'_> {
+        static EMPTY_VEC: Vec<Bytes> = Vec::new();
         match self {
             CollectingBodyInner::Streaming(body) | CollectingBodyInner::Complete { body, .. } => {
-                Some(body)
+                body.iter().cloned()
             }
-            _ => None,
+            _ => EMPTY_VEC.iter().cloned(),
         }
     }
     fn trailers(&self) -> Option<&HeaderMap> {
