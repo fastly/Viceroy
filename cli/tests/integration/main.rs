@@ -21,6 +21,7 @@ mod request;
 mod response;
 mod secret_store;
 mod sending_response;
+mod shielding;
 mod sleep;
 mod unknown_import_behavior;
 mod upstream;

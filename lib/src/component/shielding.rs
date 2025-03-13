@@ -1,13 +1,50 @@
 use super::fastly::api::{shielding, types};
+use crate::error::Error;
 use crate::linking::ComponentCtx;
 
 #[async_trait::async_trait]
 impl shielding::Host for ComponentCtx {
-    async fn shield_info(&mut self, name: Vec<u8>, _max_len: u64) -> Result<Vec<u8>, types::Error> {
+    async fn shield_info(&mut self, name: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
         // Validate input name and return the unsupported error.
-        let _name = String::from_utf8(name)?;
+        let name = String::from_utf8(name)?;
 
-        Err(types::Error::Unsupported)
+        let running_on = self.session.shielding_sites.is_local(&name);
+        let unencrypted = self
+            .session
+            .shielding_sites
+            .get_unencrypted(&name)
+            .map(|x| x.to_string())
+            .unwrap_or_default();
+        let encrypted = self
+            .session
+            .shielding_sites
+            .get_encrypted(&name)
+            .map(|x| x.to_string())
+            .unwrap_or_default();
+
+        if !running_on && unencrypted.is_empty() {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let mut output_bytes = Vec::new();
+
+        output_bytes.push(if running_on { 1u8 } else { 0 });
+        output_bytes.extend_from_slice(unencrypted.as_bytes());
+        output_bytes.push(0);
+        output_bytes.extend_from_slice(encrypted.as_bytes());
+        output_bytes.push(0);
+
+        let target_len = output_bytes.len() as u64;
+
+        if target_len > max_len {
+            return Err(Error::BufferLengthError {
+                buf: "shielding_info",
+                len: "info.len()",
+            }
+            .into());
+        }
+
+        Ok(output_bytes)
     }
 
     async fn backend_for_shield(

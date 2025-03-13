@@ -55,6 +55,8 @@ pub use crate::object_store::ObjectStores;
 mod secret_store;
 pub use crate::secret_store::SecretStores;
 
+pub use crate::shielding_site::ShieldingSites;
+
 /// Fastly-specific configuration information.
 ///
 /// This `struct` represents the fields and values in a Compute package's `fastly.toml`.
@@ -121,6 +123,10 @@ impl FastlyConfig {
     /// Get the secret store configuration.
     pub fn secret_stores(&self) -> &SecretStores {
         &self.local_server.secret_stores.0
+    }
+    /// Get the shielding site configuration.
+    pub fn shielding_sites(&self) -> &ShieldingSites {
+        &self.local_server.shielding_sites
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -207,6 +213,7 @@ pub struct LocalServerConfig {
     dictionaries: DictionariesConfig,
     object_stores: ObjectStoreConfig,
     secret_stores: SecretStoreConfig,
+    shielding_sites: ShieldingSites,
 }
 
 /// Enum of available (experimental) wasi modules
@@ -230,6 +237,7 @@ struct RawLocalServerConfig {
     #[serde(alias = "object_store", alias = "kv_stores")]
     object_stores: Option<Table>,
     secret_stores: Option<Table>,
+    shielding_sites: Option<Table>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
@@ -243,6 +251,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             dictionaries,
             object_stores,
             secret_stores,
+            shielding_sites,
         } = self;
         let acls = if let Some(acls) = acls {
             acls.try_into()?
@@ -279,6 +288,11 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             SecretStoreConfig::default()
         };
+        let shielding_sites = if let Some(shielding_sites) = shielding_sites {
+            shielding_sites.try_into()?
+        } else {
+            ShieldingSites::default()
+        };
 
         Ok(LocalServerConfig {
             acls,
@@ -288,6 +302,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             dictionaries,
             object_stores,
             secret_stores,
+            shielding_sites,
         })
     }
 }

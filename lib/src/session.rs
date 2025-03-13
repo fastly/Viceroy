@@ -29,6 +29,7 @@ use {
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
         secret_store::{SecretLookup, SecretStores},
+        shielding_site::ShieldingSites,
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
@@ -152,6 +153,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
+    /// The shielding information we've been given.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    pub(crate) shielding_sites: Arc<ShieldingSites>,
     /// The path to the configuration file used for this invocation of Viceroy.
     ///
     /// Created prior to guest execution, and never modified.
@@ -180,6 +185,7 @@ impl Session {
         config_path: Arc<Option<PathBuf>>,
         kv_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
+        shielding_sites: Arc<ShieldingSites>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -218,6 +224,7 @@ impl Session {
             kv_store,
             kv_store_by_name: PrimaryMap::new(),
             secret_stores,
+            shielding_sites,
             secret_stores_by_name: PrimaryMap::new(),
             secrets_by_name: PrimaryMap::new(),
             config_path,
