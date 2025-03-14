@@ -106,6 +106,8 @@ pub struct ExecuteCtx {
     /// this must refer to a directory, while in run mode it names
     /// a file.
     guest_profile_path: Arc<Option<PathBuf>>,
+    /// Duration for the interval between samples.
+    guest_profile_interval: Arc<Option<Duration>>,
 }
 
 impl ExecuteCtx {
@@ -115,6 +117,7 @@ impl ExecuteCtx {
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_path: Option<PathBuf>,
+        guest_profile_interval: Option<Duration>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
     ) -> Result<Self, Error> {
@@ -227,6 +230,7 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_path: Arc::new(guest_profile_path),
+            guest_profile_interval: Arc::new(guest_profile_interval),
         })
     }
 
@@ -367,7 +371,7 @@ impl ExecuteCtx {
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
     /// let adapt_core_wasm = false;
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, None, Default::default(), adapt_core_wasm)?;
     /// let local = "127.0.0.1:80".parse().unwrap();
     /// let remote = "127.0.0.1:0".parse().unwrap();
     /// let resp = ctx.handle_request(req, local, remote).await?;
@@ -552,9 +556,13 @@ impl ExecuteCtx {
             Instance::Module(module, instance_pre) => {
                 let profiler = self.guest_profile_path.is_some().then(|| {
                     let program_name = "main";
+                    let interval = self
+                        .guest_profile_interval
+                        .as_ref()
+                        .unwrap_or(EPOCH_INTERRUPTION_PERIOD);
                     GuestProfiler::new(
                         program_name,
-                        EPOCH_INTERRUPTION_PERIOD,
+                        interval,
                         vec![(program_name.to_string(), module.clone())],
                     )
                 });
@@ -653,9 +661,13 @@ impl ExecuteCtx {
         let (module, instance_pre) = self.instance_pre.unwrap_module();
 
         let profiler = self.guest_profile_path.is_some().then(|| {
+            let interval = self
+                .guest_profile_interval
+                .as_ref()
+                .unwrap_or(EPOCH_INTERRUPTION_PERIOD);
             GuestProfiler::new(
                 program_name,
-                EPOCH_INTERRUPTION_PERIOD,
+                interval,
                 vec![(program_name.to_string(), module.clone())],
             )
         });
