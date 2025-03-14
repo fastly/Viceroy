@@ -1,6 +1,9 @@
 use super::fastly::api::{shielding, types};
+use crate::config::Backend;
 use crate::error::Error;
 use crate::linking::ComponentCtx;
+use http::Uri;
+use std::str::FromStr;
 
 #[async_trait::async_trait]
 impl shielding::Host for ComponentCtx {
@@ -52,15 +55,46 @@ impl shielding::Host for ComponentCtx {
         name: Vec<u8>,
         options_mask: shielding::ShieldBackendOptionsMask,
         options: shielding::ShieldBackendOptions,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
         // Validate our inputs and return the unsupported error.
-        let _target_shield = String::from_utf8(name)?;
+        let shield_uri = String::from_utf8(name)?;
 
         if options_mask.contains(shielding::ShieldBackendOptionsMask::CACHE_KEY) {
             let _ = String::from_utf8(options.cache_key)?;
         }
 
-        Err(types::Error::Unsupported)
+        let Ok(uri) = Uri::from_str(&shield_uri) else {
+            return Err(Error::InvalidArgument.into());
+        };
+
+        let new_name = format!("******{uri}*****");
+        let new_backend = Backend {
+            uri,
+            override_host: None,
+            cert_host: None,
+            use_sni: false,
+            grpc: false,
+            client_cert: None,
+            ca_certs: Vec::new(),
+        };
+
+        if !self.session.add_backend(&new_name, new_backend) {
+            return Err(Error::BackendNameRegistryError(new_name).into());
+        }
+
+        let new_name_bytes = new_name.as_bytes().to_vec();
+
+        let target_len = new_name_bytes.len() as u64;
+
+        if target_len > max_len {
+            return Err(Error::BufferLengthError {
+                buf: "shielding_backend",
+                len: "name.len()",
+            }
+            .into());
+        }
+
+        Ok(new_name_bytes)
     }
 }

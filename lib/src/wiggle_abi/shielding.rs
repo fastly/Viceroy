@@ -1,6 +1,9 @@
+use crate::config::Backend;
 use crate::error::Error;
 use crate::session::Session;
 use crate::wiggle_abi::{fastly_shielding, types};
+use http::Uri;
+use std::str::FromStr;
 
 impl fastly_shielding::FastlyShielding for Session {
     fn shield_info(
@@ -57,11 +60,11 @@ impl fastly_shielding::FastlyShielding for Session {
         shield_name: wiggle::GuestPtr<str>,
         shield_backend_options: types::ShieldBackendOptions,
         shield_backend_config: wiggle::GuestPtr<types::ShieldBackendConfig>,
-        _out_buffer: wiggle::GuestPtr<u8>,
-        _out_buffer_max_len: u32,
+        out_buffer: wiggle::GuestPtr<u8>,
+        out_buffer_max_len: u32,
     ) -> Result<u32, Error> {
         // Validate our inputs and then return the unsupported error.
-        let Some(_) = memory.as_str(shield_name)?.map(str::to_string) else {
+        let Some(shield_uri) = memory.as_str(shield_name)?.map(str::to_string) else {
             return Err(Error::ValueAbsent);
         };
 
@@ -78,8 +81,38 @@ impl fastly_shielding::FastlyShielding for Session {
             }
         }
 
-        Err(Error::Unsupported {
-            msg: "shielding hostcalls are not supported",
-        })
+        let Ok(uri) = Uri::from_str(&shield_uri) else {
+            return Err(Error::InvalidArgument);
+        };
+
+        let new_name = format!("******{uri}*****");
+        let new_backend = Backend {
+            uri,
+            override_host: None,
+            cert_host: None,
+            use_sni: false,
+            grpc: false,
+            client_cert: None,
+            ca_certs: Vec::new(),
+        };
+
+        if !self.add_backend(&new_name, new_backend) {
+            return Err(Error::BackendNameRegistryError(new_name));
+        }
+
+        let new_name_bytes = new_name.as_bytes().to_vec();
+
+        let target_len = new_name_bytes.len() as u32;
+
+        if target_len > out_buffer_max_len {
+            return Err(Error::BufferLengthError {
+                buf: "shielding_backend",
+                len: "name.len()",
+            });
+        }
+
+        memory.copy_from_slice(&new_name_bytes, out_buffer.as_array(target_len))?;
+
+        Ok(target_len)
     }
 }
