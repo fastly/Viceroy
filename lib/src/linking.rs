@@ -308,6 +308,7 @@ pub fn link_host_functions(
     wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_purge::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::session)?;
     link_legacy_aliases(linker)?;
     Ok(())

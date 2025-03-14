@@ -395,6 +395,13 @@ pub enum FastlyConfigError {
         err: SecretStoreConfigError,
     },
 
+    #[error("invalid configuration for '{name}': {err}")]
+    InvalidShieldingSiteDefinition {
+        name: String,
+        #[source]
+        err: ShieldingSiteConfigError,
+    },
+
     /// An error that occurred while deserializing the file.
     ///
     /// This represents errors caused by syntactically invalid TOML data, missing fields, etc.
@@ -737,6 +744,22 @@ pub enum SecretStoreConfigError {
 
     #[error("Invalid secret name: {0}")]
     InvalidSecretName(String),
+}
+
+/// Errors that may occur while validating shielding site configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum ShieldingSiteConfigError {
+    #[error("Illegal TOML value for shielding site; must be either the string 'local' or a table containin an encrypted and unencrypted URL.")]
+    IllegalSiteValue,
+
+    #[error("Illegal TOML string for shielding site; must be 'local'")]
+    IllegalSiteString,
+
+    #[error("Illegal table for shielding site; must have exactly one key named 'encrypted', and one named 'unencrypted'")]
+    IllegalSiteDefinition,
+
+    #[error("Illegal URL ({url}): {error}")]
+    IllegalUrl { url: String, error: url::ParseError },
 }
 
 /// Errors related to the downstream request.
