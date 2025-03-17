@@ -12,6 +12,7 @@ use fastly_shared::FastlyStatus;
 use http::HeaderValue;
 
 mod store;
+mod variance;
 
 use store::{CacheData, CacheKeyObjects, ObjectMeta};
 
