@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
@@ -13,7 +13,7 @@ use http::HeaderValue;
 
 mod store;
 
-use store::{CacheData, CacheKeyObjects};
+use store::{CacheData, CacheKeyObjects, ObjectMeta};
 
 /// Primary cache key: an up-to-4KiB buffer.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -110,6 +110,11 @@ impl Found {
     pub fn body(&self) -> Result<Body, Error> {
         self.data.as_ref().get_body()
     }
+
+    /// Access the metadata of the cached object.
+    pub fn meta(&self) -> &ObjectMeta {
+        self.data.get_meta()
+    }
 }
 
 /// Cache for a service.
@@ -161,12 +166,18 @@ impl Cache {
     /// Last writer wins!
     // TODO: cceckman-at-fastly 2025-02-26:
     // - use request headers; vary_by; streaming body
-    pub async fn insert(&self, key: &CacheKey, body: Body) {
+    pub async fn insert(&self, key: &CacheKey, options: WriteOptions, body: Body) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(body);
+            .insert(options, body);
     }
+}
+
+/// Options that can be applied to a write, e.g. insert or transaction_insert.
+pub struct WriteOptions {
+    pub max_age: Duration,
+    pub initial_age: Option<Duration>,
 }
 
 /// Optional override for response caching behavior.
@@ -261,7 +272,11 @@ mod tests {
 
     proptest! {
         #[test]
-        fn nontransactional_insert_lookup(key in any::<CacheKey>(), value in any::<Vec<u8>>()) {
+        fn nontransactional_insert_lookup(
+                key in any::<CacheKey>(),
+                max_age in any::<u32>(),
+                initial_age in any::<Option<u32>>(),
+                value in any::<Vec<u8>>()) {
             let cache = Cache::default();
 
             // We can't use tokio::test and proptest! together; both alter the signature of the
@@ -272,7 +287,12 @@ mod tests {
                 assert!(empty.found().is_none());
                 // TODO: cceckman-at-fastly -- check GoGet
 
-                cache.insert(&key, value.clone().into()).await;
+                let write_options = WriteOptions {
+                    max_age: Duration::from_secs(max_age as u64),
+                    initial_age: initial_age.map(|v| Duration::from_secs(v as u64)),
+                };
+
+                cache.insert(&key, write_options, value.clone().into()).await;
 
                 let nonempty = cache.lookup(&key).await;
                 let found = nonempty.found().expect("should have found inserted key");
