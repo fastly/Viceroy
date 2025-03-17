@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::body::Body;
-use crate::cache::CacheKey;
+use crate::cache::{CacheKey, WriteOptions};
 use crate::session::{PeekableTask, PendingCacheTask, Session};
+use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
 use super::fastly_cache::FastlyCache;
 use super::{types, Error};
@@ -14,6 +16,23 @@ fn load_cache_key(
     let bytes = memory.as_slice(cache_key)?.ok_or(Error::SharedMemory)?;
     let key: CacheKey = bytes.try_into().map_err(|_| Error::InvalidArgument)?;
     Ok(key)
+}
+
+fn load_write_options(
+    options_mask: types::CacheWriteOptionsMask,
+    options: types::CacheWriteOptions,
+) -> Result<WriteOptions, Error> {
+    let max_age = Duration::from_nanos(options.max_age_ns);
+    let initial_age = if options_mask.contains(CacheWriteOptionsMask::INITIAL_AGE_NS) {
+        Some(Duration::from_nanos(options.initial_age_ns))
+    } else {
+        None
+    };
+
+    Ok(WriteOptions {
+        max_age,
+        initial_age,
+    })
 }
 
 #[allow(unused_variables)]
@@ -53,14 +72,14 @@ impl FastlyCache for Session {
         if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
             return Err(Error::NotAvailable("Cache API primitives"));
         }
-
         let key = load_cache_key(memory, cache_key)?;
+        let options = load_write_options(options_mask, memory.read(options)?)?;
         let cache = Arc::clone(self.cache());
 
         // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
-        cache.insert(&key, read_body).await;
+        cache.insert(&key, options, read_body).await;
         Ok(handle)
     }
 

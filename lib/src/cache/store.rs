@@ -1,8 +1,55 @@
 //! Data structures & implementation details for the Viceroy cache.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use crate::{body::Body, collecting_body::CollectingBody, Error};
+
+use super::WriteOptions;
+
+/// Metadata associated with a particular object on insert.
+#[derive(Debug)]
+pub struct ObjectMeta {
+    /// We store absolute times, computed from "now" when the request comes in.
+    fresh_until: Instant,
+    // TODO: cceckman-at-fastly: for future work!
+    /*
+    stale_while_revalidate_until: Option<Instant>,
+    edge_ok_until: Option<Instant>,
+
+    request_headers: Option<HeaderMap>,
+    vary_rule: Option<VaryRule>,
+    surrogate_keys: HashSet<String>,
+    length: Option<usize>,
+    user_metadata: Option<Bytes>,
+    sensitive_data: Option<bool>,
+    */
+}
+
+impl ObjectMeta {
+    /// Create a new ObjectMeta.
+    pub fn new(max_age: Duration) -> Self {
+        ObjectMeta {
+            fresh_until: Instant::now() + max_age,
+        }
+    }
+
+    /// Assign an initial age to the object.
+    pub fn with_initial_age(self, initial_age: Duration) -> Self {
+        ObjectMeta {
+            fresh_until: self.fresh_until - initial_age,
+            ..self
+        }
+    }
+}
+
+impl From<WriteOptions> for ObjectMeta {
+    fn from(value: WriteOptions) -> Self {
+        ObjectMeta::new(value.max_age).with_initial_age(value.initial_age.unwrap_or(Duration::ZERO))
+    }
+}
 
 /// Object(s) indexed by a CacheKey.
 #[derive(Default)]
@@ -32,15 +79,17 @@ impl CacheKeyObjects {
     /// Insert into the given CacheData.
     // TODO: cceckman-at-fastly:
     // Implement vary_by here
-    pub fn insert(&self, body: Body) {
+    pub fn insert(&self, options: WriteOptions, body: Body) {
         let key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
         let mut response_object = key_objects
             .object
             .inner
             .lock()
             .expect("failed to lock ResponseKeyObjects");
+        let meta = options.into();
         let body = CollectingBody::new(body);
-        response_object.transactional = TransactionState::Present(Arc::new(CacheData { body }));
+        response_object.transactional =
+            TransactionState::Present(Arc::new(CacheData { body, meta }));
         response_object.generation += 1;
 
         // TODO: cceckman-at-fastly, 2025-02-26:
@@ -96,9 +145,9 @@ enum TransactionState {
 pub(crate) struct CacheData {
     // TODO: cceckman-at-fastly
     // - vary rule
-    // - age; use to compute Expiry
     // - response headers
     // - surrogate keys
+    meta: ObjectMeta,
     body: CollectingBody,
 }
 
@@ -106,5 +155,10 @@ impl CacheData {
     /// Get a Body to read the cached object with.
     pub(crate) fn get_body(&self) -> Result<Body, Error> {
         self.body.read()
+    }
+
+    /// Access to object's metadata
+    pub(crate) fn get_meta(&self) -> &ObjectMeta {
+        &self.meta
     }
 }
