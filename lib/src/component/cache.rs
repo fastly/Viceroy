@@ -2,18 +2,35 @@ use {
     super::fastly::api::{cache, http_types, types},
     crate::{
         body::Body,
-        cache::CacheKey,
+        cache::{CacheKey, WriteOptions},
         error::Error,
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask},
     },
-    std::sync::Arc,
+    std::{sync::Arc, time::Duration},
 };
 
 // Utility for remapping the errors.
 fn get_key(key: Vec<u8>) -> Result<CacheKey, types::Error> {
     key.try_into()
         .map_err(|_| types::Error::BufferLen(CacheKey::MAX_LENGTH as u64))
+}
+
+fn load_write_options(
+    options_mask: cache::WriteOptionsMask,
+    options: cache::WriteOptions,
+) -> Result<WriteOptions, Error> {
+    let max_age = Duration::from_nanos(options.max_age_ns);
+    let initial_age = if options_mask.contains(cache::WriteOptionsMask::INITIAL_AGE_NS) {
+        Some(Duration::from_nanos(options.initial_age_ns))
+    } else {
+        None
+    };
+
+    Ok(WriteOptions {
+        max_age,
+        initial_age,
+    })
 }
 
 #[async_trait::async_trait]
@@ -42,8 +59,8 @@ impl cache::Host for ComponentCtx {
     async fn insert(
         &mut self,
         key: Vec<u8>,
-        _options_mask: cache::WriteOptionsMask,
-        _options: cache::WriteOptions,
+        options_mask: cache::WriteOptionsMask,
+        options: cache::WriteOptions,
     ) -> Result<cache::BodyHandle, types::Error> {
         // TODO: cceckman-at-fastly: Handle options,
         // then remove this guard.
@@ -53,10 +70,11 @@ impl cache::Host for ComponentCtx {
 
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
+        let options = load_write_options(options_mask, options)?;
 
         let handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(handle)?;
-        cache.insert(&key, read_body).await;
+        cache.insert(&key, options, read_body).await;
         Ok(handle.into())
     }
 
