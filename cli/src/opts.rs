@@ -94,7 +94,7 @@ pub struct SharedArgs {
     ///
     /// The `guest` option can be additionally configured as:
     ///
-    ///     --profile=guest[[,path],sample]
+    ///     --profile=guest[,path[,sample]]
     ///
     /// where `path` is the directory or filename to write the profile(s) to and
     /// `sample` is the duration between profiler samples (default 50μs). Time
