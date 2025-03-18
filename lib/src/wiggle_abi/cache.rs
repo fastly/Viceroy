@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use http::HeaderMap;
-use wiggle::GuestError;
 
 use crate::body::Body;
 use crate::cache::{CacheKey, WriteOptions};
