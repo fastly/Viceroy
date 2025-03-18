@@ -9,10 +9,11 @@
 //! The core cache API provides the bones of this.
 //!
 
-use std::str::FromStr;
+use std::{fmt::Write, str::FromStr};
 
-use http::header::InvalidHeaderName;
+use bytes::{Bytes, BytesMut};
 pub use http::HeaderName;
+use http::{header::InvalidHeaderName, HeaderMap};
 
 use crate::Error;
 
@@ -20,6 +21,8 @@ use crate::Error;
 ///
 /// This rule describes what fields (headers) are used to determine whether a new request "matches"
 /// a previous response.
+///
+/// VaryRule is canonicalized, with lowercase-named header names in sorted order.
 #[derive(Debug)]
 pub struct VaryRule {
     headers: Vec<HeaderName>,
@@ -35,4 +38,37 @@ impl FromStr for VaryRule {
         headers.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         Ok(VaryRule { headers })
     }
+}
+
+impl VaryRule {
+    /// Construct the Variant for the given headers: the (header, value) pairs that must be present
+    /// to match.
+    pub fn variant(&self, headers: &HeaderMap) -> Variant {
+        let mut buf = BytesMut::new();
+        for header in self.headers.iter() {
+            write!(&mut buf, "{}: ", header.as_str()).unwrap();
+            for (i, value) in headers.get_all(header).iter().enumerate() {
+                if i != 0 {
+                    write!(&mut buf, ", ").unwrap();
+                }
+                buf.extend(value.as_bytes());
+            }
+            write!(&mut buf, "\r\n").unwrap();
+        }
+        Variant {
+            signature: buf.into(),
+        }
+    }
+}
+
+/// The portion of a cache key that is defined by request and response.
+///
+/// A `vary_by` directive indicates that a cached object should only be matched if the headers
+/// listed in `vary_by` match that of the request that generated the cached object.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Variant {
+    /// The internal representation is an HTTP header block: headers and values separated by a CRLF
+    /// sequence. However, since header values may contain arbitrary bytes, this is a Bytes rather
+    /// than a String.
+    signature: Bytes,
 }
