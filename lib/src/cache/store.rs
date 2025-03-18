@@ -12,8 +12,10 @@ use super::WriteOptions;
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
 pub struct ObjectMeta {
-    /// We store absolute times, computed from "now" when the request comes in.
-    fresh_until: Instant,
+    /// The instant at which the object's "lifetime" started; possibly backdated.
+    birth: Instant,
+    /// Freshness lifetime
+    max_age: Duration,
     // TODO: cceckman-at-fastly: for future work!
     /*
     stale_while_revalidate_until: Option<Instant>,
@@ -31,17 +33,31 @@ pub struct ObjectMeta {
 impl ObjectMeta {
     /// Create a new ObjectMeta.
     pub fn new(max_age: Duration) -> Self {
-        ObjectMeta {
-            fresh_until: Instant::now() + max_age,
-        }
+        let birth = Instant::now();
+        ObjectMeta { birth, max_age }
     }
 
     /// Assign an initial age to the object.
     pub fn with_initial_age(self, initial_age: Duration) -> Self {
         ObjectMeta {
-            fresh_until: self.fresh_until - initial_age,
+            birth: self.birth - initial_age,
             ..self
         }
+    }
+
+    /// Retrieve the current age of this object.
+    pub fn age(&self) -> Duration {
+        Instant::now() - self.birth
+    }
+
+    /// Maximum fresh age of this object.
+    pub fn max_age(&self) -> Duration {
+        self.max_age
+    }
+
+    /// Return true if the entry is fresh at the current time.
+    pub fn is_fresh(&self) -> bool {
+        Instant::now().duration_since(self.birth) < self.max_age
     }
 }
 
