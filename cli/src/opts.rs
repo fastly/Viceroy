@@ -1,6 +1,8 @@
 //! Command line arguments.
 
-use viceroy_lib::config::UnknownImportBehavior;
+use std::time::Duration;
+
+use viceroy_lib::{config::UnknownImportBehavior, GuestProfileConfig};
 
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
@@ -92,9 +94,12 @@ pub struct SharedArgs {
     ///
     /// The `guest` option can be additionally configured as:
     ///
-    ///     --profile=guest[,path]
+    ///     --profile=guest[[,path],sample]
     ///
-    /// where `path` is the directory or filename to write the profile(s) to.
+    /// where `path` is the directory or filename to write the profile(s) to and
+    /// `sample` is the duration between profiler samples (default 50μs). Time
+    /// units supported are "s" (seconds), "ms" (milliseconds"), "us"/"μs"
+    /// (microseconds), and "ns" (nanoseconds).
     #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
     profile: Option<Profile>,
     /// Set of experimental WASI modules to link against.
@@ -120,7 +125,10 @@ pub struct SharedArgs {
 #[derive(Debug, Clone)]
 enum Profile {
     Native(ProfilingStrategy),
-    Guest { path: Option<String> },
+    Guest {
+        path: Option<String>,
+        sample_period: Option<Duration>,
+    },
 }
 
 impl ServeArgs {
@@ -128,19 +136,6 @@ impl ServeArgs {
     pub fn addr(&self) -> SocketAddr {
         self.socket_addr
             .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7676))
-    }
-
-    /// The path to write guest profiles to
-    pub fn profile_guest(&self) -> Option<PathBuf> {
-        if let Some(Profile::Guest { path }) = &self.shared.profile {
-            Some(
-                path.clone()
-                    .unwrap_or_else(|| "guest-profiles".to_string())
-                    .into(),
-            )
-        } else {
-            None
-        }
     }
 
     pub fn shared(&self) -> &SharedArgs {
@@ -156,19 +151,6 @@ impl RunArgs {
 
     pub fn shared(&self) -> &SharedArgs {
         &self.shared
-    }
-
-    /// The path to write a guest profile to
-    pub fn profile_guest(&self) -> Option<PathBuf> {
-        if let Some(Profile::Guest { path }) = &self.shared.profile {
-            Some(
-                path.clone()
-                    .unwrap_or_else(|| "guest-profile.json".to_string())
-                    .into(),
-            )
-        } else {
-            None
-        }
     }
 }
 
@@ -198,6 +180,26 @@ impl SharedArgs {
         match self.profile {
             Some(Profile::Native(s)) => s,
             _ => ProfilingStrategy::None,
+        }
+    }
+
+    /// Configuration for guest profiling if enabled
+    pub fn guest_profile_config(&self) -> Option<GuestProfileConfig> {
+        if let Some(Profile::Guest {
+            path,
+            sample_period,
+        }) = &self.profile
+        {
+            Some(GuestProfileConfig {
+                path: PathBuf::from(
+                    path.as_ref()
+                        .map(|p| p.as_str())
+                        .unwrap_or("guest-profiles"),
+                ),
+                sample_period: sample_period.unwrap_or_else(|| Duration::from_micros(50)),
+            })
+        } else {
+            None
         }
     }
 
@@ -314,6 +316,39 @@ fn check_module(s: &str) -> Result<PathBuf, Error> {
     }
 }
 
+/// Parse a string as a duration
+///
+/// This implementation is mostly borrowed from the wasmtime cli
+fn parse_profile_sample_duration(s: &str) -> Result<Duration, Error> {
+    // assume an integer without a unit specified is a number of seconds ...
+    if let Ok(val) = s.parse() {
+        return Ok(Duration::from_secs(val));
+    }
+
+    if let Some(num) = s.strip_suffix("s") {
+        if let Ok(val) = num.parse() {
+            return Ok(Duration::from_secs(val));
+        }
+    }
+    if let Some(num) = s.strip_suffix("ms") {
+        if let Ok(val) = num.parse() {
+            return Ok(Duration::from_millis(val));
+        }
+    }
+    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs")) {
+        if let Ok(val) = num.parse() {
+            return Ok(Duration::from_micros(val));
+        }
+    }
+    if let Some(num) = s.strip_suffix("ns") {
+        if let Ok(val) = num.parse() {
+            return Ok(Duration::from_nanos(val));
+        }
+    }
+
+    Err(Error::ProfilingStrategy)
+}
+
 /// A parsing function used by [`Opts`][opts] to check that the input is valid wasmtime's profiling strategy.
 ///
 /// [opts]: struct.Opts.html
@@ -323,9 +358,17 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
         ["jitdump"] => Ok(Profile::Native(ProfilingStrategy::JitDump)),
         ["perfmap"] => Ok(Profile::Native(ProfilingStrategy::PerfMap)),
         ["vtune"] => Ok(Profile::Native(ProfilingStrategy::VTune)),
-        ["guest"] => Ok(Profile::Guest { path: None }),
+        ["guest"] => Ok(Profile::Guest {
+            path: None,
+            sample_period: None,
+        }),
         ["guest", path] => Ok(Profile::Guest {
             path: Some(path.to_string()),
+            sample_period: None,
+        }),
+        ["guest", path, sample_period] => Ok(Profile::Guest {
+            path: path.to_string().into(),
+            sample_period: Some(parse_profile_sample_duration(sample_period)?),
         }),
         _ => Err(Error::ProfilingStrategy),
     }
@@ -531,6 +574,20 @@ mod opts_tests {
             "dummy-program-name",
             "--profile",
             "guest,/some/path",
+            &test_file("minimal.wat"),
+        ];
+        match Opts::try_parse_from(args) {
+            Ok(_) => Ok(()),
+            res => panic!("unexpected result: {:?}", res),
+        }
+    }
+
+    #[test]
+    fn wasmtime_profiling_strategy_guest_with_path_and_period_is_accepted() -> TestResult {
+        let args = &[
+            "dummy-program-name",
+            "--profile",
+            "guest,/some/path,250ns",
             &test_file("minimal.wat"),
         ];
         match Opts::try_parse_from(args) {
