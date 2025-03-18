@@ -341,10 +341,17 @@ impl cache::Host for ComponentCtx {
         let entry = self.session.cache_entry_mut(handle.into()).await?;
 
         let mut state = cache::LookupState::empty();
-        if entry.found().is_some() {
+        if let Some(found) = entry.found() {
             state |= cache::LookupState::FOUND;
-            // TODO: cceckman-at-fastly: stale vs. usable, go_get obligation
-            state |= cache::LookupState::USABLE;
+
+            if !found.meta().is_fresh() {
+                state |= cache::LookupState::STALE;
+            }
+            // TODO:: stale-while-revalidate and go_get obligation.
+            // For now, usable if fresh.
+            if found.meta().is_fresh() {
+                state |= cache::LookupState::USABLE;
+            }
         }
 
         Ok(state.into())
@@ -368,11 +375,16 @@ impl cache::Host for ComponentCtx {
         .into())
     }
 
-    async fn get_max_age_ns(&mut self, _handle: cache::Handle) -> Result<u64, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+    async fn get_max_age_ns(&mut self, handle: cache::Handle) -> Result<u64, types::Error> {
+        let entry = self.session.cache_entry_mut(handle.into()).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().max_age().as_nanos().try_into().unwrap())
+        } else {
+            Err(Error::CacheError(
+                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
+            )
+            .into())
         }
-        .into())
     }
 
     async fn get_stale_while_revalidate_ns(
@@ -385,11 +397,16 @@ impl cache::Host for ComponentCtx {
         .into())
     }
 
-    async fn get_age_ns(&mut self, _handle: cache::Handle) -> Result<u64, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+    async fn get_age_ns(&mut self, handle: cache::Handle) -> Result<u64, types::Error> {
+        let entry = self.session.cache_entry_mut(handle.into()).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().age().as_nanos().try_into().unwrap())
+        } else {
+            Err(Error::CacheError(
+                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
+            )
+            .into())
         }
-        .into())
     }
 
     async fn get_hits(&mut self, _handle: cache::Handle) -> Result<u64, types::Error> {

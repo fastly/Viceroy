@@ -301,4 +301,25 @@ mod tests {
             });
         }
     }
+
+    #[tokio::test]
+    async fn insert_immediately_stale() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        // Insert an already-stale entry:
+        let write_options = WriteOptions {
+            max_age: Duration::from_secs(1),
+            initial_age: Some(Duration::from_secs(2)),
+        };
+
+        let mut body = Body::empty();
+        body.push_back([1u8].as_slice());
+
+        cache.insert(&key, write_options, body).await;
+
+        let nonempty = cache.lookup(&key).await;
+        let found = nonempty.found().expect("should have found inserted key");
+        assert!(!found.meta().is_fresh());
+    }
 }

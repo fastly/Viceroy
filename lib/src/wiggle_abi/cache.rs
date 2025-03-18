@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use wiggle::GuestError;
+
 use crate::body::Body;
 use crate::cache::{CacheKey, WriteOptions};
 use crate::session::{PeekableTask, PendingCacheTask, Session};
@@ -264,10 +266,17 @@ impl FastlyCache for Session {
         let entry = self.cache_entry_mut(handle).await?;
 
         let mut state = types::CacheLookupState::empty();
-        if entry.found().is_some() {
+        if let Some(found) = entry.found() {
             state |= types::CacheLookupState::FOUND;
-            // TODO: cceckman-at-fastly: stale vs. usable, go_get obligation
-            state |= types::CacheLookupState::USABLE;
+
+            if !found.meta().is_fresh() {
+                state |= types::CacheLookupState::STALE;
+            }
+            // TODO:: stale-while-revalidate and go_get obligation.
+            // For now, usable if fresh.
+            if found.meta().is_fresh() {
+                state |= types::CacheLookupState::USABLE;
+            }
         }
 
         Ok(state)
@@ -351,7 +360,14 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().max_age().as_nanos().try_into().unwrap())
+        } else {
+            Err(Error::CacheError(
+                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
+            ))
+        }
     }
 
     async fn get_stale_while_revalidate_ns(
@@ -367,7 +383,14 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().age().as_nanos().try_into().unwrap())
+        } else {
+            Err(Error::CacheError(
+                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
+            ))
+        }
     }
 
     async fn get_hits(
