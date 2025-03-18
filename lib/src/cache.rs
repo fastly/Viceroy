@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
+use variance::VaryRule;
 
 use crate::{
     body::Body,
@@ -9,7 +10,7 @@ use crate::{
     Error,
 };
 use fastly_shared::FastlyStatus;
-use http::HeaderValue;
+use http::{HeaderMap, HeaderValue};
 
 mod store;
 mod variance;
@@ -179,6 +180,9 @@ impl Cache {
 pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Option<Duration>,
+
+    pub request_headers: HeaderMap,
+    pub vary_rule: Option<VaryRule>,
 }
 
 /// Optional override for response caching behavior.

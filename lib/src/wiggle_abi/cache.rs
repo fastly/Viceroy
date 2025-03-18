@@ -1,6 +1,8 @@
+use core::str;
 use std::sync::Arc;
 use std::time::Duration;
 
+use http::HeaderMap;
 use wiggle::GuestError;
 
 use crate::body::Body;
@@ -21,6 +23,8 @@ fn load_cache_key(
 }
 
 fn load_write_options(
+    session: &Session,
+    memory: &wiggle::GuestMemory<'_>,
     options_mask: types::CacheWriteOptionsMask,
     options: types::CacheWriteOptions,
 ) -> Result<WriteOptions, Error> {
@@ -30,10 +34,27 @@ fn load_write_options(
     } else {
         None
     };
+    let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+        let handle = options.request_headers;
+        let parts = session.request_parts(handle)?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+    let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
+        let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
+        let vary_rule_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
+        let vary_rule_str = str::from_utf8(vary_rule_bytes).map_err(|e| Error::Utf8Expected(e))?;
+        Some(vary_rule_str.parse()?)
+    } else {
+        None
+    };
 
     Ok(WriteOptions {
         max_age,
         initial_age,
+        request_headers,
+        vary_rule,
     })
 }
 
@@ -75,7 +96,7 @@ impl FastlyCache for Session {
             return Err(Error::NotAvailable("Cache API primitives"));
         }
         let key = load_cache_key(memory, cache_key)?;
-        let options = load_write_options(options_mask, memory.read(options)?)?;
+        let options = load_write_options(self, memory, options_mask, memory.read(options)?)?;
         let cache = Arc::clone(self.cache());
 
         // TODO: cceckman-at-fastly - handle options
