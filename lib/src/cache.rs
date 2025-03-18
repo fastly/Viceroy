@@ -147,12 +147,12 @@ impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
     // TODO: cceckman-at-fastly:
     // - use request headers; vary_by
-    pub async fn lookup(&self, key: &CacheKey) -> CacheEntry {
+    pub async fn lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
         let found = self
             .inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .get()
+            .get(headers)
             .map(|data| Found {
                 data,
                 last_body_handle: None,
@@ -182,7 +182,7 @@ pub struct WriteOptions {
     pub initial_age: Option<Duration>,
 
     pub request_headers: HeaderMap,
-    pub vary_rule: Option<VaryRule>,
+    pub vary_rule: VaryRule,
 }
 
 /// Optional override for response caching behavior.
