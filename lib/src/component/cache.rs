@@ -5,8 +5,9 @@ use {
         cache::{CacheKey, WriteOptions},
         error::Error,
         linking::ComponentCtx,
-        session::{PeekableTask, PendingCacheTask},
+        session::{PeekableTask, PendingCacheTask, Session},
     },
+    http::HeaderMap,
     std::{sync::Arc, time::Duration},
 };
 
@@ -17,6 +18,7 @@ fn get_key(key: Vec<u8>) -> Result<CacheKey, types::Error> {
 }
 
 fn load_write_options(
+    session: &Session,
     options_mask: cache::WriteOptionsMask,
     options: cache::WriteOptions,
 ) -> Result<WriteOptions, Error> {
@@ -26,10 +28,24 @@ fn load_write_options(
     } else {
         None
     };
+    let request_headers = if options_mask.contains(cache::WriteOptionsMask::REQUEST_HEADERS) {
+        let handle = options.request_headers;
+        let parts = session.request_parts(handle.into())?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+    let vary_rule = if options_mask.contains(cache::WriteOptionsMask::VARY_RULE) {
+        Some(options.vary_rule.parse()?)
+    } else {
+        None
+    };
 
     Ok(WriteOptions {
         max_age,
         initial_age,
+        request_headers,
+        vary_rule,
     })
 }
 
@@ -70,7 +86,7 @@ impl cache::Host for ComponentCtx {
 
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
-        let options = load_write_options(options_mask, options)?;
+        let options = load_write_options(&self.session, options_mask, options)?;
 
         let handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(handle)?;
