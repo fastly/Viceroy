@@ -1,9 +1,12 @@
 //! Data structures & implementation details for the Viceroy cache.
 
+use crate::cache::variance::VaryRule;
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+
+use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody, Error};
 
@@ -25,13 +28,14 @@ pub struct ObjectMeta {
     initial_age: Duration,
     /// Freshness lifetime
     max_age: Duration,
+
+    request_headers: HeaderMap,
+    vary_rule: Option<VaryRule>,
     // TODO: cceckman-at-fastly: for future work!
     /*
     stale_while_revalidate_until: Option<Instant>,
     edge_ok_until: Option<Instant>,
 
-    request_headers: Option<HeaderMap>,
-    vary_rule: Option<VaryRule>,
     surrogate_keys: HashSet<String>,
     length: Option<usize>,
     user_metadata: Option<Bytes>,
@@ -40,23 +44,6 @@ pub struct ObjectMeta {
 }
 
 impl ObjectMeta {
-    /// Create a new ObjectMeta.
-    pub fn new(max_age: Duration) -> Self {
-        ObjectMeta {
-            inserted: Instant::now(),
-            initial_age: Duration::ZERO,
-            max_age,
-        }
-    }
-
-    /// Assign an initial age to the object.
-    pub fn with_initial_age(self, initial_age: Duration) -> Self {
-        ObjectMeta {
-            initial_age,
-            ..self
-        }
-    }
-
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
         // Age in this cache, plus age upon insertion
@@ -72,11 +59,35 @@ impl ObjectMeta {
     pub fn is_fresh(&self) -> bool {
         self.age() < self.max_age
     }
+
+    /// The request headers associated with this request.
+    pub fn request_headers(&self) -> &HeaderMap {
+        &self.request_headers
+    }
+
+    /// The vary rule associated with this request.
+    pub fn vary_rule(&self) -> Option<&VaryRule> {
+        self.vary_rule.as_ref()
+    }
 }
 
 impl From<WriteOptions> for ObjectMeta {
     fn from(value: WriteOptions) -> Self {
-        ObjectMeta::new(value.max_age).with_initial_age(value.initial_age.unwrap_or(Duration::ZERO))
+        let inserted = Instant::now();
+        let initial_age = value.initial_age.unwrap_or(Duration::ZERO);
+        let WriteOptions {
+            request_headers,
+            vary_rule,
+            max_age,
+            ..
+        } = value;
+        ObjectMeta {
+            inserted,
+            initial_age,
+            max_age,
+            request_headers,
+            vary_rule,
+        }
     }
 }
 
