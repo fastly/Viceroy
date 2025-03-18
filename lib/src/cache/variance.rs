@@ -23,7 +23,7 @@ use crate::Error;
 /// a previous response.
 ///
 /// VaryRule is canonicalized, with lowercase-named header names in sorted order.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VaryRule {
     headers: Vec<HeaderName>,
 }
@@ -42,7 +42,7 @@ impl FromStr for VaryRule {
 
 impl VaryRule {
     /// Construct the Variant for the given headers: the (header, value) pairs that must be present
-    /// to match.
+    /// for a request to match a response.
     pub fn variant(&self, headers: &HeaderMap) -> Variant {
         let mut buf = BytesMut::new();
         for header in self.headers.iter() {
@@ -65,7 +65,7 @@ impl VaryRule {
 ///
 /// A `vary_by` directive indicates that a cached object should only be matched if the headers
 /// listed in `vary_by` match that of the request that generated the cached object.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default, Clone)]
 pub struct Variant {
     /// The internal representation is an HTTP header block: headers and values separated by a CRLF
     /// sequence. However, since header values may contain arbitrary bytes, this is a Bytes rather
