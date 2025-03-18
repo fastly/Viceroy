@@ -8,6 +8,7 @@ use uuid::Uuid;
 fn main() {
     test_non_concurrent();
     test_concurrent();
+    test_insert_stale();
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -54,11 +55,13 @@ fn test_concurrent() {
         assert!(fetch.is_none());
     }
 
-    let mut writer = insert(key.clone(), Duration::from_secs(10))
+    let mut writer = insert(key.clone(), Duration::from_secs(525600 * 60))
         .execute()
         .unwrap();
 
     let fetch: Found = lookup(key.clone()).execute().unwrap().unwrap();
+    assert!(fetch.is_usable());
+    assert!(!fetch.is_stale());
     let mut body = fetch.to_stream().unwrap();
     let mut body = body.read_chunks(6);
 
@@ -76,6 +79,31 @@ fn test_concurrent() {
     assert_eq!(cached, b"world");
 
     assert!(body.next().is_none());
+}
+
+fn test_insert_stale() {
+    let key = new_key();
+
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(1))
+            .initial_age(Duration::from_secs(2))
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.flush().unwrap();
+    }
+
+    let found = lookup(key.clone()).execute().unwrap().unwrap();
+
+    // NOTE: from cceckman-at-fastly:
+    // The compute platform currently does not return stale objects
+    // they have stale_while_revalidate semantics. This may change in the future.
+    // Viceroy _may_ return stale objects, i.e. it presents a superset of the compute platform's
+    // behavior.
+    assert!(!found.is_usable());
+    assert!(found.is_stale());
+    assert!(found.age() >= Duration::from_secs(2));
+    assert!(found.ttl() == Duration::from_secs(1));
 }
 
 fn new_key() -> CacheKey {
