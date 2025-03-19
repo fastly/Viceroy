@@ -2,7 +2,7 @@ use {
     super::fastly::api::{cache, http_types, types},
     crate::{
         body::Body,
-        cache::{CacheKey, WriteOptions},
+        cache::{CacheKey, VaryRule, WriteOptions},
         error::Error,
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask, Session},
@@ -36,9 +36,9 @@ fn load_write_options(
         HeaderMap::default()
     };
     let vary_rule = if options_mask.contains(cache::WriteOptionsMask::VARY_RULE) {
-        Some(options.vary_rule.parse()?)
+        options.vary_rule.parse()?
     } else {
-        None
+        VaryRule::default()
     };
 
     Ok(WriteOptions {
@@ -54,19 +54,24 @@ impl cache::Host for ComponentCtx {
     async fn lookup(
         &mut self,
         key: Vec<u8>,
-        _options_mask: cache::LookupOptionsMask,
-        _options: cache::LookupOptions,
+        options_mask: cache::LookupOptionsMask,
+        options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives").into());
-        }
+        let headers = if options_mask.contains(cache::LookupOptionsMask::REQUEST_HEADERS) {
+            let handle = options.request_headers;
+            let parts = self.session.request_parts(handle.into())?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
 
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
 
-        let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
+        let task = PeekableTask::spawn(Box::pin(
+            async move { Ok(cache.lookup(&key, &headers).await) },
+        ))
+        .await;
         let task = PendingCacheTask::new(task);
         let handle = self.session.insert_cache_op(task);
         Ok(handle.into())
