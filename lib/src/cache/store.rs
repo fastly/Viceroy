@@ -68,7 +68,7 @@ impl ObjectMeta {
     }
 
     /// The vary rule associated with this request.
-    pub fn vary_rule(&self) -> Option<&VaryRule> {
+    pub fn vary_rule(&self) -> &VaryRule {
         &self.vary_rule
     }
 
@@ -131,12 +131,12 @@ impl CacheKeyObjects {
         let meta: ObjectMeta = options.into();
 
         let mut cache_key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
-        if let Some(vary_rule) = meta.vary_rule() {
-            if !cache_key_objects.vary_rules.contains(vary_rule) {
-                // Insert at the front, run through the rules in order, so we tend towards fresher
-                // responses.
-                cache_key_objects.vary_rules.push_front(vary_rule.clone());
-            }
+        if !cache_key_objects.vary_rules.contains(meta.vary_rule()) {
+            // Insert at the front, run through the rules in order, so we tend towards fresher
+            // responses.
+            cache_key_objects
+                .vary_rules
+                .push_front(meta.vary_rule().clone());
         }
 
         let body = CollectingBody::new(body);
