@@ -1,7 +1,7 @@
 //! A guest program to test the core cache API works properly.
 
 use fastly::cache::core::*;
-use fastly::http::HeaderName;
+use fastly::http::{HeaderName, HeaderValue};
 use std::io::Write;
 use std::time::Duration;
 use uuid::Uuid;
@@ -15,6 +15,8 @@ fn main() {
     test_vary();
     test_vary_multiple();
     test_novary_ignore_headers();
+    // test_vary_combine();
+    test_vary_subtle();
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -283,6 +285,39 @@ fn test_novary_ignore_headers() {
         let body = r.unwrap().to_stream().unwrap().into_string();
         assert_eq!(&body, "hello");
     }
+}
+
+fn test_vary_combine() {
+    todo!("Test: combining repeated headers into a single header, canonical-style")
+}
+
+fn test_vary_subtle() {
+    let key = new_key();
+
+    // A very subtle (hah!) case:
+    // We can look up by one VaryRule, but get a result that
+
+    let h1 = HeaderName::from_static("x-viceroy-test");
+    let h2 = HeaderName::from_static("x-viceroy-assert");
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+            .vary_by([&h1, &h2])
+            .header(&h1, "test")
+            .header(&h2, "assert")
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.finish().unwrap();
+    }
+
+    // We want to try to insert a tricky header *value*...
+    let v: Result<HeaderValue, _> = "test\r\nx-viceroy-assert: assert".try_into();
+    // ...but that won't work:
+    v.unwrap_err();
+    // If it did, we would do this:
+    //let request = lookup(key.clone()).header(&h1, v);
+    //let result = request.execute().unwrap();
+    //assert!(result.is_none())
 }
 
 fn new_key() -> CacheKey {
