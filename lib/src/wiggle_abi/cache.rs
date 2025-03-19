@@ -5,7 +5,7 @@ use std::time::Duration;
 use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::{CacheKey, WriteOptions};
+use crate::cache::{CacheKey, VaryRule, WriteOptions};
 use crate::session::{PeekableTask, PendingCacheTask, Session};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
@@ -44,9 +44,9 @@ fn load_write_options(
         let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
         let vary_rule_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
         let vary_rule_str = str::from_utf8(vary_rule_bytes).map_err(|e| Error::Utf8Expected(e))?;
-        Some(vary_rule_str.parse()?)
+        vary_rule_str.parse()?
     } else {
-        None
+        VaryRule::default()
     };
 
     Ok(WriteOptions {
@@ -67,16 +67,28 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
+        let options = memory.read(options)?;
+        let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
+            let handle = options.request_headers;
+            let parts = self.request_parts(handle)?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
+        if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
+            // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
+            return Err(Error::Unsupported {
+                msg: "service ID in cache lookup",
+            });
         }
 
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
+        let task = PeekableTask::spawn(Box::pin(
+            async move { Ok(cache.lookup(&key, &headers).await) },
+        ))
+        .await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
         Ok(handle)
@@ -89,7 +101,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
+        // TODO: cceckman-at-fastly: Handle all options,
         // then remove this guard.
         if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
             return Err(Error::NotAvailable("Cache API primitives"));
