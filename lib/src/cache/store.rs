@@ -12,8 +12,17 @@ use super::WriteOptions;
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
 pub struct ObjectMeta {
-    /// The instant at which the object's "lifetime" started; possibly backdated.
-    birth: Instant,
+    /// The time at which the object was inserted into this cache.
+    ///
+    /// This may be later than the time at which the object was created, i.e. the object's age;
+    /// include `initial_age` in any calculations that require the absolute age.
+    ///
+    /// We use Instant here rather than a calendar datetime (e.g. `chrono`) to ensure monotonicity.
+    /// All of the external interfaces & cache semantics are in terms of relative offsets (age),
+    /// not absolute timestamps; we should not be sensitive to resyncing the system clock.
+    inserted: Instant,
+    /// Initial age, if provided during setup.
+    initial_age: Duration,
     /// Freshness lifetime
     max_age: Duration,
     // TODO: cceckman-at-fastly: for future work!
@@ -33,21 +42,25 @@ pub struct ObjectMeta {
 impl ObjectMeta {
     /// Create a new ObjectMeta.
     pub fn new(max_age: Duration) -> Self {
-        let birth = Instant::now();
-        ObjectMeta { birth, max_age }
+        ObjectMeta {
+            inserted: Instant::now(),
+            initial_age: Duration::ZERO,
+            max_age,
+        }
     }
 
     /// Assign an initial age to the object.
     pub fn with_initial_age(self, initial_age: Duration) -> Self {
         ObjectMeta {
-            birth: self.birth - initial_age,
+            initial_age,
             ..self
         }
     }
 
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
-        Instant::now() - self.birth
+        // Age in this cache, plus age upon insertion
+        Instant::now().duration_since(self.inserted) + self.initial_age
     }
 
     /// Maximum fresh age of this object.
@@ -57,7 +70,7 @@ impl ObjectMeta {
 
     /// Return true if the entry is fresh at the current time.
     pub fn is_fresh(&self) -> bool {
-        Instant::now().duration_since(self.birth) < self.max_age
+        self.age() < self.max_age
     }
 }
 
