@@ -23,7 +23,7 @@ use crate::Error;
 /// a previous response.
 ///
 /// VaryRule is canonicalized, with lowercase-named header names in sorted order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct VaryRule {
     headers: Vec<HeaderName>,
 }
