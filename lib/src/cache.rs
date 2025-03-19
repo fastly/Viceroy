@@ -2,7 +2,6 @@ use std::{sync::Arc, time::Duration};
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
-use variance::VaryRule;
 
 use crate::{
     body::Body,
@@ -16,6 +15,7 @@ mod store;
 mod variance;
 
 use store::{CacheData, CacheKeyObjects, ObjectMeta};
+pub use variance::VaryRule;
 
 /// Primary cache key: an up-to-4KiB buffer.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -145,8 +145,6 @@ impl Default for Cache {
 
 impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
-    // TODO: cceckman-at-fastly:
-    // - use request headers; vary_by
     pub async fn lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
         let found = self
             .inner
@@ -288,18 +286,20 @@ mod tests {
             // test function, and are not aware of each other enough for it to pass.
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
             rt.block_on(async {
-                let empty = cache.lookup(&key).await;
+                let empty = cache.lookup(&key, &HeaderMap::default()).await;
                 assert!(empty.found().is_none());
                 // TODO: cceckman-at-fastly -- check GoGet
 
                 let write_options = WriteOptions {
                     max_age: Duration::from_secs(max_age as u64),
                     initial_age: initial_age.map(|v| Duration::from_secs(v as u64)),
+                    request_headers: HeaderMap::default(),
+                    vary_rule: VaryRule::default(),
                 };
 
                 cache.insert(&key, write_options, value.clone().into()).await;
 
-                let nonempty = cache.lookup(&key).await;
+                let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
                 let got = found.body().unwrap().read_into_vec().await.unwrap();
                 assert_eq!(got, value);
@@ -316,6 +316,8 @@ mod tests {
         let write_options = WriteOptions {
             max_age: Duration::from_secs(1),
             initial_age: Some(Duration::from_secs(2)),
+            request_headers: HeaderMap::default(),
+            vary_rule: VaryRule::default(),
         };
 
         let mut body = Body::empty();
@@ -323,7 +325,7 @@ mod tests {
 
         cache.insert(&key, write_options, body).await;
 
-        let nonempty = cache.lookup(&key).await;
+        let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
         let found = nonempty.found().expect("should have found inserted key");
         assert!(!found.meta().is_fresh());
     }
