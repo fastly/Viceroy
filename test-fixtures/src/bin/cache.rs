@@ -15,7 +15,7 @@ fn main() {
     test_vary();
     test_vary_multiple();
     test_novary_ignore_headers();
-    // test_vary_combine();
+    test_vary_combine();
     test_vary_subtle();
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
@@ -227,10 +227,11 @@ fn test_vary_multiple() {
 
     {
         // Match values for all three.
-        // Should return the most-recently-inserted, i.e. "goodbye"
+        // Should return the most-recently-inserted, i.e. "goodbye".
+        // Note: reversed order of headers in the request.
         let r = lookup(key.clone())
-            .header(&h1, "test")
             .header(&h2, "assert")
+            .header(&h1, "test")
             // no h3
             .execute()
             .unwrap();
@@ -287,15 +288,10 @@ fn test_novary_ignore_headers() {
     }
 }
 
-fn test_vary_combine() {
-    todo!("Test: combining repeated headers into a single header, canonical-style")
-}
-
 fn test_vary_subtle() {
     let key = new_key();
 
-    // A very subtle (hah!) case:
-    // We can look up by one VaryRule, but get a result that
+    // A very subtle (hah!) case: can one header run in to another?
 
     let h1 = HeaderName::from_static("x-viceroy-test");
     let h2 = HeaderName::from_static("x-viceroy-assert");
@@ -318,6 +314,43 @@ fn test_vary_subtle() {
     //let request = lookup(key.clone()).header(&h1, v);
     //let result = request.execute().unwrap();
     //assert!(result.is_none())
+}
+
+fn test_vary_combine() {
+    let key = new_key();
+
+    let trust = HeaderValue::from_static("trust");
+    let verify = HeaderValue::from_static("verify");
+
+    let h1 = HeaderName::from_static("x-viceroy-test");
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+            .vary_by([&h1])
+            .header_values(&h1, [&trust, &verify])
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.finish().unwrap();
+    }
+
+    let r = lookup(key.clone())
+        .header(&h1, "trust, verify")
+        .execute()
+        .unwrap();
+    assert!(r.is_some());
+
+    let r = lookup(key.clone())
+        .header_values(&h1, [&trust, &verify])
+        .execute()
+        .unwrap();
+    assert!(r.is_some());
+
+    // Order matters for HTTP header values:
+    let r = lookup(key.clone())
+        .header_values(&h1, [&verify, &trust])
+        .execute()
+        .unwrap();
+    assert!(r.is_none());
 }
 
 fn new_key() -> CacheKey {
