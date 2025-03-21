@@ -24,9 +24,9 @@ fn load_write_options(
 ) -> Result<WriteOptions, Error> {
     let max_age = Duration::from_nanos(options.max_age_ns);
     let initial_age = if options_mask.contains(cache::WriteOptionsMask::INITIAL_AGE_NS) {
-        Some(Duration::from_nanos(options.initial_age_ns))
+        Duration::from_nanos(options.initial_age_ns)
     } else {
-        None
+        Duration::ZERO
     };
     let request_headers = if options_mask.contains(cache::WriteOptionsMask::REQUEST_HEADERS) {
         let handle = options.request_headers;
