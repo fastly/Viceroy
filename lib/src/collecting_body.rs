@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// CollectingBody is a body for caching and request collapsing.
-/// It allows writing a body while concurrently\* reading it, from multiple readers.
+/// It allows writing a body while concurrently reading it, from multiple readers.
 ///
 /// CollectingBody primarily exists to implement the cache APIs. Cache APIs allow three things to
 /// happen concurrently:
@@ -128,16 +128,18 @@ impl CollectingBody {
                     let current_value = upstream.borrow_and_update();
                     let send_chunks: Vec<Bytes> = current_value.chunks().skip(next_chunk).collect();
                     let trailers = current_value.trailers().cloned();
-                    if current_value.is_error() {
-                        // To trigger a guest error, it is sufficient to
-                        // TODO: cceckman-at-fastly: Do we need to do something with the error message?
-                        // To trigger a guest error, it appears sufficient to not .finish() the StreamingBody.
+                    if let CollectingBodyInner::Error(ref e) = *current_value {
+                        // To trigger a guest error, it is sufficient to not .finish() the
+                        // StreamingBody (so, early return).
+                        // As of 2025-03-21, though, this code is new, so we don't want to
+                        // completely swallow errors!
+                        tracing::warn!("error in reading from CollectingBody: {e}");
                         return;
                     }
                     (send_chunks, trailers)
                 };
 
-                // Good data:
+                // If send_chunks is nonempty, it contains data for us to forward:
                 for chunk in send_chunks {
                     if tx.send_chunk(chunk).await.is_err() {
                         // Reader hung up; we don't care any more.
@@ -145,7 +147,7 @@ impl CollectingBody {
                     }
                     next_chunk += 1;
                 }
-                // Finished data:
+                // And we may have gotten the trailers, which are the "body is done" signal:
                 if let Some(trailers) = trailers {
                     for (k, v) in trailers.iter() {
                         tx.append_trailer(k.clone(), v.clone());
@@ -178,23 +180,26 @@ enum CollectingBodyInner {
 }
 
 impl CollectingBodyInner {
-    fn chunks(&self) -> impl Iterator<Item = Bytes> + use<'_> {
+    /// The chunks currently available.
+    fn chunks(&self) -> &[Bytes] {
         static EMPTY_VEC: Vec<Bytes> = Vec::new();
         match self {
             CollectingBodyInner::Streaming(body) | CollectingBodyInner::Complete { body, .. } => {
-                body.iter().cloned()
+                body
             }
-            _ => EMPTY_VEC.iter().cloned(),
+            _ => &[],
         }
     }
+
+    /// The trailers provided.
+    ///
+    /// Trailers are only present (Some()) if streaming is complete;
+    /// None indicates streaming is still in progress.
     fn trailers(&self) -> Option<&HeaderMap> {
         match self {
             CollectingBodyInner::Complete { trailers, .. } => Some(trailers),
             _ => None,
         }
-    }
-    fn is_error(&self) -> bool {
-        matches!(self, CollectingBodyInner::Error(_))
     }
 }
 
