@@ -81,11 +81,11 @@ impl ObjectMeta {
 impl From<WriteOptions> for ObjectMeta {
     fn from(value: WriteOptions) -> Self {
         let inserted = Instant::now();
-        let initial_age = value.initial_age.unwrap_or(Duration::ZERO);
         let WriteOptions {
             request_headers,
             vary_rule,
             max_age,
+            initial_age,
             ..
         } = value;
         ObjectMeta {
