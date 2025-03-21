@@ -251,6 +251,7 @@ impl CacheOverride {
 
 #[cfg(test)]
 mod tests {
+    use http::HeaderName;
     use proptest::prelude::*;
 
     use super::*;
@@ -328,5 +329,37 @@ mod tests {
         let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
         let found = nonempty.found().expect("should have found inserted key");
         assert!(!found.meta().is_fresh());
+    }
+
+    #[tokio::test]
+    async fn test_vary() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        let header_name = HeaderName::from_static("x-viceroy-test");
+        let request_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("test"))]
+            .into_iter()
+            .collect();
+
+        let write_options = WriteOptions {
+            max_age: Duration::from_secs(100),
+            initial_age: Duration::from_secs(2),
+            request_headers: request_headers.clone(),
+            vary_rule: VaryRule::new([&header_name].into_iter()),
+        };
+        let body = Body::empty();
+        cache.insert(&key, write_options, body).await;
+
+        let empty_headers = cache.lookup(&key, &HeaderMap::default()).await;
+        assert!(empty_headers.found().is_none());
+
+        let matched_headers = cache.lookup(&key, &request_headers).await;
+        assert!(matched_headers.found.is_some());
+
+        let r2_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("assert"))]
+            .into_iter()
+            .collect();
+        let mismatched_headers = cache.lookup(&key, &r2_headers).await;
+        assert!(mismatched_headers.found.is_none());
     }
 }
