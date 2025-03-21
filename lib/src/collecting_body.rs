@@ -34,12 +34,6 @@ pub struct CollectingBody {
     inner: watch::Receiver<CollectingBodyInner>,
 }
 
-impl Default for CollectingBodyInner {
-    fn default() -> Self {
-        CollectingBodyInner::Streaming(Vec::default())
-    }
-}
-
 impl CollectingBody {
     /// Create a new CollectingBody that stores & streams from the provided Body.
     ///
@@ -167,10 +161,11 @@ impl CollectingBody {
 }
 
 /// The state of a CollectingBody, within the pubsub (watch) channel.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum CollectingBodyInner {
     // TODO: cceckman-at-fastly: consider SmallVec, optimizing for the "there is a single chunk"
     // case
+    #[default]
     Streaming(Vec<Bytes>),
     Complete {
         body: Vec<Bytes>,
@@ -182,7 +177,6 @@ enum CollectingBodyInner {
 impl CollectingBodyInner {
     /// The chunks currently available.
     fn chunks(&self) -> &[Bytes] {
-        static EMPTY_VEC: Vec<Bytes> = Vec::new();
         match self {
             CollectingBodyInner::Streaming(body) | CollectingBodyInner::Complete { body, .. } => {
                 body
