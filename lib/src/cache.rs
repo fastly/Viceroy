@@ -177,7 +177,7 @@ impl Cache {
 /// Options that can be applied to a write, e.g. insert or transaction_insert.
 pub struct WriteOptions {
     pub max_age: Duration,
-    pub initial_age: Option<Duration>,
+    pub initial_age: Duration,
 
     pub request_headers: HeaderMap,
     pub vary_rule: VaryRule,
@@ -278,7 +278,7 @@ mod tests {
         fn nontransactional_insert_lookup(
                 key in any::<CacheKey>(),
                 max_age in any::<u32>(),
-                initial_age in any::<Option<u32>>(),
+                initial_age in any::<u32>(),
                 value in any::<Vec<u8>>()) {
             let cache = Cache::default();
 
@@ -292,7 +292,7 @@ mod tests {
 
                 let write_options = WriteOptions {
                     max_age: Duration::from_secs(max_age as u64),
-                    initial_age: initial_age.map(|v| Duration::from_secs(v as u64)),
+                    initial_age: Duration::from_secs(initial_age as u64),
                     request_headers: HeaderMap::default(),
                     vary_rule: VaryRule::default(),
                 };
@@ -315,7 +315,7 @@ mod tests {
         // Insert an already-stale entry:
         let write_options = WriteOptions {
             max_age: Duration::from_secs(1),
-            initial_age: Some(Duration::from_secs(2)),
+            initial_age: Duration::from_secs(2),
             request_headers: HeaderMap::default(),
             vary_rule: VaryRule::default(),
         };
