@@ -208,7 +208,7 @@ mod tests {
     use std::sync::Arc;
 
     use http::{HeaderName, HeaderValue};
-    use tokio::task::JoinSet;
+    use tokio::{sync::oneshot, task::JoinSet};
 
     use crate::{
         body::{Body, Chunk},
@@ -290,17 +290,24 @@ mod tests {
         tx.send_chunk(&data[0..2]).await.unwrap();
         tx.send_chunk(&data[2..5]).await.unwrap();
 
+        let (send, recv) = oneshot::channel();
+
         // Now start the concurrent read + write:
         let reader = {
             let data = Arc::clone(&data);
             tokio::task::spawn(async move {
-                let read = collect.read().unwrap();
+                let mut read = collect.read().unwrap();
+
+                // Wait for the body to have some data ready...
+                read.await_ready().await;
+                // Then signal the writer to write further
+                send.send(()).unwrap();
                 let bytes = read.read_into_vec().await.unwrap();
                 assert_eq!(&bytes, &*data);
             })
         };
-        // Try to catch the reader up:
-        tokio::task::yield_now().await;
+        // Wait until the reader is caught up with what is written so far:
+        recv.await.unwrap();
 
         // Finish the write:
         tx.send_chunk(&data[5..7]).await.unwrap();
@@ -321,10 +328,15 @@ mod tests {
         tx.send_chunk(&data[0..2]).await.unwrap();
         tx.send_chunk(&data[2..5]).await.unwrap();
 
+        let (send, recv) = oneshot::channel();
+
         // Start a concurrent read, read some of it:
         let reader = {
             tokio::task::spawn(async move {
-                let read = collect.read().unwrap();
+                let mut read = collect.read().unwrap();
+                read.await_ready().await;
+                send.send(()).unwrap();
+
                 let err = read.read_into_vec().await.unwrap_err();
                 let Error::UnfinishedStreamingBody = err else {
                     panic!("incorrect error type for streaming error")
@@ -332,7 +344,7 @@ mod tests {
             })
         };
         // Try to catch the reader up:
-        tokio::task::yield_now().await;
+        recv.await.unwrap();
 
         // Write more, but drop without .finish()ing.
         tx.send_chunk(&data[5..7]).await.unwrap();
@@ -351,7 +363,11 @@ mod tests {
         let reader = {
             tokio::task::spawn(async move {
                 let mut body = collect.read().unwrap();
-                body.await_ready().await;
+
+                while !body.trailers_ready {
+                    body.await_ready().await
+                }
+
                 let v = body.trailers.get("~^.^~").unwrap();
                 assert_eq!(v, r#""is a cat *and* a valid header name""#);
 
@@ -359,7 +375,6 @@ mod tests {
                 assert!(data.is_empty());
             })
         };
-        tokio::task::yield_now();
 
         tx.append_trailer(
             HeaderName::from_static("~^.^~"),
