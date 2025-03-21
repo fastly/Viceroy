@@ -126,7 +126,7 @@ impl CollectingBody {
                 let (send_chunks, trailers) = {
                     // Acquire the read lock:
                     let current_value = upstream.borrow_and_update();
-                    let send_chunks: Vec<Bytes> = current_value.chunks().skip(next_chunk).collect();
+                    let send_chunks: Vec<Bytes> = current_value.chunks()[next_chunk..].to_owned();
                     let trailers = current_value.trailers().cloned();
                     if let CollectingBodyInner::Error(ref e) = *current_value {
                         // To trigger a guest error, it is sufficient to not .finish() the
