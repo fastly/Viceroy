@@ -41,6 +41,12 @@ impl FromStr for VaryRule {
 }
 
 impl VaryRule {
+    pub fn new<'a>(headers: impl Iterator<Item = &'a HeaderName>) -> VaryRule {
+        VaryRule {
+            headers: headers.cloned().collect(),
+        }
+    }
+
     /// Construct the Variant for the given headers: the (header, value) pairs that must be present
     /// for a request to match a response.
     pub fn variant(&self, headers: &HeaderMap) -> Variant {
