@@ -109,16 +109,10 @@ impl CollectingBody {
         let (mut tx, rx) = StreamingBody::new();
         tokio::task::spawn(async move {
             let mut next_chunk = 0;
-
-            while upstream.changed().await.is_ok() {
-                // If there's an error, the Channel is closed.
-                //
-                // This should only happen if the sender has hung up, i.e. if the object has
-                // been evicted from the cache *and* the writer is done. In which case:
-                // - If the writer shut down cleanly, great, we've already shut down cleanly
-                //      too.
-                // - If the writer didn't, we don't either.
-
+            // The receiver tracks the "current" value, and assumes that the value at the receiver
+            // is "seen" to begin with.
+            // So we have a do-while loop, with the "changed" condition at the bottom.
+            loop {
                 // We'll need to .await to send chunks, but we can't do that while holding a read
                 // lock on the watch channel.
                 // Open a new scope for the lock, copy out the work we need to do, then release the
@@ -157,6 +151,20 @@ impl CollectingBody {
                     // Trailers sent -> we're done.
                     let _ = tx.finish();
                     return;
+                }
+
+                // Now that we've processed the current state, wait for a change.
+                //
+
+                if upstream.changed().await.is_err() {
+                    return;
+                    // If there's an error, the Channel is closed.
+                    //
+                    // This should only happen if the sender has hung up, i.e. if the object has
+                    // been evicted from the cache *and* the writer is done. In which case:
+                    // - If the writer shut down cleanly, great, we've already shut down cleanly
+                    //      too.
+                    // - If the writer didn't, we don't either.
                 }
             }
         });
@@ -382,5 +390,19 @@ mod tests {
         tx.finish();
 
         reader.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn completed_stream() {
+        let (mut tx, rx) = StreamingBody::new();
+        // Write the full stream before reading:
+        let chunk: Chunk = rx.into();
+        let body: Body = chunk.into();
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+
+        let collect = CollectingBody::new(body);
+        let data = collect.read().unwrap().read_into_vec().await.unwrap();
+        assert_eq!(data, b"hello");
     }
 }
