@@ -1179,3 +1179,17 @@
         (result $err (expected (error $fastly_status)))
     )
 )
+
+(module $fastly_image_optimizer
+    (@interface func (export "transform_image_optimizer_request")
+        (param $origin_image_request $request_handle)
+        (param $origin_image_request_body $body_handle)
+        (param $origin_image_request_backend string)
+        (param $io_transform_config_mask $image_optimizer_transform_config_options)
+        (param $io_transform_configuration (@witx pointer $image_optimizer_transform_config))
+        (param $io_error_detail (@witx pointer $image_optimizer_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
+    )
+)

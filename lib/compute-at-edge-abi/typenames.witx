@@ -510,3 +510,34 @@
         ;;; Too many requests have been made.
         $too_many_requests
         ))
+
+(typename $image_optimizer_transform_config_options
+    (flags (@witx repr u32)
+        $reserved
+        $sdk_claims_opts
+        ))
+
+(typename $image_optimizer_transform_config
+  (record
+    ;; sdk_claims_opts contains any Image Optimizer API parameters that were set
+    ;; as well as the Image Optimizer region the request is meant for.
+    (field $sdk_claims_opts (@witx pointer (@witx char8)))
+    (field $sdk_claims_opts_len u32)
+    ))
+
+(typename $image_optimizer_error_tag
+    (enum (@witx tag u32)
+        $uninitialized
+        $ok
+        $error
+        $warning
+    )
+)
+
+(typename $image_optimizer_error_detail
+    (record
+        (field $tag $image_optimizer_error_tag)
+        (field $message (@witx pointer (@witx char8)))
+        (field $message_len u32)
+    )
+)

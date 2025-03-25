@@ -59,6 +59,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::http_req::add_to_linker(linker, |x| x)?;
     fastly::api::http_resp::add_to_linker(linker, |x| x)?;
     fastly::api::http_types::add_to_linker(linker, |x| x)?;
+    fastly::api::image_optimizer::add_to_linker(linker, |x| x)?;
     fastly::api::kv_store::add_to_linker(linker, |x| x)?;
     fastly::api::log::add_to_linker(linker, |x| x)?;
     fastly::api::object_store::add_to_linker(linker, |x| x)?;
@@ -86,6 +87,7 @@ pub mod http_body;
 pub mod http_req;
 pub mod http_resp;
 pub mod http_types;
+pub mod image_optimizer;
 pub mod kv_store;
 pub mod log;
 pub mod object_store;
