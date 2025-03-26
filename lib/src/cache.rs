@@ -87,8 +87,6 @@ impl CacheEntry {
 }
 
 /// A successful retrieval of an item from the cache.
-///
-// TODO: cceckman-at-fastly 2025-02-26: Streaming
 #[derive(Debug)]
 pub struct Found {
     data: Arc<CacheData>,
@@ -110,7 +108,6 @@ impl Found {
 ///
 // TODO: cceckman-at-fastly:
 // Explain some about how this works:
-// - Request-keyed vs. response-keyed items; variance
 // - Request collapsing
 // - Stale-while-revalidate
 pub struct Cache {
@@ -148,8 +145,6 @@ impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
     /// Note: races with other insertions, including transactional insertions.
     /// Last writer wins!
-    // TODO: cceckman-at-fastly 2025-02-26:
-    // - use request headers; vary_by; streaming body
     pub async fn insert(&self, key: &CacheKey, options: WriteOptions, body: Body) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
