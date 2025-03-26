@@ -104,9 +104,6 @@ pub struct CacheKeyObjects(Mutex<CacheKeyObjectsInner>);
 
 impl CacheKeyObjects {
     /// Get the applicable CacheData, if available.
-    ///
-    // TODO: cceckman-at-fastly 2025-02-26:
-    // Implement vary_by here
     pub fn get(&self, request_headers: &HeaderMap) -> Option<Arc<CacheData>> {
         let key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
 
