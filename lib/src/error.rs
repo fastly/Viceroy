@@ -670,6 +670,8 @@ pub enum ObjectStoreConfigError {
     NoFileOrData(String),
     #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
+    #[error("The `metadata` value for the object `{0}` is not a string.")]
+    MetadataNotAString(String),
     #[error("The `file` value for the object `{0}` is not a string.")]
     FileNotAString(String),
     #[error("The `key` key for an object is not set. It must be used.")]

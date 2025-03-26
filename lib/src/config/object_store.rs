@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use toml::{toml, Value};
+use toml::Value;
 use {
     crate::{
         error::{FastlyConfigError, ObjectStoreConfigError},
@@ -10,6 +10,12 @@ use {
     std::fs,
     toml::value::Table,
 };
+
+#[derive(Debug)]
+struct ObjectStoreEntry {
+    data: String,
+    metadata: Option<String>,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct ObjectStoreConfig(pub(crate) ObjectStores);
@@ -52,11 +58,14 @@ impl TryFrom<Table> for ObjectStoreConfig {
 
                     let toml: Vec<Value> = json
                         .into_iter()
-                        .map(|(key, value)| {
-                            toml! {
-                                key = key
-                                data = value
+                        .map(|(key, entry)| {
+                            let mut table = toml::value::Table::new();
+                            table.insert("key".to_string(), toml::Value::String(key));
+                            table.insert("data".to_string(), toml::Value::String(entry.data));
+                            if let Some(meta) = entry.metadata {
+                                table.insert("metadata".to_string(), toml::Value::String(meta));
                             }
+                            toml::Value::Table(table)
                         })
                         .collect();
 
@@ -158,6 +167,20 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         .to_vec(),
                 };
 
+                let metadata_bytes = match item.get("metadata") {
+                    Some(metadata) => Some(
+                        metadata
+                            .as_str()
+                            .ok_or_else(|| FastlyConfigError::InvalidObjectStoreDefinition {
+                                name: store.to_string(),
+                                err: ObjectStoreConfigError::MetadataNotAString(key.to_string()),
+                            })?
+                            .as_bytes()
+                            .to_vec(),
+                    ),
+                    None => None,
+                };
+
                 obj_store
                     .insert(
                         ObjectStoreKey::new(store),
@@ -170,7 +193,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         bytes,
                         KvInsertMode::Overwrite,
                         None,
-                        None,
+                        metadata_bytes,
                         None,
                     )
                     .expect("Lock was not poisoned");
@@ -181,7 +204,9 @@ impl TryFrom<Table> for ObjectStoreConfig {
     }
 }
 
-fn read_json_contents(file: &Path) -> Result<HashMap<String, String>, ObjectStoreConfigError> {
+fn read_json_contents(
+    file: &Path,
+) -> Result<HashMap<String, ObjectStoreEntry>, ObjectStoreConfigError> {
     // Read the contents of the given file.
     let data = fs::read_to_string(file).map_err(ObjectStoreConfigError::IoError)?;
 
@@ -195,14 +220,45 @@ fn read_json_contents(file: &Path) -> Result<HashMap<String, String>, ObjectStor
             }
         };
 
-    // Check that each dictionary entry has a string value.
     let mut contents = HashMap::with_capacity(json.len());
+
+    // Check that each KV Store entry has either a string value or an object with data and metadata
+    // fields.
     for (key, value) in json {
-        let value = value
-            .as_str()
-            .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat { key: key.clone() })?
-            .to_owned();
-        contents.insert(key, value);
+        let entry = match value {
+            serde_json::Value::String(s) => ObjectStoreEntry {
+                data: s,
+                metadata: None,
+            },
+            serde_json::Value::Object(mut obj) => {
+                let data = obj.remove("data").ok_or_else(|| {
+                    ObjectStoreConfigError::FileValueWrongFormat { key: key.clone() }
+                })?;
+
+                let data = data
+                    .as_str()
+                    .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat {
+                        key: key.clone(),
+                    })?
+                    .to_string();
+
+                let metadata = match obj.remove("metadata") {
+                    Some(val) => Some(
+                        val.as_str()
+                            .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat {
+                                key: key.clone(),
+                            })?
+                            .to_string(),
+                    ),
+                    None => None,
+                };
+
+                ObjectStoreEntry { data, metadata }
+            }
+            _ => return Err(ObjectStoreConfigError::FileValueWrongFormat { key: key.clone() }),
+        };
+
+        contents.insert(key, entry);
     }
 
     Ok(contents)
