@@ -119,8 +119,115 @@ impl CacheKeyObjects {
         None
     }
 
-    // TODO: cceckman-at-fastly,
-    // get_or_obligate, for transactional API
+    /// Perform a transactional lookup-or-obligate:
+    /// - If an appropriate response is already available, return that response (Ok)
+    /// - If no task is currently fetching an appropriate response, return an obligation to fetch
+    ///     (Err)
+    /// - Otherwise, await the completion of an appropriate response, possibly obligating ourselves
+    ///     to fetch in the future if no active task winds up fetching something appropriate.
+    pub async fn transaction_get_or_obligate(
+        self: Arc<Self>,
+        request_headers: &HeaderMap,
+    ) -> Result<Arc<CacheData>, Obligation> {
+        let mut sub = self.0.subscribe();
+
+        // We may be waked by inappropriate responses multiple times. Stay in the loop until we get
+        // an obligation or we get what we want.
+        loop {
+            let key_objects = sub.borrow_and_update();
+            let mut present = Vec::new();
+            let mut waiting = 0;
+
+            let response_keys: Vec<_> = key_objects
+                .vary_rules
+                .iter()
+                .map(|v| v.variant(request_headers))
+                .collect();
+            for response_key in &response_keys {
+                if let Some(object) = key_objects.objects.get(&response_key) {
+                    match &object.transactional {
+                        TransactionState::Present(v) => present.push(Arc::clone(v)),
+                        TransactionState::Pending => waiting += 1,
+                    }
+                }
+            }
+
+            // TODO: cceckman-at-fastly: Here and in get(), prioritize based on staleness and
+            // stale-while-revalidate ("remaining TTL", perhaps?)
+            // Something to deal with alon with stale-while-revalidate.
+            if let Some(v) = present.into_iter().next() {
+                // We have a result in cache.
+                return Ok(v);
+            }
+
+            // We'll either need to wait for changed() or take the write lockc;
+            // either way, we don't need the read lock any more.
+            std::mem::drop(key_objects);
+            if waiting > 0 {
+                // There is a request in-flight that will likely fulfill our request.
+                // Wait for it, then retry.
+                let _ = sub.changed().await;
+                continue;
+            }
+
+            // There's nothing acceptable in cache, and there's no one going out to fetch it.
+            // If you want something cached right, you have to fetch it yourself.
+            let mut obligated: Option<Obligation> = None;
+            self.0.send_if_modified(|key_objects| {
+                // Now under the write lock. This wasn't a "promotion", though, so we have to scan
+                // again.
+                let response_keys: Vec<_> = key_objects
+                    .vary_rules
+                    .iter()
+                    .map(|v| v.variant(request_headers))
+                    .collect();
+                // Early-exit if we find a match; return to the read-locked portion at the top.
+                for response_key in &response_keys {
+                    if let Some(object) = key_objects.objects.get(&response_key) {
+                        match &object.transactional {
+                            TransactionState::Present(_) => return false,
+                            TransactionState::Pending => return false,
+                        }
+                    }
+                }
+                // Obligate ourselves to perform a fetch.
+                let response_key = match response_keys.into_iter().next() {
+                    Some(v) => v,
+                    None => {
+                        // Ensure there's a blank vary rule to catch the Pending we're about to make.
+                        // If the actual response comes back with a Vary:, that's fine-
+                        // we'll only insert a Present response into the objects table if the *response*
+                        // has an empty vary rule.
+                        key_objects.vary_rules.push_front(VaryRule::default());
+                        VaryRule::default().variant(request_headers)
+                    }
+                };
+                let pending = Arc::new(CacheValue {
+                    transactional: TransactionState::Pending,
+                });
+                key_objects.objects.insert(response_key.clone(), pending);
+                obligated = Some(Obligation {
+                    object: Arc::clone(&self),
+                    variant: response_key,
+                });
+
+                // Even though we have modified the table, we don't need to issue a notification.
+                // All waiters are waiting on *completion* of a fetch, not on the *obligation* of
+                // one-- so, we return 'false' here to avoid the spurious wakeup.
+                return false;
+            });
+
+            // Now outside of the lock:
+            match obligated {
+                // We are obliged to perform a fetch. Return that to the caller, for them to
+                // perform.
+                Some(v) => return Err(v),
+                // Or, someone beat us to the punch: they inserted or obliged in between our read
+                // and write phases. That's fine; loop around again into a read phase.
+                None => continue,
+            }
+        }
+    }
 
     /// Insert into the given CacheData.
     pub fn insert(&self, request_headers: HeaderMap, options: WriteOptions, body: Body) {
@@ -152,6 +259,14 @@ struct CacheKeyObjectsInner {
     /// All the vary rules that might apply.
     /// Most-recent at the front, so we tend towards fresher responses.
     vary_rules: VecDeque<VaryRule>,
+
+    /// The variants that may be served.
+    /// Each CacheValue may have its headers complete (completed or streaming body),
+    /// or may represent a task with an Obligation to fetch the corresponding object.
+    //
+    // INVARIANT: There is exactly one Obligation for each TransactionState::Pending.
+    // There may be an Obligation without a corresponding TransactionState::Pending
+    // (if the Obligation has been fulfilled).
     objects: HashMap<Variant, Arc<CacheValue>>,
 }
 
@@ -163,11 +278,43 @@ struct CacheValue {
 
 /// The current state of this CacheValue.
 #[derive(Debug)]
-#[non_exhaustive]
 enum TransactionState {
     /// The metadata is present in the cache; the content is available, possibly only as streaming
     /// content.
     Present(Arc<CacheData>),
+    /// Some task has taken the obligation to perform a request that will *likely* use this
+    /// response key.
+    Pending,
+}
+
+/// An obligation to fetch & update the cache.
+struct Obligation {
+    object: Arc<CacheKeyObjects>,
+    variant: Variant,
+}
+
+impl Drop for Obligation {
+    fn drop(&mut self) {
+        // INVARIANT: There is exactly one Obligation for each TransactionState::Pending.
+        //
+        // To maintain this, when the Obligation is dropped, we need to check the TransactionState
+        // and clear the entry iff it is Pending.
+        // Per the above invariant, this is the only Obligation that can clear that Pending.
+        self.object.0.send_if_modified(|key_objects| {
+            if let Some(v) = key_objects.objects.get(&self.variant) {
+                if let TransactionState::Pending = v.transactional {
+                    key_objects.objects.remove(&self.variant);
+                    // We did actually perform a modification;
+                    // notify waiters, so that another one can generate an Obligation.
+                    return true;
+                }
+            }
+            // Either the Obligation was fulfilled (TransactionState::Present)
+            // or the entry was deleted (??).
+            // Either way, we didn't modify anything, so we don't need to wake any waiters.
+            return false;
+        });
+    }
 }
 
 /// The data stored in cache for a metadata-complete entry.
