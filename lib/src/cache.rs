@@ -123,7 +123,6 @@ impl Found {
 ///
 // TODO: cceckman-at-fastly:
 // Explain some about how this works:
-// - Request-keyed vs. response-keyed items; variance
 // - Request collapsing
 // - Stale-while-revalidate
 pub struct Cache {
