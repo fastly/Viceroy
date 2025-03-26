@@ -3,9 +3,10 @@
 use crate::cache::variance::VaryRule;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::watch;
 
 use http::HeaderMap;
 
@@ -100,12 +101,12 @@ impl From<WriteOptions> for ObjectMeta {
 
 /// Object(s) indexed by a CacheKey.
 #[derive(Default)]
-pub struct CacheKeyObjects(Mutex<CacheKeyObjectsInner>);
+pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
 
 impl CacheKeyObjects {
     /// Get the applicable CacheData, if available.
     pub fn get(&self, request_headers: &HeaderMap) -> Option<Arc<CacheData>> {
-        let key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
+        let key_objects = self.0.borrow();
 
         for vary_rule in key_objects.vary_rules.iter() {
             let response_key = vary_rule.variant(request_headers);
@@ -126,26 +127,24 @@ impl CacheKeyObjects {
     pub fn insert(&self, options: WriteOptions, body: Body) {
         let meta: ObjectMeta = options.into();
 
-        let mut cache_key_objects = self.0.lock().expect("failed to lock CacheKeyObjects");
-        if !cache_key_objects.vary_rules.contains(meta.vary_rule()) {
-            // Insert at the front, run through the rules in order, so we tend towards fresher
-            // responses.
-            cache_key_objects
-                .vary_rules
-                .push_front(meta.vary_rule().clone());
-        }
+        self.0.send_modify(|cache_key_objects| {
+            if !cache_key_objects.vary_rules.contains(meta.vary_rule()) {
+                // Insert at the front, run through the rules in order, so we tend towards fresher
+                // responses.
+                cache_key_objects
+                    .vary_rules
+                    .push_front(meta.vary_rule().clone());
+            }
 
-        let body = CollectingBody::new(body);
-        let variant = meta.variant();
-        let object = Arc::new(CacheData { body, meta });
-        let value = Arc::new(CacheValue {
-            transactional: TransactionState::Present(object),
+            let body = CollectingBody::new(body);
+            let variant = meta.variant();
+            let object = Arc::new(CacheData { body, meta });
+            let value = Arc::new(CacheValue {
+                transactional: TransactionState::Present(object),
+            });
+
+            cache_key_objects.objects.insert(variant, value);
         });
-
-        cache_key_objects.objects.insert(variant, value);
-
-        // TODO: cceckman-at-fastly:
-        // When implementing transactional API, notify waiters.
     }
 }
 
