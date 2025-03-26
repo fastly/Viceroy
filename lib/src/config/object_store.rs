@@ -230,8 +230,8 @@ fn read_json_contents(
                 data: s,
                 metadata: None,
             },
-            serde_json::Value::Object(mut obj) => {
-                let data = obj.remove("data").ok_or_else(|| {
+            serde_json::Value::Object(obj) => {
+                let data = obj.get("data").ok_or_else(|| {
                     ObjectStoreConfigError::FileValueWrongFormat { key: key.clone() }
                 })?;
 
@@ -242,7 +242,7 @@ fn read_json_contents(
                     })?
                     .to_string();
 
-                let metadata = match obj.remove("metadata") {
+                let metadata = match obj.get("metadata") {
                     Some(val) => Some(
                         val.as_str()
                             .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat {
