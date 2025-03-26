@@ -110,8 +110,7 @@ impl CacheKeyObjects {
         for vary_rule in key_objects.vary_rules.iter() {
             let response_key = vary_rule.variant(request_headers);
             if let Some(object) = key_objects.objects.get(&response_key) {
-                let lock = object.inner.lock().unwrap();
-                match &lock.transactional {
+                match &object.transactional {
                     TransactionState::Present(v) => return Some(Arc::clone(v)),
                     _ => continue,
                 }
@@ -139,11 +138,11 @@ impl CacheKeyObjects {
         let body = CollectingBody::new(body);
         let variant = meta.variant();
         let object = Arc::new(CacheData { body, meta });
+        let value = Arc::new(CacheValue {
+            transactional: TransactionState::Present(object),
+        });
 
-        let entry = cache_key_objects.objects.entry(variant).or_default();
-        let mut response_object = entry.inner.lock().unwrap();
-        response_object.transactional = TransactionState::Present(object);
-        response_object.generation += 1;
+        cache_key_objects.objects.insert(variant, value);
 
         // TODO: cceckman-at-fastly:
         // When implementing transactional API, notify waiters.
@@ -159,35 +158,15 @@ struct CacheKeyObjectsInner {
 }
 
 /// Fully-indexed cache value, including request and response keys.
-#[derive(Default)]
+#[derive(Debug)]
 struct CacheValue {
-    inner: Mutex<CacheValueInner>,
-}
-
-#[derive(Default)]
-struct CacheValueInner {
-    /// Generation ID for this response-key'd object.
-    ///
-    /// We hold on to a generation ID so that if an obligation is dropped-
-    /// e.g. a session terminates without completing a GoGet-
-    /// we can go from Obligated -> Missing *if* nothing else has filled it
-    /// in the mean time.
-    /// We don't want to go from Present -> Missing on a GoGet::drop,
-    /// e.g. if a non-transactional insert has raced.
-    ///
-    /// Note: this _can_ reset upon eviction from the cache,
-    /// but that will result in a new object. If you're dealing with a CacheValueInner, hold on to
-    /// your Arc!
-    generation: usize,
     transactional: TransactionState,
 }
 
 /// The current state of this CacheValue.
-#[derive(Default)]
+#[derive(Debug)]
+#[non_exhaustive]
 enum TransactionState {
-    /// No data, no obligation to fetch
-    #[default]
-    Missing,
     /// The metadata is present in the cache; the content is available, possibly only as streaming
     /// content.
     Present(Arc<CacheData>),
