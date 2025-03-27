@@ -303,6 +303,7 @@ pub fn link_host_functions(
     wiggle_abi::fastly_http_cache::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_req::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_resp::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_image_optimizer::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_kv_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_log::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::session)?;

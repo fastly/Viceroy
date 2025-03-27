@@ -62,6 +62,7 @@ mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
 mod http_cache;
+mod image_optimizer;
 mod kv_store_impl;
 mod log_impl;
 mod obj_store_impl;
@@ -87,6 +88,7 @@ wiggle::from_witx!({
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
             pending_req_wait, pending_req_wait_v2, send, send_v2, send_v3, send_async, send_async_v2, send_async_streaming
         },
+        fastly_image_optimizer::transform_image_optimizer_request,
     }
 });
 
