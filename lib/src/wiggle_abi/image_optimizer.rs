@@ -1,4 +1,4 @@
-use crate::error::{Error};
+use crate::error::Error;
 use crate::session::Session;
 use crate::wiggle_abi::{fastly_image_optimizer, types};
 use wiggle::{GuestMemory, GuestPtr};
