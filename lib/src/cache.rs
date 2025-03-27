@@ -178,6 +178,7 @@ impl Cache {
 }
 
 /// Options that can be applied to a write, e.g. insert or transaction_insert.
+#[derive(Default)]
 pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Duration,

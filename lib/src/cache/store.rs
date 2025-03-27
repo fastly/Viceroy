@@ -124,7 +124,7 @@ impl CacheKeyObjects {
     /// Return a CacheData if existing data were found (even if stale),
     /// and return an Obligaton if the data need to be freshened.
     pub async fn transaction_get(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         request_headers: &HeaderMap,
     ) -> (Option<Arc<CacheData>>, Option<Obligation>) {
         let mut sub = self.0.subscribe();
@@ -372,14 +372,17 @@ impl CacheData {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use http::HeaderMap;
+    use http::{HeaderMap, HeaderName};
 
-    use crate::{body::Body, cache::WriteOptions};
+    use crate::{
+        body::Body,
+        cache::{VaryRule, WriteOptions},
+    };
 
     use super::CacheKeyObjects;
 
     #[tokio::test]
-    async fn test_single_obligation() {
+    async fn single_obligation() {
         let ko = Arc::new(CacheKeyObjects::default());
 
         let mut set = tokio::task::JoinSet::new();
@@ -387,7 +390,7 @@ mod tests {
             set.spawn({
                 let ko = Arc::clone(&ko);
 
-                async {
+                async move {
                     let (found, obligation) = ko.transaction_get(&HeaderMap::default()).await;
                     // Either have the obligation to fetch, or was blocked until the obligation
                     // completed.
@@ -406,5 +409,106 @@ mod tests {
         }
         let _ = set.join_all().await;
         assert!(ko.get(&HeaderMap::default()).is_some())
+    }
+
+    #[tokio::test]
+    async fn test_obligaton_when_stale() {
+        let ko = Arc::new(CacheKeyObjects::default());
+        let body: Body = "hello".as_bytes().into();
+
+        ko.insert(
+            HeaderMap::default(),
+            WriteOptions::new(Duration::ZERO),
+            body,
+            None,
+        );
+        let (_, obligation) = ko.transaction_get(&HeaderMap::default()).await;
+        // TODO: stale-while-revalidate: check that the stale data are provided
+        assert!(obligation.is_some());
+    }
+
+    #[tokio::test]
+    async fn obligation_by_vary_key() {
+        let ko = Arc::new(CacheKeyObjects::default());
+        let make_body = |s: &str| s.as_bytes().into();
+
+        let header_name = HeaderName::from_static("x-fastly-test");
+
+        let vary = VaryRule::new([&header_name].into_iter());
+        let h1: HeaderMap = [(header_name.clone(), "assert".try_into().unwrap())]
+            .into_iter()
+            .collect();
+        let h2: HeaderMap = [(header_name.clone(), "assume".try_into().unwrap())]
+            .into_iter()
+            .collect();
+        let h3: HeaderMap = [(header_name.clone(), "verify".try_into().unwrap())]
+            .into_iter()
+            .collect();
+
+        ko.insert(
+            h3,
+            WriteOptions {
+                max_age: Duration::from_secs(100),
+                initial_age: Duration::ZERO,
+                vary_rule: vary.clone(),
+            },
+            make_body(""),
+            None,
+        );
+        let (f1, o1) = ko.transaction_get(&h1).await;
+        assert!(f1.is_none());
+        assert!(o1.is_some());
+        let (f2, o2) = ko.transaction_get(&h2).await;
+        assert!(f2.is_none());
+        assert!(o2.is_some());
+
+        // Anotehr transaction on the same headers should pick up the same result:
+        let fut1 = ko.transaction_get(&h1);
+        let fut2 = ko.transaction_get(&h2);
+        o2.unwrap().complete(
+            WriteOptions {
+                vary_rule: vary.clone(),
+                max_age: Duration::from_secs(100),
+                ..Default::default()
+            },
+            make_body("object 2"),
+        );
+        o1.unwrap().complete(
+            WriteOptions {
+                vary_rule: vary.clone(),
+                max_age: Duration::from_secs(100),
+                ..Default::default()
+            },
+            make_body("object 1"),
+        );
+        if let (Some(v), None) = fut1.await {
+            let s = v.get_body().unwrap().read_into_string().await.unwrap();
+            assert_eq!(&s, "object 1");
+        } else {
+            panic!("expected to block on object 1")
+        }
+        if let (Some(v), None) = fut2.await {
+            let s = v.get_body().unwrap().read_into_string().await.unwrap();
+            assert_eq!(&s, "object 2");
+        } else {
+            panic!("expected to block on object 2")
+        }
+    }
+
+    #[tokio::test]
+    async fn drop_obligation() {
+        let ko = Arc::new(CacheKeyObjects::default());
+        let empty_headers = HeaderMap::default();
+
+        let (_, o1) = ko.transaction_get(&empty_headers).await;
+        assert!(o1.is_some());
+        // This future won't resolve yet, while the obligation is outstanding:
+        let fut = ko.transaction_get(&empty_headers);
+        // But once we drop the first obligation...
+        std::mem::drop(o1);
+        // ... we should pick up another:
+        let (f, o2) = fut.await;
+        assert!(o2.is_some());
+        assert!(f.is_none());
     }
 }
