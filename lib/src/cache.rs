@@ -173,7 +173,7 @@ impl Cache {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(request_headers, options, body);
+            .insert(request_headers, options, body, None);
     }
 }
 

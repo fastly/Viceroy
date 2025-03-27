@@ -214,6 +214,8 @@ impl CacheKeyObjects {
                 obligated = Some(Obligation {
                     object: Arc::clone(&self),
                     variant: response_key,
+                    request_headers: request_headers.clone(),
+                    completed: false,
                 });
 
                 // TODO: If there is a stale-while-revalidate result above, include it as well.
@@ -234,11 +236,27 @@ impl CacheKeyObjects {
         }
     }
 
-    /// Insert into the given CacheData.
-    pub fn insert(&self, request_headers: HeaderMap, options: WriteOptions, body: Body) {
+    /// Insert into the corresponding entry.
+    ///
+    /// If a clear_obligation is provided, clear the "obligated" bit on that Variant in the same
+    /// transaction (so there's only one wakeup). Note the clear_obligation variant may differ from
+    /// the variant inserted.
+    pub fn insert(
+        &self,
+        request_headers: HeaderMap,
+        options: WriteOptions,
+        body: Body,
+        clear_obligation: Option<Variant>,
+    ) {
         let meta = ObjectMeta::new(options, request_headers);
 
         self.0.send_modify(|cache_key_objects| {
+            if let Some(clear_obligation) = clear_obligation {
+                if let Some(v) = cache_key_objects.objects.get_mut(&clear_obligation) {
+                    v.obligated = false;
+                }
+            }
+
             if !cache_key_objects.vary_rules.contains(meta.vary_rule()) {
                 // Insert at the front, run through the rules in order, so we tend towards fresher
                 // responses.
@@ -291,26 +309,39 @@ struct CacheValue {
 /// An obligation to fetch & update the cache.
 struct Obligation {
     object: Arc<CacheKeyObjects>,
+    request_headers: HeaderMap,
     variant: Variant,
+    completed: bool,
+}
+
+impl Obligation {
+    /// Fulfill the obligation by providing write options and a body.
+    pub fn complete(mut self, options: WriteOptions, body: Body) {
+        let mut request_headers = HeaderMap::default();
+        let mut variant = Variant::default();
+        std::mem::swap(&mut self.request_headers, &mut request_headers);
+        std::mem::swap(&mut self.variant, &mut variant);
+        self.object
+            .insert(request_headers, options, body, Some(variant));
+    }
 }
 
 impl Drop for Obligation {
     fn drop(&mut self) {
-        // INVARIANT: There is exactly one Obligation for each TransactionState::Pending.
-        //
-        // To maintain this, when the Obligation is dropped, we need to check the TransactionState
-        // and clear the entry iff it is Pending.
-        // Per the above invariant, this is the only Obligation that can clear that Pending.
+        if self.completed {
+            // Obligation was already completed.
+            // Don't bother acquiring the notifier's lock.
+            return;
+        }
+        // Obligation was dropped without being completed.
+        // Remove our tracking bit from the map, along with a notification.
         self.object.0.send_if_modified(|key_objects| {
             if let Some(v) = key_objects.objects.get_mut(&self.variant) {
                 v.obligated = false;
-                // We did actually perform a modification;
-                // notify waiters, so that another one can generate an Obligation if needed.
                 return true;
             }
-            // Either the Obligation was fulfilled (TransactionState::Present)
-            // or the entry was deleted (??).
-            // Either way, we didn't modify anything, so we don't need to wake any waiters.
+            // Something odd happened -- our variant is no longer in the map.
+            // In this case, we didn't change anything, so avoid a spurious wakeup.
             return false;
         });
     }
