@@ -307,7 +307,7 @@ struct CacheValue {
 }
 
 /// An obligation to fetch & update the cache.
-struct Obligation {
+pub struct Obligation {
     object: Arc<CacheKeyObjects>,
     request_headers: HeaderMap,
     variant: Variant,
@@ -365,5 +365,46 @@ impl CacheData {
     /// Access to object's metadata
     pub(crate) fn get_meta(&self) -> &ObjectMeta {
         &self.meta
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Duration};
+
+    use http::HeaderMap;
+
+    use crate::{body::Body, cache::WriteOptions};
+
+    use super::CacheKeyObjects;
+
+    #[tokio::test]
+    async fn test_single_obligation() {
+        let ko = Arc::new(CacheKeyObjects::default());
+
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..4 {
+            set.spawn({
+                let ko = Arc::clone(&ko);
+
+                async {
+                    let (found, obligation) = ko.transaction_get(&HeaderMap::default()).await;
+                    // Either have the obligation to fetch, or was blocked until the obligation
+                    // completed.
+                    assert!(found.is_some() != obligation.is_some());
+
+                    if let Some(o) = obligation {
+                        let b: Body = "hello".as_bytes().into();
+                        o.complete(WriteOptions::new(Duration::from_secs(100)), b);
+                    }
+                    if let Some(f) = found {
+                        let body = f.body.read().unwrap().read_into_string().await.unwrap();
+                        assert_eq!(&body, "hello");
+                    }
+                }
+            });
+        }
+        let _ = set.join_all().await;
+        assert!(ko.get(&HeaderMap::default()).is_some())
     }
 }
