@@ -2441,6 +2441,140 @@ pub mod fastly_erl {
     }
 }
 
+pub mod fastly_image_optimizer {
+    use super::*;
+    use crate::bindings::fastly::api::image_optimizer;
+    use core::slice;
+
+    #[repr(u32)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ImageOptimizerErrorTag {
+        Uninitialized = 0,
+        Ok = 1,
+        Error = 2,
+        Warning = 3,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct ImageOptimizerErrorDetail {
+        pub tag: ImageOptimizerErrorTag,
+        pub message: *const u8,
+        pub message_len: usize,
+    }
+
+    impl Default for image_optimizer::ImageOptimizerErrorDetail {
+        fn default() -> Self {
+            Self {
+                tag: image_optimizer::ImageOptimizerErrorTag::Uninitialized,
+                message: Vec::new(),
+            }
+        }
+    }
+
+    bitflags::bitflags! {
+        /// `ImageOptimizerTransformConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct ImageOptimizerTransformConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+            const SDK_CLAIMS_OPTS = 1 << 1;
+        }
+    }
+
+    impl From<ImageOptimizerTransformConfigOptions>
+        for image_optimizer::ImageOptimizerTransformConfigOptions
+    {
+        fn from(options: ImageOptimizerTransformConfigOptions) -> Self {
+            let mut flags = Self::empty();
+            flags.set(
+                Self::RESERVED,
+                options.contains(ImageOptimizerTransformConfigOptions::RESERVED),
+            );
+            flags.set(
+                Self::SDK_CLAIMS_OPTS,
+                options.contains(ImageOptimizerTransformConfigOptions::SDK_CLAIMS_OPTS),
+            );
+            flags
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct ImageOptimizerTransformConfig {
+        pub sdk_claims_opts: *const u8,
+        pub sdk_claims_opts_len: usize,
+    }
+
+    #[export_name = "fastly_image_optimizer#transform_image_optimizer_request"]
+    pub fn transform_image_optimizer_request(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        origin_image_backend: *const u8,
+        origin_image_backend_len: usize,
+        io_transform_config_options: ImageOptimizerTransformConfigOptions,
+        io_transform_config: *const ImageOptimizerTransformConfig,
+        io_error_detail: *mut ImageOptimizerErrorDetail,
+        resp_handle_out: *mut ResponseHandle,
+        resp_body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let backend_name =
+            unsafe { slice::from_raw_parts(origin_image_backend, origin_image_backend_len) };
+        let io_opts = image_optimizer::ImageOptimizerTransformConfigOptions::from(
+            io_transform_config_options,
+        );
+
+        // NOTE: this is only really safe because we never mutate the vectors -- we only need
+        // vectors to satisfy the interface produced by the ImageOptimizerTransformConfig record,
+        // `transform_image_optimizer_request` will never mutate the vectors it's given.
+        macro_rules! make_vec {
+            ($ptr_field:ident, $len_field:ident) => {
+                unsafe {
+                    let len = usize::try_from((*io_transform_config).$len_field).trapping_unwrap();
+                    Vec::from_raw_parts((*io_transform_config).$ptr_field as *mut _, len, len)
+                }
+            };
+        }
+
+        let config = image_optimizer::ImageOptimizerTransformConfig {
+            sdk_claims_opts: if io_opts
+                .contains(image_optimizer::ImageOptimizerTransformConfigOptions::SDK_CLAIMS_OPTS)
+            {
+                make_vec!(sdk_claims_opts, sdk_claims_opts_len)
+            } else {
+                vec![]
+            },
+        };
+
+        let error_detail = image_optimizer::ImageOptimizerErrorDetail::default();
+        let res = image_optimizer::transform_image_optimizer_request(
+            req_handle,
+            body_handle,
+            backend_name,
+            io_opts,
+            &config,
+            &error_detail,
+        );
+
+        std::mem::forget(config);
+
+        unsafe {
+            (*io_error_detail).tag = ImageOptimizerErrorTag::Uninitialized;
+        }
+        match res {
+            Ok((resp, body)) => {
+                unsafe {
+                    *resp_handle_out = resp;
+                    *resp_body_handle_out = body;
+                    (*io_error_detail).tag = ImageOptimizerErrorTag::Ok;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => FastlyStatus::from(e),
+        }
+    }
+}
+
 pub mod fastly_object_store {
     use super::*;
     use crate::bindings::fastly::api::object_store;

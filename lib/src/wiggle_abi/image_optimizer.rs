@@ -1,18 +1,22 @@
-use crate::error::{Error, HandleError};
+use crate::error::{Error};
 use crate::session::Session;
 use crate::wiggle_abi::{fastly_image_optimizer, types};
+use wiggle::{GuestMemory, GuestPtr};
 
 #[wiggle::async_trait]
 impl fastly_image_optimizer::FastlyImageOptimizer for Session {
-    fn transform_image_optimizer_request(
+    async fn transform_image_optimizer_request(
         &mut self,
-        _origin_image_request: http_req::RequestHandle,
-        _origin_image_request_body: http_req::BodyHandle,
-        _origin_image_request_backend: Vec<u8>,
-        _io_transform_config_mask: image_optimizer::ImageOptimizerTransformConfigOptions,
-        _io_transform_config: image_optimizer::ImageOptimizerTransformConfig,
-        _io_error_detail: image_optimizer::ImageOptimizerErrorDetail,
-    ) -> Result<http_req::Response, types::Error> {
-        Err(types::Error::Unsupported)
+        _memory: &mut GuestMemory<'_>,
+        _origin_image_request: types::RequestHandle,
+        _origin_image_request_body: types::BodyHandle,
+        _origin_image_request_backend: GuestPtr<str>,
+        _io_transform_config_mask: types::ImageOptimizerTransformConfigOptions,
+        _io_transform_config: GuestPtr<types::ImageOptimizerTransformConfig>,
+        _io_error_detail: GuestPtr<types::ImageOptimizerErrorDetail>,
+    ) -> Result<(types::ResponseHandle, types::BodyHandle), Error> {
+        Err(Error::Unsupported {
+            msg: "image optimizer unsupported in Viceroy",
+        })
     }
 }
