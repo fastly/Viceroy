@@ -151,6 +151,7 @@
 (typename $is_valid u32)
 (typename $inserted u32)
 (typename $ready_idx u32)
+(typename $ddos_detected u32)
 
 (typename $port u16)
 (typename $timeout_ms u32)
