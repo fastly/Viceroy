@@ -5,7 +5,7 @@ use {
         cache::{CacheKey, VaryRule, WriteOptions},
         error::Error,
         linking::ComponentCtx,
-        session::{PeekableTask, PendingCacheTask, Session},
+        session::{PeekableTask, PendingCacheTask},
     },
     http::HeaderMap,
     std::{sync::Arc, time::Duration},
@@ -18,22 +18,14 @@ fn get_key(key: Vec<u8>) -> Result<CacheKey, types::Error> {
 }
 
 fn load_write_options(
-    session: &Session,
     options_mask: cache::WriteOptionsMask,
-    options: cache::WriteOptions,
+    options: &cache::WriteOptions,
 ) -> Result<WriteOptions, Error> {
     let max_age = Duration::from_nanos(options.max_age_ns);
     let initial_age = if options_mask.contains(cache::WriteOptionsMask::INITIAL_AGE_NS) {
         Duration::from_nanos(options.initial_age_ns)
     } else {
         Duration::ZERO
-    };
-    let request_headers = if options_mask.contains(cache::WriteOptionsMask::REQUEST_HEADERS) {
-        let handle = options.request_headers;
-        let parts = session.request_parts(handle.into())?;
-        parts.headers.clone()
-    } else {
-        HeaderMap::default()
     };
     let vary_rule = if options_mask.contains(cache::WriteOptionsMask::VARY_RULE) {
         options.vary_rule.parse()?
@@ -44,7 +36,6 @@ fn load_write_options(
     Ok(WriteOptions {
         max_age,
         initial_age,
-        request_headers,
         vary_rule,
     })
 }
@@ -91,11 +82,21 @@ impl cache::Host for ComponentCtx {
 
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
-        let options = load_write_options(&self.session, options_mask, options)?;
+        let write_options = load_write_options(options_mask, &options)?;
+
+        let request_headers = if options_mask.contains(cache::WriteOptionsMask::REQUEST_HEADERS) {
+            let handle = options.request_headers;
+            let parts = self.session.request_parts(handle.into())?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
 
         let handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(handle)?;
-        cache.insert(&key, options, read_body).await;
+        cache
+            .insert(&key, request_headers, write_options, read_body)
+            .await;
         Ok(handle.into())
     }
 

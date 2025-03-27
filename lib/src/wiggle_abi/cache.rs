@@ -22,23 +22,15 @@ fn load_cache_key(
 }
 
 fn load_write_options(
-    session: &Session,
     memory: &wiggle::GuestMemory<'_>,
     options_mask: types::CacheWriteOptionsMask,
-    options: types::CacheWriteOptions,
+    options: &types::CacheWriteOptions,
 ) -> Result<WriteOptions, Error> {
     let max_age = Duration::from_nanos(options.max_age_ns);
     let initial_age = if options_mask.contains(CacheWriteOptionsMask::INITIAL_AGE_NS) {
         Duration::from_nanos(options.initial_age_ns)
     } else {
         Duration::ZERO
-    };
-    let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
-        let handle = options.request_headers;
-        let parts = session.request_parts(handle)?;
-        parts.headers.clone()
-    } else {
-        HeaderMap::default()
     };
     let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
         let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
@@ -52,7 +44,6 @@ fn load_write_options(
     Ok(WriteOptions {
         max_age,
         initial_age,
-        request_headers,
         vary_rule,
     })
 }
@@ -107,13 +98,24 @@ impl FastlyCache for Session {
             return Err(Error::NotAvailable("Cache API primitives"));
         }
         let key = load_cache_key(memory, cache_key)?;
-        let options = load_write_options(self, memory, options_mask, memory.read(options)?)?;
+        let guest_options = memory.read(options)?;
+        let options = load_write_options(memory, options_mask, &guest_options)?;
         let cache = Arc::clone(self.cache());
+        // This is the only method that accepts REQUEST_HEADERS in the optons mask.
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            let handle = guest_options.request_headers;
+            let parts = self.request_parts(handle)?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
 
         // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
-        cache.insert(&key, options, read_body).await;
+        cache
+            .insert(&key, request_headers, options, read_body)
+            .await;
         Ok(handle)
     }
 

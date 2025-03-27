@@ -79,11 +79,10 @@ impl ObjectMeta {
     }
 }
 
-impl From<WriteOptions> for ObjectMeta {
-    fn from(value: WriteOptions) -> Self {
+impl ObjectMeta {
+    fn new(value: WriteOptions, request_headers: HeaderMap) -> Self {
         let inserted = Instant::now();
         let WriteOptions {
-            request_headers,
             vary_rule,
             max_age,
             initial_age,
@@ -124,8 +123,8 @@ impl CacheKeyObjects {
     // get_or_obligate, for transactional API
 
     /// Insert into the given CacheData.
-    pub fn insert(&self, options: WriteOptions, body: Body) {
-        let meta: ObjectMeta = options.into();
+    pub fn insert(&self, request_headers: HeaderMap, options: WriteOptions, body: Body) {
+        let meta = ObjectMeta::new(options, request_headers);
 
         self.0.send_modify(|cache_key_objects| {
             if !cache_key_objects.vary_rules.contains(meta.vary_rule()) {

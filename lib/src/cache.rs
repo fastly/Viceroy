@@ -163,11 +163,17 @@ impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
     /// Note: races with other insertions, including transactional insertions.
     /// Last writer wins!
-    pub async fn insert(&self, key: &CacheKey, options: WriteOptions, body: Body) {
+    pub async fn insert(
+        &self,
+        key: &CacheKey,
+        request_headers: HeaderMap,
+        options: WriteOptions,
+        body: Body,
+    ) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(options, body);
+            .insert(request_headers, options, body);
     }
 }
 
@@ -175,9 +181,17 @@ impl Cache {
 pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Duration,
-
-    pub request_headers: HeaderMap,
     pub vary_rule: VaryRule,
+}
+
+impl WriteOptions {
+    pub fn new(max_age: Duration) -> Self {
+        WriteOptions {
+            max_age,
+            initial_age: Duration::ZERO,
+            vary_rule: VaryRule::default(),
+        }
+    }
 }
 
 /// Optional override for response caching behavior.
@@ -291,11 +305,10 @@ mod tests {
                 let write_options = WriteOptions {
                     max_age: Duration::from_secs(max_age as u64),
                     initial_age: Duration::from_secs(initial_age as u64),
-                    request_headers: HeaderMap::default(),
                     vary_rule: VaryRule::default(),
                 };
 
-                cache.insert(&key, write_options, value.clone().into()).await;
+                cache.insert(&key, HeaderMap::default(), write_options, value.clone().into()).await;
 
                 let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
@@ -314,14 +327,15 @@ mod tests {
         let write_options = WriteOptions {
             max_age: Duration::from_secs(1),
             initial_age: Duration::from_secs(2),
-            request_headers: HeaderMap::default(),
             vary_rule: VaryRule::default(),
         };
 
         let mut body = Body::empty();
         body.push_back([1u8].as_slice());
 
-        cache.insert(&key, write_options, body).await;
+        cache
+            .insert(&key, HeaderMap::default(), write_options, body)
+            .await;
 
         let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
         let found = nonempty.found().expect("should have found inserted key");
@@ -341,11 +355,12 @@ mod tests {
         let write_options = WriteOptions {
             max_age: Duration::from_secs(100),
             initial_age: Duration::from_secs(2),
-            request_headers: request_headers.clone(),
             vary_rule: VaryRule::new([&header_name].into_iter()),
         };
         let body = Body::empty();
-        cache.insert(&key, write_options, body).await;
+        cache
+            .insert(&key, request_headers.clone(), write_options, body)
+            .await;
 
         let empty_headers = cache.lookup(&key, &HeaderMap::default()).await;
         assert!(empty_headers.found().is_none());
