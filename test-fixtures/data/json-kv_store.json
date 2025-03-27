@@ -1,4 +1,8 @@
 {
     "first": "This is some data",
-    "second": "More data"
+    "second": "More data",
+    "third": {
+        "data": "third",
+        "metadata": "some metadata"
+    }
 }
