@@ -496,6 +496,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn modified_vary() {
+        let ko = Arc::new(CacheKeyObjects::default());
+        let make_body = |s: &str| s.as_bytes().into();
+
+        let header_name = HeaderName::from_static("x-fastly-test");
+        let h1: HeaderMap = [(header_name.clone(), "assert".try_into().unwrap())]
+            .into_iter()
+            .collect();
+        let h2: HeaderMap = [(header_name.clone(), "assume".try_into().unwrap())]
+            .into_iter()
+            .collect();
+        let vary = VaryRule::new([&header_name].into_iter());
+
+        // No vary known in the original request:
+        let (f1, o1) = ko.transaction_get(&h1).await;
+        assert!(f1.is_none());
+        let o1 = o1.unwrap();
+        o1.complete(
+            WriteOptions {
+                max_age: Duration::from_secs(100),
+                vary_rule: vary.clone(),
+                ..Default::default()
+            },
+            make_body("object 1"),
+        );
+
+        // A second query with the same headers should match:
+        assert!(ko.get(&h1).is_some());
+
+        // But not with different headers:
+        let (f2, o2) = ko.transaction_get(&h2).await;
+        assert!(f2.is_none());
+        assert!(o2.is_some());
+    }
+
+    #[tokio::test]
     async fn drop_obligation() {
         let ko = Arc::new(CacheKeyObjects::default());
         let empty_headers = HeaderMap::default();
