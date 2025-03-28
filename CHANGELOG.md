@@ -1,4 +1,17 @@
-## Unreleased
+## 0.12.3 (2025-03-28)
+
+- Add `downstream_client_ddos_detected` hostcall stub ([#460](https://github.com/fastly/Viceroy/pull/460))
+- Add support for metadata in local_server.kv_stores ([#459](https://github.com/fastly/Viceroy/pull/459))
+- Add support for the Image Optimizer hostcalls ([#458](https://github.com/fastly/Viceroy/pull/458))
+- Guest Profile sample period configuration support ([#456](https://github.com/fastly/Viceroy/pull/456))
+- Fix cache key type in component interface ([#453](https://github.com/fastly/Viceroy/pull/453))
+- Remove ubuntu-20.04 from CI ([#451](https://github.com/fastly/Viceroy/pull/451))
+- Allow environment variable tests to pass based on validity, rather than their value ([#450](https://github.com/fastly/Viceroy/pull/450))
+- Add `FASTLY_IS_STAGING` environment variable ([#449](https://github.com/fastly/Viceroy/pull/449))
+- Update KV Store key naming restrictions ([#447](https://github.com/fastly/Viceroy/pull/447))
+- Fixes to CI ([#448](https://github.com/fastly/Viceroy/pull/448))
+- Update to 0.11.1 of the Fastly Rust SDK ([#445](https://github.com/fastly/Viceroy/pull/445))
+- Update CI to remove tests for macOS 12 and add tests for macOS 15 ([#436](https://github.com/fastly/Viceroy/pull/436))
 
 ## 0.12.2 (2024-12-02)
 
