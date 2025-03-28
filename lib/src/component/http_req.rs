@@ -138,6 +138,10 @@ impl http_req::Host for ComponentCtx {
         }
     }
 
+    async fn downstream_client_ddos_detected(&mut self) -> Result<u32, types::Error> {
+        Ok(0)
+    }
+
     async fn downstream_tls_cipher_openssl_name(
         &mut self,
         _max_len: u64,

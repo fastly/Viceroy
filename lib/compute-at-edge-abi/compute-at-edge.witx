@@ -200,6 +200,10 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "downstream_client_ddos_detected")
+        (result $err (expected $ddos_detected (error $fastly_status)))
+    )
+
     (@interface func (export "downstream_tls_cipher_openssl_name")
         (param $cipher_out (@witx pointer (@witx char8)))
         (param $cipher_max_len (@witx usize))

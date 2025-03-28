@@ -326,6 +326,8 @@ interface http-req {
 
   downstream-client-oh-fingerprint: func(max-len: u64) -> result<list<u8>, error>;
 
+  downstream-client-ddos-detected: func() -> result<u32, error>;
+
   downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<string, error>;
 
   downstream-tls-protocol: func(max-len: u64) -> result<string, error>;
