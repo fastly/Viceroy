@@ -99,7 +99,7 @@ impl ObjectMeta {
 }
 
 /// Object(s) indexed by a CacheKey.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
 
 impl CacheKeyObjects {
@@ -277,7 +277,7 @@ impl CacheKeyObjects {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct CacheKeyObjectsInner {
     /// All the vary rules that might apply.
     /// Most-recent at the front, so we tend towards fresher responses.
@@ -307,6 +307,7 @@ struct CacheValue {
 }
 
 /// An obligation to fetch & update the cache.
+#[derive(Debug)]
 pub struct Obligation {
     object: Arc<CacheKeyObjects>,
     request_headers: HeaderMap,
