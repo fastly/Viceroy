@@ -14,7 +14,7 @@ use http::{HeaderMap, HeaderValue};
 mod store;
 mod variance;
 
-use store::{CacheData, CacheKeyObjects, ObjectMeta};
+use store::{CacheData, CacheKeyObjects, ObjectMeta, Obligation};
 pub use variance::VaryRule;
 
 /// Primary cache key: an up-to-4KiB buffer.
@@ -69,12 +69,18 @@ impl TryFrom<&str> for CacheKey {
     }
 }
 
-/// The result of a lookup: the object (if found), or an obligation to get it (if not).
+/// The result of a lookup: the object (if found), and/or an obligation to fetch.
 #[derive(Debug)]
 pub struct CacheEntry {
     key: CacheKey,
     found: Option<Found>,
-    // TODO: cceckman-at-fastly 2025-02-26: GoGet
+    go_get: Option<GoGet>,
+}
+
+/// If the result needs to be fetched, an indicator of that.
+#[derive(Debug)]
+pub struct GoGet {
+    obligation: Obligation,
 }
 
 impl CacheEntry {
@@ -90,6 +96,11 @@ impl CacheEntry {
     /// Returns the data found in the cache, if any was present.
     pub fn found_mut(&mut self) -> Option<&mut Found> {
         self.found.as_mut()
+    }
+
+    /// Returns the obligation to fetch, if required
+    pub fn go_get(&self) -> Option<&GoGet> {
+        self.go_get.as_ref()
     }
 }
 
@@ -143,7 +154,7 @@ impl Default for Cache {
 }
 
 impl Cache {
-    /// Perform a non-transactional lookup for the given cache key.
+    /// Perform a non-transactional lookup.
     pub async fn lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
         let found = self
             .inner
@@ -157,6 +168,25 @@ impl Cache {
         CacheEntry {
             key: key.clone(),
             found,
+            go_get: None,
+        }
+    }
+
+    /// Perform a transactional lookup.
+    pub async fn transaction_lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
+        let (found, obligation) = self
+            .inner
+            .get_with_by_ref(&key, async { Default::default() })
+            .await
+            .transaction_get(headers)
+            .await;
+        CacheEntry {
+            key: key.clone(),
+            found: found.map(|data| Found {
+                data,
+                last_body_handle: None,
+            }),
+            go_get: obligation.map(|obligation| GoGet { obligation }),
         }
     }
 

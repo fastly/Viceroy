@@ -48,6 +48,29 @@ fn load_write_options(
     })
 }
 
+fn load_lookup_options(
+    session: &Session,
+    memory: &wiggle::GuestMemory<'_>,
+    options_mask: types::CacheLookupOptionsMask,
+    options: wiggle::GuestPtr<types::CacheLookupOptions>,
+) -> Result<HeaderMap, Error> {
+    let options = memory.read(options)?;
+    let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
+        let handle = options.request_headers;
+        let parts = session.request_parts(handle)?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+    if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
+        // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
+        return Err(Error::Unsupported {
+            msg: "service ID in cache lookup",
+        });
+    }
+    Ok(headers)
+}
+
 #[allow(unused_variables)]
 #[wiggle::async_trait]
 impl FastlyCache for Session {
@@ -58,21 +81,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let options = memory.read(options)?;
-        let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
-            let handle = options.request_headers;
-            let parts = self.request_parts(handle)?;
-            parts.headers.clone()
-        } else {
-            HeaderMap::default()
-        };
-        if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
-            // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
-            return Err(Error::Unsupported {
-                msg: "service ID in cache lookup",
-            });
-        }
-
+        let headers = load_lookup_options(self, memory, options_mask, options)?;
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
@@ -82,7 +91,7 @@ impl FastlyCache for Session {
         .await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
-        Ok(handle)
+        Ok(handle.into())
     }
 
     async fn insert(
@@ -215,7 +224,10 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let busy = self
+            .transaction_lookup_async(memory, cache_key, options_mask, options)
+            .await?;
+        self.cache_busy_handle_wait(memory, busy).await
     }
 
     async fn transaction_lookup_async(
@@ -225,7 +237,17 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheBusyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let headers = load_lookup_options(self, memory, options_mask, options)?;
+        let key = load_cache_key(memory, cache_key)?;
+        let cache = Arc::clone(self.cache());
+
+        let task = PeekableTask::spawn(Box::pin(async move {
+            Ok(cache.transaction_lookup(&key, &headers).await)
+        }))
+        .await;
+        let task = PendingCacheTask::new(task);
+        let handle = self.insert_cache_op(task);
+        Ok(handle.into())
     }
 
     async fn cache_busy_handle_wait(
@@ -233,7 +255,9 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheBusyHandle,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let handle = handle.into();
+        let _ = self.cache_entry_mut(handle).await?;
+        Ok(handle)
     }
 
     async fn transaction_insert(
@@ -306,11 +330,14 @@ impl FastlyCache for Session {
             if !found.meta().is_fresh() {
                 state |= types::CacheLookupState::STALE;
             }
-            // TODO:: stale-while-revalidate and go_get obligation.
+            // TODO:: stale-while-revalidate.
             // For now, usable if fresh.
             if found.meta().is_fresh() {
                 state |= types::CacheLookupState::USABLE;
             }
+        }
+        if entry.go_get().is_some() {
+            state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
         }
 
         Ok(state)

@@ -12,11 +12,15 @@ fn main() {
 
     test_single_body();
     test_insert_stale();
+
     test_vary();
     test_vary_multiple();
     test_novary_ignore_headers();
     test_vary_combine();
     test_vary_subtle();
+
+    test_racing_transactions();
+
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -351,6 +355,33 @@ fn test_vary_combine() {
         .execute()
         .unwrap();
     assert!(r.is_none());
+}
+
+fn test_racing_transactions() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+
+    // Exactly one should become pending:
+    let (ready, pending) = loop {
+        let p1 = busy1.pending().unwrap();
+        let p2 = busy2.pending().unwrap();
+        if !p1 {
+            assert!(p2);
+            break (busy1, busy2);
+        }
+        if !p2 {
+            assert!(p1);
+            break (busy2, busy1);
+        }
+        std::thread::sleep(Duration::from_millis(4));
+    };
+
+    let tx = ready.wait().unwrap();
+    assert!(tx.found().is_none());
+    // The first to resolve should have the obligation to insert:
+    assert!(tx.must_insert());
 }
 
 fn new_key() -> CacheKey {

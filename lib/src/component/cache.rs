@@ -6,6 +6,7 @@ use {
         error::Error,
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask},
+        wiggle_abi::types::{CacheBusyHandle, CacheHandle},
     },
     http::HeaderMap,
     std::{sync::Arc, time::Duration},
@@ -64,7 +65,7 @@ impl cache::Host for ComponentCtx {
         ))
         .await;
         let task = PendingCacheTask::new(task);
-        let handle = self.session.insert_cache_op(task);
+        let handle: CacheHandle = self.session.insert_cache_op(task).into();
         Ok(handle.into())
     }
 
@@ -266,37 +267,49 @@ impl cache::Host for ComponentCtx {
     async fn transaction_lookup(
         &mut self,
         key: Vec<u8>,
-        _options_mask: cache::LookupOptionsMask,
-        _options: cache::LookupOptions,
+        options_mask: cache::LookupOptionsMask,
+        options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
-        let _key = get_key(key)?;
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let h = self
+            .transaction_lookup_async(key, options_mask, options)
+            .await?;
+        self.cache_busy_handle_wait(h).await
     }
 
     async fn transaction_lookup_async(
         &mut self,
         key: Vec<u8>,
-        _options_mask: cache::LookupOptionsMask,
-        _options: cache::LookupOptions,
+        options_mask: cache::LookupOptionsMask,
+        options: cache::LookupOptions,
     ) -> Result<cache::BusyHandle, types::Error> {
-        let _key = get_key(key)?;
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let headers = if options_mask.contains(cache::LookupOptionsMask::REQUEST_HEADERS) {
+            let handle = options.request_headers;
+            let parts = self.session.request_parts(handle.into())?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
+
+        let key: CacheKey = get_key(key)?;
+        let cache = Arc::clone(self.session.cache());
+
+        let task = PeekableTask::spawn(Box::pin(async move {
+            Ok(cache.transaction_lookup(&key, &headers).await)
+        }))
+        .await;
+        let task = PendingCacheTask::new(task);
+        let handle: CacheBusyHandle = self.session.insert_cache_op(task).into();
+        Ok(handle.into())
     }
 
     async fn cache_busy_handle_wait(
         &mut self,
-        _handle: cache::BusyHandle,
+        handle: cache::BusyHandle,
     ) -> Result<cache::Handle, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let busy_handle: CacheBusyHandle = handle.into();
+        let handle: CacheHandle = busy_handle.into();
+        let _ = self.session.cache_entry_mut(handle).await?;
+        Ok(handle.into())
     }
 
     async fn transaction_insert(
@@ -369,11 +382,14 @@ impl cache::Host for ComponentCtx {
             if !found.meta().is_fresh() {
                 state |= cache::LookupState::STALE;
             }
-            // TODO:: stale-while-revalidate and go_get obligation.
+            // TODO:: stale-while-revalidate.
             // For now, usable if fresh.
             if found.meta().is_fresh() {
                 state |= cache::LookupState::USABLE;
             }
+        }
+        if entry.go_get().is_some() {
+            state |= cache::LookupState::MUST_INSERT_OR_UPDATE
         }
 
         Ok(state.into())
