@@ -3,7 +3,7 @@ use {
     crate::{
         body::Body,
         cache::{CacheKey, VaryRule, WriteOptions},
-        error::Error,
+        error::{Error, HandleError},
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask},
         wiggle_abi::types::{CacheBusyHandle, CacheHandle},
@@ -314,26 +314,51 @@ impl cache::Host for ComponentCtx {
 
     async fn transaction_insert(
         &mut self,
-        _handle: cache::Handle,
-        _options_mask: cache::WriteOptionsMask,
-        _options: cache::WriteOptions,
+        handle: cache::Handle,
+        options_mask: cache::WriteOptionsMask,
+        options: cache::WriteOptions,
     ) -> Result<http_types::BodyHandle, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let (body, cache_handle) = self
+            .transaction_insert_and_stream_back(handle, options_mask, options)
+            .await?;
+        let _ = self.session.take_cache_entry(cache_handle.into())?;
+        Ok(body)
     }
 
     async fn transaction_insert_and_stream_back(
         &mut self,
-        _handle: cache::Handle,
-        _options_mask: cache::WriteOptionsMask,
-        _options: cache::WriteOptions,
+        handle: cache::Handle,
+        options_mask: cache::WriteOptionsMask,
+        options: cache::WriteOptions,
     ) -> Result<(http_types::BodyHandle, cache::Handle), types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
         }
-        .into())
+
+        let write_options = load_write_options(options_mask, &options)?;
+        // No request headers here; request headers come from the original lookup.
+        if options_mask.contains(cache::WriteOptionsMask::REQUEST_HEADERS) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let entry = self.session.cache_entry_mut(handle.into()).await?;
+        // The path here is:
+        // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
+        // CacheError::InvalidOperation
+        let obligation =
+            entry
+                .take_go_get()
+                .ok_or(Error::HandleError(HandleError::InvalidCacheHandle(
+                    handle.into(),
+                )))?;
+
+        let body_handle = self.session.insert_body(Body::empty());
+        let read_body = self.session.begin_streaming(body_handle)?;
+
+        obligation.complete(write_options, read_body);
+        Ok((body_handle.into(), handle))
     }
 
     async fn transaction_update(

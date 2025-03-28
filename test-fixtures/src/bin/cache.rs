@@ -2,7 +2,7 @@
 
 use fastly::cache::core::*;
 use fastly::http::{HeaderName, HeaderValue};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -382,6 +382,22 @@ fn test_racing_transactions() {
     assert!(tx.found().is_none());
     // The first to resolve should have the obligation to insert:
     assert!(tx.must_insert());
+    let mut body = tx.insert(Duration::from_secs(100)).execute().unwrap();
+
+    // Once we've started streaming, the other transaction should complete:
+    let tx = pending.wait().unwrap();
+    assert!(!tx.must_insert());
+    let found = tx.found().unwrap();
+    assert_eq!(found.ttl(), Duration::from_secs(100));
+    let mut rd_body = found.to_stream().unwrap();
+
+    // Write the body and read it back:
+    body.write(b"hello").unwrap();
+    body.finish().unwrap();
+
+    let mut read = String::new();
+    rd_body.read_to_string(&mut read).unwrap();
+    assert_eq!(&read, "hello");
 }
 
 fn new_key() -> CacheKey {

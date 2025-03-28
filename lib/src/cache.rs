@@ -74,13 +74,7 @@ impl TryFrom<&str> for CacheKey {
 pub struct CacheEntry {
     key: CacheKey,
     found: Option<Found>,
-    go_get: Option<GoGet>,
-}
-
-/// If the result needs to be fetched, an indicator of that.
-#[derive(Debug)]
-pub struct GoGet {
-    obligation: Obligation,
+    go_get: Option<Obligation>,
 }
 
 impl CacheEntry {
@@ -99,8 +93,13 @@ impl CacheEntry {
     }
 
     /// Returns the obligation to fetch, if required
-    pub fn go_get(&self) -> Option<&GoGet> {
+    pub fn go_get(&self) -> Option<&Obligation> {
         self.go_get.as_ref()
+    }
+
+    /// Extract the write obligation, if present.
+    pub fn take_go_get(&mut self) -> Option<Obligation> {
+        self.go_get.take()
     }
 }
 
@@ -186,7 +185,7 @@ impl Cache {
                 data,
                 last_body_handle: None,
             }),
-            go_get: obligation.map(|obligation| GoGet { obligation }),
+            go_get: obligation,
         }
     }
 
