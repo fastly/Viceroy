@@ -13,7 +13,8 @@ use {
 
 #[derive(Debug)]
 struct ObjectStoreEntry {
-    data: String,
+    data: Option<String>,
+    path: Option<String>,
     metadata: Option<String>,
 }
 
@@ -61,7 +62,12 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         .map(|(key, entry)| {
                             let mut table = toml::value::Table::new();
                             table.insert("key".to_string(), toml::Value::String(key));
-                            table.insert("data".to_string(), toml::Value::String(entry.data));
+                            if let Some(data) = entry.data {
+                                table.insert("data".to_string(), toml::Value::String(data));
+                            }
+                            if let Some(path) = entry.path {
+                                table.insert("path".to_string(), toml::Value::String(path));
+                            }
                             if let Some(meta) = entry.metadata {
                                 table.insert("metadata".to_string(), toml::Value::String(meta));
                             }
@@ -227,20 +233,32 @@ fn read_json_contents(
     for (key, value) in json {
         let entry = match value {
             serde_json::Value::String(s) => ObjectStoreEntry {
-                data: s,
+                data: Some(s),
+                path: None,
                 metadata: None,
             },
             serde_json::Value::Object(obj) => {
-                let data = obj.get("data").ok_or_else(|| {
-                    ObjectStoreConfigError::FileValueWrongFormat { key: key.clone() }
-                })?;
+                let data = match obj.get("data") {
+                    Some(val) => Some(
+                        val.as_str()
+                            .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat {
+                                key: key.clone(),
+                            })?
+                            .to_string(),
+                    ),
+                    None => None,
+                };
 
-                let data = data
-                    .as_str()
-                    .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat {
-                        key: key.clone(),
-                    })?
-                    .to_string();
+                let path = match obj.get("path") {
+                    Some(val) => Some(
+                        val.as_str()
+                            .ok_or_else(|| ObjectStoreConfigError::FileValueWrongFormat {
+                                key: key.clone(),
+                            })?
+                            .to_string(),
+                    ),
+                    None => None,
+                };
 
                 let metadata = match obj.get("metadata") {
                     Some(val) => Some(
@@ -253,7 +271,24 @@ fn read_json_contents(
                     None => None,
                 };
 
-                ObjectStoreEntry { data, metadata }
+                // Now validate: exactly one of `data` or `path` must be set
+                match (&data, &path) {
+                    (Some(_), Some(_)) => {
+                        return Err(ObjectStoreConfigError::BothDataAndPathPresent {
+                            key: key.clone(),
+                        });
+                    }
+                    (None, None) => {
+                        return Err(ObjectStoreConfigError::MissingDataOrPath { key: key.clone() });
+                    }
+                    _ => {} // all good
+                }
+
+                ObjectStoreEntry {
+                    data,
+                    path,
+                    metadata,
+                }
             }
             _ => return Err(ObjectStoreConfigError::FileValueWrongFormat { key: key.clone() }),
         };
