@@ -698,6 +698,10 @@ pub enum ObjectStoreConfigError {
     FileWrongFormat,
     #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String.")]
     FileValueWrongFormat { key: String },
+    #[error("Item value under key named '{key}' is of the wrong format. 'data' and 'file' are mutually exclusive.")]
+    BothDataAndFilePresent { key: String },
+    #[error("Item value under key named '{key}' is of the wrong format. One of 'data' and 'file' must be present.")]
+    MissingDataOrFile { key: String },
 }
 
 /// Errors that may occur while validating secret store configurations.

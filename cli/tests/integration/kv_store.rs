@@ -358,6 +358,36 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
         _ => panic!(),
     }
 
+    // Invalid format JSON - entry must have data or file (or path)
+    const BAD_16_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store-invalid_1.json", format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_16_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Item value under key named 'first' is of the wrong format. One of 'data' and 'file' must be present.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    // Invalid format JSON - entry cannot have both data and file
+    const BAD_17_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store-invalid_2.json", format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_17_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Item value under key named 'first' is of the wrong format. 'data' and 'file' are mutually exclusive.", &e.to_string()),
+        _ => panic!(),
+    }
+
     Ok(())
 });
 
