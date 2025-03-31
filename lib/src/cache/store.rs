@@ -359,7 +359,7 @@ pub(crate) struct CacheData {
 
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn get_body(&self) -> Result<Body, Error> {
+    pub(crate) fn get_body(&self) -> Result<Body, crate::Error> {
         self.body.read()
     }
 
