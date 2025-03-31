@@ -3,7 +3,10 @@ use std::{sync::Arc, time::Duration};
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::{body::Body, wiggle_abi::types::CacheOverrideTag};
+use crate::{
+    body::Body,
+    wiggle_abi::types::{CacheOverrideTag, FastlyStatus},
+};
 use fastly_shared::FastlyStatus;
 use http::{HeaderMap, HeaderValue};
 
@@ -22,13 +25,26 @@ pub enum Error {
     #[error("handle is not writeable")]
     CannotWrite,
 
-    #[error("unknown cache error: {0}")]
-    Other(String),
+    #[error("no entry for key in cache")]
+    Missing,
 }
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {
-        crate::Error::CacheError(value),
+        crate::Error::CacheError(value)
+    }
+}
+
+impl From<Error> for FastlyStatus {
+    fn from(value: Error) -> Self {
+        match value {
+            // TODO: cceckman-at-fastly: These may not correspond to the same errors as the compute
+            // platform uses. Check!
+            Error::InvalidKey => FastlyStatus::INVAL,
+            Error::CannotWrite => FastlyStatus::BADF,
+            Error::Missing => FastlyStatus::NONE,
+            _ => FastlyStatus::ERROR,
+        }
     }
 }
 

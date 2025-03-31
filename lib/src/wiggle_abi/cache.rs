@@ -395,7 +395,7 @@ impl FastlyCache for Session {
         let entry = self.cache_entry_mut(handle).await?;
 
         let Some(found) = entry.found() else {
-            return Err(Error::CacheError("key was not found in cache".to_owned()));
+            return Err(Error::CacheError(crate::cache::Error::Missing));
         };
         let body = found.body()?;
 
@@ -419,9 +419,7 @@ impl FastlyCache for Session {
         if let Some(found) = entry.found() {
             Ok(found.meta().max_age().as_nanos().try_into().unwrap())
         } else {
-            Err(Error::CacheError(
-                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
-            ))
+            Err(Error::CacheError(crate::cache::Error::Missing))
         }
     }
 
@@ -442,9 +440,7 @@ impl FastlyCache for Session {
         if let Some(found) = entry.found() {
             Ok(found.meta().age().as_nanos().try_into().unwrap())
         } else {
-            Err(Error::CacheError(
-                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
-            ))
+            Err(Error::CacheError(crate::cache::Error::Missing))
         }
     }
 
