@@ -116,12 +116,11 @@ fn test_single_body() {
     // We should be able to get two bodies from two different lookups:
     let b1 = f1.to_stream().unwrap();
     let _b2 = f2.to_stream().unwrap();
-    // But a second body from the same lookup should cause an error, while the first is
-    // outstanding:
-    // TODO: cceckman-at-fastly: Tidy up error types. This should return InvalidOperation per the
-    // API.
-    // assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
-    assert!(f1.to_stream().is_err());
+    // But a second body from the same lookup should cause an error-
+    // specifically an InvalidOperation error, per the API docs-
+    // while the first is outstanding:
+    eprintln!("{}", f1.to_stream().unwrap_err());
+    assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
     std::mem::drop(b1);
     // Now the prior read from that lookup can proceed:
     let _ = f1.to_stream().unwrap();

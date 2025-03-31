@@ -409,7 +409,7 @@ impl FastlyCache for Session {
             .cache_entry(handle.into())
             .await?
             .found()
-            .ok_or_else(|| Error::CacheError("key was not found in cache".to_owned()))?;
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
         // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
         // clean up the copying task.
         // We have to do this to allow `found`'s lifetime to end before self.session.body, which
@@ -419,10 +419,7 @@ impl FastlyCache for Session {
         if let Some(prev_handle) = found.last_body_handle {
             // Check if they're still reading the previous handle.
             if self.body(prev_handle).is_ok() {
-                // TODO: cceckman-at-fastly: more precise error types
-                return Err(Error::CacheError(
-                    format!("Found has a read outstanding already (BodyHandle {prev_handle}). Close this handle before reading")
-            ).into());
+                return Err(Error::CacheError(crate::cache::Error::HandleBodyUsed));
             }
         };
 
@@ -455,9 +452,7 @@ impl FastlyCache for Session {
         if let Some(found) = entry.found() {
             Ok(found.meta().max_age().as_nanos().try_into().unwrap())
         } else {
-            Err(Error::CacheError(
-                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
-            ))
+            Err(Error::CacheError(crate::cache::Error::Missing))
         }
     }
 
@@ -478,9 +473,7 @@ impl FastlyCache for Session {
         if let Some(found) = entry.found() {
             Ok(found.meta().age().as_nanos().try_into().unwrap())
         } else {
-            Err(Error::CacheError(
-                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
-            ))
+            Err(Error::CacheError(crate::cache::Error::Missing))
         }
     }
 

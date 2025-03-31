@@ -5,9 +5,9 @@ use proptest_derive::Arbitrary;
 
 use crate::{
     body::Body,
-    wiggle_abi::types::{BodyHandle, CacheOverrideTag},
+    component::fastly::api::types::Error as ComponentError,
+    wiggle_abi::types::{BodyHandle, CacheOverrideTag, FastlyStatus},
 };
-
 use http::{HeaderMap, HeaderValue};
 
 mod store;
@@ -25,13 +25,42 @@ pub enum Error {
     #[error("handle is not writeable")]
     CannotWrite,
 
-    #[error("unknown cache error: {0}")]
-    Other(String),
+    #[error("no entry for key in cache")]
+    Missing,
+
+    #[error("cache entry's body is currently being read by another body")]
+    HandleBodyUsed,
 }
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {
         crate::Error::CacheError(value)
+    }
+}
+
+impl From<&Error> for FastlyStatus {
+    fn from(value: &Error) -> Self {
+        match value {
+            // TODO: cceckman-at-fastly: These may not correspond to the same errors as the compute
+            // platform uses. Check!
+            Error::InvalidKey => FastlyStatus::Inval,
+            Error::CannotWrite => FastlyStatus::Badf,
+            Error::Missing => FastlyStatus::None,
+            Error::HandleBodyUsed => FastlyStatus::Badf,
+        }
+    }
+}
+
+impl From<Error> for ComponentError {
+    fn from(value: Error) -> Self {
+        match value {
+            // TODO: cceckman-at-fastly: These may not correspond to the same errors as the compute
+            // platform uses. Check!
+            Error::InvalidKey => ComponentError::InvalidArgument,
+            Error::CannotWrite => ComponentError::BadHandle,
+            Error::Missing => ComponentError::OptionalNone,
+            Error::HandleBodyUsed => ComponentError::BadHandle,
+        }
     }
 }
 

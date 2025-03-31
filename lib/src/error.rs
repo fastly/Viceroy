@@ -192,6 +192,7 @@ impl Error {
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
+            Error::CacheError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -218,8 +219,7 @@ impl Error {
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse(_, _)
-            | Error::CacheError(_) => FastlyStatus::Error,
+            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
         }
     }
 

@@ -17,6 +17,7 @@ viceroy_test!(cache_nontransactional, |is_component| {
 
     let resp = Test::using_fixture("cache.wasm")
         .adapt_component(is_component)
+        .log_stderr()
         .against_empty()
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -34,6 +35,7 @@ viceroy_test!(cache_transactional, |is_component| {
 
     let resp = Test::using_fixture("cache_transactional.wasm")
         .adapt_component(is_component)
+        .log_stderr()
         .against_empty()
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
