@@ -373,11 +373,13 @@ impl cache::Host for ComponentCtx {
         .into())
     }
 
-    async fn transaction_cancel(&mut self, _handle: cache::Handle) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+    async fn transaction_cancel(&mut self, handle: cache::Handle) -> Result<(), types::Error> {
+        let entry = self.session.cache_entry_mut(handle.into()).await?;
+        if let Some(_) = entry.take_go_get() {
+            Ok(())
+        } else {
+            Err(crate::cache::Error::CannotWrite.into())
         }
-        .into())
     }
 
     async fn close_busy(&mut self, _handle: cache::BusyHandle) -> Result<(), types::Error> {

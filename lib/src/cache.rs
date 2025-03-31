@@ -6,9 +6,8 @@ use proptest_derive::Arbitrary;
 use crate::{
     body::Body,
     wiggle_abi::types::{BodyHandle, CacheOverrideTag},
-    Error,
 };
-use fastly_shared::FastlyStatus;
+
 use http::{HeaderMap, HeaderValue};
 
 mod store;
@@ -16,6 +15,25 @@ mod variance;
 
 use store::{CacheData, CacheKeyObjects, ObjectMeta, Obligation};
 pub use variance::VaryRule;
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error("invalid key")]
+    InvalidKey,
+
+    #[error("handle is not writeable")]
+    CannotWrite,
+
+    #[error("unknown cache error: {0}")]
+    Other(String),
+}
+
+impl From<Error> for crate::Error {
+    fn from(value: Error) -> Self {
+        crate::Error::CacheError(value)
+    }
+}
 
 /// Primary cache key: an up-to-4KiB buffer.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,7 +48,7 @@ impl CacheKey {
 }
 
 impl TryFrom<&Vec<u8>> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
         value.as_slice().try_into()
@@ -38,11 +56,11 @@ impl TryFrom<&Vec<u8>> for CacheKey {
 }
 
 impl TryFrom<Vec<u8>> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
         if value.len() > Self::MAX_LENGTH {
-            Err(FastlyStatus::BUFLEN)
+            Err(Error::InvalidKey)
         } else {
             Ok(CacheKey(value))
         }
@@ -50,11 +68,11 @@ impl TryFrom<Vec<u8>> for CacheKey {
 }
 
 impl TryFrom<&[u8]> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() > CacheKey::MAX_LENGTH {
-            Err(FastlyStatus::BUFLEN)
+            Err(Error::InvalidKey)
         } else {
             Ok(CacheKey(value.to_owned()))
         }
@@ -62,7 +80,7 @@ impl TryFrom<&[u8]> for CacheKey {
 }
 
 impl TryFrom<&str> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.as_bytes().try_into()
@@ -119,7 +137,7 @@ pub struct Found {
 
 impl Found {
     /// Access the body of the cached object.
-    pub fn body(&self) -> Result<Body, Error> {
+    pub fn body(&self) -> Result<Body, crate::Error> {
         self.data.as_ref().get_body()
     }
 

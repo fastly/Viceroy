@@ -150,8 +150,8 @@ pub enum Error {
     Again,
 
     // TODO: cceckman-at-fastly ; better error types
-    #[error("Error from cache: {0}")]
-    CacheError(String),
+    #[error("cache error: {0}")]
+    CacheError(crate::cache::Error),
 }
 
 impl Error {

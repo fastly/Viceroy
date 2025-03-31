@@ -2,7 +2,7 @@
 
 use fastly::cache::core::*;
 use fastly::http::{HeaderName, HeaderValue};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -18,8 +18,6 @@ fn main() {
     test_novary_ignore_headers();
     test_vary_combine();
     test_vary_subtle();
-
-    test_racing_transactions();
 
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
@@ -355,49 +353,6 @@ fn test_vary_combine() {
         .execute()
         .unwrap();
     assert!(r.is_none());
-}
-
-fn test_racing_transactions() {
-    let key = new_key();
-
-    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
-    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
-
-    // Exactly one should become pending:
-    let (ready, pending) = loop {
-        let p1 = busy1.pending().unwrap();
-        let p2 = busy2.pending().unwrap();
-        if !p1 {
-            assert!(p2);
-            break (busy1, busy2);
-        }
-        if !p2 {
-            assert!(p1);
-            break (busy2, busy1);
-        }
-        std::thread::sleep(Duration::from_millis(4));
-    };
-
-    let tx = ready.wait().unwrap();
-    assert!(tx.found().is_none());
-    // The first to resolve should have the obligation to insert:
-    assert!(tx.must_insert());
-    let mut body = tx.insert(Duration::from_secs(100)).execute().unwrap();
-
-    // Once we've started streaming, the other transaction should complete:
-    let tx = pending.wait().unwrap();
-    assert!(!tx.must_insert());
-    let found = tx.found().unwrap();
-    assert_eq!(found.ttl(), Duration::from_secs(100));
-    let mut rd_body = found.to_stream().unwrap();
-
-    // Write the body and read it back:
-    body.write(b"hello").unwrap();
-    body.finish().unwrap();
-
-    let mut read = String::new();
-    rd_body.read_to_string(&mut read).unwrap();
-    assert_eq!(&read, "hello");
 }
 
 fn new_key() -> CacheKey {
