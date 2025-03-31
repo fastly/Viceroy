@@ -369,7 +369,7 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
         kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store-invalid_1.json", format = "json" }
     "#;
     match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_16_FASTLY_TOML) {
-        Err(e) => assert_eq!("invalid configuration for 'store_one': Item value under key named 'first' is of the wrong format. One of 'data' and 'file' must be present.", &e.to_string()),
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Item value under key named 'first' is of the wrong format. One of 'data' or 'file' must be present.", &e.to_string()),
         _ => panic!(),
     }
 

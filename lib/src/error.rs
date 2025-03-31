@@ -700,7 +700,7 @@ pub enum ObjectStoreConfigError {
     FileValueWrongFormat { key: String },
     #[error("Item value under key named '{key}' is of the wrong format. 'data' and 'file' are mutually exclusive.")]
     BothDataAndFilePresent { key: String },
-    #[error("Item value under key named '{key}' is of the wrong format. One of 'data' and 'file' must be present.")]
+    #[error("Item value under key named '{key}' is of the wrong format. One of 'data' or 'file' must be present.")]
     MissingDataOrFile { key: String },
 }
 
