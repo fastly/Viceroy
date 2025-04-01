@@ -1,6 +1,7 @@
 (use "typenames.witx")
 (use "cache.witx")
 (use "config-store.witx")
+(use "http-cache.witx")
 
 (module $fastly_abi
     (@interface func (export "init")
@@ -172,6 +173,12 @@
         (result $err (expected $num_bytes (error $fastly_status)))
     )
 
+    (@interface func (export "downstream_server_ip_addr")
+        ;; must be a 16-byte array
+        (param $addr_octets_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
     (@interface func (export "downstream_client_h2_fingerprint")
         (param $h2fp_out (@witx pointer (@witx char8)))
         (param $h2fp_max_len (@witx usize))
@@ -191,6 +198,10 @@
         (param $ohfp_max_len (@witx usize))
         (param $nwritten_out (@witx pointer (@witx usize)))
         (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_ddos_detected")
+        (result $err (expected $ddos_detected (error $fastly_status)))
     )
 
     (@interface func (export "downstream_tls_cipher_openssl_name")
@@ -236,7 +247,14 @@
          (param $ja4_max_len (@witx usize))
          (param $nwritten_out (@witx pointer (@witx usize)))
          (result $err (expected (error $fastly_status)))
-     )
+    )
+
+    (@interface func (export "downstream_compliance_region")
+         (param $region_out (@witx pointer (@witx char8)))
+         (param $region_max_len (@witx usize))
+         (param $nwritten_out (@witx pointer (@witx usize)))
+         (result $err (expected (error $fastly_status)))
+    )
 
     (@interface func (export "new")
         (result $err (expected $request_handle (error $fastly_status)))
@@ -383,10 +401,51 @@
                 (error $fastly_status)))
     )
 
+    ;; Like `send_v2`, but does NOT provide caching of any form, and does not set `X-Cache` or
+    ;; similar.
+    ;;
+    ;; This hostcall is intended to ultimately replace `send_v2` as HTTP caching becomes managed
+    ;; explicitly at the SDK level.
+    ;;
+    ;; Any cache override setting on the request is ignored.
+    ;;
+    ;; Making this a distinct hostcall, rather than a cache override variant, may make it easier
+    ;; to tell when support for old styles of send can be safely dropped.
+    (@interface func (export "send_v3")
+        (param $h $request_handle)
+        (param $b $body_handle)
+        (param $backend string)
+        (param $error_detail (@witx pointer $send_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
+    )
+
     (@interface func (export "send_async")
         (param $h $request_handle)
         (param $b $body_handle)
         (param $backend string)
+        (result $err (expected $pending_request_handle
+                (error $fastly_status)))
+    )
+
+    ;; Like `send_async`, but does NOT provide caching of any form, and does not set `X-Cache` or
+    ;; similar.
+    ;;
+    ;; Also encompasses `send_async_streaming` by including a streaming flag.
+    ;;
+    ;; This hostcall is intended to ultimately replace `send_async{_streaming}` as HTTP
+    ;; caching becomes managed explicitly at the SDK level.
+    ;;
+    ;; Any cache override setting on the request is ignored.
+    ;;
+    ;; Making this a distinct hostcall, rather than a cache override variant, may make it easier
+    ;; to tell when support for old styles of send can be safely dropped.
+    (@interface func (export "send_async_v2")
+        (param $h $request_handle)
+        (param $b $body_handle)
+        (param $backend string)
+        (param $streaming u32)
         (result $err (expected $pending_request_handle
                 (error $fastly_status)))
     )
@@ -510,6 +569,26 @@
         (param $backend_configuration (@witx pointer $dynamic_backend_config))
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Hostcall for Fastly Compute guests to inspect request HTTP traffic
+    ;;; using the NGWAF lookaside service.
+    (@interface func (export "inspect")
+        (param $req $request_handle)
+        (param $body $body_handle)
+        (param $insp_info_mask $inspect_info_mask)
+        (param $insp_info (@witx pointer $inspect_info))
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
+    ;;; Instead of having this request cache in this service's space, use the
+    ;;; cache of the named service
+    (@interface func (export "on_behalf_of")
+        (param $req $request_handle)
+        (param $service string)
+        (result $err (expected (error $fastly_status)))
+    )
 )
 
 (module $fastly_http_resp
@@ -625,6 +704,24 @@
         (param $mode $http_keepalive_mode)
         (result $err (expected (error $fastly_status)))
     )
+
+    ;;; Hostcall for getting the destination IP used for this request.
+    ;;;
+    ;;; The buffer for the IP address must be 16 bytes. This will return
+    ;;; the number of bytes written to the buffer: 4 for IPv4 addresses,
+    ;;; and 16 for IPv6.
+    (@interface func (export "get_addr_dest_ip")
+        (param $h $response_handle)
+        ;; must be a 16-byte array
+        (param $addr_octets_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
+    ;;; Hostcall for getting the destination port used for this request.
+    (@interface func (export "get_addr_dest_port")
+        (param $h $response_handle)
+        (result $err (expected $port (error $fastly_status)))
+    )
 )
 
 (module $fastly_dictionary
@@ -638,7 +735,8 @@
         (param $key string)
         (param $value (@witx pointer (@witx char8)))
         (param $value_max_len (@witx usize))
-        (result $err (expected $num_bytes (error $fastly_status)))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
     )
 )
 
@@ -717,6 +815,7 @@
     )
 )
 
+;; NOTE: These are deprecated, use the fastly_kv_store hostcalls
 (module $fastly_object_store
     (@interface func (export "open")
         (param $name string)
@@ -742,7 +841,7 @@
         (param $body_handle_out (@witx pointer $body_handle))
         (result $err (expected (error $fastly_status)))
     )
-    
+
     (@interface func (export "insert")
         (param $store $object_store_handle)
         (param $key string)
@@ -772,6 +871,92 @@
 
     (@interface func (export "pending_delete_wait")
         (param $pending_handle $pending_kv_delete_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_kv_store
+    (@interface func (export "open")
+        (param $name string)
+        (result $err (expected $kv_store_handle (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup")
+        (param $store $kv_store_handle)
+        (param $key string)
+        (param $lookup_config_mask $kv_lookup_config_options)
+        (param $lookup_configuration (@witx pointer $kv_lookup_config))
+        (param $handle_out (@witx pointer $kv_store_lookup_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;; deprecated, generation always returns 0
+    ;; via a failed u32::parse of a u64
+    (@interface func (export "lookup_wait")
+        (param $handle $kv_store_lookup_handle)
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $metadata_buf (@witx pointer (@witx char8)))
+        (param $metadata_buf_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (param $generation_out (@witx pointer u32))
+        (param $kv_error_out (@witx pointer $kv_error))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup_wait_v2")
+        (param $handle $kv_store_lookup_handle)
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $metadata_buf (@witx pointer (@witx char8)))
+        (param $metadata_buf_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (param $generation_out (@witx pointer u64))
+        (param $kv_error_out (@witx pointer $kv_error))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "insert")
+        (param $store $kv_store_handle)
+        (param $key string)
+        (param $body_handle $body_handle)
+        (param $insert_config_mask $kv_insert_config_options)
+        (param $insert_configuration (@witx pointer $kv_insert_config))
+        (param $handle_out (@witx pointer $kv_store_insert_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "insert_wait")
+        (param $handle $kv_store_insert_handle)
+        (param $kv_error_out (@witx pointer $kv_error))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "delete")
+        (param $store $kv_store_handle)
+        (param $key string)
+        (param $delete_config_mask $kv_delete_config_options)
+        (param $delete_configuration (@witx pointer $kv_delete_config))
+        (param $handle_out (@witx pointer $kv_store_delete_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "delete_wait")
+        (param $handle $kv_store_delete_handle)
+        (param $kv_error_out (@witx pointer $kv_error))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "list")
+        (param $store $kv_store_handle)
+        (param $list_config_mask $kv_list_config_options)
+        (param $list_configuration (@witx pointer $kv_list_config))
+        (param $handle_out (@witx pointer $kv_store_list_handle))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "list_wait")
+        (param $handle $kv_store_list_handle)
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $kv_error_out (@witx pointer $kv_error))
         (result $err (expected (error $fastly_status)))
     )
 )
@@ -876,6 +1061,49 @@
                 (error $fastly_status)))
     )
 
+    ;; Get the idle timeout for HTTP keepalive connections to the backend.
+    (@interface func (export "get_http_keepalive_time")
+        (param $backend string)
+        (result $err (expected
+                $timeout_ms
+                (error $fastly_status)))
+    )
+
+    ;; Get whether TCP keepalives have been enabled on the backend.
+    (@interface func (export "get_tcp_keepalive_enable")
+        (param $backend string)
+        (result $err (expected
+                $is_keepalive
+                (error $fastly_status)))
+    )
+
+    ;; Get how long to wait between sending each TCP keepalive probe to the
+    ;; backend.
+    (@interface func (export "get_tcp_keepalive_interval")
+        (param $backend string)
+        (result $err (expected
+                $timeout_secs
+                (error $fastly_status)))
+    )
+
+    ;; Get how long to wait after sending the last data before starting to send
+    ;; TCP keepalives to the backend.
+    (@interface func (export "get_tcp_keepalive_probes")
+        (param $backend string)
+        (result $err (expected
+                $probe_count
+                (error $fastly_status)))
+    )
+
+    ;; Get how long to wait after sending the last data before starting to send
+    ;; TCP keepalives to the backend.
+    (@interface func (export "get_tcp_keepalive_time")
+        (param $backend string)
+        (result $err (expected
+                $timeout_secs
+                (error $fastly_status)))
+    )
+
     ;; Returns 1 if the backend is configured to use SSL.
     (@interface func (export "is_ssl")
         (param $backend string)
@@ -931,5 +1159,41 @@
         (param $options_mask $purge_options_mask)
         (param $options (@witx pointer $purge_options))
         (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_compute_runtime
+    (@interface func (export "get_vcpu_ms")
+        (result $err (expected $vcpu_ms (error $fastly_status)))
+    )
+)
+
+(module $fastly_acl
+    (@interface func (export "open")
+        (param $name string)
+        (result $err (expected $acl_handle (error $fastly_status)))
+    )
+
+    (@interface func (export "lookup")
+        (param $acl $acl_handle)
+        (param $ip_octets (@witx const_pointer (@witx char8)))
+        (param $ip_len (@witx usize))
+        (param $body_handle_out (@witx pointer $body_handle))
+        (param $acl_error_out (@witx pointer $acl_error))
+        (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_image_optimizer
+    (@interface func (export "transform_image_optimizer_request")
+        (param $origin_image_request $request_handle)
+        (param $origin_image_request_body $body_handle)
+        (param $origin_image_request_backend string)
+        (param $io_transform_config_mask $image_optimizer_transform_config_options)
+        (param $io_transform_configuration (@witx pointer $image_optimizer_transform_config))
+        (param $io_error_detail (@witx pointer $image_optimizer_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
     )
 )

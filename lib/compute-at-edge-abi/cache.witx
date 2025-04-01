@@ -1,13 +1,21 @@
 ;;; The outcome of a cache lookup (either bare or as part of a cache transaction)
 (typename $cache_handle (handle))
+;;; Handle that can be used to check whether or not a cache lookup is waiting on another client.
+(typename $cache_busy_handle (handle))
+;;; Handle for an in-progress Replace operation
+(typename $cache_replace_handle (handle))
+
 (typename $cache_object_length u64)
 (typename $cache_duration_ns u64)
 (typename $cache_hit_count u64)
+(typename $cache_replace_strategy u32)
 
 ;;; Extensible options for cache lookup operations; currently used for both `lookup` and `transaction_lookup`.
 (typename $cache_lookup_options
     (record
         (field $request_headers $request_handle) ;; a full request handle, but used only for its headers
+        (field $service_id (@witx pointer (@witx char8)))
+        (field $service_id_len u32)
     )
 )
 
@@ -15,6 +23,26 @@
     (flags (@witx repr u32)
         $reserved
         $request_headers
+        $service_id
+    )
+)
+
+;;; Extensible options for cache replace operations
+(typename $cache_replace_options
+    (record
+        (field $request_headers $request_handle) ;; a full request handle, but used only for its headers
+        (field $replace_strategy $cache_replace_strategy)
+        (field $service_id (@witx pointer (@witx char8)))
+        (field $service_id_len u32)
+    )
+)
+
+(typename $cache_replace_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $request_headers
+        $replace_strategy
+        $service_id
     )
 )
 
@@ -42,6 +70,9 @@
         (field $length $cache_object_length)
         (field $user_metadata_ptr (@witx pointer u8))
         (field $user_metadata_len (@witx usize))
+        (field $edge_max_age_ns $cache_duration_ns)
+        (field $service_id (@witx pointer (@witx char8)))
+        (field $service_id_len u32)
     )
 )
 
@@ -56,6 +87,8 @@
         $length
         $user_metadata
         $sensitive_data
+        $edge_max_age_ns
+        $service_id
     )
 )
 
@@ -106,6 +139,93 @@
         (result $err (expected $body_handle (error $fastly_status)))
     )
 
+    ;;; The entrypoint to the replace API.
+    ;;;
+    ;;; This operation always participates in request collapsing and may return stale objects.
+    (@interface func (export "replace")
+        (param $cache_key (list u8))
+        (param $options_mask $cache_replace_options_mask)
+        (param $options (@witx pointer $cache_replace_options))
+        (result $err (expected $cache_replace_handle (error $fastly_status)))
+    )
+
+    ;;; Replace an object in the cache with the given metadata
+    ;;;
+    ;;; The returned handle is to a streaming body that is used for writing the object into
+    ;;; the cache.
+    (@interface func (export "replace_insert")
+        (param $handle $cache_replace_handle)
+        (param $options_mask $cache_write_options_mask)
+        (param $options (@witx pointer $cache_write_options))
+        (result $err (expected $body_handle (error $fastly_status)))
+    )
+
+    ;;; Gets the age of the existing object during replace, returning the
+    ;;; `$none` error if there was no object.
+    (@interface func (export "replace_get_age_ns")
+        (param $handle $cache_replace_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Gets a range of the existing object body, returning the `$none` error if there
+    ;;; was no existing object.
+    ;;;
+    ;;; The returned `body_handle` must be closed before calling this function
+    ;;; again on the same `cache_replace_handle`.
+    (@interface func (export "replace_get_body")
+        (param $handle $cache_replace_handle)
+        (param $options_mask $cache_get_body_options_mask)
+        (param $options $cache_get_body_options)
+        (result $err (expected $body_handle (error $fastly_status)))
+    )
+
+    ;;; Gets the number of cache hits for the existing object during replace,
+    ;;; returning the `$none` error if there was no object.
+    (@interface func (export "replace_get_hits")
+        (param $handle $cache_replace_handle)
+        (result $err (expected $cache_hit_count (error $fastly_status)))
+    )
+
+    ;;; Gets the content length of the existing object during replace,
+    ;;; returning the `$none` error if there was no object, or no content
+    ;;; length was provided.
+    (@interface func (export "replace_get_length")
+        (param $handle $cache_replace_handle)
+        (result $err (expected $cache_object_length (error $fastly_status)))
+    )
+
+    ;;; Gets the configured max age of the existing object during replace,
+    ;;; returning the `$none` error if there was no object.
+    (@interface func (export "replace_get_max_age_ns")
+        (param $handle $cache_replace_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Gets the configured stale-while-revalidate period of the existing
+    ;;; object during replace, returning the `$none` error if there was no
+    ;;; object.
+    (@interface func (export "replace_get_stale_while_revalidate_ns")
+        (param $handle $cache_replace_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Gets the lookup state of the existing object during replace, returning
+    ;;; the `$none` error if there was no object.
+    (@interface func (export "replace_get_state")
+        (param $handle $cache_replace_handle)
+        (result $err (expected $cache_lookup_state (error $fastly_status)))
+    )
+
+    ;;; Gets the user metadata of the existing object during replace, returning
+    ;;; the `$none` error if there was no object.
+    (@interface func (export "replace_get_user_metadata")
+        (param $handle $cache_replace_handle)
+        (param $user_metadata_out_ptr (@witx pointer u8))
+        (param $user_metadata_out_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
     ;;; The entrypoint to the request-collapsing cache transaction API.
     ;;;
     ;;; This operation always participates in request collapsing and may return stale objects. To bypass
@@ -114,6 +234,24 @@
         (param $cache_key (list u8))
         (param $options_mask $cache_lookup_options_mask)
         (param $options (@witx pointer $cache_lookup_options))
+        (result $err (expected $cache_handle (error $fastly_status)))
+    )
+
+    ;;; The entrypoint to the request-collapsing cache transaction API, returning instead of waiting on busy.
+    ;;;
+    ;;; This operation always participates in request collapsing and may return stale objects. To bypass
+    ;;; request collapsing, use `lookup` and `insert` instead.
+    (@interface func (export "transaction_lookup_async")
+        (param $cache_key (list u8))
+        (param $options_mask $cache_lookup_options_mask)
+        (param $options (@witx pointer $cache_lookup_options))
+        (result $err (expected $cache_busy_handle (error $fastly_status)))
+    )
+
+    ;;; Continues the lookup transaction from which the given busy handle was returned,
+    ;;; waiting for the leader transaction if request collapsed, and returns a cache handle.
+    (@interface func (export "cache_busy_handle_wait")
+        (param $busy_handle $cache_busy_handle)
         (result $err (expected $cache_handle (error $fastly_status)))
     )
 
@@ -166,6 +304,12 @@
         (param $handle $cache_handle)
         (result $err (expected (error $fastly_status))))
 
+    ;;; Close an interaction with the cache that has not yet finished request collapsing.
+    (@interface func (export "close_busy")
+        (param $handle $cache_busy_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
     ;;; Close an ongoing interaction with the cache.
     ;;;
     ;;; If the cache handle state includes the `$must_insert_or_update` (and hence no insert or
@@ -196,10 +340,6 @@
     ;;;
     ;;; The returned `body_handle` must be closed before calling this function again on the same
     ;;; `cache_handle`.
-    ;;;
-    ;;; Note: until the CacheD protocol is adjusted to fully support this functionality,
-    ;;; the body of objects that are past the stale-while-revalidate period will not
-    ;;; be available, even when other metadata is.
     (@interface func (export "get_body")
         (param $handle $cache_handle)
         (param $options_mask $cache_get_body_options_mask)

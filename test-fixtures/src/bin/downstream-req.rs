@@ -24,4 +24,16 @@ fn main() {
 
     let localhost: IpAddr = "127.0.0.1".parse().unwrap();
     assert_eq!(client_req.get_client_ip_addr().unwrap(), localhost);
+
+    let localhost: IpAddr = "127.0.0.1".parse().unwrap();
+    assert_eq!(client_req.get_server_ip_addr().unwrap(), localhost);
+
+    assert_eq!(client_req.get_tls_cipher_openssl_name(), None);
+    assert_eq!(client_req.get_tls_cipher_openssl_name_bytes(), None);
+    assert_eq!(client_req.get_tls_client_hello(), None);
+    assert_eq!(client_req.get_tls_protocol(), None);
+    assert_eq!(client_req.get_tls_protocol_bytes(), None);
+    // NOTE: This currently fails, waiting on a patch to land in the fastly crate
+    // assert_eq!(client_req.get_tls_raw_client_certificate(), None);
+    assert_eq!(client_req.get_tls_raw_client_certificate_bytes(), None);
 }

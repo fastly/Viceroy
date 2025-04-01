@@ -5,7 +5,7 @@ use {
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
-const RUST_FIXTURE_PATH: &str = "../../../test-fixtures/target/wasm32-wasi/debug/";
+const RUST_FIXTURE_PATH: &str = "../../../test-fixtures/target/wasm32-wasip1/debug/";
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -13,8 +13,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 /// Handy alias for the return type of async Tokio tests
 pub type TestResult = Result<(), Error>;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn fatal_error_traps() -> TestResult {
+async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
     let module_path = format!("{RUST_FIXTURE_PATH}/response.wasm");
     let ctx = ExecuteCtx::new(
         module_path,
@@ -22,10 +21,13 @@ async fn fatal_error_traps() -> TestResult {
         HashSet::new(),
         None,
         viceroy_lib::config::UnknownImportBehavior::LinkError,
+        adapt_core_wasm,
     )?;
     let req = Request::get("http://127.0.0.1:7676/").body(Body::from(""))?;
+    let local = "127.0.0.1:80".parse().unwrap();
+    let remote = "127.0.0.1:0".parse().unwrap();
     let resp = ctx
-        .handle_request_with_runtime_error(req, "127.0.0.1".parse().unwrap())
+        .handle_request_with_runtime_error(req, local, remote)
         .await?;
 
     // The Guest was terminated and so should return a 500.
@@ -42,4 +44,14 @@ async fn fatal_error_traps() -> TestResult {
     );
 
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fatal_error_traps() -> TestResult {
+    fatal_error_traps_impl(false).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fatal_error_traps_component() -> TestResult {
+    fatal_error_traps_impl(true).await
 }

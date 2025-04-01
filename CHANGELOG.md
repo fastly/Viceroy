@@ -1,5 +1,101 @@
 ## Unreleased
 
+## 0.12.3 (2025-03-28)
+
+- Add `downstream_client_ddos_detected` hostcall stub ([#460](https://github.com/fastly/Viceroy/pull/460))
+- Add support for metadata in local_server.kv_stores ([#459](https://github.com/fastly/Viceroy/pull/459))
+- Add support for the Image Optimizer hostcalls ([#458](https://github.com/fastly/Viceroy/pull/458))
+- Guest Profile sample period configuration support ([#456](https://github.com/fastly/Viceroy/pull/456))
+- Fix cache key type in component interface ([#453](https://github.com/fastly/Viceroy/pull/453))
+- Remove ubuntu-20.04 from CI ([#451](https://github.com/fastly/Viceroy/pull/451))
+- Allow environment variable tests to pass based on validity, rather than their value ([#450](https://github.com/fastly/Viceroy/pull/450))
+- Add `FASTLY_IS_STAGING` environment variable ([#449](https://github.com/fastly/Viceroy/pull/449))
+- Update KV Store key naming restrictions ([#447](https://github.com/fastly/Viceroy/pull/447))
+- Fixes to CI ([#448](https://github.com/fastly/Viceroy/pull/448))
+- Update to 0.11.1 of the Fastly Rust SDK ([#445](https://github.com/fastly/Viceroy/pull/445))
+- Update CI to remove tests for macOS 12 and add tests for macOS 15 ([#436](https://github.com/fastly/Viceroy/pull/436))
+
+## 0.12.2 (2024-12-02)
+
+- Add support for the `on_behalf_of` hostcalls ([#440](https://github.com/fastly/Viceroy/pull/440))
+- Add new `lookup_wait_v2` to fix generation parsing bug ([#439](https://github.com/fastly/Viceroy/pull/439))
+- Add `fastly_acl` hostcalls ([#438](https://github.com/fastly/Viceroy/pull/438))
+
+## 0.12.1 (2024-10-04)
+
+- Stub new HTTP cache hostcalls ([#433](https://github.com/fastly/Viceroy/pull/433))
+- Add support for reading secrets from a JSON file ([#428](https://github.com/fastly/Viceroy/pull/428))
+- Added hostcalls for the new builder api hostcalls ([#427](https://github.com/fastly/Viceroy/pull/427))
+
+## 0.12.0 (2024-09-03)
+
+- Add ReplaceHandle hostcall stubs for upcoming SDK release ([#424](https://github.com/fastly/Viceroy/pull/424))
+- Add keepalive options for dynamic backends ([#423](https://github.com/fastly/Viceroy/pull/423))
+- Fix bug in `inspect` implementation and add a test ([#422](https://github.com/fastly/Viceroy/pull/422))
+- Add the missing adapter calls for new cache operations ([#419](https://github.com/fastly/Viceroy/pull/419))
+- Implement component traits on ComponentCtx ([#421](https://github.com/fastly/Viceroy/pull/421))
+- Split info spans when logging request IDs ([#420](https://github.com/fastly/Viceroy/pull/420))
+- Rename the kv-store interface to object-store in compute.wit ([#415](https://github.com/fastly/Viceroy/pull/415))
+
+## 0.11.0 (2024-08-20)
+
+- Add support for JSON files in `local_server.kv_stores` ([#365](https://github.com/fastly/Viceroy/pull/365))
+- Add `get_vcpu_ms` hostcall ([#412](https://github.com/fastly/Viceroy/pull/412))
+- Add `inspect` hostcall ([#417](https://github.com/fastly/Viceroy/pull/417))
+- Add `downstream_compliance_region` hostcall ([#403](https://github.com/fastly/Viceroy/pull/403))
+- Emit the status code for responses, in addition to other stats ([#416](https://github.com/fastly/Viceroy/pull/416))
+- Update `compute.wit` and the adapter for some api fixes ([#414](https://github.com/fastly/Viceroy/pull/414))
+- Use `mozilla-actions/sccache-action` for caching builds ([#411](https://github.com/fastly/Viceroy/pull/411))
+
+## 0.10.2 (2024-07-22)
+
+- Add support for supplying client certificates in fastly.toml, through the use of the
+  `client_cert_info` table, which must have one of a "certificate" or "certificate_file"
+  key, as well as one of a "key" and "key_file" key. The "_file" variants can be used to
+  point to certificate/key files on disk, whereas the non-"_file" variants should be
+  multi-line string constants in the toml. In all cases, they should be in PEM format.
+- Restore compatibility with older glibc versions in release artifacts
+
+## 0.10.1 (2024-07-11)
+
+- Revert a CI configuration change that inadvertently prevented builds being created for amd64 macOS endpoints ([#405](https://github.com/fastly/Viceroy/pull/405))
+
+## 0.10.0 (2024-07-09)
+
+- Add `get_addr_dest_{ip,port}` hostcalls ([#402](https://github.com/fastly/Viceroy/pull/402))
+- Add `downstream_server_ip_addr` hostcall ([#401](https://github.com/fastly/Viceroy/pull/401))
+- Support `wat` files when adapting core wasm ([#399](https://github.com/fastly/Viceroy/pull/399))
+- Add support for environment variables in the adapter ([#400](https://github.com/fastly/Viceroy/pull/400))
+- Run tests as components ([#396](https://github.com/fastly/Viceroy/pull/396))
+- Remove some unused memory management code in the adapter ([#398](https://github.com/fastly/Viceroy/pull/398))
+- Allow capturing logging endpoint messages ([#397](https://github.com/fastly/Viceroy/pull/397))
+- Support cli args in the adapter ([#394](https://github.com/fastly/Viceroy/pull/394))
+- Rework component testing support to make test updates easier ([#395](https://github.com/fastly/Viceroy/pull/395))
+- Populate the guest cli args ([#393](https://github.com/fastly/Viceroy/pull/393))
+- Update to wasmtime 22.0.0 ([#392](https://github.com/fastly/Viceroy/pull/392))
+- Populate `nwritten_out` when errors occur in config-store::get or dictionary::get ([#389](https://github.com/fastly/Viceroy/pull/389))
+- Switch to using the on-demand allocator, instead of the pooling allocator ([#391](https://github.com/fastly/Viceroy/pull/391))
+- Explicitly test the dictionary host calls in the dictionary fixture ([#390](https://github.com/fastly/Viceroy/pull/390))
+- Enable the config-store-lookup tests ([#387](https://github.com/fastly/Viceroy/pull/387))
+- Run the `request` tests as a component ([#386](https://github.com/fastly/Viceroy/pull/386))
+- Update Ubuntu and MacOS runners to latest (and non-EOL) versions ([#388](https://github.com/fastly/Viceroy/pull/388))
+- Fix trap handling when running components ([#382](https://github.com/fastly/Viceroy/pull/382))
+- fix(wiggle_abi): write the result's length, not the guest buffer's ([#385](https://github.com/fastly/Viceroy/pull/385))
+- Add adaptive buffer support for geo + device detection lookups ([#383](https://github.com/fastly/Viceroy/pull/383))
+- Fix buffer-len handling in the component adapter ([#381](https://github.com/fastly/Viceroy/pull/381))
+- Switch to reading dictionaries during the `fastly_dictionary_open` call ([#379](https://github.com/fastly/Viceroy/pull/379))
+- Support adapting core wasm to components ([#374](https://github.com/fastly/Viceroy/pull/374))
+
+## 0.9.7 (2024-05-24)
+
+- Update to wasmtime-21.0.0 ([#369](https://github.com/fastly/Viceroy/pull/369))
+- Initial WebAssembly component support ([#367](https://github.com/fastly/Viceroy/pull/367))
+- Add stubs for new busy-handle hostcalls ([#373](https://github.com/fastly/Viceroy/pull/373))
+
+## 0.9.6 (2024-04-08)
+
+- Return a ValueAbsent for all the downstream-tls related functions instead of a NotAvailable ([#315](https://github.com/fastly/Viceroy/pull/315))
+
 ## 0.9.5 (2024-03-15)
 
 - Bug fix: Honor CA certificates when they are supplied, either as part of a dynamic backend

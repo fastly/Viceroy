@@ -22,7 +22,7 @@ use {
     },
     crate::{error::Error, session::Session},
     tracing::{event, Level},
-    wiggle::{GuestErrorType, GuestPtr},
+    wiggle::{GuestErrorType, GuestMemory, GuestPtr},
 };
 
 pub const ABI_VERSION: u64 = 1;
@@ -36,21 +36,23 @@ pub const ABI_VERSION: u64 = 1;
 // TODO ACF 2020-06-29: this lets us avoid ABI breakage for the moment, but the next time we need
 // to break the ABI, we should revisit whether we want to keep this behavior.
 macro_rules! multi_value_result {
-    ( $expr:expr, $ending_cursor_out:expr ) => {{
+    ( $memory:ident, $expr:expr, $ending_cursor_out:expr ) => {{
         let res = $expr;
         let ec = res.as_ref().unwrap_or(&(-1));
         // the previous implementation would only write these if they were null
         if $ending_cursor_out.offset() != 0 {
-            $ending_cursor_out.write(*ec)?;
+            $memory.write($ending_cursor_out, *ec)?;
         }
         let _ = res?;
         Ok(())
     }};
 }
 
+mod acl;
 mod backend_impl;
 mod body_impl;
 mod cache;
+mod compute_runtime;
 mod config_store;
 mod device_detection_impl;
 mod dictionary_impl;
@@ -59,6 +61,9 @@ mod erl_impl;
 mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
+mod http_cache;
+mod image_optimizer;
+mod kv_store_impl;
 mod log_impl;
 mod obj_store_impl;
 mod req_impl;
@@ -73,15 +78,89 @@ wiggle::from_witx!({
     witx: ["$CARGO_MANIFEST_DIR/compute-at-edge-abi/compute-at-edge.witx"],
     errors: { fastly_status => Error },
     async: {
+        fastly_acl::lookup,
         fastly_async_io::{select},
-        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait},
+        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
+        fastly_kv_store::{lookup, lookup_wait, lookup_wait_v2, insert, insert_wait, delete, delete_wait, list, list_wait},
         fastly_http_body::{append, read, write},
+        fastly_http_cache::{lookup, transaction_lookup, insert, transaction_insert, transaction_insert_and_stream_back, transaction_update, transaction_update_and_return_fresh, transaction_record_not_cacheable, transaction_abandon, found, close, get_suggested_backend_request, get_suggested_cache_options, prepare_response_for_storage, get_found_response, get_state, get_length, get_max_age_ns, get_stale_while_revalidate_ns, get_age_ns, get_hits, get_sensitive_data, get_surrogate_keys, get_vary_rule},
         fastly_http_req::{
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
-            pending_req_wait, pending_req_wait_v2, send, send_v2, send_async, send_async_streaming
+            pending_req_wait, pending_req_wait_v2, send, send_v2, send_v3, send_async, send_async_v2, send_async_streaming
         },
+        fastly_image_optimizer::transform_image_optimizer_request,
     }
 });
+
+impl From<types::ObjectStoreHandle> for types::KvStoreHandle {
+    fn from(h: types::ObjectStoreHandle) -> types::KvStoreHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreHandle> for types::ObjectStoreHandle {
+    fn from(h: types::KvStoreHandle) -> types::ObjectStoreHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreLookupHandle> for types::PendingKvLookupHandle {
+    fn from(h: types::KvStoreLookupHandle) -> types::PendingKvLookupHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvLookupHandle> for types::KvStoreLookupHandle {
+    fn from(h: types::PendingKvLookupHandle) -> types::KvStoreLookupHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreInsertHandle> for types::PendingKvInsertHandle {
+    fn from(h: types::KvStoreInsertHandle) -> types::PendingKvInsertHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvInsertHandle> for types::KvStoreInsertHandle {
+    fn from(h: types::PendingKvInsertHandle) -> types::KvStoreInsertHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreDeleteHandle> for types::PendingKvDeleteHandle {
+    fn from(h: types::KvStoreDeleteHandle) -> types::PendingKvDeleteHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvDeleteHandle> for types::KvStoreDeleteHandle {
+    fn from(h: types::PendingKvDeleteHandle) -> types::KvStoreDeleteHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreListHandle> for types::PendingKvListHandle {
+    fn from(h: types::KvStoreListHandle) -> types::PendingKvListHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvListHandle> for types::KvStoreListHandle {
+    fn from(h: types::PendingKvListHandle) -> types::KvStoreListHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
 
 impl From<types::HttpVersion> for http::version::Version {
     fn from(v: types::HttpVersion) -> http::version::Version {
@@ -112,7 +191,7 @@ impl TryFrom<http::version::Version> for types::HttpVersion {
 }
 
 impl FastlyAbi for Session {
-    fn init(&mut self, abi_version: u64) -> Result<(), Error> {
+    fn init(&mut self, _memory: &mut GuestMemory<'_>, abi_version: u64) -> Result<(), Error> {
         if abi_version != ABI_VERSION {
             Err(Error::AbiVersionMismatch)
         } else {
@@ -181,10 +260,11 @@ impl GuestErrorType for FastlyStatus {
 pub(crate) trait MultiValueWriter {
     fn write_values(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         terminator: u8,
-        memory: &GuestPtr<[u8]>,
+        buf: GuestPtr<[u8]>,
         cursor: types::MultiValueCursor,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<types::MultiValueCursorResult, Error>;
 }
 
@@ -196,12 +276,13 @@ where
     #[allow(clippy::useless_conversion)] // numeric conversations that may vary by platform
     fn write_values(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         terminator: u8,
-        memory: &GuestPtr<[u8]>,
+        buf: GuestPtr<[u8]>,
         cursor: types::MultiValueCursor,
-        nwritten_out: &GuestPtr<u32>,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<types::MultiValueCursorResult, Error> {
-        let mut buf = memory.as_slice_mut()?.ok_or(Error::SharedMemory)?;
+        let buf = memory.as_slice_mut(buf)?.ok_or(Error::SharedMemory)?;
 
         // Note: the prior implementation multi_value_writer would first
         // terminate the buffer, write -1 to the ending cursor, and zero the nwritten
@@ -224,7 +305,7 @@ where
                         // If there's not enough room to write even a single value, that's an error.
                         // Write out the number of bytes necessary to fit this header value, or zero
                         // on overflow to signal an error condition.
-                        nwritten_out.write(value_len_with_term.try_into().unwrap_or(0))?;
+                        memory.write(nwritten_out, value_len_with_term.try_into().unwrap_or(0))?;
                         return Err(Error::BufferLengthError {
                             buf: "buf",
                             len: "buf.len()",
@@ -263,7 +344,7 @@ where
             types::MultiValueCursorResult::from(cursor as i64)
         };
 
-        nwritten_out.write(buf_offset.try_into().unwrap_or(0))?;
+        memory.write(nwritten_out, buf_offset.try_into().unwrap_or(0))?;
 
         Ok(ending_cursor)
     }

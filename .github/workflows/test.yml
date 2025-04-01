@@ -9,29 +9,31 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-20.04, windows-2022, macos-11]
+        platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
     runs-on: ${{ matrix.platform }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
       with:
         submodules: true
     - name: Install Rust
-      run: rustup update --no-self-update stable && rustup default stable
+      run: rustup update --no-self-update 1.83 && rustup default 1.83
       shell: bash
-    - name: Add wasm32-wasi Rust target
-      run: rustup target add wasm32-wasi
+    - name: Add wasm32-wasip1 Rust target
+      run: rustup target add wasm32-wasip1
+    - name: Add wasm32-unknown-unknown Rust target
+      run: rustup target add wasm32-unknown-unknown
     - name: Cache cargo
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-          test-fixtures/target/
-        key: ${{ runner.os }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/registry
+        key: ${{ matrix.platform }}-cargo-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.5
     - name: Install rustfmt
       run: rustup component add rustfmt
       shell: bash
@@ -41,6 +43,8 @@ jobs:
     - name: test
       run: make ci
       shell: bash
+    - name: adapter
+      run: cargo build --release -p viceroy-component-adapter --target wasm32-unknown-unknown
 
   # Run the trap test in an isolated job. It needs different cargo features than the usual build, so
   # it entails rebuilding the whole workspace if we combine them in a single job. This way, we
@@ -48,42 +52,44 @@ jobs:
   trap-test:
     strategy:
       matrix:
-        platform: [ubuntu-20.04, windows-2022, macos-11]
+        platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
     runs-on: ${{ matrix.platform }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
       with:
         submodules: true
     - name: Install Rust
-      run: rustup update --no-self-update stable && rustup default stable
+      run: rustup update --no-self-update 1.83 && rustup default 1.83
       shell: bash
-    - name: Add wasm32-wasi Rust target
-      run: rustup target add wasm32-wasi
+    - name: Add wasm32-wasip1 Rust target
+      run: rustup target add wasm32-wasip1
+    - name: Add wasm32-unknown-unknown Rust target
+      run: rustup target add wasm32-unknown-unknown
     - name: Cache cargo
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          cli/tests/trap-test/target/
-          test-fixtures/target/
-        key: ${{ runner.os }}-cargo-trap-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/registry
+        key: ${{ matrix.platform }}-cargo-trap-v${{ env.CACHE_GENERATION }}-${{ steps.toolchain.outputs.rustc_hash }}-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.5
     - name: trap-test
       run: make trap-test-ci
       shell: bash
 
   package-check:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
           submodules: true
       - name: Install Rust
-        run: rustup update stable && rustup default stable
+        run: rustup update 1.83 && rustup default 1.83
         shell: bash
       - name: Check crates can be published
         run: make package-check

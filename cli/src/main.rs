@@ -13,10 +13,10 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
-use wasi_common::I32Exit;
+use viceroy_lib::GuestProfileConfig;
+use wasmtime_wasi::I32Exit;
 
 mod opts;
 
@@ -40,11 +40,15 @@ use {
 /// Create a new server, bind it to an address, and serve responses until an error occurs.
 pub async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     // Load the wasm module into an execution context
-    let ctx =
-        create_execution_context(serve_args.shared(), true, serve_args.profile_guest()).await?;
+    let ctx = create_execution_context(
+        serve_args.shared(),
+        true,
+        serve_args.shared().guest_profile_config(),
+    )
+    .await?;
 
-    if let Some(guest_profile_path) = serve_args.profile_guest() {
-        std::fs::create_dir_all(guest_profile_path)?;
+    if let Some(guest_profile_config) = serve_args.shared().guest_profile_config() {
+        std::fs::create_dir_all(guest_profile_config.path)?;
     }
 
     let addr = serve_args.addr();
@@ -93,13 +97,80 @@ pub async fn main() -> ExitCode {
                 Err(_) => ExitCode::FAILURE,
             }
         }
+        Commands::Adapt(adapt_args) => {
+            install_tracing_subscriber(adapt_args.verbosity());
+            let input = adapt_args.input();
+            let output = adapt_args.output();
+            let bytes = match std::fs::read(&input) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to read module from: {}",
+                        input.display()
+                    );
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            if viceroy_lib::adapt::is_component(&bytes) {
+                event!(
+                    Level::ERROR,
+                    "File is already a component: {}",
+                    input.display()
+                );
+                return ExitCode::FAILURE;
+            }
+
+            let is_wat = input.extension().map(|str| str == "wat").unwrap_or(false);
+
+            let module = if is_wat {
+                let text = match String::from_utf8(bytes) {
+                    Ok(module) => module,
+                    Err(e) => {
+                        event!(Level::ERROR, "Failed to parse wat: {e}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+
+                match viceroy_lib::adapt::adapt_wat(&text) {
+                    Ok(module) => module,
+                    Err(e) => {
+                        event!(Level::ERROR, "Failed to adapt wat: {e}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            } else {
+                match viceroy_lib::adapt::adapt_bytes(&bytes) {
+                    Ok(module) => module,
+                    Err(e) => {
+                        event!(Level::ERROR, "Failed to adapt module: {e}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            };
+
+            event!(Level::INFO, "Writing component to: {}", output.display());
+            match std::fs::write(output, module) {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    event!(Level::ERROR, "Failed to write component: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
     }
 }
 
 /// Execute a Wasm program in the Viceroy environment.
 pub async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(run_args.shared(), false, run_args.profile_guest()).await?;
+    let ctx = create_execution_context(
+        run_args.shared(),
+        false,
+        run_args.shared().guest_profile_config(),
+    )
+    .await?;
     let input = run_args.shared().input();
     let program_name = match input.file_stem() {
         Some(stem) => stem.to_string_lossy(),
@@ -234,21 +305,23 @@ impl<'a> MakeWriter<'a> for StdWriter {
 async fn create_execution_context(
     args: &SharedArgs,
     check_backends: bool,
-    guest_profile_path: Option<PathBuf>,
+    guest_profile_config: Option<GuestProfileConfig>,
 ) -> Result<ExecuteCtx, anyhow::Error> {
     let input = args.input();
     let mut ctx = ExecuteCtx::new(
         input,
         args.profiling_strategy(),
         args.wasi_modules(),
-        guest_profile_path,
+        guest_profile_config,
         args.unknown_import_behavior(),
+        args.adapt(),
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout());
 
     if let Some(config_path) = args.config_path() {
         let config = FastlyConfig::from_file(config_path)?;
+        let acls = config.acls();
         let backends = config.backends();
         let device_detection = config.device_detection();
         let geolocation = config.geolocation();
@@ -258,6 +331,7 @@ async fn create_execution_context(
         let backend_names = itertools::join(backends.keys(), ", ");
 
         ctx = ctx
+            .with_acls(acls.clone())
             .with_backends(backends.clone())
             .with_device_detection(device_detection.clone())
             .with_geolocation(geolocation.clone())

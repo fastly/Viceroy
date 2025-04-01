@@ -2,17 +2,21 @@
 
 use futures::stream::StreamExt;
 use hyper::{service, Body as HyperBody, Request, Response, Server, Uri};
-use std::net::Ipv4Addr;
 use std::{
-    collections::HashSet, convert::Infallible, future::Future, net::SocketAddr, path::PathBuf,
-    sync::Arc,
+    collections::HashSet,
+    convert::Infallible,
+    future::Future,
+    io::Write,
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
     body::Body,
     config::{
-        DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
+        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
     },
     ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
@@ -20,6 +24,29 @@ use viceroy_lib::{
 pub use self::backends::TestBackends;
 
 mod backends;
+
+#[macro_export]
+macro_rules! viceroy_test {
+    ($name:ident, |$is_component:ident| $body:block) => {
+        mod $name {
+            use super::*;
+
+            async fn test_impl($is_component: bool) -> TestResult {
+                $body
+            }
+
+            #[tokio::test(flavor = "multi_thread")]
+            async fn core_wasm() -> TestResult {
+                test_impl(false).await
+            }
+
+            #[tokio::test(flavor = "multi_thread")]
+            async fn component() -> TestResult {
+                test_impl(true).await
+            }
+        }
+    };
+}
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
 ///
@@ -29,7 +56,7 @@ mod backends;
 /// ```
 /// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
 /// ```
-pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasi/debug/";
+pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasip1/debug/";
 
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///
@@ -50,16 +77,19 @@ pub type TestResult = Result<(), Error>;
 /// A builder for running individual requests through a wasm fixture.
 pub struct Test {
     module_path: PathBuf,
+    acls: Acls,
     backends: TestBackends,
     device_detection: DeviceDetection,
     dictionaries: Dictionaries,
     geolocation: Geolocation,
     object_stores: ObjectStores,
     secret_stores: SecretStores,
+    capture_logs: Arc<Mutex<dyn Write + Send>>,
     log_stdout: bool,
     log_stderr: bool,
     via_hyper: bool,
     unknown_import_behavior: UnknownImportBehavior,
+    adapt_component: bool,
 }
 
 impl Test {
@@ -70,16 +100,19 @@ impl Test {
 
         Self {
             module_path,
+            acls: Acls::new(),
             backends: TestBackends::new(),
             device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
+            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
+            adapt_component: false,
         }
     }
 
@@ -90,16 +123,19 @@ impl Test {
 
         Self {
             module_path,
+            acls: Acls::new(),
             backends: TestBackends::new(),
             device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
+            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
+            adapt_component: false,
         }
     }
 
@@ -107,6 +143,7 @@ impl Test {
     pub fn using_fastly_toml(self, fastly_toml: &str) -> Result<Self, Error> {
         let config = fastly_toml.parse::<FastlyConfig>()?;
         Ok(Self {
+            acls: config.acls().to_owned(),
             backends: TestBackends::from_backend_configs(config.backends()),
             device_detection: config.device_detection().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
@@ -209,6 +246,11 @@ impl Test {
         self
     }
 
+    pub fn capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
+        self.capture_logs = capture_logs;
+        self
+    }
+
     /// Treat stderr as a logging endpoint for this test.
     pub fn log_stderr(self) -> Self {
         Self {
@@ -232,6 +274,12 @@ impl Test {
             via_hyper: true,
             ..self
         }
+    }
+
+    /// Automatically adapt the wasm to a component before running.
+    pub fn adapt_component(mut self, adapt: bool) -> Self {
+        self.adapt_component = adapt;
+        self
     }
 
     /// Pass the given requests through this test, returning the associated responses.
@@ -282,13 +330,16 @@ impl Test {
             HashSet::new(),
             None,
             self.unknown_import_behavior,
+            self.adapt_component,
         )?
+        .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())
         .with_device_detection(self.device_detection.clone())
         .with_geolocation(self.geolocation.clone())
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())
+        .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
         .with_log_stdout(self.log_stdout);
 
@@ -352,9 +403,11 @@ impl Test {
                     .build()
                     .unwrap();
                 *req.uri_mut() = new_uri;
+                let local = (Ipv4Addr::LOCALHOST, 80).into();
+                let remote = (Ipv4Addr::LOCALHOST, 0).into();
                 let resp = ctx
                     .clone()
-                    .handle_request(req.map(Into::into), Ipv4Addr::LOCALHOST.into())
+                    .handle_request(req.map(Into::into), local, remote)
                     .await
                     .map(|result| {
                         match result {
