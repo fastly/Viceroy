@@ -1,6 +1,8 @@
 {
     "first": "This is some data",
-    "second": "More data",
+    "second": {
+        "file": "../test-fixtures/data/kv-store.txt"
+    },
     "third": {
         "data": "third",
         "metadata": "some metadata"
