@@ -10,7 +10,7 @@ use tokio::sync::watch;
 
 use http::HeaderMap;
 
-use crate::{body::Body, collecting_body::CollectingBody, Error};
+use crate::{body::Body, collecting_body::CollectingBody};
 
 use super::{variance::Variant, WriteOptions};
 

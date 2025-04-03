@@ -3,10 +3,7 @@ use std::{sync::Arc, time::Duration};
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::{
-    body::Body,
-    wiggle_abi::types::{CacheOverrideTag, FastlyStatus},
-};
+use crate::{body::Body, wiggle_abi::types::CacheOverrideTag};
 use fastly_shared::FastlyStatus;
 use http::{HeaderMap, HeaderValue};
 
@@ -111,6 +108,15 @@ pub struct CacheEntry {
 }
 
 impl CacheEntry {
+    /// Return a stub entry to hold in CacheBusy.
+    pub fn stub(&self) -> CacheEntry {
+        Self {
+            key: self.key.clone(),
+            found: None,
+            go_get: None,
+        }
+    }
+
     /// Returns the key used to generate this CacheEntry.
     pub fn key(&self) -> &CacheKey {
         &self.key
