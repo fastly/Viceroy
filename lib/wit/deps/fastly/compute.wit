@@ -326,6 +326,8 @@ interface http-req {
 
   downstream-client-oh-fingerprint: func(max-len: u64) -> result<list<u8>, error>;
 
+  downstream-client-ddos-detected: func() -> result<u32, error>;
+
   downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<string, error>;
 
   downstream-tls-protocol: func(max-len: u64) -> result<string, error>;
@@ -1377,6 +1379,45 @@ interface shielding {
   ) -> result<list<u8>, error>;
 }
 
+/*
+ * Fastly Image Optimizer
+ */
+interface image-optimizer {
+
+  use http-types.{body-handle, request-handle, response};
+  use types.{error};
+
+  flags image-optimizer-transform-config-options {
+    reserved,
+    sdk-claims-opts,
+  }
+
+  record image-optimizer-transform-config {
+    sdk-claims-opts: list<u8>,
+  }
+
+  enum image-optimizer-error-tag {
+    uninitialized,
+    ok,
+    error,
+    warning,
+  }
+
+  record image-optimizer-error-detail {
+    tag: image-optimizer-error-tag,
+    message: list<u8>,
+  }
+
+  transform-image-optimizer-request: func(
+    origin-image-request: request-handle,
+    origin-image-request-body: body-handle,
+    origin-image-request-backend: list<u8>,
+    io-transform-config-mask: image-optimizer-transform-config-options,
+    io-transform-config: image-optimizer-transform-config,
+    io-error-detail: image-optimizer-error-detail,
+  ) -> result<response, error>;
+}
+
 interface reactor {
   use http-types.{request-handle, body-handle};
 
@@ -1419,6 +1460,7 @@ world compute {
     import http-body;
     import http-req;
     import http-resp;
+    import image-optimizer;
     import log;
     import kv-store;
     import object-store;

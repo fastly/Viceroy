@@ -12,7 +12,7 @@ viceroy_test!(kv_store, |is_component| {
         language = "rust"
         [local_server]
         kv_stores.empty_store = []
-        kv_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/kv-store.txt"}]
+        kv_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/kv-store.txt"},{key = "third", data = "third", metadata = "some metadata"}]
     "#;
 
     let resp = Test::using_fixture("kv_store.wasm")
@@ -42,7 +42,7 @@ viceroy_test!(object_stores_backward_compat, |is_component| {
         language = "rust"
         [local_server]
         object_stores.empty_store = []
-        object_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", path = "../test-fixtures/data/kv-store.txt"}]
+        object_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", path = "../test-fixtures/data/kv-store.txt"},{key = "third", data = "third", metadata = "some metadata"}]
     "#;
 
     let resp = Test::using_fixture("kv_store.wasm")
@@ -102,7 +102,7 @@ viceroy_test!(object_store_backward_compat, |is_component| {
         language = "rust"
         [local_server]
         object_store.empty_store = []
-        object_store.store_one = [{key = "first", data = "This is some data"},{key = "second", path = "../test-fixtures/data/kv-store.txt"}]
+        object_store.store_one = [{key = "first", data = "This is some data"},{key = "second", path = "../test-fixtures/data/kv-store.txt"},{key = "third", data = "third", metadata = "some metadata"}]
     "#;
 
     let resp = Test::using_fixture("kv_store.wasm")
@@ -336,6 +336,55 @@ viceroy_test!(kv_store_bad_configs, |is_component| {
     "#;
     match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_14_FASTLY_TOML) {
         Err(e) => assert_eq!("invalid configuration for 'store_one': The file is of the wrong format. The file is expected to contain a single JSON Object.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    const BAD_15_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
+        language = "rust"
+        [local_server]
+        kv_stores.store_one = [{key = "first", data = "This is some data", metadata = 5}]
+    "#;
+    match Test::using_fixture("kv_store.wasm")
+        .adapt_component(is_component)
+        .using_fastly_toml(BAD_15_FASTLY_TOML)
+    {
+        Err(e) => assert_eq!(
+            "invalid configuration for 'store_one': The `metadata` value for the object `first` is not a string.",
+            &e.to_string()
+        ),
+        _ => panic!(),
+    }
+
+    // Invalid format JSON - entry must have data or file (or path)
+    const BAD_16_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store-invalid_1.json", format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_16_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Item value under key named 'first' is of the wrong format. One of 'data' or 'file' must be present.", &e.to_string()),
+        _ => panic!(),
+    }
+
+    // Invalid format JSON - entry cannot have both data and file
+    const BAD_17_FASTLY_TOML: &str = r#"
+        name = "kv-store-test"
+        description = "kv store test"
+        authors = ["Gustav Wengel <gustav@climatiq.io>"]
+        language = "rust"
+        [local_server]
+        kv_stores.empty_store = []
+        kv_stores.store_one = { file = "../test-fixtures/data/json-kv_store-invalid_2.json", format = "json" }
+    "#;
+    match Test::using_fixture("kv_store.wasm").using_fastly_toml(BAD_17_FASTLY_TOML) {
+        Err(e) => assert_eq!("invalid configuration for 'store_one': Item value under key named 'first' is of the wrong format. 'data' and 'file' are mutually exclusive.", &e.to_string()),
         _ => panic!(),
     }
 

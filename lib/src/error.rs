@@ -677,6 +677,8 @@ pub enum ObjectStoreConfigError {
     NoFileOrData(String),
     #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
+    #[error("The `metadata` value for the object `{0}` is not a string.")]
+    MetadataNotAString(String),
     #[error("The `file` value for the object `{0}` is not a string.")]
     FileNotAString(String),
     #[error("The `key` key for an object is not set. It must be used.")]
@@ -703,6 +705,10 @@ pub enum ObjectStoreConfigError {
     FileWrongFormat,
     #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String.")]
     FileValueWrongFormat { key: String },
+    #[error("Item value under key named '{key}' is of the wrong format. 'data' and 'file' are mutually exclusive.")]
+    BothDataAndFilePresent { key: String },
+    #[error("Item value under key named '{key}' is of the wrong format. One of 'data' or 'file' must be present.")]
+    MissingDataOrFile { key: String },
 }
 
 /// Errors that may occur while validating secret store configurations.

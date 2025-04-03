@@ -27,6 +27,16 @@ fn main() {
             .into_string(),
         "More data"
     );
+    // Test that we can get metadata using the `metadata` config key
+    assert_eq!(
+        store_one.lookup("third").unwrap().metadata().unwrap(),
+        "some metadata"
+    );
+    // Test that we cannot get metadata if it's not set
+    assert_eq!(
+        store_one.lookup("first").unwrap().metadata(),
+        None
+    );
 
     let empty_store = KVStore::open("empty_store").unwrap().unwrap();
     // Check that the value "bar" is not in the store

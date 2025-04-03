@@ -182,6 +182,13 @@ impl FastlyHttpReq for Session {
         Err(Error::NotAvailable("Client original header fingerprint"))
     }
 
+    fn downstream_client_ddos_detected(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+    ) -> Result<u32, Error> {
+        Ok(0)
+    }
+
     fn downstream_tls_cipher_openssl_name(
         &mut self,
         _memory: &mut GuestMemory<'_>,

@@ -201,6 +201,10 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    (@interface func (export "downstream_client_ddos_detected")
+        (result $err (expected $ddos_detected (error $fastly_status)))
+    )
+
     (@interface func (export "downstream_tls_cipher_openssl_name")
         (param $cipher_out (@witx pointer (@witx char8)))
         (param $cipher_max_len (@witx usize))
@@ -1178,5 +1182,19 @@
         (param $body_handle_out (@witx pointer $body_handle))
         (param $acl_error_out (@witx pointer $acl_error))
         (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_image_optimizer
+    (@interface func (export "transform_image_optimizer_request")
+        (param $origin_image_request $request_handle)
+        (param $origin_image_request_body $body_handle)
+        (param $origin_image_request_backend string)
+        (param $io_transform_config_mask $image_optimizer_transform_config_options)
+        (param $io_transform_configuration (@witx pointer $image_optimizer_transform_config))
+        (param $io_error_detail (@witx pointer $image_optimizer_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
     )
 )

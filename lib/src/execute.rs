@@ -47,7 +47,7 @@ use {
     wasmtime_wasi::I32Exit,
 };
 
-pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
@@ -61,6 +61,16 @@ impl Instance {
             Instance::Component(_) => panic!("unwrap_module called on a component"),
         }
     }
+}
+
+#[derive(Clone)]
+pub struct GuestProfileConfig {
+    /// Path to write profiling results from the guest. In serve mode,
+    /// this must refer to a directory, while in run mode it names
+    /// a file.
+    pub path: PathBuf,
+    /// Period at which the guest should be profiled.
+    pub sample_period: Duration,
 }
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
@@ -105,10 +115,8 @@ pub struct ExecuteCtx {
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
-    /// Path to write profiling results from the guest. In serve mode,
-    /// this must refer to a directory, while in run mode it names
-    /// a file.
-    guest_profile_path: Arc<Option<PathBuf>>,
+    /// Configuration for guest profiling if enabled
+    guest_profile_config: Option<Arc<GuestProfileConfig>>,
 }
 
 impl ExecuteCtx {
@@ -117,7 +125,7 @@ impl ExecuteCtx {
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
-        guest_profile_path: Option<PathBuf>,
+        guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
     ) -> Result<Self, Error> {
@@ -199,14 +207,21 @@ impl ExecuteCtx {
             Instance::Module(module, instance_pre)
         };
 
-        // Create the epoch-increment thread.
+        // Create the epoch-increment thread. Note that the period for epoch
+        // interruptions is driven by the guest profiling sample period if
+        // provided as guest stack sampling is done from the epoch
+        // interruption callback.
 
         let epoch_increment_stop = Arc::new(AtomicBool::new(false));
         let engine_clone = engine.clone();
         let epoch_increment_stop_clone = epoch_increment_stop.clone();
+        let sample_period = guest_profile_config
+            .as_ref()
+            .map(|c| c.sample_period)
+            .unwrap_or(DEFAULT_EPOCH_INTERRUPTION_PERIOD);
         let epoch_increment_thread = Some(Arc::new(thread::spawn(move || {
             while !epoch_increment_stop_clone.load(Ordering::Relaxed) {
-                thread::sleep(EPOCH_INTERRUPTION_PERIOD);
+                thread::sleep(sample_period);
                 engine_clone.increment_epoch();
             }
         })));
@@ -230,7 +245,7 @@ impl ExecuteCtx {
             shielding_sites: Arc::new(ShieldingSites::new()),
             epoch_increment_thread,
             epoch_increment_stop,
-            guest_profile_path: Arc::new(guest_profile_path),
+            guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
         })
     }
 
@@ -497,17 +512,17 @@ impl ExecuteCtx {
             self.shielding_sites.clone(),
         );
 
-        let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
+        let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
             let now = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            path.join(format!("{}-{}.json", now, req_id))
+            pcfg.path.join(format!("{}-{}.json", now, req_id))
         });
 
         match self.instance_pre.as_ref() {
             Instance::Component(instance_pre) => {
-                if self.guest_profile_path.is_some() {
+                if self.guest_profile_config.is_some() {
                     warn!("Components do not currently support the guest profiler");
                 }
 
@@ -560,11 +575,11 @@ impl ExecuteCtx {
             }
 
             Instance::Module(module, instance_pre) => {
-                let profiler = self.guest_profile_path.is_some().then(|| {
+                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
                     let program_name = "main";
                     GuestProfiler::new(
                         program_name,
-                        EPOCH_INTERRUPTION_PERIOD,
+                        pcfg.sample_period,
                         vec![(program_name.to_string(), module.clone())],
                     )
                 });
@@ -663,13 +678,14 @@ impl ExecuteCtx {
 
         let (module, instance_pre) = self.instance_pre.unwrap_module();
 
-        let profiler = self.guest_profile_path.is_some().then(|| {
+        let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
             GuestProfiler::new(
                 program_name,
-                EPOCH_INTERRUPTION_PERIOD,
+                pcfg.sample_period,
                 vec![(program_name.to_string(), module.clone())],
             )
         });
+
         let mut store = create_store(&self, session, profiler, |builder| {
             builder.arg(program_name);
             for arg in args {
@@ -694,7 +710,10 @@ impl ExecuteCtx {
             CpuTimeTracking::new(active_cpu_time_us, main_func.call_async(&mut store, ())).await;
 
         // If we collected a profile, write it to the file
-        write_profile(&mut store, self.guest_profile_path.as_ref().as_ref());
+        write_profile(
+            &mut store,
+            self.guest_profile_config.as_deref().map(|cfg| &cfg.path),
+        );
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
