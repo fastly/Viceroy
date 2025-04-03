@@ -1,0 +1,31 @@
+(typename $shield_backend_options
+  (flags (@witx repr u32)
+    $reserved
+    $use_cache_key
+  ))
+
+(typename $shield_backend_config
+  (record
+    (field $cache_key (@witx pointer (@witx char8)))
+    (field $cache_key_len u32)
+    ))
+
+(module $fastly_shielding
+
+  (@interface func (export "shield_info")
+    (param $name string)
+    (param $info_block (@witx pointer (@witx char8)))
+    (param $info_block_max_len (@witx usize))
+    (result $err (expected $num_bytes (error $fastly_status)))
+  )
+
+  (@interface func (export "backend_for_shield")
+    (param $shield_name string)
+    (param $backend_config_mask $shield_backend_options)
+    (param $backend_configuration (@witx pointer $shield_backend_config))
+    (param $backend_name_out (@witx pointer (@witx char8)))
+    (param $backend_name_max_len (@witx usize))
+    (result $err (expected $num_bytes (error $fastly_status)))
+  )
+
+)

@@ -2,6 +2,7 @@
 (use "cache.witx")
 (use "config-store.witx")
 (use "http-cache.witx")
+(use "shielding.witx")
 
 (module $fastly_abi
     (@interface func (export "init")
