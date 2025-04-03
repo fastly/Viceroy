@@ -33,6 +33,8 @@ fn main() {
     assert_eq!(client_req.get_tls_client_hello(), None);
     assert_eq!(client_req.get_tls_protocol(), None);
     assert_eq!(client_req.get_tls_protocol_bytes(), None);
+    assert_eq!(client_req.get_tls_ja3_md5(), None);
+    assert_eq!(client_req.get_tls_ja4(), None);
     // NOTE: This currently fails, waiting on a patch to land in the fastly crate
     // assert_eq!(client_req.get_tls_raw_client_certificate(), None);
     assert_eq!(client_req.get_tls_raw_client_certificate_bytes(), None);

@@ -174,7 +174,7 @@ impl http_req::Host for ComponentCtx {
     }
 
     async fn downstream_tls_ja3_md5(&mut self) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS JA3 hash").into())
+        Err(Error::ValueAbsent.into())
     }
 
     async fn new(&mut self) -> Result<http_types::RequestHandle, types::Error> {
@@ -847,7 +847,7 @@ impl http_req::Host for ComponentCtx {
     }
 
     async fn downstream_tls_ja4(&mut self, _max_len: u64) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS JA4 hash").into())
+        Err(Error::ValueAbsent.into())
     }
 
     async fn downstream_compliance_region(
