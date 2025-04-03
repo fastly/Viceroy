@@ -304,7 +304,7 @@ impl FastlyHttpReq for Session {
         ja4_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS JA4 hash"))
+        Err(Error::ValueAbsent)
     }
 
     fn downstream_compliance_region(
