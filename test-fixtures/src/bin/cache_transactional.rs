@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 fn main() {
     test_racing_transactions();
-    test_implicit_cancel();
+    test_implicit_cancel_of_fetch();
+    test_implicit_cancel_of_pending();
     test_explicit_cancel();
 }
 
@@ -62,18 +63,33 @@ fn test_racing_transactions() {
     assert_eq!(&read, "hello");
 }
 
-fn test_implicit_cancel() {
+fn test_implicit_cancel_of_fetch() {
     let key = new_key();
 
     let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
     let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
-    let (tx, pending) = ready_and_pending(busy1, busy2);
+    let (t1, pending) = ready_and_pending(busy1, busy2);
 
     // Cancel via dropping:
-    assert!(tx.must_insert_or_update());
-    std::mem::drop(tx);
-    //let t2 = pending.wait().unwrap();
-    //assert!(!t2.found().is_some());
+    assert!(t1.must_insert_or_update());
+    std::mem::drop(t1);
+    let t2 = pending.wait().unwrap();
+    assert!(t2.found().is_none());
+    assert!(t2.must_insert_or_update());
+}
+
+fn test_implicit_cancel_of_pending() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let (t1, pending) = ready_and_pending(busy1, busy2);
+
+    // Cancel the blocked request via dropping.
+    // Fun fact, this was a bug in compute platform that we fixed when writing the Viceroy
+    // implementation!
+    std::mem::drop(pending);
+    assert!(t1.must_insert_or_update());
 }
 
 fn test_explicit_cancel() {
