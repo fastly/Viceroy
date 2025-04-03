@@ -57,7 +57,7 @@ viceroy_test!(shielding_running_on, |is_component| {
 });
 
 viceroy_test!(shield_backends, |is_component| {
-    let blank_addr = SocketAddr::from(([0, 0, 0, 0], 0));
+    let blank_addr = SocketAddr::from(([127, 0, 0, 1], 0));
 
     let make_service_unenc = make_service_fn(|_conn| async {
         Ok::<_, Infallible>(service_fn(|_: Request<Body>| async {
