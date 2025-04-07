@@ -23,6 +23,7 @@ pub mod session;
 
 mod acl;
 mod async_io;
+mod collecting_body;
 pub mod component;
 mod downstream;
 mod execute;

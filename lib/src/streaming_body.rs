@@ -1,3 +1,6 @@
+//! Provides `StreamingBody`, an asynchronously-written body.
+//! See `Body` for a body that is asynchronously read.
+
 use crate::{body::Chunk, error::Error};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use tokio::sync::mpsc;
