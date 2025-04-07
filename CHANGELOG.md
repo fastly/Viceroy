@@ -1,4 +1,6 @@
-## Unreleased
+## 0.12.4 (2025-04-07)
+
+- Add support for `file` entries in KV Stores defined using "file"/"format" ([#463](https://github.com/fastly/Viceroy/pull/463))
 
 ## 0.12.3 (2025-03-28)
 
