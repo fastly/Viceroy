@@ -12,8 +12,6 @@ mod store;
 use store::{CacheData, CacheKeyObjects};
 
 /// Primary cache key: an up-to-4KiB buffer.
-///
-// TODO: cceckman: use an inline-vec to make this cheaper to pass around
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub struct CacheKey(
