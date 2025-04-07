@@ -56,3 +56,19 @@ bitflags = { version = "2.5.0", default-features = false }
 object = { version = "0.33", default-features = false, features = ["archive"] }
 wasi = { version = "0.11.0", default-features = false }
 wit-bindgen-rust-macro = { version = "0.32.0", default-features = false }
+
+[profile.release.package.viceroy-component-adapter]
+opt-level = 's'
+strip = 'debuginfo'
+
+[profile.dev.package.viceroy-component-adapter]
+# Make dev look like a release build since this adapter module won't work with
+# a debug build that uses data segments and such.
+incremental = false
+opt-level = 's'
+# Omit assertions, which include failure messages which require string
+# initializers.
+debug-assertions = false
+# Omit integer overflow checks, which include failure messages which require
+# string initializers.
+overflow-checks = false
