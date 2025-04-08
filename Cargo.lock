@@ -2589,7 +2589,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "viceroy"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "anyhow",
  "base64",
@@ -2629,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "viceroy-lib"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3450,9 +3450,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.7.4"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
+checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
 dependencies = [
  "memchr",
 ]
