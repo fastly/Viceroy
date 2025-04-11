@@ -8,6 +8,7 @@ use uuid::Uuid;
 fn main() {
     test_non_concurrent();
     test_concurrent();
+    test_single_body();
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -76,6 +77,39 @@ fn test_concurrent() {
     assert_eq!(cached, b"world");
 
     assert!(body.next().is_none());
+}
+
+fn test_single_body() {
+    let key = new_key();
+
+    let body = "hello world".as_bytes();
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(10))
+            .known_length(body.len() as u64)
+            .execute()
+            .unwrap();
+        writer.write_all(body).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let f1 = lookup(key.clone())
+        .execute()
+        .unwrap()
+        .expect("could not perform first fetch");
+    let f2 = lookup(key.clone())
+        .execute()
+        .unwrap()
+        .expect("could not perform second fetch");
+
+    // We should be able to get two bodies from two different lookups:
+    let b1 = f1.to_stream().unwrap();
+    let b2 = f2.to_stream().unwrap();
+    // But a second body from the same lookup should cause an error, while the first is
+    // outstanding:
+    assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
+    std::mem::drop(b1);
+    // Now the prior read from that lookup can proceed:
+    let _ = f1.to_stream().unwrap();
 }
 
 fn new_key() -> CacheKey {
