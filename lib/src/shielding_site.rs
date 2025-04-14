@@ -3,6 +3,11 @@ use std::collections::HashMap;
 use toml::Value;
 use url::Url;
 
+/// This structure tracks all the possible shielding targets we might
+/// use during execution.
+///
+/// This map will be provided in its entirety from fastly.toml, and will
+/// also help us know what POP we're running on.
 #[derive(Clone, Debug)]
 pub struct ShieldingSites {
     sites: HashMap<String, ShieldingSite>,
@@ -91,6 +96,20 @@ impl TryFrom<toml::value::Map<String, Value>> for ShieldingSites {
     }
 }
 
+/// Information about a particular shielding site; specifically, if it's the
+/// "local" site that we're pretending to run on, or a remote site.
+///
+/// Remote sites can include different URLs for encrypted and unencrypted
+/// traffic. This mirrors the Fastly presentation of shields, in which users
+/// can choose to send their traffic encrypted or not (we generally recommend
+/// that people do send it encrypted).
+///
+/// Note, however, that we just take these locations as URLs, and don't
+/// actually check if the encrypted URL is HTTPS and the unencrypted one
+/// is HTTP. The whole point of this is just to provide avenues for testing,
+/// so it doesn't really matter, and it can be useful to abuse this flexibility
+/// when testing to avoid having to deal with certificates and such. (We do,
+/// actually; our tests check both URLs, but actually they're both HTTP.)
 #[derive(Clone, Debug)]
 enum ShieldingSite {
     Local,
