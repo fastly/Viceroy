@@ -14,8 +14,9 @@ impl fastly_shielding::FastlyShielding for Session {
         out_buffer_max_len: u32,
     ) -> Result<u32, Error> {
         // Validate the input name and then return the unsupported error.
-        let name_bytes = memory.to_vec(name.as_bytes())?;
-        let name = String::from_utf8(name_bytes).map_err(|_| Error::InvalidArgument)?;
+        let Some(name) = memory.as_str(name)?.map(str::to_string) else {
+            return Err(Error::ValueAbsent);
+        };
 
         let running_on = self.shielding_sites.is_local(&name);
         let unencrypted = self
