@@ -320,7 +320,7 @@ impl ExecuteCtx {
         self.secret_stores = Arc::new(secret_stores);
         self
     }
-    /// Set the secret stores for this execution context.
+    /// Set the shielding sites for this execution context.
     pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
         self.shielding_sites = Arc::new(shielding_sites);
         self
