@@ -174,6 +174,15 @@ impl CollectingBody {
     }
 }
 
+/// A ReadLease
+trait ReadLease {
+    fn done(self);
+}
+
+impl ReadLease for () {
+    fn done(self) {}
+}
+
 /// The state of a CollectingBody, within the pubsub (watch) channel.
 #[derive(Debug)]
 enum CollectingBodyInner {
