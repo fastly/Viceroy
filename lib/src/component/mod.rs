@@ -65,6 +65,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::object_store::add_to_linker(linker, |x| x)?;
     fastly::api::purge::add_to_linker(linker, |x| x)?;
     fastly::api::secret_store::add_to_linker(linker, |x| x)?;
+    fastly::api::shielding::add_to_linker(linker, |x| x)?;
     fastly::api::types::add_to_linker(linker, |x| x)?;
     fastly::api::uap::add_to_linker(linker, |x| x)?;
 
@@ -93,5 +94,6 @@ pub mod log;
 pub mod object_store;
 pub mod purge;
 pub mod secret_store;
+pub mod shielding;
 pub mod types;
 pub mod uap;

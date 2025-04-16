@@ -16,6 +16,7 @@ use {
         object_store::ObjectStores,
         secret_store::SecretStores,
         session::Session,
+        shielding_site::ShieldingSites,
         upstream::TlsConfig,
         Error,
     },
@@ -109,6 +110,8 @@ pub struct ExecuteCtx {
     object_store: ObjectStores,
     /// The secret stores for this execution.
     secret_stores: Arc<SecretStores>,
+    /// The shielding sites for this execution.
+    shielding_sites: Arc<ShieldingSites>,
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
@@ -239,6 +242,7 @@ impl ExecuteCtx {
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
             secret_stores: Arc::new(SecretStores::new()),
+            shielding_sites: Arc::new(ShieldingSites::new()),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
@@ -314,6 +318,11 @@ impl ExecuteCtx {
     /// Set the secret stores for this execution context.
     pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
         self.secret_stores = Arc::new(secret_stores);
+        self
+    }
+    /// Set the shielding sites for this execution context.
+    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
+        self.shielding_sites = Arc::new(shielding_sites);
         self
     }
 
@@ -500,6 +509,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.shielding_sites.clone(),
         );
 
         let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
@@ -659,6 +669,7 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.shielding_sites.clone(),
         );
 
         if let Instance::Component(_) = self.instance_pre.as_ref() {

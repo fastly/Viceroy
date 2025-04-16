@@ -32,6 +32,7 @@ mod linking;
 mod object_store;
 mod secret_store;
 mod service;
+mod shielding_site;
 mod streaming_body;
 mod upstream;
 pub mod wiggle_abi;
