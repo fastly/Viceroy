@@ -144,6 +144,17 @@ impl ComponentCtx {
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
+
+        // instrument hostcalls to have those show up in profiles
+        store.call_hook(|mut store, kind| {
+            if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+                prof.call_hook(&store, kind);
+                store.data_mut().guest_profiler = Some(prof);
+            }
+            Ok(())
+        });
+
+        // sampling profiler
         store.epoch_deadline_callback(|mut store| {
             if let Some(mut prof) = store.data_mut().guest_profiler.take() {
                 prof.sample(&store, std::time::Duration::ZERO);
@@ -151,6 +162,7 @@ impl ComponentCtx {
             }
             Ok(UpdateDeadline::Yield(1))
         });
+
         store.limiter(|ctx| &mut ctx.limiter);
         Ok(store)
     }
@@ -227,6 +239,17 @@ pub(crate) fn create_store(
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.set_epoch_deadline(1);
+
+    // instrument hostcalls to have those show up in profiles
+    store.call_hook(|mut store, kind| {
+        if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+            prof.call_hook(&store, kind);
+            store.data_mut().guest_profiler = Some(prof);
+        }
+        Ok(())
+    });
+
+    // sampling profiler
     store.epoch_deadline_callback(|mut store| {
         if let Some(mut prof) = store.data_mut().guest_profiler.take() {
             prof.sample(&store, std::time::Duration::ZERO);
@@ -234,6 +257,7 @@ pub(crate) fn create_store(
         }
         Ok(UpdateDeadline::Yield(1))
     });
+
     store.limiter(|ctx| &mut ctx.limiter);
     Ok(store)
 }
