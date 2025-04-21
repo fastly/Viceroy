@@ -5,7 +5,6 @@ use proptest_derive::Arbitrary;
 
 use crate::{
     body::Body,
-    session::Session,
     wiggle_abi::types::{BodyHandle, CacheOverrideTag},
     Error,
 };
