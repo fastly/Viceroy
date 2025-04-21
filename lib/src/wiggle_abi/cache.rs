@@ -272,7 +272,11 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly ; options
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives"));
+        }
 
         // We wind up re-borrowing `found` and `self.session` several times here, to avoid
         // borrowing the both of them at once. Ultimately it is possible that inserting a body
