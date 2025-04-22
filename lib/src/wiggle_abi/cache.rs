@@ -225,10 +225,16 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let busy = self
-            .transaction_lookup_async(memory, cache_key, options_mask, options)
-            .await?;
-        self.cache_busy_handle_wait(memory, busy).await
+        let headers = load_lookup_options(self, memory, options_mask, options)?;
+        let key = load_cache_key(memory, cache_key)?;
+        let cache = Arc::clone(self.cache());
+
+        let entry = cache.transaction_lookup(&key, &headers).await;
+
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(entry) })).await;
+        let task = PendingCacheTask::new(task);
+        let handle = self.insert_cache_op(task);
+        Ok(handle.into())
     }
 
     async fn transaction_lookup_async(
@@ -257,8 +263,12 @@ impl FastlyCache for Session {
         handle: types::CacheBusyHandle,
     ) -> Result<types::CacheHandle, Error> {
         let handle = handle.into();
-        let _ = self.cache_entry_mut(handle).await?;
-        Ok(handle)
+        // Swap out for a distinct handle, so we don't hit a repeated `close`+`close_busy`:
+        let entry = self.cache_entry_mut(handle).await?;
+        let mut other_entry = entry.stub();
+        std::mem::swap(entry, &mut other_entry);
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(other_entry) })).await;
+        Ok(self.insert_cache_op(PendingCacheTask::new(task)).into())
     }
 
     async fn transaction_insert(
@@ -325,7 +335,12 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle.into()).await?;
+        if let Some(_) = entry.take_go_get() {
+            Ok(())
+        } else {
+            Err(Error::CacheError(crate::cache::Error::CannotWrite).into())
+        }
     }
 
     async fn close_busy(
@@ -333,10 +348,11 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheBusyHandle,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        // Don't wait for the transaction to complete; drop the future to cancel.
+        let _ = self.take_cache_entry(handle.into())?;
+        Ok(())
     }
 
-    /// Wait for the lookup to be complete, then discard the results.
     async fn close(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,

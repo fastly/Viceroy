@@ -8,6 +8,7 @@ use crate::{
     component::fastly::api::types::Error as ComponentError,
     wiggle_abi::types::{BodyHandle, CacheOverrideTag, FastlyStatus},
 };
+
 use http::{HeaderMap, HeaderValue};
 
 mod store;
@@ -125,6 +126,15 @@ pub struct CacheEntry {
 }
 
 impl CacheEntry {
+    /// Return a stub entry to hold in CacheBusy.
+    pub fn stub(&self) -> CacheEntry {
+        Self {
+            key: self.key.clone(),
+            found: None,
+            go_get: None,
+        }
+    }
+
     /// Returns the key used to generate this CacheEntry.
     pub fn key(&self) -> &CacheKey {
         &self.key

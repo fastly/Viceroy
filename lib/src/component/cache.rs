@@ -301,10 +301,17 @@ impl api::Host for ComponentCtx {
         &mut self,
         handle: api::BusyHandle,
     ) -> Result<api::Handle, types::Error> {
-        let busy_handle: CacheBusyHandle = handle.into();
-        let handle: CacheHandle = busy_handle.into();
-        let _ = self.session.cache_entry_mut(handle).await?;
-        Ok(handle.into())
+        let handle = handle.into();
+        // Swap out for a distinct handle, so we don't hit a repeated `close`+`close_busy`:
+        let entry = self.session.cache_entry_mut(handle).await?;
+        let mut other_entry = entry.stub();
+        std::mem::swap(entry, &mut other_entry);
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(other_entry) })).await;
+        let h: CacheHandle = self
+            .session
+            .insert_cache_op(PendingCacheTask::new(task))
+            .into();
+        Ok(h.into())
     }
 
     async fn transaction_insert(
@@ -377,18 +384,20 @@ impl api::Host for ComponentCtx {
         }
     }
 
-    async fn close_busy(&mut self, _handle: api::BusyHandle) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+    async fn close_busy(&mut self, handle: api::BusyHandle) -> Result<(), types::Error> {
+        // Don't wait for the transaction to complete; drop the future to cancel.
+        let _ = self.session.take_cache_entry(handle.into())?;
+        Ok(())
     }
 
-    async fn close(&mut self, _handle: api::Handle) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+    async fn close(&mut self, handle: api::Handle) -> Result<(), types::Error> {
+        let _ = self
+            .session
+            .take_cache_entry(handle.into())?
+            .task()
+            .recv()
+            .await?;
+        Ok(())
     }
 
     async fn get_state(&mut self, handle: api::Handle) -> Result<api::LookupState, types::Error> {
