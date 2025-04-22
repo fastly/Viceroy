@@ -409,7 +409,8 @@ pub(crate) struct CacheData {
 impl CacheData {
     /// Get a Body to read the cached object with.
     pub(crate) fn get_body(&self) -> Result<Body, crate::Error> {
-        self.body.read()
+        // TODO: cceckman-at-fastly: range options
+        self.body.read(0, None)
     }
 
     /// Access to object's metadata
@@ -457,7 +458,13 @@ mod tests {
                         obligation.complete(WriteOptions::new(Duration::from_secs(100)), body);
                     }
                     if let Some(found) = found {
-                        let body = found.body.read().unwrap().read_into_string().await.unwrap();
+                        let body = found
+                            .body
+                            .read(0, None)
+                            .unwrap()
+                            .read_into_string()
+                            .await
+                            .unwrap();
                         assert_eq!(&body, "hello");
                     }
                 }
