@@ -1097,6 +1097,28 @@ impl Session {
             })
     }
 
+    /// Get immutable access to a cache entry, which may require blocking until the entry is
+    /// available.
+    pub(crate) async fn cache_entry(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<&CacheEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_cache_mut)
+            .map(PendingCacheTask::as_mut)
+            .ok_or(HandleError::InvalidCacheHandle(handle))?
+            .await
+            .as_ref()
+            .map_err(|e| {
+                // TODO: cceckman-at-fastly: Can we pull the error type out of PeekableTask?
+                // I don't think the cache-lookup path can generate errors.
+                tracing::error!("in completion of cache lookup: {e}");
+                HandleError::InvalidCacheHandle(handle)
+            })
+    }
+
     /// Take ownership of a `CacheEntry` given its handle.
     ///
     /// Returns a `HandleError` if the handle is not associated with a cache lookup.

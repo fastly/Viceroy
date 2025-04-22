@@ -3,7 +3,12 @@ use std::sync::Arc;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::{body::Body, wiggle_abi::types::CacheOverrideTag, Error};
+use crate::{
+    body::Body,
+    session::Session,
+    wiggle_abi::types::{BodyHandle, CacheOverrideTag},
+    Error,
+};
 use fastly_shared::FastlyStatus;
 use http::HeaderValue;
 
@@ -80,14 +85,25 @@ impl CacheEntry {
     pub fn found(&self) -> Option<&Found> {
         self.found.as_ref()
     }
+
+    /// Returns the data found in the cache, if any was present.
+    pub fn found_mut(&mut self) -> Option<&mut Found> {
+        self.found.as_mut()
+    }
 }
 
 /// A successful retrieval of an item from the cache.
-///
-// TODO: cceckman-at-fastly 2025-02-26: Streaming
 #[derive(Debug)]
 pub struct Found {
     data: Arc<CacheData>,
+
+    /// The handle for the last body used to read from this Found.
+    ///
+    /// Only one Body may be outstanding from a given Found at a time.
+    /// (This is an implementation restriction within the compute platform).
+    /// We mirror the BodyHandle here when we create it; we can later check whether the handle is
+    /// still valid, to find an outstanding read.
+    pub last_body_handle: Option<BodyHandle>,
 }
 
 impl Found {
@@ -131,7 +147,10 @@ impl Cache {
             .get_with_by_ref(&key, async { Default::default() })
             .await
             .get()
-            .map(|data| Found { data });
+            .map(|data| Found {
+                data,
+                last_body_handle: None,
+            });
         CacheEntry {
             key: key.clone(),
             found,
