@@ -384,7 +384,7 @@ mod tests {
             HeaderName::from_static("~^.^~"),
             HeaderValue::from_static(r#""is a cat *and* a valid header name""#),
         );
-        tx.finish();
+        tx.finish().unwrap();
 
         reader.await.unwrap();
     }
