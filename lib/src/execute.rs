@@ -5,6 +5,7 @@ use {
         acl::Acls,
         adapt,
         body::Body,
+        cache::Cache,
         component as compute,
         config::{
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
@@ -33,8 +34,10 @@ use {
         net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
         pin::Pin,
-        sync::atomic::{AtomicBool, AtomicU64, Ordering},
-        sync::{Arc, Mutex},
+        sync::{
+            atomic::{AtomicBool, AtomicU64, Ordering},
+            Arc, Mutex,
+        },
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
@@ -112,6 +115,8 @@ pub struct ExecuteCtx {
     secret_stores: Arc<SecretStores>,
     /// The shielding sites for this execution.
     shielding_sites: Arc<ShieldingSites>,
+    /// The cache for this service.
+    cache: Arc<Cache>,
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
@@ -246,6 +251,7 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
+            cache: Arc::new(Cache::default()),
         })
     }
 
@@ -510,6 +516,7 @@ impl ExecuteCtx {
             self.object_store.clone(),
             self.secret_stores.clone(),
             self.shielding_sites.clone(),
+            self.cache.clone(),
         );
 
         let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
@@ -670,6 +677,7 @@ impl ExecuteCtx {
             self.object_store.clone(),
             self.secret_stores.clone(),
             self.shielding_sites.clone(),
+            self.cache.clone(),
         );
 
         if let Instance::Component(_) = self.instance_pre.as_ref() {

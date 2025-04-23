@@ -1,40 +1,72 @@
 use {
     super::fastly::api::{cache, http_types, types},
-    crate::{error::Error, linking::ComponentCtx},
+    crate::{
+        body::Body,
+        cache::CacheKey,
+        error::Error,
+        linking::ComponentCtx,
+        session::{PeekableTask, PendingCacheTask},
+    },
+    std::sync::Arc,
 };
+
+// Utility for remapping the errors.
+fn get_key(key: Vec<u8>) -> Result<CacheKey, types::Error> {
+    key.try_into()
+        .map_err(|_| types::Error::BufferLen(CacheKey::MAX_LENGTH as u64))
+}
 
 #[async_trait::async_trait]
 impl cache::Host for ComponentCtx {
     async fn lookup(
         &mut self,
-        _key: Vec<u8>,
+        key: Vec<u8>,
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
         }
-        .into())
+
+        let key: CacheKey = get_key(key)?;
+        let cache = Arc::clone(self.session.cache());
+
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
+        let task = PendingCacheTask::new(task);
+        let handle = self.session.insert_cache_op(task);
+        Ok(handle.into())
     }
 
     async fn insert(
         &mut self,
-        _key: Vec<u8>,
+        key: Vec<u8>,
         _options_mask: cache::WriteOptionsMask,
         _options: cache::WriteOptions,
     ) -> Result<cache::BodyHandle, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
         }
-        .into())
+
+        let key: CacheKey = get_key(key)?;
+        let cache = Arc::clone(self.session.cache());
+
+        let handle = self.session.insert_body(Body::empty());
+        let read_body = self.session.begin_streaming(handle)?;
+        cache.insert(&key, read_body).await;
+        Ok(handle.into())
     }
 
     async fn replace(
         &mut self,
-        _key: Vec<u8>,
+        key: Vec<u8>,
         _options_mask: cache::ReplaceOptionsMask,
         _options: cache::ReplaceOptions,
     ) -> Result<cache::ReplaceHandle, types::Error> {
+        let _key: CacheKey = get_key(key)?;
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -138,22 +170,66 @@ impl cache::Host for ComponentCtx {
 
     async fn get_body(
         &mut self,
-        _handle: cache::Handle,
+        handle: cache::Handle,
         _options_mask: cache::GetBodyOptionsMask,
         _options: cache::GetBodyOptions,
     ) -> Result<http_types::BodyHandle, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        // TODO: cceckman-at-fastly: Handle options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
         }
-        .into())
+
+        // We wind up re-borrowing `found` and `self.session` several times here, to avoid
+        // borrowing the both of them at once. Ultimately it is possible that inserting a body
+        // would change the address of Found, by re-shuffling the AsyncItems table; once again,
+        // borrowck wins the day.
+        //
+        // We have an exclusive borrow &mut self.session for the lifetime of this call,
+        // so even though we're re-borrowing/repeating lookups, we know we won't run into TOCTOU.
+
+        let found = self
+            .session
+            .cache_entry(handle.into())
+            .await?
+            .found()
+            .ok_or_else(|| Error::CacheError("key was not found in cache".to_owned()))?;
+        // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
+        // clean up the copying task.
+        // We have to do this to allow `found`'s lifetime to end before self.session.body, which
+        // has to re-borrow self.self.session.
+        let body = found.body()?;
+
+        if let Some(prev_handle) = found.last_body_handle {
+            // Check if they're still reading the previous handle.
+            if self.session.body(prev_handle).is_ok() {
+                // TODO: cceckman-at-fastly: more precise error types
+                return Err(Error::CacheError(
+                    format!("Found has a read outstanding already (BodyHandle {prev_handle}). Close this handle before reading")
+            ).into());
+            }
+        };
+
+        let body_handle = self.session.insert_body(body);
+        // Finalize by committing the handle as "the last read".
+        // We have to borrow `found` again, this time as mutable.
+        self.session
+            .cache_entry_mut(handle.into())
+            .await?
+            .found_mut()
+            .unwrap()
+            .last_body_handle = Some(body_handle.into());
+
+        Ok(body_handle.into())
     }
 
     async fn transaction_lookup(
         &mut self,
-        _key: Vec<u8>,
+        key: Vec<u8>,
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::Handle, types::Error> {
+        let _key = get_key(key)?;
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -162,10 +238,11 @@ impl cache::Host for ComponentCtx {
 
     async fn transaction_lookup_async(
         &mut self,
-        _key: Vec<u8>,
+        key: Vec<u8>,
         _options_mask: cache::LookupOptionsMask,
         _options: cache::LookupOptions,
     ) -> Result<cache::BusyHandle, types::Error> {
+        let _key = get_key(key)?;
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -241,12 +318,18 @@ impl cache::Host for ComponentCtx {
 
     async fn get_state(
         &mut self,
-        _handle: cache::Handle,
+        handle: cache::Handle,
     ) -> Result<cache::LookupState, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        let entry = self.session.cache_entry_mut(handle.into()).await?;
+
+        let mut state = cache::LookupState::empty();
+        if entry.found().is_some() {
+            state |= cache::LookupState::FOUND;
+            // TODO: cceckman-at-fastly: stale vs. usable, go_get obligation
+            state |= cache::LookupState::USABLE;
         }
-        .into())
+
+        Ok(state.into())
     }
 
     async fn get_user_metadata(
