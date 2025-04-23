@@ -164,8 +164,6 @@ impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
     /// Note: races with other insertions, including transactional insertions.
     /// Last writer wins!
-    // TODO: cceckman-at-fastly 2025-02-26:
-    // - use request headers; vary_by; streaming body
     pub async fn insert(&self, key: &CacheKey, options: WriteOptions, body: Body) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
