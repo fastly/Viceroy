@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use bytes::Bytes;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
@@ -31,6 +32,9 @@ pub enum Error {
 
     #[error("cache entry's body is currently being read by another body")]
     HandleBodyUsed,
+
+    #[error("user metadata is too large")]
+    TooLargeUserMetadata,
 }
 
 impl From<Error> for crate::Error {
@@ -48,6 +52,7 @@ impl From<&Error> for FastlyStatus {
             Error::CannotWrite => FastlyStatus::Badf,
             Error::Missing => FastlyStatus::None,
             Error::HandleBodyUsed => FastlyStatus::Badf,
+            Error::TooLargeUserMetadata => FastlyStatus::Inval,
         }
     }
 }
@@ -61,6 +66,7 @@ impl From<Error> for ComponentError {
             Error::CannotWrite => ComponentError::BadHandle,
             Error::Missing => ComponentError::OptionalNone,
             Error::HandleBodyUsed => ComponentError::BadHandle,
+            Error::TooLargeUserMetadata => ComponentError::InvalidArgument,
         }
     }
 }
@@ -274,6 +280,7 @@ pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Duration,
     pub vary_rule: VaryRule,
+    pub user_metadata: Bytes,
 }
 
 impl WriteOptions {
@@ -282,6 +289,7 @@ impl WriteOptions {
             max_age,
             initial_age: Duration::ZERO,
             vary_rule: VaryRule::default(),
+            user_metadata: Bytes::new(),
         }
     }
 }

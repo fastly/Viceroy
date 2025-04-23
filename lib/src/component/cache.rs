@@ -8,6 +8,7 @@ use {
         session::{PeekableTask, PendingCacheTask},
         wiggle_abi::types::CacheHandle,
     },
+    bytes::Bytes,
     http::HeaderMap,
     std::{sync::Arc, time::Duration},
 };
@@ -33,11 +34,17 @@ fn load_write_options(
     } else {
         VaryRule::default()
     };
+    let user_metadata = if options_mask.contains(api::WriteOptionsMask::USER_METADATA) {
+        Bytes::copy_from_slice(&options.user_metadata)
+    } else {
+        Bytes::new()
+    };
 
     Ok(WriteOptions {
         max_age,
         initial_age,
         vary_rule,
+        user_metadata,
     })
 }
 
@@ -435,13 +442,20 @@ impl api::Host for ComponentCtx {
 
     async fn get_user_metadata(
         &mut self,
-        _handle: api::Handle,
-        _max_len: u64,
+        handle: api::Handle,
+        max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        let entry = self.session.cache_entry(handle.into()).await?;
+
+        let md_bytes = entry
+            .found()
+            .map(|found| found.meta().user_metadata())
+            .ok_or(crate::Error::CacheError(crate::cache::Error::Missing))?;
+        let len = md_bytes.len() as u64;
+        if len > max_len {
+            return Err(types::Error::BufferLen(len));
         }
-        .into())
+        Ok(Some(md_bytes.into()))
     }
 
     async fn get_length(&mut self, _handle: api::Handle) -> Result<u64, types::Error> {
