@@ -21,10 +21,29 @@ fn main() {
     test_vary_subtle();
 
     test_user_metadata();
+
+    test_length_from_body();
+
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
     // Oh well -- that's what we have collecting_body::tests::unfinished_stream for.
+}
+
+/// Wait for the length of a cached object to be known.
+///
+/// Internally in Viceroy, all writes to cached bodies are streaming writes, and are processed
+/// concurrently. That means an `insert..finish()` sequence, followed by a `lookup..to_stream()`,
+/// may still observe the body as "streaming" for a period of time.
+///
+/// If we didn't provide a known .length() along with the insert data, we can sleep+poll until the
+/// length is known, implying that the whole bosy is available.
+///
+/// This is an ugly hack. Sorry.
+fn poll_known_length(found: &Found) {
+    while let None = found.known_length() {
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn test_non_concurrent() {
@@ -384,6 +403,28 @@ fn test_user_metadata() {
         let md = got.user_metadata();
         assert_eq!(&md, b"hi there".as_slice());
     }
+}
+
+fn test_length_from_body() {
+    let key = new_key();
+
+    let body = "hello beautiful world".as_bytes();
+    let mut writer = insert(key.clone(), Duration::from_secs(10))
+        .execute()
+        .unwrap();
+    {
+        let fetch = lookup(key.clone()).execute().unwrap();
+        // We haven't streamed the body, so the length is unknown.
+        let got = fetch.unwrap();
+        assert!(got.known_length().is_none());
+    }
+    writer.write_all(body).unwrap();
+    writer.finish().unwrap();
+
+    let fetch = lookup(key.clone()).execute().unwrap();
+    let got = fetch.unwrap();
+    poll_known_length(&got);
+    assert_eq!(got.known_length().unwrap(), body.len() as u64);
 }
 
 fn new_key() -> CacheKey {

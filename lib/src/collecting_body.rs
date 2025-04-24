@@ -38,6 +38,18 @@ impl Default for CollectingBodyInner {
 }
 
 impl CollectingBody {
+    /// Returns the length of the body, if it is complete.
+    pub fn length(&self) -> Option<u64> {
+        let state = self.inner.borrow();
+        match *state {
+            CollectingBodyInner::Streaming(_) => None,
+            CollectingBodyInner::Complete { ref body, .. } => {
+                Some(body.iter().map(|chunk| chunk.len()).sum::<usize>() as u64)
+            }
+            CollectingBodyInner::Error(_) => None,
+        }
+    }
+
     /// Create a new CollectingBody that stores & streams from the provided Body.
     ///
     /// Writes to the StreamingBody are collected, and propagated to all readers of this
