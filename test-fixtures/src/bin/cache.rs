@@ -7,34 +7,42 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Run a test function with wrapped logging.
+/// This makes it easy to tell what test failed when run on Compute Platform.
+macro_rules! run_test {
+    ($name:ident) => {{
+        eprintln!("running test: {}", stringify!($name));
+        $name();
+        eprintln!("completed test: {}", stringify!($name));
+    }};
+}
+
 fn main() {
-    test_non_concurrent();
-    test_concurrent();
+    let service = std::env::var("FASTLY_SERVICE_VERSION").unwrap();
+    eprintln!("Running tests; version {service}");
 
-    test_single_body();
-    test_insert_stale();
+    run_test!(test_non_concurrent);
+    run_test!(test_concurrent);
 
-    test_vary();
-    test_vary_multiple();
-    test_novary_ignore_headers();
-    test_vary_combine();
-    test_vary_subtle();
+    run_test!(test_single_body);
+    run_test!(test_insert_stale);
 
-    test_user_metadata();
+    run_test!(test_vary);
+    run_test!(test_vary_multiple);
+    run_test!(test_novary_ignore_headers);
+    run_test!(test_vary_subtle);
+    run_test!(test_vary_combine);
 
-    test_length_from_body();
-    test_inconsistent_body_length();
+    run_test!(test_length_from_body);
+    run_test!(test_inconsistent_body_length);
 
-    // We don't have a way of testing "incomplete streaming results in an error"
-    // in a single instance. If we fail to close the (write) body handle, the underlying host object
-    // is still hanging around, ready for more writes, until the instance is done.
-    // Oh well -- that's what we have collecting_body::tests::unfinished_stream for.
+    run_test!(test_user_metadata);
 
-    test_racing_transactions();
-    test_implicit_cancel_of_fetch();
-    test_implicit_cancel_of_pending();
-    test_explicit_cancel();
-    test_collapse_across_vary();
+    run_test!(test_racing_transactions);
+    run_test!(test_implicit_cancel_of_fetch);
+    run_test!(test_implicit_cancel_of_pending);
+    run_test!(test_explicit_cancel);
+    run_test!(test_collapse_across_vary);
 }
 
 fn new_key() -> CacheKey {
