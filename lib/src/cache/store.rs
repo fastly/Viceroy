@@ -49,7 +49,7 @@ impl ObjectMeta {
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
         // Age in this cache, plus age upon insertion
-        Instant::now().duration_since(self.inserted) + self.initial_age
+        self.inserted.elapsed() + self.initial_age
     }
 
     /// Maximum fresh age of this object.
