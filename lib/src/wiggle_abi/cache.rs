@@ -1,8 +1,13 @@
+use core::str;
 use std::sync::Arc;
+use std::time::Duration;
+
+use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::CacheKey;
+use crate::cache::{CacheKey, VaryRule, WriteOptions};
 use crate::session::{PeekableTask, PendingCacheTask, Session};
+use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
 use super::fastly_cache::FastlyCache;
 use super::{types, Error};
@@ -16,6 +21,42 @@ fn load_cache_key(
     Ok(key)
 }
 
+fn load_write_options(
+    session: &Session,
+    memory: &wiggle::GuestMemory<'_>,
+    options_mask: types::CacheWriteOptionsMask,
+    options: types::CacheWriteOptions,
+) -> Result<WriteOptions, Error> {
+    let max_age = Duration::from_nanos(options.max_age_ns);
+    let initial_age = if options_mask.contains(CacheWriteOptionsMask::INITIAL_AGE_NS) {
+        Duration::from_nanos(options.initial_age_ns)
+    } else {
+        Duration::ZERO
+    };
+    let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+        let handle = options.request_headers;
+        let parts = session.request_parts(handle)?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+    let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
+        let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
+        let vary_rule_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
+        let vary_rule_str = str::from_utf8(vary_rule_bytes).map_err(|e| Error::Utf8Expected(e))?;
+        vary_rule_str.parse()?
+    } else {
+        VaryRule::default()
+    };
+
+    Ok(WriteOptions {
+        max_age,
+        initial_age,
+        request_headers,
+        vary_rule,
+    })
+}
+
 #[allow(unused_variables)]
 #[wiggle::async_trait]
 impl FastlyCache for Session {
@@ -26,16 +67,28 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
+        let options = memory.read(options)?;
+        let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
+            let handle = options.request_headers;
+            let parts = self.request_parts(handle)?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
+        if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
+            // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
+            return Err(Error::Unsupported {
+                msg: "service ID in cache lookup",
+            });
         }
 
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        let task = PeekableTask::spawn(Box::pin(async move { Ok(cache.lookup(&key).await) })).await;
+        let task = PeekableTask::spawn(Box::pin(
+            async move { Ok(cache.lookup(&key, &headers).await) },
+        ))
+        .await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
         Ok(handle)
@@ -48,19 +101,19 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
+        // TODO: cceckman-at-fastly: Handle all options,
         // then remove this guard.
         if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
             return Err(Error::NotAvailable("Cache API primitives"));
         }
-
         let key = load_cache_key(memory, cache_key)?;
+        let options = load_write_options(self, memory, options_mask, memory.read(options)?)?;
         let cache = Arc::clone(self.cache());
 
         // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
-        cache.insert(&key, read_body).await;
+        cache.insert(&key, options, read_body).await;
         Ok(handle)
     }
 
@@ -245,10 +298,17 @@ impl FastlyCache for Session {
         let entry = self.cache_entry_mut(handle).await?;
 
         let mut state = types::CacheLookupState::empty();
-        if entry.found().is_some() {
+        if let Some(found) = entry.found() {
             state |= types::CacheLookupState::FOUND;
-            // TODO: cceckman-at-fastly: stale vs. usable, go_get obligation
-            state |= types::CacheLookupState::USABLE;
+
+            if !found.meta().is_fresh() {
+                state |= types::CacheLookupState::STALE;
+            }
+            // TODO:: stale-while-revalidate and go_get obligation.
+            // For now, usable if fresh.
+            if found.meta().is_fresh() {
+                state |= types::CacheLookupState::USABLE;
+            }
         }
 
         Ok(state)
@@ -332,7 +392,14 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().max_age().as_nanos().try_into().unwrap())
+        } else {
+            Err(Error::CacheError(
+                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
+            ))
+        }
     }
 
     async fn get_stale_while_revalidate_ns(
@@ -348,7 +415,14 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().age().as_nanos().try_into().unwrap())
+        } else {
+            Err(Error::CacheError(
+                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
+            ))
+        }
     }
 
     async fn get_hits(

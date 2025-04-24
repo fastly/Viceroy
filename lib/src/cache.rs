@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
@@ -9,11 +9,13 @@ use crate::{
     Error,
 };
 use fastly_shared::FastlyStatus;
-use http::HeaderValue;
+use http::{HeaderMap, HeaderValue};
 
 mod store;
+mod variance;
 
-use store::{CacheData, CacheKeyObjects};
+use store::{CacheData, CacheKeyObjects, ObjectMeta};
+pub use variance::VaryRule;
 
 /// Primary cache key: an up-to-4KiB buffer.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -110,6 +112,11 @@ impl Found {
     pub fn body(&self) -> Result<Body, Error> {
         self.data.as_ref().get_body()
     }
+
+    /// Access the metadata of the cached object.
+    pub fn meta(&self) -> &ObjectMeta {
+        self.data.get_meta()
+    }
 }
 
 /// Cache for a service.
@@ -138,14 +145,12 @@ impl Default for Cache {
 
 impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
-    // TODO: cceckman-at-fastly:
-    // - use request headers; vary_by
-    pub async fn lookup(&self, key: &CacheKey) -> CacheEntry {
+    pub async fn lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
         let found = self
             .inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .get()
+            .get(headers)
             .map(|data| Found {
                 data,
                 last_body_handle: None,
@@ -159,14 +164,21 @@ impl Cache {
     /// Perform a non-transactional lookup for the given cache key.
     /// Note: races with other insertions, including transactional insertions.
     /// Last writer wins!
-    // TODO: cceckman-at-fastly 2025-02-26:
-    // - use request headers; vary_by; streaming body
-    pub async fn insert(&self, key: &CacheKey, body: Body) {
+    pub async fn insert(&self, key: &CacheKey, options: WriteOptions, body: Body) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(body);
+            .insert(options, body);
     }
+}
+
+/// Options that can be applied to a write, e.g. insert or transaction_insert.
+pub struct WriteOptions {
+    pub max_age: Duration,
+    pub initial_age: Duration,
+
+    pub request_headers: HeaderMap,
+    pub vary_rule: VaryRule,
 }
 
 /// Optional override for response caching behavior.
@@ -237,6 +249,7 @@ impl CacheOverride {
 
 #[cfg(test)]
 mod tests {
+    use http::HeaderName;
     use proptest::prelude::*;
 
     use super::*;
@@ -261,24 +274,90 @@ mod tests {
 
     proptest! {
         #[test]
-        fn nontransactional_insert_lookup(key in any::<CacheKey>(), value in any::<Vec<u8>>()) {
+        fn nontransactional_insert_lookup(
+                key in any::<CacheKey>(),
+                max_age in any::<u32>(),
+                initial_age in any::<u32>(),
+                value in any::<Vec<u8>>()) {
             let cache = Cache::default();
 
             // We can't use tokio::test and proptest! together; both alter the signature of the
             // test function, and are not aware of each other enough for it to pass.
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
             rt.block_on(async {
-                let empty = cache.lookup(&key).await;
+                let empty = cache.lookup(&key, &HeaderMap::default()).await;
                 assert!(empty.found().is_none());
                 // TODO: cceckman-at-fastly -- check GoGet
 
-                cache.insert(&key, value.clone().into()).await;
+                let write_options = WriteOptions {
+                    max_age: Duration::from_secs(max_age as u64),
+                    initial_age: Duration::from_secs(initial_age as u64),
+                    request_headers: HeaderMap::default(),
+                    vary_rule: VaryRule::default(),
+                };
 
-                let nonempty = cache.lookup(&key).await;
+                cache.insert(&key, write_options, value.clone().into()).await;
+
+                let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
                 let got = found.body().unwrap().read_into_vec().await.unwrap();
                 assert_eq!(got, value);
             });
         }
+    }
+
+    #[tokio::test]
+    async fn insert_immediately_stale() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        // Insert an already-stale entry:
+        let write_options = WriteOptions {
+            max_age: Duration::from_secs(1),
+            initial_age: Duration::from_secs(2),
+            request_headers: HeaderMap::default(),
+            vary_rule: VaryRule::default(),
+        };
+
+        let mut body = Body::empty();
+        body.push_back([1u8].as_slice());
+
+        cache.insert(&key, write_options, body).await;
+
+        let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
+        let found = nonempty.found().expect("should have found inserted key");
+        assert!(!found.meta().is_fresh());
+    }
+
+    #[tokio::test]
+    async fn test_vary() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        let header_name = HeaderName::from_static("x-viceroy-test");
+        let request_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("test"))]
+            .into_iter()
+            .collect();
+
+        let write_options = WriteOptions {
+            max_age: Duration::from_secs(100),
+            initial_age: Duration::from_secs(2),
+            request_headers: request_headers.clone(),
+            vary_rule: VaryRule::new([&header_name].into_iter()),
+        };
+        let body = Body::empty();
+        cache.insert(&key, write_options, body).await;
+
+        let empty_headers = cache.lookup(&key, &HeaderMap::default()).await;
+        assert!(empty_headers.found().is_none());
+
+        let matched_headers = cache.lookup(&key, &request_headers).await;
+        assert!(matched_headers.found.is_some());
+
+        let r2_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("assert"))]
+            .into_iter()
+            .collect();
+        let mismatched_headers = cache.lookup(&key, &r2_headers).await;
+        assert!(mismatched_headers.found.is_none());
     }
 }

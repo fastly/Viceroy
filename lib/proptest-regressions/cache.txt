@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 59cac97c28e31b87da4163d47031bc52ca7e07f8e90887911c569a29fbdc75c0 # shrinks to key = CacheKey([]), max_age = 9223372036854481161.46386714s, initial_age = None, value = []
