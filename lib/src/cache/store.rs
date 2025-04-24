@@ -324,6 +324,9 @@ impl Obligation {
         std::mem::swap(&mut self.variant, &mut variant);
         self.object
             .insert(request_headers, options, body, Some(variant));
+        // Mild optimization: avoid re-acquiring the lock when we drop.
+        // We've already cleared the obligation flag.
+        self.completed = true;
     }
 }
 
