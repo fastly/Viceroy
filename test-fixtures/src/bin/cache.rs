@@ -162,26 +162,24 @@ fn test_single_body() {
         .execute()
         .unwrap()
         .expect("could not perform first fetch");
-    let f2 = lookup(key.clone())
-        .execute()
-        .unwrap()
-        .expect("could not perform second fetch");
 
-    // We should be able to get two bodies from two different lookups:
     let b1 = f1.to_stream().unwrap();
-    let _b2 = f2.to_stream().unwrap();
-    // But a second body from the same lookup should cause an error-
-    // specifically an InvalidOperation error, per the API docs-
-    // while the first is outstanding:
-    eprintln!("{}", f1.to_stream().unwrap_err());
+
+    // Reading a second body from the same Found results in an error, as documented:
     assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
-    // TODO: This doesn't work on the Compute Platform.
-    // Need to finish streaming the body?
-    // std::mem::drop(b1);
+
+    // If the existing body is read out and closed...
     let v1 = b1.into_bytes();
-    // Now the prior read from that lookup can proceed:
-    let v2 = f1.to_stream().unwrap().into_bytes();
-    assert_eq!(&v1, &v2);
+    // A new body can be read:
+    let b2 = f1.to_stream().unwrap();
+
+    // However, the entire body must be read; it's not enough to "just" read it:
+    b2.into_handle().close().unwrap();
+    let b3 = f1
+        .to_stream()
+        .expect("should be able to re-read body after close of existing body");
+    let v3 = b3.into_bytes();
+    assert_eq!(&v1, &v3);
 }
 
 fn test_insert_stale() {
