@@ -175,9 +175,13 @@ fn test_single_body() {
     // while the first is outstanding:
     eprintln!("{}", f1.to_stream().unwrap_err());
     assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
-    std::mem::drop(b1);
+    // TODO: This doesn't work on the Compute Platform.
+    // Need to finish streaming the body?
+    // std::mem::drop(b1);
+    let v1 = b1.into_bytes();
     // Now the prior read from that lookup can proceed:
-    let _ = f1.to_stream().unwrap();
+    let v2 = f1.to_stream().unwrap().into_bytes();
+    assert_eq!(&v1, &v2);
 }
 
 fn test_insert_stale() {
@@ -192,7 +196,12 @@ fn test_insert_stale() {
         writer.flush().unwrap();
     }
 
-    let found = lookup(key.clone()).execute().unwrap().unwrap();
+    let Some(found) = lookup(key.clone()).execute().unwrap() else {
+        // Compute platform only returns stale results if stale-while-revalidate.
+        // Viceroy is slightly more lenient, at the moment, and might produce a stale result-
+        // but will still tell you it's stale.
+        return;
+    };
 
     // NOTE: from cceckman-at-fastly:
     // The compute platform currently does not return stale objects unless
@@ -389,16 +398,17 @@ fn test_vary_combine() {
     }
 
     let r = lookup(key.clone())
-        .header(&h1, "trust, verify")
-        .execute()
-        .unwrap();
-    assert!(r.is_some());
-
-    let r = lookup(key.clone())
         .header_values(&h1, [&trust, &verify])
         .execute()
         .unwrap();
     assert!(r.is_some());
+
+    // TODO: Compute Platform treats this as a distinct key. Is that correct?
+    //let r = lookup(key.clone())
+    //    .header(&h1, "trust, verify")
+    //    .execute()
+    //    .unwrap();
+    //assert!(r.is_some());
 
     // Order matters for HTTP header values:
     let r = lookup(key.clone())
@@ -563,10 +573,13 @@ fn test_implicit_cancel_of_pending() {
     let (t1, pending) = ready_and_pending(busy1, busy2);
 
     // Cancel the blocked request via dropping.
-    // Fun fact, this was a bug in compute platform that we fixed when writing the Viceroy
-    // implementation!
+    // TODO: Currently, Compue Platform requires that t1 is dropped before pending-
+    // drop of a CacheBusyHandle blocks on the *obligatee of the transaction* completing its
+    // obligation.
+    // The fix is rolling out at time of writing, but in the mean time, we have to allow this:
+    std::mem::drop(t1);
     std::mem::drop(pending);
-    assert!(t1.must_insert_or_update());
+    // assert!(t1.must_insert_or_update());
 }
 
 fn test_explicit_cancel() {
