@@ -4,8 +4,8 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
-    PendingKvLookupTask,
+    AsyncItem, PeekableTask, PendingCacheTask, PendingKvDeleteTask, PendingKvInsertTask,
+    PendingKvListTask, PendingKvLookupTask,
 };
 
 use std::collections::HashMap;
@@ -17,7 +17,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::cache::{Cache, CacheEntry};
 use crate::object_store::KvStoreError;
+use crate::wiggle_abi::types::CacheHandle;
 
 use {
     self::downstream::DownstreamResponse,
@@ -163,6 +165,8 @@ pub struct Session {
     config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
+    /// The cache for this service.
+    cache: Arc<Cache>,
 }
 
 impl Session {
@@ -186,6 +190,7 @@ impl Session {
         kv_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
         shielding_sites: Arc<ShieldingSites>,
+        cache: Arc<Cache>,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -229,6 +234,7 @@ impl Session {
             secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
+            cache,
         }
     }
 
@@ -1060,7 +1066,81 @@ impl Session {
         Ok(())
     }
 
-    /// Take ownership of multiple [`PendingRequest`]s in preparation for a `select`.
+    // ------- Core Cache API ------
+
+    /// Insert a pending cache operation.
+    pub fn insert_cache_op(&mut self, task: PendingCacheTask) -> CacheHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingCache(task)))
+            .into()
+    }
+
+    /// Get mutable access to a cache entry, which may require blocking until the entry is
+    /// available.
+    pub(crate) async fn cache_entry_mut(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<&mut CacheEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_cache_mut)
+            .map(PendingCacheTask::as_mut)
+            .ok_or(HandleError::InvalidCacheHandle(handle))?
+            .await
+            .as_mut()
+            .map_err(|e| {
+                // TODO: cceckman-at-fastly: Can we pull the error type out of PeekableTask?
+                // I don't think the cache-lookup path can generate errors.
+                tracing::error!("in completion of cache lookup: {e}");
+                HandleError::InvalidCacheHandle(handle)
+            })
+    }
+
+    /// Get immutable access to a cache entry, which may require blocking until the entry is
+    /// available.
+    pub(crate) async fn cache_entry(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<&CacheEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_cache_mut)
+            .map(PendingCacheTask::as_mut)
+            .ok_or(HandleError::InvalidCacheHandle(handle))?
+            .await
+            .as_ref()
+            .map_err(|e| {
+                // TODO: cceckman-at-fastly: Can we pull the error type out of PeekableTask?
+                // I don't think the cache-lookup path can generate errors.
+                tracing::error!("in completion of cache lookup: {e}");
+                HandleError::InvalidCacheHandle(handle)
+            })
+    }
+
+    /// Take ownership of a `CacheEntry` given its handle.
+    ///
+    /// Returns a `HandleError` if the handle is not associated with a cache lookup.
+    pub(crate) fn take_cache_entry(
+        &mut self,
+        handle: CacheHandle,
+    ) -> Result<PendingCacheTask, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_cache)
+            .ok_or(HandleError::InvalidCacheHandle(handle))
+    }
+
+    /// Access the cache.
+    pub fn cache(&self) -> &Arc<Cache> {
+        &self.cache
+    }
+
+    // -------- Scheduling APIs ----------
+
+    /// Take ownership of multiple AsyncItems in preparation for a `select`.
     ///
     /// Returns a [`HandleError`] if any of the handles are not associated with a pending
     /// request in the session.
@@ -1322,5 +1402,17 @@ impl From<KvStoreListHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for KvStoreListHandle {
     fn from(h: AsyncItemHandle) -> KvStoreListHandle {
         KvStoreListHandle::from(h.as_u32())
+    }
+}
+
+impl From<AsyncItemHandle> for CacheHandle {
+    fn from(h: AsyncItemHandle) -> CacheHandle {
+        CacheHandle::from(h.as_u32())
+    }
+}
+
+impl From<CacheHandle> for AsyncItemHandle {
+    fn from(h: CacheHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
     }
 }

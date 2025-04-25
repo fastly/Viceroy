@@ -18,7 +18,8 @@ test: test-crates trap-test
 
 .PHONY: test-crates
 test-crates: fix-build
-	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
+	# TODO: cceckman-at-fastly: When all cache APIs match Compute Platform, remove the environment flag.
+	RUST_BACKTRACE=1 ENABLE_EXPERIMENTAL_CACHE_API=1 $(VICEROY_CARGO) test --all
 
 .PHONY: fix-build
 fix-build:

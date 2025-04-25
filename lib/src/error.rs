@@ -148,6 +148,10 @@ pub enum Error {
 
     #[error("Resource temporarily unavailable")]
     Again,
+
+    // TODO: cceckman-at-fastly ; better error types
+    #[error("Error from cache: {0}")]
+    CacheError(String),
 }
 
 impl Error {
@@ -214,7 +218,8 @@ impl Error {
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
+            | Error::InvalidAlpnRepsonse(_, _)
+            | Error::CacheError(_) => FastlyStatus::Error,
         }
     }
 
@@ -303,6 +308,10 @@ pub enum HandleError {
     /// An acl handle was not valid.
     #[error("Invalid acl handle: {0}")]
     InvalidAclHandle(crate::wiggle_abi::types::AclHandle),
+
+    /// A cache handle was not valid.
+    #[error("Invalid cache handle: {0}")]
+    InvalidCacheHandle(crate::wiggle_abi::types::CacheHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.

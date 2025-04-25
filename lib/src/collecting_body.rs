@@ -1,9 +1,6 @@
 //! Provides `CollectingBody`, a body that can be concurrently written-to (via a `StreamingBody`
 //! handle) and read-from (via multiple `Body`) handles.
 
-// TODO: cceckman-at-fastly: Temporary, I promise.
-#![allow(unused)]
-
 use bytes::Bytes;
 use http::HeaderMap;
 use http_body::Body as HttpBody;
@@ -387,7 +384,7 @@ mod tests {
             HeaderName::from_static("~^.^~"),
             HeaderValue::from_static(r#""is a cat *and* a valid header name""#),
         );
-        tx.finish();
+        tx.finish().unwrap();
 
         reader.await.unwrap();
     }
