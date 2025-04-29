@@ -34,4 +34,11 @@ fn main() {
     let is_staging = env::var("FASTLY_IS_STAGING").expect("staging variable set");
 
     assert!(is_staging == "0" || is_staging == "1");
+
+    let log_level = env::var("LOG_LEVEL").expect("log level set");
+    assert!(!log_level.is_empty());
+
+    let err_np = Result::Err(env::VarError::NotPresent);
+    assert_eq!(env::var("FASTLY_OMITTED"), err_np);
+    assert_eq!(env::var("FASTLYNONO"), err_np);
 }

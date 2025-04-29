@@ -41,6 +41,11 @@ mod device_detection;
 
 pub use self::device_detection::DeviceDetection;
 
+/// Types and deserializers for environment variables configuration settings.
+mod environment_variables;
+
+pub use self::environment_variables::EnvironmentVariables;
+
 /// Types and deserializers for geolocation configuration settings.
 mod geolocation;
 
@@ -66,6 +71,7 @@ pub struct FastlyConfig {
     description: String,
     authors: Vec<String>,
     language: String,
+    env: EnvironmentVariables,
     local_server: LocalServerConfig,
 }
 
@@ -88,6 +94,11 @@ impl FastlyConfig {
     /// Get a reference to the package language.
     pub fn language(&self) -> &str {
         self.language.as_str()
+    }
+
+    /// Get a reference to the environment variables.
+    pub fn environment_variables(&self) -> &EnvironmentVariables {
+        &self.env
     }
 
     /// Get the acl configuration.
@@ -173,6 +184,7 @@ struct TomlFastlyConfig {
     description: Option<String>,
     authors: Option<Vec<String>>,
     language: Option<String>,
+    env: Option<Table>,
 }
 
 impl TryInto<FastlyConfig> for TomlFastlyConfig {
@@ -183,8 +195,10 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             description,
             authors,
             language,
+            env,
             local_server,
         } = self;
+        let env = env.map(TryInto::try_into).transpose()?.unwrap_or_default();
         let local_server = local_server
             .map(TryInto::try_into)
             .transpose()?
@@ -194,6 +208,7 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             description: description.unwrap_or_default(),
             authors: authors.unwrap_or_default(),
             language: language.unwrap_or_default(),
+            env,
             local_server,
         })
     }
@@ -222,7 +237,7 @@ pub enum ExperimentalModule {
     WasiNn,
 }
 
-/// Internal deserializer used to read the `[testing]` section of a `fastly.toml` file.
+/// Internal deserializer used to read the `[local_server]` section of a `fastly.toml` file.
 ///
 /// Once a TOML file has been read using [`toml::from_str`], this can be converted into
 /// a [`LocalServerConfig`] with [`TryInto::try_into`].

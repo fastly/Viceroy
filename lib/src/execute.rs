@@ -8,8 +8,8 @@ use {
         cache::Cache,
         component as compute,
         config::{
-            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
-            UnknownImportBehavior,
+            Backends, DeviceDetection, Dictionaries, EnvironmentVariables, ExperimentalModule,
+            Geolocation, UnknownImportBehavior,
         },
         downstream::prepare_request,
         error::ExecutionError,
@@ -93,6 +93,8 @@ pub struct ExecuteCtx {
     backends: Arc<Backends>,
     /// The device detection mappings for this execution.
     device_detection: Arc<DeviceDetection>,
+    /// The environment variables for this execution.
+    environment_variables: Arc<EnvironmentVariables>,
     /// The geolocation mappings for this execution.
     geolocation: Arc<Geolocation>,
     /// Preloaded TLS certificates and configuration
@@ -237,6 +239,7 @@ impl ExecuteCtx {
             acls: Arc::new(Acls::new()),
             backends: Arc::new(Backends::default()),
             device_detection: Arc::new(DeviceDetection::default()),
+            environment_variables: Arc::new(EnvironmentVariables::default()),
             geolocation: Arc::new(Geolocation::default()),
             tls_config: TlsConfig::new()?,
             dictionaries: Arc::new(Dictionaries::default()),
@@ -312,6 +315,15 @@ impl ExecuteCtx {
     /// Set the dictionaries for this execution context.
     pub fn with_dictionaries(mut self, dictionaries: Dictionaries) -> Self {
         self.dictionaries = Arc::new(dictionaries);
+        self
+    }
+
+    /// Set the environment_variables for this execution context.
+    pub fn with_environment_variables(
+        mut self,
+        environment_variables: EnvironmentVariables,
+    ) -> Self {
+        self.environment_variables = Arc::new(environment_variables);
         self
     }
 
@@ -509,6 +521,7 @@ impl ExecuteCtx {
             self.acls.clone(),
             self.backends.clone(),
             self.device_detection.clone(),
+            self.environment_variables.clone(),
             self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),
@@ -670,6 +683,7 @@ impl ExecuteCtx {
             self.acls.clone(),
             self.backends.clone(),
             self.device_detection.clone(),
+            self.environment_variables.clone(),
             self.geolocation.clone(),
             self.tls_config.clone(),
             self.dictionaries.clone(),

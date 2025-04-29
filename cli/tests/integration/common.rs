@@ -12,6 +12,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tracing_subscriber::filter::EnvFilter;
+use viceroy_lib::config::EnvironmentVariables;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
     body::Body,
@@ -82,6 +83,7 @@ pub struct Test {
     backends: TestBackends,
     device_detection: DeviceDetection,
     dictionaries: Dictionaries,
+    environment_variables: EnvironmentVariables,
     geolocation: Geolocation,
     object_stores: ObjectStores,
     secret_stores: SecretStores,
@@ -106,6 +108,7 @@ impl Test {
             backends: TestBackends::new(),
             device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
+            environment_variables: EnvironmentVariables::default(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
@@ -130,6 +133,7 @@ impl Test {
             backends: TestBackends::new(),
             device_detection: DeviceDetection::new(),
             dictionaries: Dictionaries::new(),
+            environment_variables: EnvironmentVariables::default(),
             geolocation: Geolocation::new(),
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
@@ -151,6 +155,7 @@ impl Test {
             backends: TestBackends::from_backend_configs(config.backends()),
             device_detection: config.device_detection().to_owned(),
             dictionaries: config.dictionaries().to_owned(),
+            environment_variables: config.environment_variables().to_owned(),
             geolocation: config.geolocation().to_owned(),
             object_stores: config.object_stores().to_owned(),
             secret_stores: config.secret_stores().to_owned(),
@@ -339,8 +344,9 @@ impl Test {
         )?
         .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)
-        .with_dictionaries(self.dictionaries.clone())
         .with_device_detection(self.device_detection.clone())
+        .with_dictionaries(self.dictionaries.clone())
+        .with_environment_variables(self.environment_variables.clone())
         .with_geolocation(self.geolocation.clone())
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())
