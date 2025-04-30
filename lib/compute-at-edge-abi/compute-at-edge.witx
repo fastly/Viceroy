@@ -1,12 +1,12 @@
-;; FASTLY-INTERNAL
-(use "privileged-anti-abuse.witx")
-;; FASTLY-INTERNAL
-
 (use "typenames.witx")
 (use "cache.witx")
 (use "config-store.witx")
 (use "http-cache.witx")
 (use "shielding.witx")
+
+;; FASTLY-INTERNAL
+(use "privileged-anti-abuse.witx")
+;; FASTLY-INTERNAL
 
 (module $fastly_abi
     (@interface func (export "init")
