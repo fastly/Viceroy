@@ -6,7 +6,7 @@ use {
         error::{Error, HandleError},
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask},
-        wiggle_abi::types::{CacheBusyHandle, CacheHandle},
+        wiggle_abi::types::CacheHandle,
     },
     http::HeaderMap,
     std::{sync::Arc, time::Duration},
@@ -288,12 +288,22 @@ impl api::Host for ComponentCtx {
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
 
-        let task = PeekableTask::spawn(Box::pin(async move {
-            Ok(cache.transaction_lookup(&key, &headers).await)
-        }))
-        .await;
+        // Look up once, joining the transaction only if obligated:
+        let e = cache.transaction_lookup(&key, &headers, false).await;
+        let ready = e.found().is_some() || e.go_get().is_some();
+        // If we already got _something_, we can provide an already-complete PeekableTask.
+        // Otherwise we need to spawn it and let it block in the background.
+        let task = if ready {
+            PeekableTask::complete(e)
+        } else {
+            PeekableTask::spawn(Box::pin(async move {
+                Ok(cache.transaction_lookup(&key, &headers, true).await)
+            }))
+            .await
+        };
+
         let task = PendingCacheTask::new(task);
-        let handle: CacheBusyHandle = self.session.insert_cache_op(task).into();
+        let handle: CacheHandle = self.session.insert_cache_op(task).into();
         Ok(handle.into())
     }
 

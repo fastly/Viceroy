@@ -121,11 +121,17 @@ impl CacheKeyObjects {
     }
 
     /// Perform a transactional lookup.
-    /// Return a CacheData if existing data were found (even if stale),
-    /// and return an Obligaton if the data need to be freshened.
+    ///
+    /// Returns a CacheData if existing data were found (even if stale),
+    /// and returns an Obligaton if the data need to be freshened.
+    ///
+    /// If !ok_to_wait, returns a result immediately, without waiting for outstanding Obligations
+    /// to complete.
+    /// If ok_to_wait, this may await another task to complete or abandon its Obligation.
     pub async fn transaction_get(
         self: &Arc<Self>,
         request_headers: &HeaderMap,
+        ok_to_wait: bool,
     ) -> (Option<Arc<CacheData>>, Option<Obligation>) {
         let mut sub = self.0.subscribe();
 
@@ -160,7 +166,7 @@ impl CacheKeyObjects {
             // If we found an acceptable in-progress request while under the read lock,
             // we can await. The subscription ensures that, even though we're
             // "waiting outside of the lock", we'll still see the updated version.
-            if awaitable {
+            if awaitable && ok_to_wait {
                 let _ = sub.changed().await;
                 continue;
             }
@@ -227,7 +233,7 @@ impl CacheKeyObjects {
             });
 
             // Now outside of the lock: return what we have.
-            if data.is_some() || obligated.is_some() {
+            if data.is_some() || obligated.is_some() || !ok_to_wait {
                 return (data, obligated);
             }
 
@@ -376,10 +382,11 @@ impl CacheData {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use bytes::Bytes;
     use http::{HeaderMap, HeaderName};
 
     use crate::{
-        body::Body,
+        body::{Body, Chunk},
         cache::{VaryRule, WriteOptions},
     };
 
@@ -395,7 +402,7 @@ mod tests {
                 let ko = Arc::clone(&objects);
 
                 async move {
-                    let (found, obligation) = ko.transaction_get(&HeaderMap::default()).await;
+                    let (found, obligation) = ko.transaction_get(&HeaderMap::default(), true).await;
                     // Either have the obligation to fetch, or was blocked until the obligation
                     // completed.
                     assert!(found.is_some() != obligation.is_some());
@@ -426,7 +433,7 @@ mod tests {
             body,
             None,
         );
-        let (_, obligation) = objects.transaction_get(&HeaderMap::default()).await;
+        let (_, obligation) = objects.transaction_get(&HeaderMap::default(), true).await;
         // TODO: stale-while-revalidate: check that the stale data are provided
         assert!(obligation.is_some());
     }
@@ -459,16 +466,16 @@ mod tests {
             make_body(""),
             None,
         );
-        let (found1, obligation1) = objects.transaction_get(&h1).await;
+        let (found1, obligation1) = objects.transaction_get(&h1, true).await;
         assert!(found1.is_none());
         assert!(obligation1.is_some());
-        let (found2, obligation2) = objects.transaction_get(&h2).await;
+        let (found2, obligation2) = objects.transaction_get(&h2, true).await;
         assert!(found2.is_none());
         assert!(obligation2.is_some());
 
         // Anotehr transaction on the same headers should pick up the same result:
-        let busy1 = objects.transaction_get(&h1);
-        let busy2 = objects.transaction_get(&h2);
+        let busy1 = objects.transaction_get(&h1, true);
+        let busy2 = objects.transaction_get(&h2, true);
         obligation2.unwrap().complete(
             WriteOptions {
                 vary_rule: vary.clone(),
@@ -514,7 +521,7 @@ mod tests {
         let vary = VaryRule::new([&header_name].into_iter());
 
         // No vary known in the original request:
-        let (found1, obligation1) = objects.transaction_get(&h1).await;
+        let (found1, obligation1) = objects.transaction_get(&h1, true).await;
         assert!(found1.is_none());
         let obligation1 = obligation1.unwrap();
         obligation1.complete(
@@ -530,7 +537,7 @@ mod tests {
         assert!(objects.get(&h1).is_some());
 
         // But not with different headers:
-        let (found2, obligaton2) = objects.transaction_get(&h2).await;
+        let (found2, obligaton2) = objects.transaction_get(&h2, true).await;
         assert!(found2.is_none());
         assert!(obligaton2.is_some());
     }
@@ -540,15 +547,38 @@ mod tests {
         let ko = Arc::new(CacheKeyObjects::default());
         let empty_headers = HeaderMap::default();
 
-        let (_not_found, obligation1) = ko.transaction_get(&empty_headers).await;
+        let (_not_found, obligation1) = ko.transaction_get(&empty_headers, true).await;
         assert!(obligation1.is_some());
         // This future won't resolve yet, while the obligation is outstanding:
-        let busy2 = ko.transaction_get(&empty_headers);
+        let busy2 = ko.transaction_get(&empty_headers, true);
         // But once we drop the first obligation...
         std::mem::drop(obligation1);
         // ... we should pick up another:
         let (found2, obligation2) = busy2.await;
         assert!(obligation2.is_some());
         assert!(found2.is_none());
+    }
+
+    #[tokio::test]
+    async fn immediate_with_no_results() {
+        // The "immediate" invocation should return without blocking on obligations completing.
+        let ko = Arc::new(CacheKeyObjects::default());
+        let empty_headers = HeaderMap::default();
+
+        let (None, Some(obligation)) = ko.transaction_get(&empty_headers, false).await else {
+            panic!("unexpected value")
+        };
+
+        // This should resolve immediately, even though there's an outstanding obligation:
+        let (not_found, not_obligated) = ko.transaction_get(&empty_headers, false).await;
+        assert!(not_found.is_none());
+        assert!(not_obligated.is_none());
+
+        let c: Chunk = Bytes::new().into();
+        let b: Body = c.into();
+        obligation.complete(WriteOptions::new(Duration::from_secs(100)), b);
+        let (Some(_), None) = ko.transaction_get(&empty_headers, false).await else {
+            panic!("unexpected value")
+        };
     }
 }

@@ -225,16 +225,10 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let headers = load_lookup_options(self, memory, options_mask, options)?;
-        let key = load_cache_key(memory, cache_key)?;
-        let cache = Arc::clone(self.cache());
-
-        let entry = cache.transaction_lookup(&key, &headers).await;
-
-        let task = PeekableTask::spawn(Box::pin(async move { Ok(entry) })).await;
-        let task = PendingCacheTask::new(task);
-        let handle = self.insert_cache_op(task);
-        Ok(handle.into())
+        let h = self
+            .transaction_lookup_async(memory, cache_key, options_mask, options)
+            .await?;
+        self.cache_busy_handle_wait(memory, h).await
     }
 
     async fn transaction_lookup_async(
@@ -248,10 +242,20 @@ impl FastlyCache for Session {
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        let task = PeekableTask::spawn(Box::pin(async move {
-            Ok(cache.transaction_lookup(&key, &headers).await)
-        }))
-        .await;
+        // Look up once, joining the transaction only if obligated:
+        let e = cache.transaction_lookup(&key, &headers, false).await;
+        let ready = e.found().is_some() || e.go_get().is_some();
+        // If we already got _something_, we can provide an already-complete PeekableTask.
+        // Otherwise we need to spawn it and let it block in the background.
+        let task = if ready {
+            PeekableTask::complete(e)
+        } else {
+            PeekableTask::spawn(Box::pin(async move {
+                Ok(cache.transaction_lookup(&key, &headers, true).await)
+            }))
+            .await
+        };
+
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
         Ok(handle.into())

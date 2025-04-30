@@ -14,26 +14,18 @@ fn new_key() -> CacheKey {
     Uuid::new_v4().into_bytes().to_vec().into()
 }
 
-/// Among two transactions, pick the one "ready" and the one "pending", in that order.
+/// Among two transactions started in order,
+/// assert that the first is ready and the second is pending,
+/// and convert the former to a Transaction.
 fn ready_and_pending(
     busy1: PendingTransaction,
     busy2: PendingTransaction,
 ) -> (Transaction, PendingTransaction) {
-    // Exactly one should become pending:
-    let (ready, pending) = loop {
-        let p1 = busy1.pending().unwrap();
-        let p2 = busy2.pending().unwrap();
-        if !p1 {
-            assert!(p2);
-            break (busy1, busy2);
-        }
-        if !p2 {
-            assert!(p1);
-            break (busy2, busy1);
-        }
-        std::thread::sleep(Duration::from_millis(4));
-    };
-    (ready.wait().unwrap(), pending)
+    let b1 = busy1.pending().expect("error checking status");
+    let b2 = busy2.pending().expect("error checking status");
+    assert!(!b1);
+    assert!(b2);
+    (busy1.wait().unwrap(), busy2)
 }
 
 fn test_racing_transactions() {

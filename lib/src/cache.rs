@@ -229,12 +229,17 @@ impl Cache {
     }
 
     /// Perform a transactional lookup.
-    pub async fn transaction_lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
+    pub async fn transaction_lookup(
+        &self,
+        key: &CacheKey,
+        headers: &HeaderMap,
+        ok_to_wait: bool,
+    ) -> CacheEntry {
         let (found, obligation) = self
             .inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .transaction_get(headers)
+            .transaction_get(headers, ok_to_wait)
             .await;
         CacheEntry {
             key: key.clone(),
