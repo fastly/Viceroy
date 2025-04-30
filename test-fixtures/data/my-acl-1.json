@@ -1,0 +1,8 @@
+{
+  "entries": [
+    { "op": "update", "prefix": "1.2.3.0/24", "action": "BLOCK" },
+    { "op": "create", "prefix": "192.168.0.0/16", "action": "BLOCK" },
+    { "op": "update", "prefix": "23.23.23.23/32", "action": "ALLOW" },
+    { "op": "create", "prefix": "1.2.3.4/32", "action": "ALLOW" }
+  ]
+}

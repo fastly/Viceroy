@@ -21,6 +21,6 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 RUN curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain 1.52.1 -y
 ENV PATH=/root/.cargo/bin:$PATH
 RUN rustup component add rustfmt
-RUN rustup target add wasm32-wasi
+RUN rustup target add wasm32-wasip1
 
 WORKDIR $VICEROY_SRC

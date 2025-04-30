@@ -3,7 +3,7 @@ use {
         error::{FastlyConfigError, SecretStoreConfigError},
         secret_store::{SecretStore, SecretStores},
     },
-    std::{convert::TryFrom, fs},
+    std::{collections::HashMap, convert::TryFrom, fs},
     toml::value::Table,
 };
 
@@ -23,12 +23,66 @@ impl TryFrom<Table> for SecretStoreConfig {
                 });
             }
 
-            let items = items.as_array().ok_or_else(|| {
-                FastlyConfigError::InvalidSecretStoreDefinition {
-                    name: store_name.to_string(),
-                    err: SecretStoreConfigError::NotAnArray,
+            // Either the items here are from a top-level file with
+            // "file" and "format" keys or it's an inline array.
+            // We try to parse either one of them to the same Vec<toml::Value>
+            // to allow them to run through the same validation path further down.
+            let file_path = items
+                .as_table()
+                .and_then(|table| table.get("file"))
+                .and_then(|file| file.as_str());
+            let file_format = items
+                .as_table()
+                .and_then(|table| table.get("format"))
+                .and_then(|format| format.as_str());
+
+            let items: Vec<toml::Value> = match (file_path, file_format) {
+                (Some(file_path), Some(file_type)) => {
+                    if file_type != "json" {
+                        return Err(FastlyConfigError::InvalidSecretStoreDefinition {
+                            name: store_name.to_string(),
+                            err: SecretStoreConfigError::InvalidFileFormat(file_type.to_string()),
+                        });
+                    }
+
+                    let json = read_json_contents(&file_path).map_err(|e| {
+                        FastlyConfigError::InvalidSecretStoreDefinition {
+                            name: store_name.to_string(),
+                            err: e,
+                        }
+                    })?;
+
+                    let toml: Vec<toml::Value> = json
+                        .into_iter()
+                        .map(|(key, value)| {
+                            toml::toml! {
+                                key = key
+                                data = value
+                            }
+                        })
+                        .collect();
+
+                    toml
                 }
-            })?;
+                (None, None) => {
+                    // No file or format specified, parse the TOML as an array
+                    items
+                        .as_array()
+                        .ok_or_else(|| FastlyConfigError::InvalidSecretStoreDefinition {
+                            name: store_name.to_string(),
+                            err: SecretStoreConfigError::NotAnArray,
+                        })?
+                        .clone()
+                }
+                // This means that *either* `format` or `file` is set, which isn't allowed
+                // we need both or neither.
+                (_, _) => {
+                    return Err(FastlyConfigError::InvalidSecretStoreDefinition {
+                        name: store_name.to_string(),
+                        err: SecretStoreConfigError::OnlyOneFormatOrFileSet,
+                    });
+                }
+            };
 
             let mut secret_store = SecretStore::new();
             for item in items.iter() {
@@ -111,4 +165,11 @@ fn is_valid_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+fn read_json_contents(filename: &str) -> Result<HashMap<String, String>, SecretStoreConfigError> {
+    let data = fs::read_to_string(filename).map_err(SecretStoreConfigError::IoError)?;
+    let map: HashMap<String, String> =
+        serde_json::from_str(&data).map_err(|_| SecretStoreConfigError::FileWrongFormat)?;
+    Ok(map)
 }

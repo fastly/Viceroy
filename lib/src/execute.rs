@@ -2,8 +2,10 @@
 
 use {
     crate::{
+        acl::Acls,
         adapt,
         body::Body,
+        cache::Cache,
         component as compute,
         config::{
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
@@ -15,18 +17,27 @@ use {
         object_store::ObjectStores,
         secret_store::SecretStores,
         session::Session,
+        shielding_site::ShieldingSites,
         upstream::TlsConfig,
         Error,
     },
+    futures::{
+        task::{Context, Poll},
+        Future,
+    },
     hyper::{Request, Response},
+    pin_project::pin_project,
     std::{
         collections::HashSet,
         fs,
         io::Write,
         net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
-        sync::atomic::{AtomicBool, AtomicU64, Ordering},
-        sync::{Arc, Mutex},
+        pin::Pin,
+        sync::{
+            atomic::{AtomicBool, AtomicU64, Ordering},
+            Arc, Mutex,
+        },
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
@@ -39,11 +50,11 @@ use {
     wasmtime_wasi::I32Exit,
 };
 
-pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
-    Component(component::InstancePre<ComponentCtx>),
+    Component(compute::ComputePre<ComponentCtx>),
 }
 
 impl Instance {
@@ -53,6 +64,16 @@ impl Instance {
             Instance::Component(_) => panic!("unwrap_module called on a component"),
         }
     }
+}
+
+#[derive(Clone)]
+pub struct GuestProfileConfig {
+    /// Path to write profiling results from the guest. In serve mode,
+    /// this must refer to a directory, while in run mode it names
+    /// a file.
+    pub path: PathBuf,
+    /// Period at which the guest should be profiled.
+    pub sample_period: Duration,
 }
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
@@ -66,6 +87,8 @@ pub struct ExecuteCtx {
     engine: Engine,
     /// An almost-linked Instance: each import function is linked, just needs a Store
     instance_pre: Arc<Instance>,
+    /// The acls for this execution.
+    acls: Arc<Acls>,
     /// The backends for this execution.
     backends: Arc<Backends>,
     /// The device detection mappings for this execution.
@@ -90,13 +113,15 @@ pub struct ExecuteCtx {
     object_store: ObjectStores,
     /// The secret stores for this execution.
     secret_stores: Arc<SecretStores>,
+    /// The shielding sites for this execution.
+    shielding_sites: Arc<ShieldingSites>,
+    /// The cache for this service.
+    cache: Arc<Cache>,
     // `Arc` for the two fields below because this struct must be `Clone`.
     epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
     epoch_increment_stop: Arc<AtomicBool>,
-    /// Path to write profiling results from the guest. In serve mode,
-    /// this must refer to a directory, while in run mode it names
-    /// a file.
-    guest_profile_path: Arc<Option<PathBuf>>,
+    /// Configuration for guest profiling if enabled
+    guest_profile_config: Option<Arc<GuestProfileConfig>>,
 }
 
 impl ExecuteCtx {
@@ -105,7 +130,7 @@ impl ExecuteCtx {
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
-        guest_profile_path: Option<PathBuf>,
+        guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
     ) -> Result<Self, Error> {
@@ -165,7 +190,7 @@ impl ExecuteCtx {
                 Component::from_binary(&engine, &input)?
             };
             let instance_pre = linker.instantiate_pre(&component)?;
-            Instance::Component(instance_pre)
+            Instance::Component(compute::ComputePre::new(instance_pre)?)
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
@@ -187,14 +212,21 @@ impl ExecuteCtx {
             Instance::Module(module, instance_pre)
         };
 
-        // Create the epoch-increment thread.
+        // Create the epoch-increment thread. Note that the period for epoch
+        // interruptions is driven by the guest profiling sample period if
+        // provided as guest stack sampling is done from the epoch
+        // interruption callback.
 
         let epoch_increment_stop = Arc::new(AtomicBool::new(false));
         let engine_clone = engine.clone();
         let epoch_increment_stop_clone = epoch_increment_stop.clone();
+        let sample_period = guest_profile_config
+            .as_ref()
+            .map(|c| c.sample_period)
+            .unwrap_or(DEFAULT_EPOCH_INTERRUPTION_PERIOD);
         let epoch_increment_thread = Some(Arc::new(thread::spawn(move || {
             while !epoch_increment_stop_clone.load(Ordering::Relaxed) {
-                thread::sleep(EPOCH_INTERRUPTION_PERIOD);
+                thread::sleep(sample_period);
                 engine_clone.increment_epoch();
             }
         })));
@@ -202,6 +234,7 @@ impl ExecuteCtx {
         Ok(Self {
             engine,
             instance_pre: Arc::new(instance_pre),
+            acls: Arc::new(Acls::new()),
             backends: Arc::new(Backends::default()),
             device_detection: Arc::new(DeviceDetection::default()),
             geolocation: Arc::new(Geolocation::default()),
@@ -214,15 +247,28 @@ impl ExecuteCtx {
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
             secret_stores: Arc::new(SecretStores::new()),
+            shielding_sites: Arc::new(ShieldingSites::new()),
             epoch_increment_thread,
             epoch_increment_stop,
-            guest_profile_path: Arc::new(guest_profile_path),
+            guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
+            cache: Arc::new(Cache::default()),
         })
     }
 
     /// Get the engine for this execution context.
     pub fn engine(&self) -> &Engine {
         &self.engine
+    }
+
+    /// Get the acls for this execution context.
+    pub fn acls(&self) -> &Acls {
+        &self.acls
+    }
+
+    /// Set the acls for this execution context.
+    pub fn with_acls(mut self, acls: Acls) -> Self {
+        self.acls = Arc::new(acls);
+        self
     }
 
     /// Get the backends for this execution context.
@@ -278,6 +324,11 @@ impl ExecuteCtx {
     /// Set the secret stores for this execution context.
     pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
         self.secret_stores = Arc::new(secret_stores);
+        self
+    }
+    /// Set the shielding sites for this execution context.
+    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
+        self.shielding_sites = Arc::new(shielding_sites);
         self
     }
 
@@ -365,15 +416,28 @@ impl ExecuteCtx {
         let req_id = self
             .next_req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
         // if the guest sends one, while the guest continues to run afterward within its task.
-        let guest_handle = tokio::task::spawn(
-            self.run_guest(req, req_id, sender, local, remote)
-                .instrument(info_span!("request", id = req_id)),
-        );
+        let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
+            active_cpu_time_us.clone(),
+            self.run_guest(
+                req,
+                req_id,
+                sender,
+                local,
+                remote,
+                active_cpu_time_us.clone(),
+            )
+            .instrument(info_span!("request", id = req_id)),
+        ));
 
-        let resp = match receiver.await {
+        let res = receiver.await;
+        let span = info_span!("request", id = req_id);
+        let _span = span.enter();
+
+        let resp = match res {
             Ok(resp) => (resp, None),
             Err(_) => match guest_handle
                 .await
@@ -396,6 +460,8 @@ impl ExecuteCtx {
                 Err(e) => panic!("failed to run guest: {}", e),
             },
         };
+
+        info!("response status: {:?}", resp.0.status());
 
         Ok(resp)
     }
@@ -428,6 +494,7 @@ impl ExecuteCtx {
         sender: Sender<Response<Body>>,
         local: SocketAddr,
         remote: SocketAddr,
+        active_cpu_time_us: Arc<AtomicU64>,
     ) -> Result<(), ExecutionError> {
         info!("handling request {} {}", req.method(), req.uri());
         let start_timestamp = Instant::now();
@@ -437,7 +504,9 @@ impl ExecuteCtx {
             sender,
             local,
             remote,
+            active_cpu_time_us,
             &self,
+            self.acls.clone(),
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),
@@ -446,19 +515,21 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.shielding_sites.clone(),
+            self.cache.clone(),
         );
 
-        let guest_profile_path = self.guest_profile_path.as_deref().map(|path| {
+        let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
             let now = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            path.join(format!("{}-{}.json", now, req_id))
+            pcfg.path.join(format!("{}-{}.json", now, req_id))
         });
 
         match self.instance_pre.as_ref() {
             Instance::Component(instance_pre) => {
-                if self.guest_profile_path.is_some() {
+                if self.guest_profile_config.is_some() {
                     warn!("Components do not currently support the guest profiler");
                 }
 
@@ -470,10 +541,10 @@ impl ExecuteCtx {
                 })
                 .map_err(ExecutionError::Context)?;
 
-                let (compute, _instance) =
-                    compute::Compute::instantiate_pre(&mut store, instance_pre)
-                        .await
-                        .map_err(ExecutionError::Instantiation)?;
+                let compute = instance_pre
+                    .instantiate_async(&mut store)
+                    .await
+                    .map_err(ExecutionError::Instantiation)?;
 
                 let result = compute
                     .fastly_api_reactor()
@@ -511,11 +582,11 @@ impl ExecuteCtx {
             }
 
             Instance::Module(module, instance_pre) => {
-                let profiler = self.guest_profile_path.is_some().then(|| {
+                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
                     let program_name = "main";
                     GuestProfiler::new(
                         program_name,
-                        EPOCH_INTERRUPTION_PERIOD,
+                        pcfg.sample_period,
                         vec![(program_name.to_string(), module.clone())],
                     )
                 });
@@ -586,6 +657,7 @@ impl ExecuteCtx {
         let (sender, receiver) = oneshot::channel();
         let local = (Ipv4Addr::LOCALHOST, 80).into();
         let remote = (Ipv4Addr::LOCALHOST, 0).into();
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         let session = Session::new(
             req_id,
@@ -593,7 +665,9 @@ impl ExecuteCtx {
             sender,
             local,
             remote,
+            active_cpu_time_us.clone(),
             &self,
+            self.acls.clone(),
             self.backends.clone(),
             self.device_detection.clone(),
             self.geolocation.clone(),
@@ -602,6 +676,8 @@ impl ExecuteCtx {
             self.config_path.clone(),
             self.object_store.clone(),
             self.secret_stores.clone(),
+            self.shielding_sites.clone(),
+            self.cache.clone(),
         );
 
         if let Instance::Component(_) = self.instance_pre.as_ref() {
@@ -610,13 +686,14 @@ impl ExecuteCtx {
 
         let (module, instance_pre) = self.instance_pre.unwrap_module();
 
-        let profiler = self.guest_profile_path.is_some().then(|| {
+        let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
             GuestProfiler::new(
                 program_name,
-                EPOCH_INTERRUPTION_PERIOD,
+                pcfg.sample_period,
                 vec![(program_name.to_string(), module.clone())],
             )
         });
+
         let mut store = create_store(&self, session, profiler, |builder| {
             builder.arg(program_name);
             for arg in args {
@@ -637,10 +714,14 @@ impl ExecuteCtx {
             .map_err(ExecutionError::Typechecking)?;
 
         // Invoke the entrypoint function and collect its exit code
-        let result = main_func.call_async(&mut store, ()).await;
+        let result =
+            CpuTimeTracking::new(active_cpu_time_us, main_func.call_async(&mut store, ())).await;
 
         // If we collected a profile, write it to the file
-        write_profile(&mut store, self.guest_profile_path.as_ref().as_ref());
+        write_profile(
+            &mut store,
+            self.guest_profile_config.as_deref().map(|cfg| &cfg.path),
+        );
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
@@ -709,4 +790,33 @@ fn configure_wasmtime(
     }
 
     config
+}
+
+#[pin_project]
+struct CpuTimeTracking<F> {
+    #[pin]
+    future: F,
+    time_spent: Arc<AtomicU64>,
+}
+
+impl<F> CpuTimeTracking<F> {
+    fn new(time_spent: Arc<AtomicU64>, future: F) -> Self {
+        CpuTimeTracking { future, time_spent }
+    }
+}
+
+impl<E, F: Future<Output = Result<(), E>>> Future for CpuTimeTracking<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let me = self.project();
+
+        let start = Instant::now();
+        let result = me.future.poll(cx);
+        // 2^64 microseconds is over half a million years, so I'm not terribly
+        // worried about this cast.
+        let runtime = start.elapsed().as_micros() as u64;
+        let _ = me.time_spent.fetch_add(runtime, Ordering::SeqCst);
+        result
+    }
 }

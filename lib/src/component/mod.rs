@@ -6,6 +6,7 @@ component::bindgen!({
     async: true,
     with: {
         "fastly:api/uap/user-agent": uap::UserAgent,
+        "fastly:api/kv-store/lookup-result": kv_store::LookupResult,
 
         "wasi:clocks": wasmtime_wasi::bindings::clocks,
         "wasi:random": wasmtime_wasi::bindings::random,
@@ -18,7 +19,10 @@ component::bindgen!({
     },
 
     trappable_imports: [
-        "header-values-get"
+        "header-values-get",
+        "[method]lookup-result.body",
+        "[method]lookup-result.metadata",
+        "[method]lookup-result.generation"
     ],
 });
 
@@ -41,31 +45,38 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::cli::stdout::add_to_linker_get_host(linker, wrap)?;
     wasmtime_wasi::bindings::cli::stderr::add_to_linker_get_host(linker, wrap)?;
 
-    fastly::api::async_io::add_to_linker(linker, |x| x.session())?;
-    fastly::api::backend::add_to_linker(linker, |x| x.session())?;
-    fastly::api::cache::add_to_linker(linker, |x| x.session())?;
-    fastly::api::device_detection::add_to_linker(linker, |x| x.session())?;
-    fastly::api::dictionary::add_to_linker(linker, |x| x.session())?;
-    fastly::api::erl::add_to_linker(linker, |x| x.session())?;
-    fastly::api::geo::add_to_linker(linker, |x| x.session())?;
-    fastly::api::http_body::add_to_linker(linker, |x| x.session())?;
-    fastly::api::http_req::add_to_linker(linker, |x| x.session())?;
-    fastly::api::http_resp::add_to_linker(linker, |x| x.session())?;
-    fastly::api::http_types::add_to_linker(linker, |x| x.session())?;
-    fastly::api::log::add_to_linker(linker, |x| x.session())?;
-    fastly::api::kv_store::add_to_linker(linker, |x| x.session())?;
-    fastly::api::purge::add_to_linker(linker, |x| x.session())?;
-    fastly::api::secret_store::add_to_linker(linker, |x| x.session())?;
-    fastly::api::types::add_to_linker(linker, |x| x.session())?;
-    fastly::api::uap::add_to_linker(linker, |x| x.session())?;
-    fastly::api::config_store::add_to_linker(linker, |x| x.session())?;
+    fastly::api::acl::add_to_linker(linker, |x| x)?;
+    fastly::api::async_io::add_to_linker(linker, |x| x)?;
+    fastly::api::backend::add_to_linker(linker, |x| x)?;
+    fastly::api::cache::add_to_linker(linker, |x| x)?;
+    fastly::api::compute_runtime::add_to_linker(linker, |x| x)?;
+    fastly::api::config_store::add_to_linker(linker, |x| x)?;
+    fastly::api::device_detection::add_to_linker(linker, |x| x)?;
+    fastly::api::dictionary::add_to_linker(linker, |x| x)?;
+    fastly::api::erl::add_to_linker(linker, |x| x)?;
+    fastly::api::geo::add_to_linker(linker, |x| x)?;
+    fastly::api::http_body::add_to_linker(linker, |x| x)?;
+    fastly::api::http_req::add_to_linker(linker, |x| x)?;
+    fastly::api::http_resp::add_to_linker(linker, |x| x)?;
+    fastly::api::http_types::add_to_linker(linker, |x| x)?;
+    fastly::api::image_optimizer::add_to_linker(linker, |x| x)?;
+    fastly::api::kv_store::add_to_linker(linker, |x| x)?;
+    fastly::api::log::add_to_linker(linker, |x| x)?;
+    fastly::api::object_store::add_to_linker(linker, |x| x)?;
+    fastly::api::purge::add_to_linker(linker, |x| x)?;
+    fastly::api::secret_store::add_to_linker(linker, |x| x)?;
+    fastly::api::shielding::add_to_linker(linker, |x| x)?;
+    fastly::api::types::add_to_linker(linker, |x| x)?;
+    fastly::api::uap::add_to_linker(linker, |x| x)?;
 
     Ok(())
 }
 
+pub mod acl;
 pub mod async_io;
 pub mod backend;
 pub mod cache;
+pub mod compute_runtime;
 pub mod config_store;
 pub mod device_detection;
 pub mod dictionary;
@@ -77,9 +88,12 @@ pub mod http_body;
 pub mod http_req;
 pub mod http_resp;
 pub mod http_types;
+pub mod image_optimizer;
 pub mod kv_store;
 pub mod log;
+pub mod object_store;
 pub mod purge;
 pub mod secret_store;
+pub mod shielding;
 pub mod types;
 pub mod uap;

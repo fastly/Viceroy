@@ -2,7 +2,7 @@ use {
     super::fastly::api::types,
     crate::{
         error::{self, HandleError},
-        session::Session,
+        linking::ComponentCtx,
     },
     http::header::InvalidHeaderName,
 };
@@ -12,12 +12,18 @@ pub enum TrappableError {
     Trap(anyhow::Error),
 }
 
-impl types::Host for Session {
+impl types::Host for ComponentCtx {
     fn convert_error(&mut self, err: TrappableError) -> wasmtime::Result<types::Error> {
         match err {
             TrappableError::Error(err) => Ok(err),
             TrappableError::Trap(err) => Err(err),
         }
+    }
+}
+
+impl From<wasmtime::component::ResourceTableError> for TrappableError {
+    fn from(e: wasmtime::component::ResourceTableError) -> Self {
+        Self::Trap(e.into())
     }
 }
 

@@ -21,7 +21,9 @@ pub mod error;
 pub mod logging;
 pub mod session;
 
+mod acl;
 mod async_io;
+mod collecting_body;
 pub mod component;
 mod downstream;
 mod execute;
@@ -30,11 +32,12 @@ mod linking;
 mod object_store;
 mod secret_store;
 mod service;
+mod shielding_site;
 mod streaming_body;
 mod upstream;
 pub mod wiggle_abi;
 
 pub use {
-    error::Error, execute::ExecuteCtx, service::ViceroyService, upstream::BackendConnector,
-    wasmtime::ProfilingStrategy,
+    error::Error, execute::ExecuteCtx, execute::GuestProfileConfig, service::ViceroyService,
+    upstream::BackendConnector, wasmtime::ProfilingStrategy,
 };

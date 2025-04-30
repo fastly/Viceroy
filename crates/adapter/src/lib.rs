@@ -28,11 +28,12 @@ pub mod bindings {
     wit_bindgen_rust_macro::generate!({
         path: "../../lib/wit",
         world: "fastly:api/compute",
-        std_feature,
         raw_strings,
         runtime_path: "crate::bindings::wit_bindgen_rt_shim",
         disable_run_ctors_once_workaround: true,
         skip: ["poll"],
+        generate_all,
+        disable_custom_section_link_helpers: true,
     });
 
     pub mod wit_bindgen_rt_shim {
@@ -353,7 +354,7 @@ impl BumpAlloc {
             unreachable!("invalid alignment");
         }
         let align_offset = self.base.align_offset(align);
-        if align_offset >= self.len {
+        if align_offset > self.len {
             unreachable!("failed to allocate")
         }
         self.len -= align_offset;

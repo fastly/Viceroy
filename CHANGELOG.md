@@ -1,6 +1,79 @@
 ## Unreleased
 
-- Add support for JSON files in local_server.kv_stores ([#365](https://github.com/fastly/Viceroy/pull/365))
+## 0.13.0
+
+- Add support for shielding primitives in Viceroy ([#455](https://github.com/fastly/Viceroy/pull/455)
+
+  Shielding definitions can be creating inside `fastly.toml` using the
+  `local-server.shielding_sites` key. These definitions are just a normal TOML
+  dictionary mapping shield sites (e.g., "pdx-or-us", "bfi-wa-us", etc.) to
+  either the string "Local" (meaning that Viceroy should pretend to be operating
+  in that POP), or a dictionary mapping "unencrypted" and "encrypted" to target
+  URLs (to mimic operating off the shield POP). For example:
+
+  ```
+  [local_server.shielding_sites]
+  "pdx-or-us" = "Local"
+  "bfi-wa-us".unencrypted = "http://localhost"
+  "bfi-wa-us".encrypted = "https://localhost"
+  ```
+
+  This snippet defines two shield POPs: "pdx-or-us", which Viceroy should
+  pretend to be running on, and "bfi-wa-us", which is remote. If the guest
+  program asks for a backend to "bfi-wa-us", Viceroy will use `localhost`
+  as the target server, using HTTPS for encrypted traffic and HTTP for
+  unencrypted traffic.
+
+## 0.12.4 (2025-04-07)
+
+- Add support for `file` entries in KV Stores defined using "file"/"format" ([#463](https://github.com/fastly/Viceroy/pull/463))
+
+## 0.12.3 (2025-03-28)
+
+- Add `downstream_client_ddos_detected` hostcall stub ([#460](https://github.com/fastly/Viceroy/pull/460))
+- Add support for metadata in local_server.kv_stores ([#459](https://github.com/fastly/Viceroy/pull/459))
+- Add support for the Image Optimizer hostcalls ([#458](https://github.com/fastly/Viceroy/pull/458))
+- Guest Profile sample period configuration support ([#456](https://github.com/fastly/Viceroy/pull/456))
+- Fix cache key type in component interface ([#453](https://github.com/fastly/Viceroy/pull/453))
+- Remove ubuntu-20.04 from CI ([#451](https://github.com/fastly/Viceroy/pull/451))
+- Allow environment variable tests to pass based on validity, rather than their value ([#450](https://github.com/fastly/Viceroy/pull/450))
+- Add `FASTLY_IS_STAGING` environment variable ([#449](https://github.com/fastly/Viceroy/pull/449))
+- Update KV Store key naming restrictions ([#447](https://github.com/fastly/Viceroy/pull/447))
+- Fixes to CI ([#448](https://github.com/fastly/Viceroy/pull/448))
+- Update to 0.11.1 of the Fastly Rust SDK ([#445](https://github.com/fastly/Viceroy/pull/445))
+- Update CI to remove tests for macOS 12 and add tests for macOS 15 ([#436](https://github.com/fastly/Viceroy/pull/436))
+
+## 0.12.2 (2024-12-02)
+
+- Add support for the `on_behalf_of` hostcalls ([#440](https://github.com/fastly/Viceroy/pull/440))
+- Add new `lookup_wait_v2` to fix generation parsing bug ([#439](https://github.com/fastly/Viceroy/pull/439))
+- Add `fastly_acl` hostcalls ([#438](https://github.com/fastly/Viceroy/pull/438))
+
+## 0.12.1 (2024-10-04)
+
+- Stub new HTTP cache hostcalls ([#433](https://github.com/fastly/Viceroy/pull/433))
+- Add support for reading secrets from a JSON file ([#428](https://github.com/fastly/Viceroy/pull/428))
+- Added hostcalls for the new builder api hostcalls ([#427](https://github.com/fastly/Viceroy/pull/427))
+
+## 0.12.0 (2024-09-03)
+
+- Add ReplaceHandle hostcall stubs for upcoming SDK release ([#424](https://github.com/fastly/Viceroy/pull/424))
+- Add keepalive options for dynamic backends ([#423](https://github.com/fastly/Viceroy/pull/423))
+- Fix bug in `inspect` implementation and add a test ([#422](https://github.com/fastly/Viceroy/pull/422))
+- Add the missing adapter calls for new cache operations ([#419](https://github.com/fastly/Viceroy/pull/419))
+- Implement component traits on ComponentCtx ([#421](https://github.com/fastly/Viceroy/pull/421))
+- Split info spans when logging request IDs ([#420](https://github.com/fastly/Viceroy/pull/420))
+- Rename the kv-store interface to object-store in compute.wit ([#415](https://github.com/fastly/Viceroy/pull/415))
+
+## 0.11.0 (2024-08-20)
+
+- Add support for JSON files in `local_server.kv_stores` ([#365](https://github.com/fastly/Viceroy/pull/365))
+- Add `get_vcpu_ms` hostcall ([#412](https://github.com/fastly/Viceroy/pull/412))
+- Add `inspect` hostcall ([#417](https://github.com/fastly/Viceroy/pull/417))
+- Add `downstream_compliance_region` hostcall ([#403](https://github.com/fastly/Viceroy/pull/403))
+- Emit the status code for responses, in addition to other stats ([#416](https://github.com/fastly/Viceroy/pull/416))
+- Update `compute.wit` and the adapter for some api fixes ([#414](https://github.com/fastly/Viceroy/pull/414))
+- Use `mozilla-actions/sccache-action` for caching builds ([#411](https://github.com/fastly/Viceroy/pull/411))
 
 ## 0.10.2 (2024-07-22)
 

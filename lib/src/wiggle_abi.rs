@@ -48,10 +48,12 @@ macro_rules! multi_value_result {
     }};
 }
 
+mod acl;
 mod anti_abuse_impl;
 mod backend_impl;
 mod body_impl;
 mod cache;
+mod compute_runtime;
 mod config_store;
 mod device_detection_impl;
 mod dictionary_impl;
@@ -60,11 +62,15 @@ mod erl_impl;
 mod fastly_purge_impl;
 mod geo_impl;
 mod headers;
+mod http_cache;
+mod image_optimizer;
+mod kv_store_impl;
 mod log_impl;
 mod obj_store_impl;
 mod req_impl;
 mod resp_impl;
 mod secret_store_impl;
+mod shielding;
 mod uap_impl;
 
 // Expand the `.witx` interface definition into a collection of modules. The `types` module will
@@ -74,15 +80,90 @@ wiggle::from_witx!({
     witx: ["$CARGO_MANIFEST_DIR/compute-at-edge-abi/compute-at-edge.witx"],
     errors: { fastly_status => Error },
     async: {
+        fastly_acl::lookup,
         fastly_async_io::{select},
-        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait},
+        fastly_object_store::{delete_async, pending_delete_wait, insert, insert_async, pending_insert_wait, lookup_async, pending_lookup_wait, list},
+        fastly_kv_store::{lookup, lookup_wait, lookup_wait_v2, insert, insert_wait, delete, delete_wait, list, list_wait},
         fastly_http_body::{append, read, write},
+        fastly_http_cache::{lookup, transaction_lookup, insert, transaction_insert, transaction_insert_and_stream_back, transaction_update, transaction_update_and_return_fresh, transaction_record_not_cacheable, transaction_abandon, found, close, get_suggested_backend_request, get_suggested_cache_options, prepare_response_for_storage, get_found_response, get_state, get_length, get_max_age_ns, get_stale_while_revalidate_ns, get_age_ns, get_hits, get_sensitive_data, get_surrogate_keys, get_vary_rule},
+        fastly_cache::{ cache_busy_handle_wait, close, close_busy, found, get_age_ns, get_body, get_found_response, get_hits, get_length, get_max_age_ns, get_sensitive_data, get_stale_while_revalidate_ns, get_state, get_suggested_backend_request, get_suggested_cache_options, get_surrogate_keys, get_user_metadata, get_vary_rule, insert, lookup, prepare_response_for_storage, replace, replace_get_age_ns, replace_get_body, replace_get_body_ns, replace_get_hits, replace_get_hits_ns, replace_get_length, replace_get_max_age_ns, replace_get_stale, replace_get_stale_while_revalidate_ns, replace_get_state, replace_get_user_metadata, replace_insert, transaction_cancel, transaction_insert, transaction_insert_and_stream_back, transaction_lookup, transaction_lookup_async, transaction_record_not_cacheable, transaction_update, transaction_update_and_return_fresh},
         fastly_http_req::{
             pending_req_select, pending_req_select_v2, pending_req_poll, pending_req_poll_v2,
-            pending_req_wait, pending_req_wait_v2, send, send_v2, send_async, send_async_streaming
+            pending_req_wait, pending_req_wait_v2, send, send_v2, send_v3, send_async, send_async_v2, send_async_streaming
         },
+        fastly_image_optimizer::transform_image_optimizer_request,
     }
 });
+
+impl From<types::ObjectStoreHandle> for types::KvStoreHandle {
+    fn from(h: types::ObjectStoreHandle) -> types::KvStoreHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreHandle> for types::ObjectStoreHandle {
+    fn from(h: types::KvStoreHandle) -> types::ObjectStoreHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreLookupHandle> for types::PendingKvLookupHandle {
+    fn from(h: types::KvStoreLookupHandle) -> types::PendingKvLookupHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvLookupHandle> for types::KvStoreLookupHandle {
+    fn from(h: types::PendingKvLookupHandle) -> types::KvStoreLookupHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreInsertHandle> for types::PendingKvInsertHandle {
+    fn from(h: types::KvStoreInsertHandle) -> types::PendingKvInsertHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvInsertHandle> for types::KvStoreInsertHandle {
+    fn from(h: types::PendingKvInsertHandle) -> types::KvStoreInsertHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreDeleteHandle> for types::PendingKvDeleteHandle {
+    fn from(h: types::KvStoreDeleteHandle) -> types::PendingKvDeleteHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvDeleteHandle> for types::KvStoreDeleteHandle {
+    fn from(h: types::PendingKvDeleteHandle) -> types::KvStoreDeleteHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::KvStoreListHandle> for types::PendingKvListHandle {
+    fn from(h: types::KvStoreListHandle) -> types::PendingKvListHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
+
+impl From<types::PendingKvListHandle> for types::KvStoreListHandle {
+    fn from(h: types::PendingKvListHandle) -> types::KvStoreListHandle {
+        let s = unsafe { h.inner() };
+        s.into()
+    }
+}
 
 impl From<types::HttpVersion> for http::version::Version {
     fn from(v: types::HttpVersion) -> http::version::Version {

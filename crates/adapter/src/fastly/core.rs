@@ -86,18 +86,20 @@ pub enum HttpKeepaliveMode {
     NoKeepalive = 1,
 }
 
-pub type PendingObjectStoreLookupHandle = u32;
-pub type PendingObjectStoreInsertHandle = u32;
-pub type PendingObjectStoreDeleteHandle = u32;
+pub type AclHandle = u32;
+pub type AsyncItemHandle = u32;
 pub type BodyHandle = u32;
+pub type DictionaryHandle = u32;
+pub type KVStoreHandle = u32;
+pub type PendingObjectStoreDeleteHandle = u32;
+pub type PendingObjectStoreInsertHandle = u32;
+pub type PendingObjectStoreListHandle = u32;
+pub type PendingObjectStoreLookupHandle = u32;
 pub type PendingRequestHandle = u32;
 pub type RequestHandle = u32;
 pub type ResponseHandle = u32;
-pub type DictionaryHandle = u32;
-pub type KVStoreHandle = u32;
-pub type SecretStoreHandle = u32;
 pub type SecretHandle = u32;
-pub type AsyncItemHandle = u32;
+pub type SecretStoreHandle = u32;
 
 const INVALID_HANDLE: u32 = u32::MAX - 1;
 
@@ -121,6 +123,11 @@ pub struct DynamicBackendConfig {
     pub client_certificate: *const u8,
     pub client_certificate_len: u32,
     pub client_key: SecretHandle,
+    pub http_keepalive_time_ms: u32,
+    pub tcp_keepalive_enable: u32,
+    pub tcp_keepalive_interval_secs: u32,
+    pub tcp_keepalive_probes: u32,
+    pub tcp_keepalive_time_secs: u32,
 }
 
 impl Default for DynamicBackendConfig {
@@ -144,6 +151,11 @@ impl Default for DynamicBackendConfig {
             client_certificate: std::ptr::null(),
             client_certificate_len: 0,
             client_key: 0,
+            http_keepalive_time_ms: 0,
+            tcp_keepalive_enable: 0,
+            tcp_keepalive_interval_secs: 0,
+            tcp_keepalive_probes: 0,
+            tcp_keepalive_time_secs: 0,
         }
     }
 }
@@ -185,6 +197,7 @@ bitflags::bitflags! {
         const DONT_POOL = 1 << 12;
         const CLIENT_CERT = 1 << 13;
         const GRPC = 1 << 14;
+        const KEEPALIVE = 1 << 15;
     }
 }
 
@@ -248,7 +261,97 @@ impl From<BackendConfigOptions> for crate::bindings::fastly::api::http_types::Ba
             options.contains(BackendConfigOptions::CLIENT_CERT),
         );
         flags.set(Self::GRPC, options.contains(BackendConfigOptions::GRPC));
+        flags.set(
+            Self::KEEPALIVE,
+            options.contains(BackendConfigOptions::KEEPALIVE),
+        );
         flags
+    }
+}
+
+bitflags::bitflags! {
+    /// `InspectConfigOptions` codings.
+    #[derive(Default)]
+    #[repr(transparent)]
+    pub struct InspectConfigOptions: u32 {
+        const RESERVED = 1 << 0;
+        const CORP = 1 << 1;
+        const WORKSPACE = 1 << 2;
+    }
+}
+
+impl From<InspectConfigOptions> for crate::bindings::fastly::api::http_req::InspectConfigOptions {
+    fn from(options: InspectConfigOptions) -> Self {
+        let mut flags = Self::empty();
+        flags.set(
+            Self::RESERVED,
+            options.contains(InspectConfigOptions::RESERVED),
+        );
+        flags.set(Self::CORP, options.contains(InspectConfigOptions::CORP));
+        flags.set(
+            Self::WORKSPACE,
+            options.contains(InspectConfigOptions::WORKSPACE),
+        );
+        flags
+    }
+}
+
+#[repr(C)]
+pub struct InspectConfig {
+    pub corp: *const u8,
+    pub corp_len: u32,
+    pub workspace: *const u8,
+    pub workspace_len: u32,
+}
+
+pub mod fastly_acl {
+    use super::*;
+    use crate::bindings::fastly::api::acl;
+    use core::slice;
+
+    #[export_name = "fastly_acl#open"]
+    pub fn open(
+        acl_name_ptr: *const u8,
+        acl_name_len: usize,
+        acl_handle_out: *mut AclHandle,
+    ) -> FastlyStatus {
+        let acl_name = unsafe { slice::from_raw_parts(acl_name_ptr, acl_name_len) };
+        match acl::open(acl_name) {
+            Ok(res) => {
+                unsafe {
+                    *acl_handle_out = res;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_acl#lookup"]
+    pub fn lookup(
+        acl_handle: acl::AclHandle,
+        ip_octets: *const u8,
+        ip_len: usize,
+        body_handle_out: *mut BodyHandle,
+        acl_error_out: *mut acl::AclError,
+    ) -> FastlyStatus {
+        let ip = unsafe { slice::from_raw_parts(ip_octets, ip_len) };
+        match acl::lookup(acl_handle, ip, u64::try_from(ip_len).trapping_unwrap()) {
+            Ok((Some(body_handle), acl_error)) => {
+                unsafe {
+                    *body_handle_out = body_handle;
+                    *acl_error_out = acl_error;
+                }
+                FastlyStatus::OK
+            }
+            Ok((None, acl_error)) => {
+                unsafe {
+                    *acl_error_out = acl_error;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
     }
 }
 
@@ -264,6 +367,24 @@ pub mod fastly_abi {
             FastlyStatus::UNKNOWN_ERROR
         } else {
             FastlyStatus::OK
+        }
+    }
+}
+
+pub mod fastly_compute_runtime {
+    use super::*;
+
+    #[export_name = "fastly_compute_runtime#get_vcpu_ms"]
+    pub fn get_vcpu_ms(vcpu_time_ms_out: *mut u64) -> FastlyStatus {
+        match crate::bindings::fastly::api::compute_runtime::get_vcpu_ms() {
+            Ok(time) => {
+                unsafe {
+                    *vcpu_time_ms_out = time;
+                };
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
         }
     }
 }
@@ -1346,16 +1467,53 @@ pub mod fastly_http_req {
 
                 FastlyStatus::OK
             }
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
 
-                e.into()
+                err.error.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_http_req#send_v3"]
+    pub fn send_v3(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend: *const u8,
+        backend_len: usize,
+        error_detail: *mut SendErrorDetail,
+        resp_handle_out: *mut ResponseHandle,
+        resp_body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
+        match fastly::api::http_req::send_v3(req_handle, body_handle, backend) {
+            Ok((resp_handle, resp_body_handle)) => {
+                unsafe {
+                    *error_detail = http_req::SendErrorDetailTag::Ok.into();
+                    *resp_handle_out = resp_handle;
+                    *resp_body_handle_out = resp_body_handle;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(err) => {
+                unsafe {
+                    *error_detail = err
+                        .detail
+                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
+                        .into();
+                    *resp_handle_out = INVALID_HANDLE;
+                    *resp_body_handle_out = INVALID_HANDLE;
+                }
+
+                err.error.into()
             }
         }
     }
@@ -1370,6 +1528,28 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
         match http_req::send_async(req_handle, body_handle, backend) {
+            Ok(res) => {
+                unsafe {
+                    *pending_req_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_req#send_async_v2"]
+    pub fn send_async_v2(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend: *const u8,
+        backend_len: usize,
+        pending_req_handle_out: *mut PendingRequestHandle,
+        streaming: bool,
+    ) -> FastlyStatus {
+        let backend = unsafe { slice::from_raw_parts(backend, backend_len) };
+        match http_req::send_async_v2(req_handle, body_handle, backend, streaming) {
             Ok(res) => {
                 unsafe {
                     *pending_req_handle_out = res;
@@ -1556,16 +1736,17 @@ pub mod fastly_http_req {
 
                 FastlyStatus::OK
             },
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *is_done_out = 0;
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -1614,15 +1795,16 @@ pub mod fastly_http_req {
                 }
                 FastlyStatus::OK
             }
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -1644,15 +1826,16 @@ pub mod fastly_http_req {
 
                 FastlyStatus::OK
             }
-            Err((detail, e)) => {
+            Err(err) => {
                 unsafe {
-                    *error_detail = detail
+                    *error_detail = err
+                        .detail
                         .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
                         .into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
-                e.into()
+                err.error.into()
             }
         }
     }
@@ -1684,6 +1867,55 @@ pub mod fastly_http_req {
             req_handle,
             encodings.into(),
         ))
+    }
+
+    #[export_name = "fastly_http_req#inspect"]
+    pub fn inspect(
+        ds_req: RequestHandle,
+        ds_body: BodyHandle,
+        info_mask: InspectConfigOptions,
+        info: *mut InspectConfig,
+        buf: *mut u8,
+        buf_len: usize,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        // NOTE: this is only really safe because we never mutate the vectors -- we only need
+        // vectors to satisfy the interface produced by the InspectConfig record,
+        // `inspect` will never mutate the vectors it's given.
+        macro_rules! make_vec {
+            ($ptr_field:ident, $len_field:ident) => {
+                unsafe {
+                    let len = usize::try_from((*info).$len_field).trapping_unwrap();
+                    Vec::from_raw_parts((*info).$ptr_field as *mut _, len, len)
+                }
+            };
+        }
+
+        let info_mask = http_req::InspectConfigOptions::from(info_mask);
+
+        let info = http_req::InspectConfig {
+            corp: make_vec!(corp, corp_len),
+            workspace: make_vec!(workspace, workspace_len),
+        };
+
+        let res = alloc_result!(buf, buf_len, nwritten_out, {
+            fastly::api::http_req::inspect(
+                ds_req,
+                ds_body,
+                info_mask,
+                &info,
+                u64::try_from(buf_len).trapping_unwrap(),
+            )
+        });
+
+        std::mem::forget(info);
+
+        res
+    }
+
+    #[export_name = "fastly_http_req#on_behalf_of"]
+    pub fn on_behalf_of(_: RequestHandle, _: *const u8, _: usize) -> FastlyStatus {
+        FastlyStatus::UNKNOWN_ERROR
     }
 }
 
@@ -2209,9 +2441,143 @@ pub mod fastly_erl {
     }
 }
 
-pub mod fastly_kv_store {
+pub mod fastly_image_optimizer {
     use super::*;
-    use crate::bindings::fastly::api::kv_store;
+    use crate::bindings::fastly::api::image_optimizer;
+    use core::slice;
+
+    #[repr(u32)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ImageOptimizerErrorTag {
+        Uninitialized = 0,
+        Ok = 1,
+        Error = 2,
+        Warning = 3,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct ImageOptimizerErrorDetail {
+        pub tag: ImageOptimizerErrorTag,
+        pub message: *const u8,
+        pub message_len: usize,
+    }
+
+    impl Default for image_optimizer::ImageOptimizerErrorDetail {
+        fn default() -> Self {
+            Self {
+                tag: image_optimizer::ImageOptimizerErrorTag::Uninitialized,
+                message: Vec::new(),
+            }
+        }
+    }
+
+    bitflags::bitflags! {
+        /// `ImageOptimizerTransformConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct ImageOptimizerTransformConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+            const SDK_CLAIMS_OPTS = 1 << 1;
+        }
+    }
+
+    impl From<ImageOptimizerTransformConfigOptions>
+        for image_optimizer::ImageOptimizerTransformConfigOptions
+    {
+        fn from(options: ImageOptimizerTransformConfigOptions) -> Self {
+            let mut flags = Self::empty();
+            flags.set(
+                Self::RESERVED,
+                options.contains(ImageOptimizerTransformConfigOptions::RESERVED),
+            );
+            flags.set(
+                Self::SDK_CLAIMS_OPTS,
+                options.contains(ImageOptimizerTransformConfigOptions::SDK_CLAIMS_OPTS),
+            );
+            flags
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct ImageOptimizerTransformConfig {
+        pub sdk_claims_opts: *const u8,
+        pub sdk_claims_opts_len: usize,
+    }
+
+    #[export_name = "fastly_image_optimizer#transform_image_optimizer_request"]
+    pub fn transform_image_optimizer_request(
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        origin_image_backend: *const u8,
+        origin_image_backend_len: usize,
+        io_transform_config_options: ImageOptimizerTransformConfigOptions,
+        io_transform_config: *const ImageOptimizerTransformConfig,
+        io_error_detail: *mut ImageOptimizerErrorDetail,
+        resp_handle_out: *mut ResponseHandle,
+        resp_body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        let backend_name =
+            unsafe { slice::from_raw_parts(origin_image_backend, origin_image_backend_len) };
+        let io_opts = image_optimizer::ImageOptimizerTransformConfigOptions::from(
+            io_transform_config_options,
+        );
+
+        // NOTE: this is only really safe because we never mutate the vectors -- we only need
+        // vectors to satisfy the interface produced by the ImageOptimizerTransformConfig record,
+        // `transform_image_optimizer_request` will never mutate the vectors it's given.
+        macro_rules! make_vec {
+            ($ptr_field:ident, $len_field:ident) => {
+                unsafe {
+                    let len = usize::try_from((*io_transform_config).$len_field).trapping_unwrap();
+                    Vec::from_raw_parts((*io_transform_config).$ptr_field as *mut _, len, len)
+                }
+            };
+        }
+
+        let config = image_optimizer::ImageOptimizerTransformConfig {
+            sdk_claims_opts: if io_opts
+                .contains(image_optimizer::ImageOptimizerTransformConfigOptions::SDK_CLAIMS_OPTS)
+            {
+                make_vec!(sdk_claims_opts, sdk_claims_opts_len)
+            } else {
+                vec![]
+            },
+        };
+
+        let error_detail = image_optimizer::ImageOptimizerErrorDetail::default();
+        let res = image_optimizer::transform_image_optimizer_request(
+            req_handle,
+            body_handle,
+            backend_name,
+            io_opts,
+            &config,
+            &error_detail,
+        );
+
+        std::mem::forget(config);
+
+        unsafe {
+            (*io_error_detail).tag = ImageOptimizerErrorTag::Uninitialized;
+        }
+        match res {
+            Ok((resp, body)) => {
+                unsafe {
+                    *resp_handle_out = resp;
+                    *resp_body_handle_out = body;
+                    (*io_error_detail).tag = ImageOptimizerErrorTag::Ok;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => FastlyStatus::from(e),
+        }
+    }
+}
+
+pub mod fastly_object_store {
+    use super::*;
+    use crate::bindings::fastly::api::object_store;
     use core::slice;
 
     #[export_name = "fastly_object_store#open"]
@@ -2221,7 +2587,7 @@ pub mod fastly_kv_store {
         kv_store_handle_out: *mut KVStoreHandle,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name_ptr, name_len) };
-        match kv_store::open(name) {
+        match object_store::open(name) {
             Ok(None) => {
                 unsafe {
                     *kv_store_handle_out = INVALID_HANDLE;
@@ -2247,7 +2613,7 @@ pub mod fastly_kv_store {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::lookup(kv_store_handle, key) {
+        match object_store::lookup(kv_store_handle, key) {
             Ok(res) => {
                 unsafe {
                     *body_handle_out = res.unwrap_or(INVALID_HANDLE);
@@ -2266,7 +2632,7 @@ pub mod fastly_kv_store {
         pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::lookup_async(kv_store_handle, key) {
+        match object_store::lookup_async(kv_store_handle, key) {
             Ok(res) => {
                 unsafe {
                     *pending_body_handle_out = res;
@@ -2282,7 +2648,7 @@ pub mod fastly_kv_store {
         pending_body_handle: PendingObjectStoreLookupHandle,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match kv_store::pending_lookup_wait(pending_body_handle) {
+        match object_store::pending_lookup_wait(pending_body_handle) {
             Ok(res) => {
                 unsafe {
                     *body_handle_out = res.unwrap_or(INVALID_HANDLE);
@@ -2301,7 +2667,7 @@ pub mod fastly_kv_store {
         body_handle: BodyHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        convert_result(kv_store::insert(kv_store_handle, key, body_handle))
+        convert_result(object_store::insert(kv_store_handle, key, body_handle))
     }
 
     #[export_name = "fastly_object_store#insert_async"]
@@ -2313,7 +2679,7 @@ pub mod fastly_kv_store {
         pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::insert_async(kv_store_handle, key, body_handle) {
+        match object_store::insert_async(kv_store_handle, key, body_handle) {
             Ok(res) => {
                 unsafe {
                     *pending_body_handle_out = res;
@@ -2328,7 +2694,7 @@ pub mod fastly_kv_store {
     pub fn pending_insert_wait(
         pending_body_handle: PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
-        convert_result(kv_store::pending_insert_wait(pending_body_handle))
+        convert_result(object_store::pending_insert_wait(pending_body_handle))
     }
 
     #[export_name = "fastly_object_store#delete_async"]
@@ -2339,7 +2705,7 @@ pub mod fastly_kv_store {
         pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::delete_async(kv_store_handle, key) {
+        match object_store::delete_async(kv_store_handle, key) {
             Ok(res) => {
                 unsafe {
                     *pending_body_handle_out = res;
@@ -2354,7 +2720,591 @@ pub mod fastly_kv_store {
     pub fn pending_delete_wait(
         pending_body_handle: PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
-        convert_result(kv_store::pending_delete_wait(pending_body_handle))
+        convert_result(object_store::pending_delete_wait(pending_body_handle))
+    }
+}
+
+pub mod fastly_kv_store {
+    use super::*;
+    use crate::bindings::fastly::api::kv_store;
+    use core::slice;
+
+    /// Modes of KV Store insertion.
+    ///
+    /// This type serves to facilitate alternative methods of key insertion.
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    pub enum InsertMode {
+        /// The default method of insertion. Create a key, or overwrite an existing one
+        #[default]
+        Overwrite,
+        /// Only insert if the key does not currently exist
+        Add,
+        /// Append this insertion's body onto a key's value if it exists (or create a new key if there is none)
+        Append,
+        /// Prepend this insertion's body onto a key's value if it exists (or create a new key if there is none)
+        Prepend,
+    }
+
+    impl From<InsertMode> for kv_store::InsertMode {
+        fn from(value: InsertMode) -> Self {
+            match value {
+                InsertMode::Overwrite => Self::Overwrite,
+                InsertMode::Add => Self::Add,
+                InsertMode::Append => Self::Append,
+                InsertMode::Prepend => Self::Prepend,
+            }
+        }
+    }
+
+    #[repr(C)]
+    pub struct InsertConfig {
+        pub mode: InsertMode,
+        pub if_generation_match: u64,
+        pub metadata: *const u8,
+        pub metadata_len: u32,
+        pub time_to_live_sec: u32,
+    }
+
+    impl Default for InsertConfig {
+        fn default() -> Self {
+            InsertConfig {
+                mode: InsertMode::Overwrite,
+                if_generation_match: 0,
+                metadata: std::ptr::null(),
+                metadata_len: 0,
+                time_to_live_sec: 0,
+            }
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Default, Copy, Clone)]
+    pub enum ListModeInternal {
+        #[default]
+        Strong,
+        Eventual,
+    }
+
+    impl From<ListModeInternal> for kv_store::ListMode {
+        fn from(value: ListModeInternal) -> Self {
+            match value {
+                ListModeInternal::Strong => Self::Strong,
+                ListModeInternal::Eventual => Self::Eventual,
+            }
+        }
+    }
+
+    #[repr(C)]
+    pub struct ListConfig {
+        pub mode: ListModeInternal,
+        pub cursor: *const u8,
+        pub cursor_len: u32,
+        pub limit: u32,
+        pub prefix: *const u8,
+        pub prefix_len: u32,
+    }
+
+    impl Default for ListConfig {
+        fn default() -> Self {
+            ListConfig {
+                mode: ListModeInternal::Strong,
+                cursor: std::ptr::null(),
+                cursor_len: 0,
+                limit: 0,
+                prefix: std::ptr::null(),
+                prefix_len: 0,
+            }
+        }
+    }
+
+    #[repr(C)]
+    pub struct LookupConfig {
+        // reserved is just a placeholder,
+        // can be removed when somethin real is added
+        reserved: u32,
+    }
+
+    impl Default for LookupConfig {
+        fn default() -> Self {
+            LookupConfig { reserved: 0 }
+        }
+    }
+
+    #[repr(C)]
+    pub struct DeleteConfig {
+        // reserved is just a placeholder,
+        // can be removed when somethin real is added
+        reserved: u32,
+    }
+
+    impl Default for DeleteConfig {
+        fn default() -> Self {
+            DeleteConfig { reserved: 0 }
+        }
+    }
+
+    bitflags::bitflags! {
+        /// `InsertConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct InsertConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+            const BACKGROUND_FETCH = 1 << 1;
+            const RESERVED_2 = 1 << 2;
+            const METADATA = 1 << 3;
+            const TIME_TO_LIVE_SEC = 1 << 4;
+            const IF_GENERATION_MATCH = 1 << 5;
+        }
+        /// `ListConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct ListConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+            const CURSOR = 1 << 1;
+            const LIMIT = 1 << 2;
+            const PREFIX = 1 << 3;
+        }
+        /// `LookupConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct LookupConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+        }
+        /// `DeleteConfigOptions` codings.
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct DeleteConfigOptions: u32 {
+            const RESERVED = 1 << 0;
+        }
+    }
+
+    impl From<InsertConfigOptions> for kv_store::InsertConfigOptions {
+        fn from(value: InsertConfigOptions) -> Self {
+            let mut res = Self::empty();
+            res.set(
+                Self::RESERVED,
+                value.contains(InsertConfigOptions::RESERVED),
+            );
+            res.set(
+                Self::BACKGROUND_FETCH,
+                value.contains(InsertConfigOptions::BACKGROUND_FETCH),
+            );
+            res.set(
+                Self::IF_GENERATION_MATCH,
+                value.contains(InsertConfigOptions::IF_GENERATION_MATCH),
+            );
+            res.set(
+                Self::METADATA,
+                value.contains(InsertConfigOptions::METADATA),
+            );
+            res.set(
+                Self::TIME_TO_LIVE_SEC,
+                value.contains(InsertConfigOptions::TIME_TO_LIVE_SEC),
+            );
+            res
+        }
+    }
+
+    impl From<ListConfigOptions> for kv_store::ListConfigOptions {
+        fn from(value: ListConfigOptions) -> Self {
+            let mut res = Self::empty();
+            res.set(Self::RESERVED, value.contains(ListConfigOptions::RESERVED));
+            res.set(Self::CURSOR, value.contains(ListConfigOptions::CURSOR));
+            res.set(Self::LIMIT, value.contains(ListConfigOptions::LIMIT));
+            res.set(Self::PREFIX, value.contains(ListConfigOptions::PREFIX));
+            res
+        }
+    }
+
+    #[repr(u32)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum KvError {
+        Uninitialized,
+        Ok,
+        BadRequest,
+        NotFound,
+        PreconditionFailed,
+        PayloadTooLarge,
+        InternalError,
+        TooManyRequests,
+    }
+
+    impl From<kv_store::KvStatus> for KvError {
+        fn from(value: kv_store::KvStatus) -> Self {
+            match value {
+                kv_store::KvStatus::Ok => Self::Ok,
+                kv_store::KvStatus::BadRequest => Self::BadRequest,
+                kv_store::KvStatus::NotFound => Self::NotFound,
+                kv_store::KvStatus::PreconditionFailed => Self::PreconditionFailed,
+                kv_store::KvStatus::PayloadTooLarge => Self::PayloadTooLarge,
+                kv_store::KvStatus::InternalError => Self::InternalError,
+                kv_store::KvStatus::TooManyRequests => Self::TooManyRequests,
+            }
+        }
+    }
+
+    #[export_name = "fastly_kv_store#open"]
+    pub fn open_v2(
+        name_ptr: *const u8,
+        name_len: usize,
+        kv_store_handle_out: *mut KVStoreHandle,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(name_ptr, name_len) };
+        match kv_store::open(name) {
+            Ok(None) => {
+                unsafe {
+                    *kv_store_handle_out = INVALID_HANDLE;
+                }
+
+                FastlyStatus::INVALID_ARGUMENT
+            }
+
+            Ok(Some(res)) => {
+                unsafe {
+                    *kv_store_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#lookup"]
+    pub fn lookup_v2(
+        kv_store_handle: KVStoreHandle,
+        key_ptr: *const u8,
+        key_len: usize,
+        //  NOTE: mask and config are ignored in the wit definition while they're empty
+        _lookup_config_mask: LookupConfigOptions,
+        _lookup_config: *const LookupConfig,
+        pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
+    ) -> FastlyStatus {
+        let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+        match kv_store::lookup(kv_store_handle, key) {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#lookup_wait"]
+    pub fn pending_lookup_wait_v2(
+        pending_handle: PendingObjectStoreLookupHandle,
+        body_handle_out: *mut BodyHandle,
+        metadata_out: *mut u8,
+        metadata_len: usize,
+        nwritten_out: *mut usize,
+        generation_out: *mut u32,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        let res = match kv_store::lookup_wait(pending_handle) {
+            Ok((res, status)) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                }
+
+                let Some(res) = res else {
+                    return FastlyStatus::OK;
+                };
+
+                res
+            }
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                return e.into();
+            }
+        };
+
+        with_buffer!(
+            metadata_out,
+            metadata_len,
+            { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
+            |res| {
+                let buf = handle_buffer_len!(res, nwritten_out);
+
+                unsafe {
+                    *nwritten_out = buf.as_ref().map(Vec::len).unwrap_or(0);
+                }
+
+                std::mem::forget(buf);
+            }
+        );
+
+        let body = res.body();
+        let generation = 0;
+
+        unsafe {
+            *body_handle_out = body;
+            *generation_out = generation;
+        }
+
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_kv_store#lookup_wait_v2"]
+    pub fn lookup_wait_v2(
+        pending_handle: PendingObjectStoreLookupHandle,
+        body_handle_out: *mut BodyHandle,
+        metadata_out: *mut u8,
+        metadata_len: usize,
+        nwritten_out: *mut usize,
+        generation_out: *mut u64,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        let res = match kv_store::lookup_wait(pending_handle) {
+            Ok((res, status)) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                }
+
+                let Some(res) = res else {
+                    return FastlyStatus::OK;
+                };
+
+                res
+            }
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                return e.into();
+            }
+        };
+
+        with_buffer!(
+            metadata_out,
+            metadata_len,
+            { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
+            |res| {
+                let buf = handle_buffer_len!(res, nwritten_out);
+
+                unsafe {
+                    *nwritten_out = buf.as_ref().map(Vec::len).unwrap_or(0);
+                }
+
+                std::mem::forget(buf);
+            }
+        );
+
+        let body = res.body();
+        let generation = res.generation();
+
+        unsafe {
+            *body_handle_out = body;
+            *generation_out = generation;
+        }
+
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_kv_store#insert"]
+    pub fn insert_v2(
+        kv_store_handle: KVStoreHandle,
+        key_ptr: *const u8,
+        key_len: usize,
+        body_handle: BodyHandle,
+        insert_config_mask: InsertConfigOptions,
+        insert_config: *const InsertConfig,
+        pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
+    ) -> FastlyStatus {
+        let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+
+        let insert_config_mask = insert_config_mask.into();
+        let insert_config = unsafe {
+            kv_store::InsertConfig {
+                mode: (*insert_config).mode.into(),
+                if_generation_match: (*insert_config).if_generation_match,
+                metadata: {
+                    let len = usize::try_from((*insert_config).metadata_len).trapping_unwrap();
+                    Vec::from_raw_parts((*insert_config).metadata as *mut _, len, len)
+                },
+                time_to_live_sec: (*insert_config).time_to_live_sec,
+            }
+        };
+
+        let res = kv_store::insert(
+            kv_store_handle,
+            key,
+            body_handle,
+            insert_config_mask,
+            &insert_config,
+        );
+
+        // We don't own the memory in metadata, so forget the vector that the insert config holds.
+        std::mem::forget(insert_config);
+
+        match res {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#insert_wait"]
+    pub fn pending_insert_wait_v2(
+        pending_body_handle: PendingObjectStoreInsertHandle,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        match kv_store::insert_wait(pending_body_handle) {
+            Ok(status) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                e.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_kv_store#delete"]
+    pub fn delete_v2(
+        kv_store_handle: KVStoreHandle,
+        key_ptr: *const u8,
+        key_len: usize,
+        // These are ignored in the wit interface for the time being, as they don't pass any
+        // meaningful values.
+        _delete_config_mask: DeleteConfigOptions,
+        _delete_config: *const DeleteConfig,
+        pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
+    ) -> FastlyStatus {
+        let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+        match kv_store::delete(kv_store_handle, key) {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#delete_wait"]
+    pub fn pending_delete_wait_v2(
+        pending_body_handle: PendingObjectStoreDeleteHandle,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        match kv_store::delete_wait(pending_body_handle) {
+            Ok(status) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                }
+
+                e.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_kv_store#list"]
+    pub fn list_v2(
+        kv_store_handle: KVStoreHandle,
+        list_config_mask: ListConfigOptions,
+        list_config: *const ListConfig,
+        pending_body_handle_out: *mut PendingObjectStoreListHandle,
+    ) -> FastlyStatus {
+        let mask = kv_store::ListConfigOptions::from(list_config_mask);
+
+        let config = unsafe {
+            kv_store::ListConfig {
+                mode: (*list_config).mode.into(),
+                cursor: if mask.contains(kv_store::ListConfigOptions::CURSOR) {
+                    let len = usize::try_from((*list_config).cursor_len).trapping_unwrap();
+                    Vec::from_raw_parts((*list_config).cursor as *mut _, len, len)
+                } else {
+                    Vec::new()
+                },
+                limit: if mask.contains(kv_store::ListConfigOptions::LIMIT) {
+                    (*list_config).limit
+                } else {
+                    0
+                },
+                prefix: if mask.contains(kv_store::ListConfigOptions::PREFIX) {
+                    let len = usize::try_from((*list_config).prefix_len).trapping_unwrap();
+                    Vec::from_raw_parts((*list_config).prefix as *mut _, len, len)
+                } else {
+                    Vec::new()
+                },
+            }
+        };
+
+        let res = kv_store::list(kv_store_handle, mask, &config);
+
+        std::mem::forget(config);
+
+        match res {
+            Ok(res) => {
+                unsafe {
+                    *pending_body_handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_kv_store#list_wait"]
+    pub fn pending_list_wait_v2(
+        pending_body_handle: PendingObjectStoreListHandle,
+        body_handle_out: *mut BodyHandle,
+        kv_error_out: *mut KvError,
+    ) -> FastlyStatus {
+        match kv_store::list_wait(pending_body_handle) {
+            Ok((res, status)) => {
+                unsafe {
+                    *kv_error_out = status.into();
+                    *body_handle_out = res.unwrap_or(INVALID_HANDLE);
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => {
+                unsafe {
+                    *kv_error_out = KvError::Uninitialized;
+                    *body_handle_out = INVALID_HANDLE;
+                }
+
+                e.into()
+            }
+        }
     }
 }
 
@@ -2654,12 +3604,13 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend_ptr, backend_len) };
         match backend::get_ssl_min_version(backend) {
-            Ok(res) => {
+            Ok(Some(res)) => {
                 unsafe {
                     *value = u32::from(res);
                 }
                 FastlyStatus::OK
             }
+            Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
     }
@@ -2672,12 +3623,13 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = unsafe { slice::from_raw_parts(backend_ptr, backend_len) };
         match backend::get_ssl_max_version(backend) {
-            Ok(res) => {
+            Ok(Some(res)) => {
                 unsafe {
                     *value = u32::from(res);
                 }
                 FastlyStatus::OK
             }
+            Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
     }
@@ -2787,6 +3739,167 @@ pub mod fastly_purge {
                         *(*options).ret_buf_nwritten_out = res.len();
                     }
                     std::mem::forget(res);
+                }
+            }
+        )
+    }
+}
+
+pub mod fastly_shielding {
+    use super::*;
+    use crate::bindings::fastly::api::{shielding as host, types};
+    use std::slice;
+
+    bitflags::bitflags! {
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct ShieldBackendOptions: u32 {
+            const RESERVED = 1 << 0;
+            const CACHE_KEY = 1 << 1;
+        }
+    }
+
+    #[repr(C)]
+    pub struct ShieldBackendConfig {
+        pub cache_key: *const u8,
+        pub cache_key_len: u32,
+    }
+
+    impl Default for ShieldBackendConfig {
+        fn default() -> Self {
+            ShieldBackendConfig {
+                cache_key: std::ptr::null(),
+                cache_key_len: 0,
+            }
+        }
+    }
+
+    #[export_name = "fastly_shielding#shield_info"]
+    pub fn shield_info(
+        name: *const u8,
+        name_len: usize,
+        info_block: *mut u8,
+        info_block_len: usize,
+        nwritten_out: *mut u32,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(name, name_len) };
+        with_buffer!(
+            info_block,
+            info_block_len,
+            { host::shield_info(name, u64::try_from(info_block_len).trapping_unwrap()) },
+            |res| {
+                match res {
+                    Ok(res) => {
+                        unsafe {
+                            *nwritten_out = u32::try_from(res.len()).unwrap_or(0);
+                        }
+                        std::mem::forget(res);
+                    }
+
+                    Err(e) => {
+                        if let types::Error::BufferLen(needed) = e {
+                            unsafe {
+                                *nwritten_out = u32::try_from(needed).unwrap_or(0);
+                            }
+                        }
+
+                        return Err(e.into());
+                    }
+                }
+            }
+        )
+    }
+
+    impl From<ShieldBackendOptions> for host::ShieldBackendOptionsMask {
+        fn from(value: ShieldBackendOptions) -> Self {
+            let mut flags = Self::empty();
+
+            flags.set(
+                Self::RESERVED,
+                value.contains(ShieldBackendOptions::RESERVED),
+            );
+            flags.set(
+                Self::CACHE_KEY,
+                value.contains(ShieldBackendOptions::CACHE_KEY),
+            );
+
+            flags
+        }
+    }
+
+    fn shield_backend_options(
+        mask: ShieldBackendOptions,
+        options: *const ShieldBackendConfig,
+    ) -> (host::ShieldBackendOptionsMask, host::ShieldBackendOptions) {
+        let mask = host::ShieldBackendOptionsMask::from(mask);
+
+        // NOTE: this is only really safe because we never mutate the vectors -- we only need
+        // vectors to satisfy the interface produced by the DynamicBackendConfig record,
+        // `register_dynamic_backend` will never mutate the vectors it's given.
+        macro_rules! make_vec {
+            ($ptr_field:ident, $len_field:ident) => {
+                unsafe {
+                    let len = usize::try_from((*options).$len_field).trapping_unwrap();
+                    Vec::from_raw_parts((*options).$ptr_field as *mut _, len, len)
+                }
+            };
+        }
+
+        let options = host::ShieldBackendOptions {
+            cache_key: if mask.contains(host::ShieldBackendOptionsMask::CACHE_KEY) {
+                make_vec!(cache_key, cache_key_len)
+            } else {
+                Vec::new()
+            },
+        };
+
+        (mask, options)
+    }
+
+    /// Turn a pop name into a backend that we can send requests to.
+    #[export_name = "fastly_shielding#backend_for_shield"]
+    pub fn backend_for_shield(
+        name: *const u8,
+        name_len: usize,
+        options_mask: ShieldBackendOptions,
+        options: *const ShieldBackendConfig,
+        backend_name: *mut u8,
+        backend_name_len: usize,
+        nwritten_out: *mut u32,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let (mask, options) = shield_backend_options(options_mask, options);
+        with_buffer!(
+            backend_name,
+            backend_name_len,
+            {
+                let res = host::backend_for_shield(
+                    name,
+                    mask,
+                    &options,
+                    u64::try_from(backend_name_len).trapping_unwrap(),
+                );
+                std::mem::forget(options);
+                res
+            },
+            |res| {
+                match res {
+                    Ok(res) => {
+                        unsafe {
+                            *nwritten_out = u32::try_from(res.len()).unwrap_or(0);
+                        }
+                        std::mem::forget(res);
+                    }
+
+                    Err(e) => {
+                        if let types::Error::BufferLen(needed) = e {
+                            unsafe {
+                                *nwritten_out = u32::try_from(needed).unwrap_or(0);
+                            }
+                        }
+
+                        return Err(e.into());
+                    }
                 }
             }
         )
