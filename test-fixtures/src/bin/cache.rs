@@ -294,7 +294,7 @@ fn test_vary_multiple() {
         let r = lookup(key.clone())
             .header(&h2, "assert")
             .header(&h1, "test")
-            // no h3
+            // No h3; note that H3 doesn't have a value when inserted
             .execute()
             .unwrap();
         let body = r.unwrap().to_stream().unwrap().into_string();
@@ -401,12 +401,13 @@ fn test_vary_combine() {
         .unwrap();
     assert!(r.is_some());
 
-    // TODO: Compute Platform treats this as a distinct key. Is that correct?
-    //let r = lookup(key.clone())
-    //    .header(&h1, "trust, verify")
-    //    .execute()
-    //    .unwrap();
-    //assert!(r.is_some());
+    // A comma-delimited value is considered distinct from multiple values.
+    // This may lead to suboptimal caching in some cases, but is safe from information leakage.
+    let r = lookup(key.clone())
+        .header(&h1, "trust, verify")
+        .execute()
+        .unwrap();
+    assert!(r.is_none());
 
     // Order matters for HTTP header values:
     let r = lookup(key.clone())
@@ -570,11 +571,11 @@ fn test_implicit_cancel_of_pending() {
     let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
     let (t1, pending) = ready_and_pending(busy1, busy2);
 
-    // Cancel the blocked request via dropping.
-    // TODO: Currently, Compue Platform requires that t1 is dropped before pending-
+    // TODO: Currently, Compute Platform requires that t1 is dropped before pending-
     // drop of a CacheBusyHandle blocks on the *obligatee of the transaction* completing its
     // obligation.
-    // The fix is rolling out at time of writing, but in the mean time, we have to allow this:
+    // This fix is rolling out (expect it early May 2025), but in the mean time, we have to allow
+    // this:
     std::mem::drop(t1);
     std::mem::drop(pending);
     // assert!(t1.must_insert_or_update());
