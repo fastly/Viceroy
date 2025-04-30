@@ -1,5 +1,29 @@
 ## Unreleased
 
+## 0.13.0
+
+- Add support for shielding primitives in Viceroy ([#455](https://github.com/fastly/Viceroy/pull/455)
+
+  Shielding definitions can be creating inside `fastly.toml` using the
+  `local-server.shielding_sites` key. These definitions are just a normal TOML
+  dictionary mapping shield sites (e.g., "pdx-or-us", "bfi-wa-us", etc.) to
+  either the string "Local" (meaning that Viceroy should pretend to be operating
+  in that POP), or a dictionary mapping "unencrypted" and "encrypted" to target
+  URLs (to mimic operating off the shield POP). For example:
+
+  ```
+  [local_server.shielding_sites]
+  "pdx-or-us" = "Local"
+  "bfi-wa-us".unencrypted = "http://localhost"
+  "bfi-wa-us".encrypted = "https://localhost"
+  ```
+
+  This snippet defines two shield POPs: "pdx-or-us", which Viceroy should
+  pretend to be running on, and "bfi-wa-us", which is remote. If the guest
+  program asks for a backend to "bfi-wa-us", Viceroy will use `localhost`
+  as the target server, using HTTPS for encrypted traffic and HTTP for
+  unencrypted traffic.
+
 ## 0.12.4 (2025-04-07)
 
 - Add support for `file` entries in KV Stores defined using "file"/"format" ([#463](https://github.com/fastly/Viceroy/pull/463))
