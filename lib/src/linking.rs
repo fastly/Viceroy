@@ -331,13 +331,11 @@ pub fn link_host_functions(
     wiggle_abi::fastly_kv_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_log::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_privileged_anti_abuse::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_purge::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_backend::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_privileged_anti_abuse::add_to_linker(linker, WasmCtx::session)?;
     link_legacy_aliases(linker)?;
     Ok(())
 }
