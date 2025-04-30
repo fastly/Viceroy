@@ -408,9 +408,28 @@ pub(crate) struct CacheData {
 
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn get_body(&self) -> Result<Body, crate::Error> {
-        // TODO: cceckman-at-fastly: range options
-        self.body.read(0, None)
+    pub(crate) fn get_body(
+        &self,
+        from: Option<u64>,
+        to: Option<u64>,
+    ) -> Result<Body, crate::Error> {
+        // Per the documentation of to_stream_for_range, if the range is invalid, the body contains
+        // the entire item.
+        //
+        // For a streaming body, we may or may not know the full length;
+        // if we don't, then we return the entire body.
+        let length: Option<u64> = self.length();
+        let (from, to) = match (length, from, to) {
+            // No known length -> return the entire body.
+            (None, _, _) => (None, None),
+            // Invalid "from"
+            (Some(len), Some(from), _) if from >= len => (None, None),
+            (Some(len), _, Some(to)) if to >= len => (None, None),
+            // A valid range; fine, leave it.
+            _ => (from, to),
+        };
+
+        self.body.read(from, to)
     }
 
     /// Access to object's metadata
@@ -460,7 +479,7 @@ mod tests {
                     if let Some(found) = found {
                         let body = found
                             .body
-                            .read(0, None)
+                            .read(None, None)
                             .unwrap()
                             .read_into_string()
                             .await
@@ -545,13 +564,23 @@ mod tests {
             make_body("object 1"),
         );
         if let (Some(found), None) = busy1.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .get_body(None, None)
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 1");
         } else {
             panic!("expected to block on object 1")
         }
         if let (Some(found), None) = busy2.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .get_body(None, None)
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 2");
         } else {
             panic!("expected to block on object 2")

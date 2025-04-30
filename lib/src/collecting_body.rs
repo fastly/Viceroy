@@ -142,14 +142,14 @@ impl CollectingBody {
     ///
     /// `from` and `to` indicate the range to read; (0, None) indicates "read the whole object".
     /// Both bounds are inclusive (unlike the range operator).
-    pub fn read(&self, from: usize, to: Option<usize>) -> Result<Body, error::Error> {
+    pub fn read(&self, from: Option<u64>, to: Option<u64>) -> Result<Body, error::Error> {
         let mut upstream = self.inner.clone();
         let (mut tx, rx) = StreamingBody::new();
         tokio::task::spawn(async move {
             let mut next_chunk = 0;
-            let mut cursor = 0;
+            let mut cursor: u64 = 0;
 
-            let range = std::ops::RangeInclusive::new(from, to.unwrap_or(usize::MAX));
+            let range = std::ops::RangeInclusive::new(from.unwrap_or(0), to.unwrap_or(u64::MAX));
 
             // The receiver tracks the "current" value, and assumes that the value at the receiver
             // is "seen" to begin with.
@@ -179,8 +179,8 @@ impl CollectingBody {
                 // Commit to processing all these chunks:
                 next_chunk += send_chunks.len();
                 for chunk in send_chunks {
-                    let chunk_bounds = cursor..=(cursor + chunk.len() - 1);
-                    cursor += chunk.len();
+                    let chunk_bounds = cursor..=(cursor + chunk.len() as u64 - 1);
+                    cursor += chunk.len() as u64;
 
                     // What might we send from this chunk; inclusive start and end.
                     let absolute_start = std::cmp::max(*range.start(), *chunk_bounds.start());
@@ -193,8 +193,8 @@ impl CollectingBody {
                         Some(chunk)
                     } else if absolute_end >= absolute_start {
                         // Some overlap. Create a subslice.
-                        let r = (absolute_start - chunk_bounds.start())
-                            ..=(absolute_end - chunk_bounds.start());
+                        let r = ((absolute_start - chunk_bounds.start()) as usize)
+                            ..=((absolute_end - chunk_bounds.start()) as usize);
                         Some(Bytes::copy_from_slice(&chunk[r]))
                     } else {
                         // No overlap.
@@ -287,7 +287,7 @@ mod tests {
     use crate::{
         body::{Body, Chunk},
         collecting_body::CollectingBody,
-        streaming_body::{self, StreamingBody},
+        streaming_body::StreamingBody,
         Error,
     };
 
@@ -305,7 +305,7 @@ mod tests {
             tx.send_chunk(&data[i..i + 1]).await.unwrap();
         }
         tx.finish().unwrap();
-        let read = collect.read(0, None).unwrap();
+        let read = collect.read(None, None).unwrap();
         let bytes = read.read_into_vec().await.unwrap();
         assert_eq!(&bytes, &data);
     }
@@ -323,7 +323,7 @@ mod tests {
         // Readers:
         set.spawn({
             let data = Arc::clone(&data);
-            let read = collect.read(0, None).unwrap();
+            let read = collect.read(None, None).unwrap();
 
             async move {
                 let bytes = read.read_into_vec().await.unwrap();
@@ -332,7 +332,7 @@ mod tests {
         });
         set.spawn({
             let data = Arc::clone(&data);
-            let read = collect.read(0, None).unwrap();
+            let read = collect.read(None, None).unwrap();
 
             async move {
                 let bytes = read.read_into_vec().await.unwrap();
@@ -370,7 +370,7 @@ mod tests {
         let reader = {
             let data = Arc::clone(&data);
             tokio::task::spawn(async move {
-                let mut read = collect.read(0, None).unwrap();
+                let mut read = collect.read(None, None).unwrap();
 
                 // Wait for the body to have some data ready...
                 read.await_ready().await;
@@ -407,7 +407,7 @@ mod tests {
         // Start a concurrent read, read some of it:
         let reader = {
             tokio::task::spawn(async move {
-                let mut read = collect.read(0, None).unwrap();
+                let mut read = collect.read(None, None).unwrap();
                 read.await_ready().await;
                 send.send(()).unwrap();
 
@@ -436,7 +436,7 @@ mod tests {
         // Start a concurrent read, read some of it:
         let reader = {
             tokio::task::spawn(async move {
-                let mut body = collect.read(0, None).unwrap();
+                let mut body = collect.read(None, None).unwrap();
 
                 while !body.trailers_ready {
                     body.await_ready().await
@@ -470,7 +470,7 @@ mod tests {
 
         let collect = CollectingBody::new(body, None);
         let data = collect
-            .read(0, None)
+            .read(None, None)
             .unwrap()
             .read_into_vec()
             .await
@@ -542,7 +542,7 @@ mod tests {
     }
 
     /// Proptest strategy for a streaming body, plus start and end bounds.
-    fn body_and_end_bounded_range() -> impl Strategy<Value = (Vec<Vec<u8>>, usize, usize)> {
+    fn body_and_doubly_bounded_range() -> impl Strategy<Value = (Vec<Vec<u8>>, usize, usize)> {
         streaming_body()
             .prop_flat_map(|body| {
                 let total_len = body.iter().map(|v| v.len()).sum::<usize>();
@@ -553,7 +553,7 @@ mod tests {
             .prop_flat_map(|(body, total_len, start)| (Just(body), Just(start), start..total_len))
     }
 
-    async fn test_end_bounded_range(
+    async fn test_both_bounded_range(
         yield_points: Vec<bool>,
         body: Vec<Vec<u8>>,
         start: usize,
@@ -579,7 +579,7 @@ mod tests {
         js.spawn(async move {
             // Receiver task.
             let data = collect
-                .read(start, Some(end))
+                .read(Some(start), Some(end))
                 .unwrap()
                 .read_into_vec()
                 .await
@@ -595,13 +595,13 @@ mod tests {
 
     proptest! {
         #[test]
-        fn end_bounded_range(
+        fn both_bounded_range(
             yield_points in proptest::collection::vec(any::<bool>(), 1..20),
-            content in body_and_end_bounded_range(),
+            content in body_and_doubly_bounded_range(),
         ) {
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
             let (body, start, end) = content;
-            return rt.block_on(test_end_bounded_range(yield_points, body, start,end));
+            return rt.block_on(test_both_bounded_range(yield_points, body, start,end));
         }
     }
 
@@ -630,7 +630,7 @@ mod tests {
         js.spawn(async move {
             // Receiver task.
             let data = collect
-                .read(start, None)
+                .read(Some(start), None)
                 .unwrap()
                 .read_into_vec()
                 .await
@@ -648,11 +648,62 @@ mod tests {
         #[test]
         fn start_bounded_range(
             yield_points in proptest::collection::vec(any::<bool>(), 1..20),
-            content in body_and_end_bounded_range(),
+            content in body_and_doubly_bounded_range(),
         ) {
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
             let (body, start, _) = content;
             return rt.block_on(test_start_bounded_range(yield_points, body, start));
+        }
+    }
+
+    async fn test_end_bounded_range(
+        yield_points: Vec<bool>,
+        body: Vec<Vec<u8>>,
+        end: usize,
+    ) -> Result<(), TestCaseError> {
+        let flat_body: Vec<u8> = body.iter().flatten().map(|&b| b).collect();
+
+        let (mut tx, rx) = StreamingBody::new();
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)));
+        let mut js = tokio::task::JoinSet::new();
+        js.spawn(async move {
+            // Sender task.
+            for (i, chunk) in body.into_iter().enumerate() {
+                tx.send_chunk(chunk).await.unwrap();
+                // Fuzz the scheduling:
+                if yield_points[i % yield_points.len()] {
+                    tokio::task::yield_now().await;
+                }
+            }
+            tx.finish().unwrap();
+            Ok(())
+        });
+        js.spawn(async move {
+            // Receiver task.
+            let data = collect
+                .read(None, Some(end))
+                .unwrap()
+                .read_into_vec()
+                .await
+                .unwrap();
+            prop_assert_eq!(&data, &flat_body[..=end]);
+            Ok(())
+        });
+        for result in js.join_all().await {
+            result?;
+        }
+        Ok(())
+    }
+
+    proptest! {
+        #[test]
+        fn end_bounded_range(
+            yield_points in proptest::collection::vec(any::<bool>(), 1..20),
+            content in body_and_doubly_bounded_range(),
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let (body, _, end) = content;
+            return rt.block_on(test_end_bounded_range(yield_points, body, end));
         }
     }
 }

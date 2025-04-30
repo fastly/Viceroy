@@ -25,6 +25,9 @@ fn main() {
     test_length_from_body();
     test_inconsistent_body_length();
 
+    test_nonconcurrent_range();
+    test_concurrent_range();
+
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -407,6 +410,7 @@ fn test_user_metadata() {
 }
 
 fn test_length_from_body() {
+    // We can get a known length from "just" streaming the body.
     let key = new_key();
 
     let body = "hello beautiful world".as_bytes();
@@ -479,6 +483,93 @@ fn test_inconsistent_body_length() {
         let mut data = Vec::new();
         got.read_to_end(&mut data).unwrap_err();
     }
+}
+
+fn test_nonconcurrent_range() {
+    // When we do a full body, then a range request, we get only the ranged bits.
+    let key = new_key();
+
+    {
+        let fetch = lookup(key.clone())
+            .execute()
+            .expect("failed initial lookup");
+        assert!(fetch.is_none());
+    }
+
+    let body = "hello beautiful world".as_bytes();
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(10))
+            .execute()
+            .unwrap();
+        writer.write_all(body).unwrap();
+        writer.finish().unwrap();
+    }
+
+    {
+        let got = lookup(key.clone()).execute().unwrap().unwrap();
+        poll_known_length(&got);
+        let got = got
+            .to_stream_from_range(Some(6), Some(14))
+            .unwrap()
+            .into_bytes();
+        assert_eq!(&got, b"beautiful");
+    }
+
+    {
+        let got = lookup(key.clone()).execute().unwrap().unwrap();
+        let got = got
+            .to_stream_from_range(Some(6), None)
+            .unwrap()
+            .into_bytes();
+        assert_eq!(&got, b"beautiful world");
+    }
+
+    {
+        let got = lookup(key.clone()).execute().unwrap().unwrap();
+        let got = got
+            .to_stream_from_range(None, Some(4))
+            .unwrap()
+            .into_bytes();
+        assert_eq!(&got, b"hello");
+    }
+}
+
+fn test_concurrent_range() {
+    // When we stream a body, we get different results based on whether we provided a known length.
+    let key_unknown_length = new_key();
+    let key_known_length = new_key();
+
+    let body = "hello beautiful world".as_bytes();
+    let mut writer_unknown_length = insert(key_unknown_length.clone(), Duration::from_secs(10))
+        .execute()
+        .unwrap();
+    let mut writer_known_length = insert(key_known_length.clone(), Duration::from_secs(10))
+        .known_length(body.len() as u64)
+        .execute()
+        .unwrap();
+
+    let read_unknown_length = lookup(key_unknown_length).execute().unwrap().unwrap();
+    let read_known_length = lookup(key_known_length).execute().unwrap().unwrap();
+
+    // These capture the state when no body has been streamed at all, so the behavior should be
+    // deterministic.
+    let body_unknown_length = read_unknown_length
+        .to_stream_from_range(Some(6), Some(14))
+        .unwrap();
+    let body_known_length = read_known_length
+        .to_stream_from_range(Some(6), Some(14))
+        .unwrap();
+
+    writer_unknown_length.write(body).unwrap();
+    writer_unknown_length.finish().unwrap();
+    writer_known_length.write(body).unwrap();
+    writer_known_length.finish().unwrap();
+
+    let body_unknown_length = body_unknown_length.into_bytes();
+    let body_known_length = body_known_length.into_bytes();
+
+    assert_eq!(&body_unknown_length, body);
+    assert_eq!(&body_known_length, b"beautiful");
 }
 
 fn new_key() -> CacheKey {

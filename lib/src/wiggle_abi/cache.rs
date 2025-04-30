@@ -451,11 +451,28 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
+        let from = if options_mask.contains(types::CacheGetBodyOptionsMask::FROM) {
+            Some(
+                options
+                    .from
+                    .try_into()
+                    .expect("system supports objects sizes > 2^32"),
+            )
+        } else {
+            None
+        };
+        // HTTP inclusive-range semantics: range 0-0 is one byte long.
+        let to = if options_mask.contains(types::CacheGetBodyOptionsMask::TO) {
+            Some(
+                options
+                    .to
+                    .saturating_sub(0)
+                    .try_into()
+                    .expect("system supports object sizes > 2^32"),
+            )
+        } else {
+            None
+        };
 
         // We wind up re-borrowing `found` and `self.session` several times here, to avoid
         // borrowing the both of them at once. Ultimately it is possible that inserting a body
@@ -474,7 +491,7 @@ impl FastlyCache for Session {
         // clean up the copying task.
         // We have to do this to allow `found`'s lifetime to end before self.session.body, which
         // has to re-borrow self.self.session.
-        let body = found.body()?;
+        let body = found.body(from, to)?;
 
         if let Some(prev_handle) = found.last_body_handle {
             // Check if they're still reading the previous handle.

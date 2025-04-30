@@ -177,8 +177,8 @@ pub struct Found {
 
 impl Found {
     /// Access the body of the cached object.
-    pub fn body(&self) -> Result<Body, crate::Error> {
-        self.data.as_ref().get_body()
+    pub fn body(&self, from: Option<u64>, to: Option<u64>) -> Result<Body, crate::Error> {
+        self.data.as_ref().get_body(from, to)
     }
 
     /// Access the metadata of the cached object.
@@ -414,7 +414,7 @@ mod tests {
 
                 let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
-                let got = found.body().unwrap().read_into_vec().await.unwrap();
+                let got = found.body(None, None).unwrap().read_into_vec().await.unwrap();
                 assert_eq!(got, value);
             });
         }
