@@ -405,7 +405,7 @@ mod tests {
                 let write_options = WriteOptions {
                     max_age: Duration::from_secs(max_age as u64),
                     initial_age: Duration::from_secs(initial_age as u64),
-                    vary_rule: VaryRule::default(),
+                    ..Default::default()
                 };
 
                 cache.insert(&key, HeaderMap::default(), write_options, value.clone().into()).await;
@@ -427,7 +427,7 @@ mod tests {
         let write_options = WriteOptions {
             max_age: Duration::from_secs(1),
             initial_age: Duration::from_secs(2),
-            vary_rule: VaryRule::default(),
+            ..Default::default()
         };
 
         let mut body = Body::empty();
@@ -454,8 +454,8 @@ mod tests {
 
         let write_options = WriteOptions {
             max_age: Duration::from_secs(100),
-            initial_age: Duration::from_secs(2),
             vary_rule: VaryRule::new([&header_name].into_iter()),
+            ..Default::default()
         };
         let body = Body::empty();
         cache

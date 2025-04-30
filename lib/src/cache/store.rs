@@ -497,8 +497,8 @@ mod tests {
             h3,
             WriteOptions {
                 max_age: Duration::from_secs(100),
-                initial_age: Duration::ZERO,
                 vary_rule: vary.clone(),
+                ..Default::default()
             },
             make_body(""),
             None,
