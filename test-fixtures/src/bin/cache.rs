@@ -173,13 +173,21 @@ fn test_single_body() {
     // A new body can be read:
     let b2 = f1.to_stream().unwrap();
 
-    // However, the entire body must be read; it's not enough to "just" read it:
-    b2.into_handle().close().unwrap();
-    let b3 = f1
-        .to_stream()
-        .expect("should be able to re-read body after close of existing body");
-    let v3 = b3.into_bytes();
-    assert_eq!(&v1, &v3);
+    // TODO: This is a difference between compute platform and Viceroy.
+    // In Viceroy, it's sufficient to close the body, then the read can proceed:
+    if std::env::var("FASTLY_HOSTNAME").unwrap() == "localhost" {
+        b2.into_handle().close().unwrap();
+        let b3 = f1
+            .to_stream()
+            .expect("should be able to re-read body after close of existing body");
+        let v3 = b3.into_bytes();
+        assert_eq!(&v1, &v3);
+    } else {
+        b2.into_handle().close().unwrap();
+        // In Compute Platform, the body must complete:
+        f1.to_stream()
+            .expect_err("should be able to re-read body after close of existing body");
+    }
 }
 
 fn test_insert_stale() {
