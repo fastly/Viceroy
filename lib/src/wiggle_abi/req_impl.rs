@@ -18,8 +18,8 @@ use {
             types::{
                 BackendConfigOptions, BodyHandle, CacheOverrideTag, ClientCertVerifyResult,
                 ContentEncodings, DynamicBackendConfig, FramingHeadersMode, HttpVersion,
-                MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, RequestHandle,
-                ResponseHandle,
+                InspectInfo, InspectInfoMask, MultiValueCursor, MultiValueCursorResult,
+                PendingRequestHandle, RequestHandle, ResponseHandle,
             },
         },
     },
@@ -180,6 +180,13 @@ impl FastlyHttpReq for Session {
         _nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("Client original header fingerprint"))
+    }
+
+    fn downstream_client_ddos_detected(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+    ) -> Result<u32, Error> {
+        Ok(0)
     }
 
     fn downstream_tls_cipher_openssl_name(
@@ -796,6 +803,18 @@ impl FastlyHttpReq for Session {
             .await
     }
 
+    async fn send_v3(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend_bytes: GuestPtr<str>,
+        error_detail: GuestPtr<SendErrorDetail>,
+    ) -> Result<(ResponseHandle, BodyHandle), Error> {
+        self.send_v2(memory, req_handle, body_handle, backend_bytes, error_detail)
+            .await
+    }
+
     async fn send_async(
         &mut self,
         memory: &mut GuestMemory<'_>,
@@ -822,6 +841,23 @@ impl FastlyHttpReq for Session {
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))
+    }
+
+    async fn send_async_v2(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        body_handle: BodyHandle,
+        backend_bytes: GuestPtr<str>,
+        streaming: u32,
+    ) -> Result<PendingRequestHandle, Error> {
+        if streaming == 1 {
+            self.send_async_streaming(memory, req_handle, body_handle, backend_bytes)
+                .await
+        } else {
+            self.send_async(memory, req_handle, body_handle, backend_bytes)
+                .await
+        }
     }
 
     async fn send_async_streaming(
@@ -1007,5 +1043,74 @@ impl FastlyHttpReq for Session {
         }
 
         Ok(())
+    }
+
+    fn inspect(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        ds_req: RequestHandle,
+        ds_body: BodyHandle,
+        info_mask: InspectInfoMask,
+        info: GuestPtr<InspectInfo>,
+        buf: GuestPtr<u8>,
+        buf_len: u32,
+    ) -> Result<u32, Error> {
+        // Make sure we're given valid handles, even though we won't use them.
+        let _ = self.request_parts(ds_req)?;
+        let _ = self.body(ds_body)?;
+
+        // Make sure the InspectInfo looks good, even though we won't use it.
+        let info = memory.read(info)?;
+        let info_string_or_err = |flag, str_field: GuestPtr<u8>, len_field| {
+            if info_mask.contains(flag) {
+                if len_field == 0 {
+                    return Err(Error::InvalidArgument);
+                }
+
+                let byte_vec = memory.to_vec(str_field.as_array(len_field))?;
+                let s = String::from_utf8(byte_vec).map_err(|_| Error::InvalidArgument)?;
+
+                Ok(s)
+            } else {
+                // For now, corp and workspace arguments are required to actually generate the hostname,
+                // but in the future the lookaside service will be generated using the customer ID, and
+                // it will be okay for them to be unspecified or empty.
+                Err(Error::InvalidArgument)
+            }
+        };
+
+        let _ = info_string_or_err(InspectInfoMask::CORP, info.corp, info.corp_len)?;
+        let _ = info_string_or_err(
+            InspectInfoMask::WORKSPACE,
+            info.workspace,
+            info.workspace_len,
+        )?;
+
+        // Return the mock NGWAF response.
+        let ngwaf_resp = self.ngwaf_response();
+        let ngwaf_resp_len = ngwaf_resp.len();
+
+        match u32::try_from(ngwaf_resp_len) {
+            Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_len => {
+                memory.copy_from_slice(ngwaf_resp.as_bytes(), buf.as_array(ngwaf_resp_len))?;
+
+                Ok(ngwaf_resp_len)
+            }
+            _ => Err(Error::BufferLengthError {
+                buf: "buf",
+                len: "buf_len",
+            }),
+        }
+    }
+
+    fn on_behalf_of(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        _ds_req: RequestHandle,
+        _service: GuestPtr<str>,
+    ) -> Result<(), Error> {
+        Err(Error::Unsupported {
+            msg: "on_behalf_of is not supported in Viceroy",
+        })
     }
 }

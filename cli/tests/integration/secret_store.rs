@@ -14,6 +14,7 @@ viceroy_test!(secret_store_works, |is_component| {
         language = "rust"
         [local_server]
         secret_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/kv-store.txt"}]
+        secret_stores.store_two = {file = "../test-fixtures/data/json-secret_store.json", format = "json"}
     "#;
 
     let resp = Test::using_fixture("secret-store.wasm")

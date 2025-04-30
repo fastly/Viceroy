@@ -8,7 +8,7 @@ use {
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
     wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
-    wasmtime_wasi_nn::WasiNnCtx,
+    wasmtime_wasi_nn::witx::WasiNnCtx,
 };
 
 pub struct Limiter {
@@ -95,7 +95,7 @@ impl wasmtime::ResourceLimiter for Limiter {
 pub struct ComponentCtx {
     table: wasmtime_wasi::ResourceTable,
     wasi: wasmtime_wasi::WasiCtx,
-    session: Session,
+    pub(crate) session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
     limiter: Limiter,
 }
@@ -144,6 +144,17 @@ impl ComponentCtx {
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
+
+        // instrument hostcalls to have those show up in profiles
+        store.call_hook(|mut store, kind| {
+            if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+                prof.call_hook(&store, kind);
+                store.data_mut().guest_profiler = Some(prof);
+            }
+            Ok(())
+        });
+
+        // sampling profiler
         store.epoch_deadline_callback(|mut store| {
             if let Some(mut prof) = store.data_mut().guest_profiler.take() {
                 prof.sample(&store, std::time::Duration::ZERO);
@@ -151,6 +162,7 @@ impl ComponentCtx {
             }
             Ok(UpdateDeadline::Yield(1))
         });
+
         store.limiter(|ctx| &mut ctx.limiter);
         Ok(store)
     }
@@ -227,6 +239,17 @@ pub(crate) fn create_store(
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.set_epoch_deadline(1);
+
+    // instrument hostcalls to have those show up in profiles
+    store.call_hook(|mut store, kind| {
+        if let Some(mut prof) = store.data_mut().guest_profiler.take() {
+            prof.call_hook(&store, kind);
+            store.data_mut().guest_profiler = Some(prof);
+        }
+        Ok(())
+    });
+
+    // sampling profiler
     store.epoch_deadline_callback(|mut store| {
         if let Some(mut prof) = store.data_mut().guest_profiler.take() {
             prof.sample(&store, std::time::Duration::ZERO);
@@ -234,6 +257,7 @@ pub(crate) fn create_store(
         }
         Ok(UpdateDeadline::Yield(1))
     });
+
     store.limiter(|ctx| &mut ctx.limiter);
     Ok(store)
 }
@@ -255,6 +279,8 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> WasiCtxBuilder {
         .env("FASTLY_SERVICE_VERSION", "0")
         // signal that we're in a local testing environment
         .env("FASTLY_HOSTNAME", "localhost")
+        // ...which is not the staging environment
+        .env("FASTLY_IS_STAGING", "0")
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
         .env("FASTLY_TRACE_ID", &format!("{:032x}", session.req_id()));
 
@@ -287,23 +313,29 @@ pub fn link_host_functions(
 
     wasmtime_wasi::preview1::add_to_linker_async(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_acl::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_backend::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_compute_runtime::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_device_detection::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_erl::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_body::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_http_cache::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_req::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_http_resp::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_image_optimizer::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_kv_store::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_log::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_privileged_anti_abuse::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_purge::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_backend::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_privileged_anti_abuse::add_to_linker(linker, WasmCtx::session)?;
     link_legacy_aliases(linker)?;
     Ok(())
 }

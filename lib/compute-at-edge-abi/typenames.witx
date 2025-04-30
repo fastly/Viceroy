@@ -91,18 +91,32 @@
 (typename $endpoint_handle (handle))
 ;;; A handle to an Edge Dictionary.
 (typename $dictionary_handle (handle))
-;;; A handle to an Object Store.
+;;; (DEPRECATED) A handle to an Object Store.
 (typename $object_store_handle (handle))
-;;; A handle to a pending KV lookup request.
+;;; (DEPRECATED) A handle to a pending KV lookup request.
 (typename $pending_kv_lookup_handle (handle))
-;;; A handle to a pending KV insert request.
+;;; (DEPRECATED) A handle to a pending KV insert request.
 (typename $pending_kv_insert_handle (handle))
-;;; A handle to a pending KV delete request.
+;;; (DEPRECATED) A handle to a pending KV delete request.
 (typename $pending_kv_delete_handle (handle))
+;;; (DEPRECATED) A handle to a pending KV list.
+(typename $pending_kv_list_handle (handle))
+;;; A handle to an KV Store.
+(typename $kv_store_handle (handle))
+;;; A handle to a KV Store lookup.
+(typename $kv_store_lookup_handle (handle))
+;;; A handle to a KV Store insert.
+(typename $kv_store_insert_handle (handle))
+;;; A handle to a KV Store delete.
+(typename $kv_store_delete_handle (handle))
+;;; A handle to a KV Store list.
+(typename $kv_store_list_handle (handle))
 ;;; A handle to a Secret Store.
 (typename $secret_store_handle (handle))
 ;;; A handle to an individual secret.
 (typename $secret_handle (handle))
+;;; A handle to an ACL.
+(typename $acl_handle (handle))
 ;;; A handle to an object supporting generic async operations.
 ;;; Can be either a `body_handle` or a `pending_request_handle`.
 ;;;
@@ -137,11 +151,15 @@
 (typename $is_valid u32)
 (typename $inserted u32)
 (typename $ready_idx u32)
+(typename $ddos_detected u32)
 
 (typename $port u16)
 (typename $timeout_ms u32)
+(typename $timeout_secs u32)
+(typename $probe_count u32)
 (typename $backend_exists u32)
 (typename $is_dynamic u32)
+(typename $is_keepalive u32)
 (typename $is_ssl u32)
 (typename $backend_health
     (enum (@witx tag u32)
@@ -187,6 +205,7 @@
        $dont_pool
        $client_cert
        $grpc
+       $keepalive
        ))
 
 (typename $dynamic_backend_config
@@ -209,6 +228,11 @@
     (field $client_certificate (@witx pointer (@witx char8)))
     (field $client_certificate_len u32)
     (field $client_key $secret_handle)
+    (field $http_keepalive_time_ms $timeout_ms)
+    (field $tcp_keepalive_enable u32)
+    (field $tcp_keepalive_interval_secs $timeout_secs)
+    (field $tcp_keepalive_probes $probe_count)
+    (field $tcp_keepalive_time_secs $timeout_secs)
     ))
 
 ;;; TLS client certificate verified result from downstream.
@@ -358,3 +382,163 @@
 (typename $has u32)
 
 (typename $body_length u64)
+(typename $vcpu_ms u64)
+
+(typename $inspect_info_mask
+    (flags (@witx repr u32)
+        $reserved
+        $corp
+        $workspace
+    )
+)
+
+(typename $inspect_info
+    (record
+        (field $corp (@witx pointer (@witx char8)))
+        (field $corp_len u32)
+        (field $workspace (@witx pointer (@witx char8)))
+        (field $workspace_len u32)
+    )
+)
+
+(typename $kv_lookup_config_options
+    (flags (@witx repr u32)
+       $reserved
+       ))
+
+(typename $kv_lookup_config
+  (record
+    (field $reserved u32)
+    ))
+
+(typename $kv_delete_config_options
+    (flags (@witx repr u32)
+       $reserved
+       ))
+
+(typename $kv_delete_config
+  (record
+    (field $reserved u32)
+    ))
+
+(typename $kv_insert_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $background_fetch
+       ;; reserved_2 was previously if_generation_match (u32)
+       $reserved_2
+       $metadata
+       $time_to_live_sec
+       $if_generation_match
+       ))
+
+(typename $kv_insert_mode
+    (enum (@witx tag u32)
+       $overwrite
+       $add
+       $append
+       $prepend))
+
+(typename $kv_insert_config
+  (record
+    (field $mode $kv_insert_mode)
+    (field $unused u32)
+    (field $metadata (@witx pointer (@witx char8)))
+    (field $metadata_len u32)
+    (field $time_to_live_sec u32)
+    (field $if_generation_match u64)
+    ))
+
+(typename $kv_list_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $cursor
+       $limit
+       $prefix
+       ))
+
+(typename $kv_list_mode
+    (enum (@witx tag u32)
+       $strong
+       $eventual))
+
+(typename $kv_list_config
+  (record
+    (field $mode $kv_list_mode)
+    (field $cursor (@witx pointer (@witx char8)))
+    (field $cursor_len u32)
+    (field $limit u32)
+    (field $prefix (@witx pointer (@witx char8)))
+    (field $prefix_len u32)
+    ))
+
+(typename $kv_error
+    (enum (@witx tag u32)
+        ;;; The $kv_error has not been set.
+        $uninitialized
+        ;;; There was no error.
+        $ok
+        ;;; KV store cannot or will not process the request due to something that is perceived to be a client error
+        ;;; This will map to the api's 400 codes
+        $bad_request
+        ;;; KV store cannot find the requested resource
+        ;;; This will map to the api's 404 codes
+        $not_found
+        ;;; KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)
+        ;;; This will map to the api's 412 codes
+        $precondition_failed
+        ;;; The size limit for a KV store key was exceeded.
+        ;;; This will map to the api's 413 codes
+        $payload_too_large
+        ;;; The system encountered an unexpected internal error.
+        ;;; This will map to all remaining http error codes
+        $internal_error
+        ;;; Too many requests have been made to the KV store.
+        ;;; This will map to the api's 429 codes
+        $too_many_requests
+        ))
+
+(typename $acl_error
+    (enum (@witx tag u32)
+        ;;; The $acl_error has not been initialized.
+        $uninitialized
+        ;;; There was no error.
+        $ok
+        ;;; This will map to the api's 204 code.
+        ;;; It indicates that the request succeeded, yet returned nothing.
+        $no_content
+        ;;; This will map to the api's 429 code.
+        ;;; Too many requests have been made.
+        $too_many_requests
+        ))
+
+(typename $image_optimizer_transform_config_options
+    (flags (@witx repr u32)
+        $reserved
+        $sdk_claims_opts
+        ))
+
+(typename $image_optimizer_transform_config
+  (record
+    ;; sdk_claims_opts contains any Image Optimizer API parameters that were set
+    ;; as well as the Image Optimizer region the request is meant for.
+    (field $sdk_claims_opts (@witx pointer (@witx char8)))
+    (field $sdk_claims_opts_len u32)
+    ))
+
+(typename $image_optimizer_error_tag
+    (enum (@witx tag u32)
+        $uninitialized
+        $ok
+        $error
+        $warning
+    )
+)
+
+(typename $image_optimizer_error_detail
+    (record
+        (field $tag $image_optimizer_error_tag)
+        (field $message (@witx pointer (@witx char8)))
+        (field $message_len u32)
+    )
+)

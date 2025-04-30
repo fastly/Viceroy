@@ -1,0 +1,6 @@
+{
+  "entries": [
+    { "op": "update", "prefix": "2000::/24", "action": "BLOCK" },
+    { "op": "create", "prefix": "FACE::/16", "action": "ALLOW" }
+  ]
+}

@@ -22,6 +22,13 @@ fn main() {
         _ => panic!(),
     }
 
+    let store_two = SecretStore::open("store_two").unwrap();
+    assert_eq!(store_two.get("first").unwrap().plaintext(), "first secret");
+    assert_eq!(
+        store_two.get("second").unwrap().plaintext(),
+        "another secret",
+    );
+
     let hello_bytes = "hello, wasm_world!".as_bytes().to_vec();
     let secret = Secret::from_bytes(hello_bytes).unwrap();
     assert_eq!("hello, wasm_world!", secret.plaintext());

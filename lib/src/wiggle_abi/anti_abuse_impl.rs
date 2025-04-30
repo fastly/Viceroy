@@ -13,23 +13,33 @@ const INCOMPLETE_RESPONSE: &[u8] =
 
 impl FastlyPrivilegedAntiAbuse for Session {
     #[allow(unused_variables)]
-    fn service_bot_verify<'a>(
+    fn service_bot_verify(
         &mut self,
-        jsonreq: &GuestPtr<'a, str>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        jsonreq: GuestPtr<str>,
         timeout_ms: u64,
-        buf: &wiggle::GuestPtr<'a, u8>,
+        buf: wiggle::GuestPtr<u8>,
         buf_len: u32,
-        nwritten_out: &wiggle::GuestPtr<'a, u32>,
+        nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
         let result = INCOMPLETE_RESPONSE;
         let result_len = result.len() as u32;
 
-        let mut buf_ptr = buf
-            .as_array(result_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_ptr.copy_from_slice(result);
-        nwritten_out.write(result_len)?;
+        // Whether or not we actually do the write, we put the "correct length" in nwritten_out.
+        memory.write(nwritten_out, result_len)?;
+        // If the provided buffer is to long, we return an error (with the correct length in
+        // nwritten.)
+        if buf_len < result_len {
+            return Err(Error::BufferLengthError {
+                buf: "buf",
+                len: "buf_len",
+            });
+        }
+
+        let buf = buf.as_array(buf_len);
+        let buf = memory.as_slice_mut(buf)?.ok_or(Error::SharedMemory)?;
+
+        buf[..result.len()].copy_from_slice(result);
         Ok(())
     }
 }

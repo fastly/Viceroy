@@ -1,12 +1,12 @@
 use {
     super::fastly::api::{async_io, types},
-    crate::{session::Session, wiggle_abi},
+    crate::{linking::ComponentCtx, wiggle_abi},
     futures::FutureExt,
     std::time::Duration,
 };
 
 #[async_trait::async_trait]
-impl async_io::Host for Session {
+impl async_io::Host for ComponentCtx {
     async fn select(
         &mut self,
         hs: Vec<async_io::Handle>,
@@ -16,7 +16,7 @@ impl async_io::Host for Session {
             return Err(types::Error::InvalidArgument.into());
         }
 
-        let select_fut = self.select_impl(
+        let select_fut = self.session.select_impl(
             hs.iter()
                 .copied()
                 .map(|i| wiggle_abi::types::AsyncItemHandle::from(i).into()),
@@ -44,6 +44,7 @@ impl async_io::Host for Session {
     async fn is_ready(&mut self, handle: async_io::Handle) -> Result<bool, types::Error> {
         let handle = wiggle_abi::types::AsyncItemHandle::from(handle);
         Ok(self
+            .session
             .async_item_mut(handle.into())?
             .await_ready()
             .now_or_never()

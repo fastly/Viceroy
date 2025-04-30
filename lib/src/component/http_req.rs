@@ -7,6 +7,7 @@ use {
     crate::{
         config::{Backend, ClientCertInfo},
         error::Error,
+        linking::ComponentCtx,
         secret_store::SecretLookup,
         session::{AsyncItem, AsyncItemHandle, PeekableTask, Session, ViceroyRequestMetadata},
         upstream,
@@ -50,13 +51,13 @@ use {
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
-impl http_req::Host for Session {
+impl http_req::Host for ComponentCtx {
     async fn method_get(
         &mut self,
         h: http_types::RequestHandle,
         max_len: u64,
     ) -> Result<String, types::Error> {
-        let req = self.request_parts(h.into())?;
+        let req = self.session.request_parts(h.into())?;
         let req_method = &req.method;
 
         if req_method.as_str().len() > usize::try_from(max_len).unwrap() {
@@ -73,7 +74,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         max_len: u64,
     ) -> Result<String, types::Error> {
-        let req = self.request_parts(h.into())?;
+        let req = self.session.request_parts(h.into())?;
         let req_uri = &req.uri;
         let res = req_uri.to_string();
 
@@ -108,7 +109,7 @@ impl http_req::Host for Session {
     }
 
     async fn downstream_client_ip_addr(&mut self) -> Result<Vec<u8>, types::Error> {
-        match self.downstream_client_ip() {
+        match self.session.downstream_client_ip() {
             IpAddr::V4(addr) => {
                 let octets = addr.octets();
                 debug_assert_eq!(octets.len(), 4);
@@ -123,7 +124,7 @@ impl http_req::Host for Session {
     }
 
     async fn downstream_server_ip_addr(&mut self) -> Result<Vec<u8>, types::Error> {
-        match self.downstream_server_ip() {
+        match self.session.downstream_server_ip() {
             IpAddr::V4(addr) => {
                 let octets = addr.octets();
                 debug_assert_eq!(octets.len(), 4);
@@ -135,6 +136,10 @@ impl http_req::Host for Session {
                 Ok(Vec::from(octets))
             }
         }
+    }
+
+    async fn downstream_client_ddos_detected(&mut self) -> Result<u32, types::Error> {
+        Ok(0)
     }
 
     async fn downstream_tls_cipher_openssl_name(
@@ -174,7 +179,7 @@ impl http_req::Host for Session {
 
     async fn new(&mut self) -> Result<http_types::RequestHandle, types::Error> {
         let (parts, _) = Request::new(()).into_parts();
-        Ok(self.insert_request_parts(parts).into())
+        Ok(self.session.insert_request_parts(parts).into())
     }
 
     async fn header_names_get(
@@ -183,7 +188,7 @@ impl http_req::Host for Session {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        let headers = &self.request_parts(h.into())?.headers;
+        let headers = &self.session.request_parts(h.into())?.headers;
 
         let (buf, next) = write_values(
             headers.keys(),
@@ -213,7 +218,7 @@ impl http_req::Host for Session {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &self.request_parts(h.into())?.headers;
+        let headers = &self.session.request_parts(h.into())?.headers;
         let value = if let Some(value) = headers.get(&name) {
             value
         } else {
@@ -234,7 +239,7 @@ impl http_req::Host for Session {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
-        let headers = &self.request_parts(h.into())?.headers;
+        let headers = &self.session.request_parts(h.into())?.headers;
 
         let values = headers.get_all(HeaderName::from_str(&name)?);
 
@@ -266,7 +271,7 @@ impl http_req::Host for Session {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
 
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let values = {
@@ -300,7 +305,7 @@ impl http_req::Host for Session {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
@@ -318,7 +323,7 @@ impl http_req::Host for Session {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
@@ -335,7 +340,7 @@ impl http_req::Host for Session {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers
             .remove(name)
@@ -349,7 +354,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         method: String,
     ) -> Result<(), types::Error> {
-        let method_ref = &mut self.request_parts_mut(h.into())?.method;
+        let method_ref = &mut self.session.request_parts_mut(h.into())?.method;
         *method_ref = Method::from_bytes(method.as_bytes())?;
         Ok(())
     }
@@ -359,7 +364,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         uri: String,
     ) -> Result<(), types::Error> {
-        let uri_ref = &mut self.request_parts_mut(h.into())?.uri;
+        let uri_ref = &mut self.session.request_parts_mut(h.into())?.uri;
         *uri_ref = Uri::try_from(uri.as_bytes())?;
         Ok(())
     }
@@ -368,7 +373,7 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::RequestHandle,
     ) -> Result<http_types::HttpVersion, types::Error> {
-        let req = self.request_parts(h.into())?;
+        let req = self.session.request_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
     }
@@ -378,7 +383,7 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
-        let req = self.request_parts_mut(h.into())?;
+        let req = self.session.request_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
     }
@@ -390,16 +395,17 @@ impl http_req::Host for Session {
         backend_name: String,
     ) -> Result<http_types::Response, types::Error> {
         // prepare the request
-        let req_parts = self.take_request_parts(h.into())?;
-        let req_body = self.take_body(b.into())?;
+        let req_parts = self.session.take_request_parts(h.into())?;
+        let req_body = self.session.take_body(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
+            .session
             .backend(&backend_name)
             .ok_or_else(|| Error::UnknownBackend(backend_name))?;
 
         // synchronously send the request
-        let resp = upstream::send_request(req, backend, self.tls_config()).await?;
-        let (resp_handle, body_handle) = self.insert_response(resp);
+        let resp = upstream::send_request(req, backend, self.session.tls_config()).await?;
+        let (resp_handle, body_handle) = self.session.insert_response(resp);
         Ok((resp_handle.into(), body_handle.into()))
     }
 
@@ -408,11 +414,21 @@ impl http_req::Host for Session {
         h: http_types::RequestHandle,
         b: http_types::BodyHandle,
         backend_name: String,
-    ) -> Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)> {
+    ) -> Result<http_types::Response, http_req::ErrorWithDetail> {
         // This initial implementation ignores the error detail field
         self.send(h, b, backend_name)
             .await
             .map_err(types::Error::with_empty_detail)
+    }
+
+    async fn send_v3(
+        &mut self,
+        h: http_types::RequestHandle,
+        b: http_types::BodyHandle,
+        backend_name: String,
+    ) -> Result<http_types::Response, http_req::ErrorWithDetail> {
+        // This initial implementation ignores the error detail field
+        self.send_v2(h, b, backend_name).await
     }
 
     async fn send_async(
@@ -422,19 +438,39 @@ impl http_req::Host for Session {
         backend_name: String,
     ) -> Result<http_types::PendingRequestHandle, types::Error> {
         // prepare the request
-        let req_parts = self.take_request_parts(h.into())?;
-        let req_body = self.take_body(b.into())?;
+        let req_parts = self.session.take_request_parts(h.into())?;
+        let req_body = self.session.take_body(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
+            .session
             .backend(&backend_name)
             .ok_or(types::Error::from(types::Error::UnknownError))?;
 
         // asynchronously send the request
-        let task =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
+        let task = PeekableTask::spawn(upstream::send_request(
+            req,
+            backend,
+            self.session.tls_config(),
+        ))
+        .await;
 
         // return a handle to the pending request
-        Ok(self.insert_pending_request(task).into())
+        Ok(self.session.insert_pending_request(task).into())
+    }
+
+    async fn send_async_v2(
+        &mut self,
+        h: http_types::RequestHandle,
+        b: http_types::BodyHandle,
+        backend_name: String,
+        streaming: bool,
+    ) -> Result<http_types::PendingRequestHandle, types::Error> {
+        if streaming {
+            self.send_async_streaming(h, b, backend_name)
+        } else {
+            self.send_async(h, b, backend_name)
+        }
+        .await
     }
 
     async fn send_async_streaming(
@@ -444,19 +480,24 @@ impl http_req::Host for Session {
         backend_name: String,
     ) -> Result<http_types::PendingRequestHandle, types::Error> {
         // prepare the request
-        let req_parts = self.take_request_parts(h.into())?;
-        let req_body = self.begin_streaming(b.into())?;
+        let req_parts = self.session.take_request_parts(h.into())?;
+        let req_body = self.session.begin_streaming(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
+            .session
             .backend(&backend_name)
             .ok_or(types::Error::from(types::Error::UnknownError))?;
 
         // asynchronously send the request
-        let task =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
+        let task = PeekableTask::spawn(upstream::send_request(
+            req,
+            backend,
+            self.session.tls_config(),
+        ))
+        .await;
 
         // return a handle to the pending request
-        Ok(self.insert_pending_request(task).into())
+        Ok(self.session.insert_pending_request(task).into())
     }
 
     async fn pending_req_poll(
@@ -464,11 +505,12 @@ impl http_req::Host for Session {
         h: http_types::PendingRequestHandle,
     ) -> Result<Option<http_types::Response>, types::Error> {
         if self
+            .session
             .async_item_mut(AsyncItemHandle::from_u32(h))?
             .is_ready()
         {
-            let resp = self.take_pending_request(h.into())?.recv().await?;
-            let (resp_handle, resp_body_handle) = self.insert_response(resp);
+            let resp = self.session.take_pending_request(h.into())?.recv().await?;
+            let (resp_handle, resp_body_handle) = self.session.insert_response(resp);
             Ok(Some((resp_handle.into(), resp_body_handle.into())))
         } else {
             Ok(None)
@@ -478,8 +520,7 @@ impl http_req::Host for Session {
     async fn pending_req_poll_v2(
         &mut self,
         h: http_types::PendingRequestHandle,
-    ) -> Result<Option<http_types::Response>, (Option<http_req::SendErrorDetail>, types::Error)>
-    {
+    ) -> Result<Option<http_types::Response>, http_req::ErrorWithDetail> {
         self.pending_req_poll(h)
             .await
             .map_err(types::Error::with_empty_detail)
@@ -489,15 +530,15 @@ impl http_req::Host for Session {
         &mut self,
         h: http_types::PendingRequestHandle,
     ) -> Result<http_types::Response, types::Error> {
-        let pending_req = self.take_pending_request(h.into())?.recv().await?;
-        let (resp_handle, body_handle) = self.insert_response(pending_req);
+        let pending_req = self.session.take_pending_request(h.into())?.recv().await?;
+        let (resp_handle, body_handle) = self.session.insert_response(pending_req);
         Ok((resp_handle.into(), body_handle.into()))
     }
 
     async fn pending_req_wait_v2(
         &mut self,
         h: http_types::PendingRequestHandle,
-    ) -> Result<http_types::Response, (Option<http_req::SendErrorDetail>, types::Error)> {
+    ) -> Result<http_types::Response, http_req::ErrorWithDetail> {
         self.pending_req_wait(h)
             .await
             .map_err(types::Error::with_empty_detail)
@@ -515,13 +556,14 @@ impl http_req::Host for Session {
 
         // perform the select operation
         let done_index = self
+            .session
             .select_impl(
                 h.iter()
                     .map(|handle| types::PendingRequestHandle::from(*handle).into()),
             )
             .await?;
 
-        let item = self.take_async_item(
+        let item = self.session.take_async_item(
             types::PendingRequestHandle::from(h.get(done_index).cloned().unwrap()).into(),
         )?;
 
@@ -529,7 +571,7 @@ impl http_req::Host for Session {
             AsyncItem::PendingReq(res) => match res {
                 PeekableTask::Complete(resp) => match resp {
                     Ok(resp) => {
-                        let (resp_handle, body_handle) = self.insert_response(resp);
+                        let (resp_handle, body_handle) = self.session.insert_response(resp);
                         (done_index as u32, (resp_handle.into(), body_handle.into()))
                     }
                     // Unfortunately, the ABI provides no means of returning error information
@@ -550,8 +592,7 @@ impl http_req::Host for Session {
     async fn pending_req_select_v2(
         &mut self,
         h: Vec<http_types::PendingRequestHandle>,
-    ) -> Result<(u32, http_types::Response), (Option<http_req::SendErrorDetail>, types::Error)>
-    {
+    ) -> Result<(u32, http_types::Response), http_req::ErrorWithDetail> {
         self.pending_req_select(h)
             .await
             .map_err(types::Error::with_empty_detail)
@@ -564,7 +605,7 @@ impl http_req::Host for Session {
     async fn close(&mut self, h: http_types::RequestHandle) -> Result<(), types::Error> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
-        self.take_request_parts(h.into())?;
+        self.session.take_request_parts(h.into())?;
         Ok(())
     }
 
@@ -577,7 +618,7 @@ impl http_req::Host for Session {
 
         // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
         // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
-        let extensions = &mut self.request_parts_mut(h.into())?.extensions;
+        let extensions = &mut self.session.request_parts_mut(h.into())?.extensions;
 
         let encodings = types::ContentEncodings::try_from(encodings.as_array()[0])?;
 
@@ -726,16 +767,17 @@ impl http_req::Host for Session {
         };
 
         let client_cert = if options.contains(http_types::BackendConfigOptions::CLIENT_CERT) {
-            let key_lookup =
-                self.secret_lookup(config.client_key.into())
-                    .ok_or(Error::SecretStoreError(
-                        SecretStoreError::InvalidSecretHandle(config.client_key.into()),
-                    ))?;
+            let key_lookup = self.session.secret_lookup(config.client_key.into()).ok_or(
+                Error::SecretStoreError(SecretStoreError::InvalidSecretHandle(
+                    config.client_key.into(),
+                )),
+            )?;
             let key = match &key_lookup {
                 SecretLookup::Standard {
                     store_name,
                     secret_name,
                 } => self
+                    .session
                     .secret_stores()
                     .get_store(store_name)
                     .ok_or(Error::SecretStoreError(
@@ -771,7 +813,7 @@ impl http_req::Host for Session {
             ca_certs,
         };
 
-        if !self.add_backend(name, new_backend) {
+        if !self.session.add_backend(name, new_backend) {
             return Err(Error::BackendNameRegistryError(name.to_string()).into());
         }
 
@@ -786,7 +828,7 @@ impl http_req::Host for Session {
     }
 
     async fn downstream_client_request_id(&mut self, max_len: u64) -> Result<String, types::Error> {
-        let result = format!("{:032x}", self.req_id());
+        let result = format!("{:032x}", self.session.req_id());
 
         if result.len() > usize::try_from(max_len).unwrap() {
             return Err(types::Error::BufferLen(
@@ -812,7 +854,7 @@ impl http_req::Host for Session {
         &mut self,
         region_max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        let region = Session::downstream_compliance_region(self);
+        let region = Session::downstream_compliance_region(&self.session);
         let region_len = region.len();
 
         match u64::try_from(region_len) {
@@ -826,7 +868,7 @@ impl http_req::Host for Session {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        let headers = self.downstream_original_headers();
+        let headers = self.session.downstream_original_headers();
         let (buf, next) = write_values(
             headers.keys(),
             b'\0',
@@ -847,9 +889,53 @@ impl http_req::Host for Session {
 
     async fn original_header_count(&mut self) -> Result<u32, types::Error> {
         Ok(self
+            .session
             .downstream_original_headers()
             .len()
             .try_into()
             .expect("More than u32::MAX headers"))
+    }
+
+    async fn inspect(
+        &mut self,
+        ds_req: http_types::RequestHandle,
+        ds_body: http_types::BodyHandle,
+        info_mask: http_req::InspectConfigOptions,
+        info: http_req::InspectConfig,
+        buf_max_len: u64,
+    ) -> Result<String, types::Error> {
+        use http_req::InspectConfigOptions as Flags;
+
+        // Make sure we're given valid handles, even though we won't use them.
+        let _ = self.session.request_parts(ds_req.into())?;
+        let _ = self.session.body(ds_body.into())?;
+
+        // For now, corp and workspace arguments are required to actually generate the hostname,
+        // but in the future the lookaside service will be generated using the customer ID, and
+        // it will be okay for them to be unspecified or empty.
+        if !info_mask.contains(Flags::CORP | Flags::WORKSPACE) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        if info.corp.is_empty() || info.workspace.is_empty() {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        // Return the mock NGWAF response.
+        let ngwaf_resp = self.session.ngwaf_response();
+        let ngwaf_resp_len = ngwaf_resp.len();
+
+        match u64::try_from(ngwaf_resp_len) {
+            Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_max_len => Ok(ngwaf_resp),
+            too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
+        }
+    }
+
+    async fn on_behalf_of(
+        &mut self,
+        _: http_req::RequestHandle,
+        _: Vec<u8>,
+    ) -> Result<(), types::Error> {
+        Err(types::Error::Unsupported)
     }
 }

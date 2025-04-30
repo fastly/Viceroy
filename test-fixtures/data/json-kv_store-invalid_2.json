@@ -1,0 +1,6 @@
+{
+    "first": {
+        "data": "this is invalid because it has both data and file",
+        "file": "../test-fixtures/data/kv-store.txt"
+    }
+}

@@ -2,7 +2,7 @@
 
 use {
     self::{
-        backends::BackendsConfig, dictionaries::DictionariesConfig,
+        acl::AclConfig, backends::BackendsConfig, dictionaries::DictionariesConfig,
         object_store::ObjectStoreConfig, secret_store::SecretStoreConfig,
     },
     crate::error::FastlyConfigError,
@@ -24,6 +24,10 @@ mod dictionaries;
 pub use self::dictionaries::{Dictionary, LoadedDictionary};
 
 pub type Dictionaries = HashMap<String, Dictionary>;
+
+/// Types and deserializers for acl configuration settings.
+mod acl;
+pub use crate::acl::Acls;
 
 /// Types and deserializers for backend configuration settings.
 mod backends;
@@ -50,6 +54,8 @@ pub use crate::object_store::ObjectStores;
 /// Types and deserializers for secret store configuration settings.
 mod secret_store;
 pub use crate::secret_store::SecretStores;
+
+pub use crate::shielding_site::ShieldingSites;
 
 /// Fastly-specific configuration information.
 ///
@@ -84,6 +90,11 @@ impl FastlyConfig {
         self.language.as_str()
     }
 
+    /// Get the acl configuration.
+    pub fn acls(&self) -> &Acls {
+        &self.local_server.acls.0
+    }
+
     /// Get the backend configuration.
     pub fn backends(&self) -> &Backends {
         &self.local_server.backends.0
@@ -112,6 +123,10 @@ impl FastlyConfig {
     /// Get the secret store configuration.
     pub fn secret_stores(&self) -> &SecretStores {
         &self.local_server.secret_stores.0
+    }
+    /// Get the shielding site configuration.
+    pub fn shielding_sites(&self) -> &ShieldingSites {
+        &self.local_server.shielding_sites
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -191,12 +206,14 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
 /// may be added in the future.
 #[derive(Clone, Debug, Default)]
 pub struct LocalServerConfig {
+    acls: AclConfig,
     backends: BackendsConfig,
     device_detection: DeviceDetection,
     geolocation: Geolocation,
     dictionaries: DictionariesConfig,
     object_stores: ObjectStoreConfig,
     secret_stores: SecretStoreConfig,
+    shielding_sites: ShieldingSites,
 }
 
 /// Enum of available (experimental) wasi modules
@@ -211,6 +228,7 @@ pub enum ExperimentalModule {
 /// a [`LocalServerConfig`] with [`TryInto::try_into`].
 #[derive(Deserialize)]
 struct RawLocalServerConfig {
+    acls: Option<Table>,
     backends: Option<Table>,
     device_detection: Option<Table>,
     geolocation: Option<Table>,
@@ -219,19 +237,27 @@ struct RawLocalServerConfig {
     #[serde(alias = "object_store", alias = "kv_stores")]
     object_stores: Option<Table>,
     secret_stores: Option<Table>,
+    shielding_sites: Option<Table>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
     type Error = FastlyConfigError;
     fn try_into(self) -> Result<LocalServerConfig, Self::Error> {
         let Self {
+            acls,
             backends,
             device_detection,
             geolocation,
             dictionaries,
             object_stores,
             secret_stores,
+            shielding_sites,
         } = self;
+        let acls = if let Some(acls) = acls {
+            acls.try_into()?
+        } else {
+            AclConfig::default()
+        };
         let backends = if let Some(backends) = backends {
             backends.try_into()?
         } else {
@@ -262,14 +288,21 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
         } else {
             SecretStoreConfig::default()
         };
+        let shielding_sites = if let Some(shielding_sites) = shielding_sites {
+            shielding_sites.try_into()?
+        } else {
+            ShieldingSites::default()
+        };
 
         Ok(LocalServerConfig {
+            acls,
             backends,
             device_detection,
             geolocation,
             dictionaries,
             object_stores,
             secret_stores,
+            shielding_sites,
         })
     }
 }

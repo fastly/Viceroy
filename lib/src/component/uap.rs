@@ -1,6 +1,6 @@
 use {
     super::fastly::api::{types, uap},
-    crate::{error::Error, session::Session},
+    crate::{error::Error, linking::ComponentCtx},
     wasmtime::component::Resource,
 };
 
@@ -8,7 +8,7 @@ use {
 pub struct UserAgent {}
 
 #[async_trait::async_trait]
-impl uap::HostUserAgent for Session {
+impl uap::HostUserAgent for ComponentCtx {
     async fn family(
         &mut self,
         _agent: Resource<UserAgent>,
@@ -41,13 +41,13 @@ impl uap::HostUserAgent for Session {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 
-    fn drop(&mut self, _agent: Resource<UserAgent>) -> wasmtime::Result<()> {
+    async fn drop(&mut self, _agent: Resource<UserAgent>) -> wasmtime::Result<()> {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 }
 
 #[async_trait::async_trait]
-impl uap::Host for Session {
+impl uap::Host for ComponentCtx {
     async fn parse(&mut self, _user_agent: String) -> Result<Resource<UserAgent>, types::Error> {
         // not available
         Err(Error::NotAvailable("User-agent parsing is not available").into())

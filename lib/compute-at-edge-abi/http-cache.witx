@@ -1,0 +1,443 @@
+;;; Overall, this should look very familiar to users of the Core Cache API. The primary differences
+;;; are:
+;;;
+;;; - HTTP `request_handle`s and `response_handle`s are used rather than relying on the user to
+;;;   encode headers, status codes, etc in `user_metadata`.
+;;;
+;;; - Convenience functions specific to HTTP semantics are provided, such as `is_request_cacheable`,
+;;;   `get_suggested_backend_request`, `get_suggested_cache_options`, and
+;;;   `transaction_record_not_cacheable`.
+;;;
+;;; The HTTP-specific behavior of these functions is intended to support applications that match the
+;;; normative guidance in RFC 9111. For example, `is_request_cacheable` returns `false` for `POST`
+;;; requests. However, this answer along with those of many of these functions explicitly provide
+;;; _suggestions_; they do not necessarily need to be followed if custom behavior is required, such
+;;; as caching `POST` responses when the application author knows that to be safe.
+;;;
+;;; The starting points for this API are `lookup` (no request collapsing) and `transaction_lookup`
+;;; (request collapsing).
+
+;;; A handle to an HTTP Cache transaction.
+(typename $http_cache_handle (handle))
+
+;;; Boolean: 1 == true, 0 == false.
+(typename $is_cacheable u32)
+
+;;; Boolean: 1 == true, 0 == false.
+(typename $is_sensitive u32)
+
+;;; The suggested action to take for spec-recommended behavior following
+;;; `prepare_response_for_storage`.
+(typename $http_storage_action
+    (enum (@witx tag u32)
+        ;; Insert the response into cache (`transaction_insert*`).
+        $insert
+
+        ;; Update the stale response in cache (`transaction_update*`).
+        $update
+
+        ;; Do not store this response.
+        $do_not_store
+
+        ;; Do not store this response, and furthermore record its non-cacheability for other pending
+        ;; requests (`transaction_record_not_cacheable`).
+        $record_uncacheable
+    )
+)
+
+;;; Non-required options for cache lookups.
+;;;
+;;; This record is always provided along with an `http_cache_lookup_options_mask` value that
+;;; indicates which of the fields in this record are valid.
+(typename $http_cache_lookup_options
+    (record
+        ;; Cache key to use in lieu of the automatically-generated cache key based on the request's
+        ;; properties.
+        (field $override_key_ptr (@witx pointer (@witx char8)))
+        (field $override_key_len (@witx usize))
+    )
+)
+
+;;; Options mask for `http_cache_lookup_options`.
+(typename $http_cache_lookup_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $override_key
+    )
+)
+
+;;; Options for cache insertions and updates.
+;;;
+;;; This record is always provided along with an `http_cache_write_options_mask` value that
+;;; indicates which of the fields in this record are valid.
+(typename $http_cache_write_options
+    (record
+        ;; The maximum age of the response before it is considered stale, in nanoseconds.
+        ;;
+        ;; This field is required; there is no flag for it in `http_cache_write_options_mask`.
+        (field $max_age_ns $cache_duration_ns)
+
+        ;; A list of header names to use when calculating variants for this response.
+        ;;
+        ;; The format is a string containing header names separated by spaces.
+        (field $vary_rule_ptr (@witx pointer (@witx char8)))
+        (field $vary_rule_len (@witx usize))
+
+        ;; The initial age of the response in nanoseconds.
+        ;;
+        ;; If this field is not set, the default value is zero.
+        ;;
+        ;; This age is used to determine the freshness lifetime of the response as well as to
+        ;; prioritize which variant to return if a subsequent lookup matches more than one vary rule
+        (field $initial_age_ns $cache_duration_ns)
+
+        ;; The maximum duration after `max_age` during which the response may be delivered stale
+        ;; while being revalidated, in nanoseconds.
+        ;;
+        ;; If this field is not set, the default value is zero.
+        (field $stale_while_revalidate_ns $cache_duration_ns)
+
+        ;; A list of surrogate keys that may be used to purge this response.
+        ;;
+        ;; The format is a string containing [valid surrogate
+        ;; keys](https://www.fastly.com/documentation/reference/http/http-headers/Surrogate-Key/)
+        ;; separated by spaces.
+        ;;
+        ;; If this field is not set, no surrogate keys will be associated with the response. This
+        ;; means that the response cannot be purged except via a purge-all operation.
+        (field $surrogate_keys_ptr (@witx pointer (@witx char8)))
+        (field $surrogate_keys_len (@witx usize))
+
+        ;; The length of the response body.
+        ;;
+        ;; If this field is not set, the length of the body is treated as unknown.
+        ;;
+        ;; When possible, this field should be set so that other clients waiting to retrieve the
+        ;; body have enough information to synthesize a `content-length` even before the complete
+        ;; body is inserted to the cache.
+        (field $length $cache_object_length)
+    )
+)
+
+;;; Options mask for `http_cache_write_options`.
+(typename $http_cache_write_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $vary_rule
+        $initial_age_ns
+        $stale_while_revalidate_ns
+        $surrogate_keys
+        $length
+        $sensitive_data
+    )
+)
+
+(module $fastly_http_cache
+    ;;; Determine whether a request is cacheable per conservative RFC 9111 semantics.
+    ;;;
+    ;;; In particular, this function checks whether the request method is `GET` or `HEAD`, and
+    ;;; considers requests with other methods uncacheable. Applications where it is safe to cache
+    ;;; responses to other methods should consider using their own cacheability check instead of
+    ;;; this function.
+    (@interface func (export "is_request_cacheable")
+        (param $req_handle $request_handle)
+        (result $err (expected $is_cacheable (error $fastly_status)))
+    )
+
+    ;;; Retrieves the default cache key for the request.
+    ;;;
+    ;;; The `$key_out` parameter must point to an array of size `key_out_len`.
+    ;;;
+    ;;; If the guest-provided output parameter is not long enough to contain the full key,
+    ;;; the required size is written by the host to `nwritten_out` and the `$buflen`
+    ;;; error is returned.
+    ;;;
+    ;;; At the moment, HTTP cache keys must always be 32 bytes.
+    (@interface func (export "get_suggested_cache_key")
+        (param $req_handle $request_handle)
+        (param $key_out_ptr (@witx pointer (@witx char8)))
+        (param $key_out_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Perform a cache lookup based on the given request without participating in request
+    ;;; collapsing.
+    ;;;
+    ;;; The request is not consumed.
+    (@interface func (export "lookup")
+        (param $req_handle $request_handle)
+        (param $options_mask $http_cache_lookup_options_mask)
+        (param $options (@witx pointer $http_cache_lookup_options))
+        (result $err (expected $http_cache_handle (error $fastly_status)))
+    )
+
+    ;;; Perform a cache lookup based on the given request.
+    ;;;
+    ;;; This operation always participates in request collapsing and may return an obligation to
+    ;;; insert or update responses, and/or stale responses. To bypass request collapsing, use
+    ;;; `lookup` instead.
+    ;;;
+    ;;; The request is not consumed.
+    (@interface func (export "transaction_lookup")
+        (param $req_handle $request_handle)
+        (param $options_mask $http_cache_lookup_options_mask)
+        (param $options (@witx pointer $http_cache_lookup_options))
+        (result $err (expected $http_cache_handle (error $fastly_status)))
+    )
+
+    ;;; Insert a response into the cache with the given options, returning a streaming body handle
+    ;;; that is ready for writing or appending.
+    ;;;
+    ;;; Can only be used if the cache handle state includes the `$must_insert_or_update` flag.
+    ;;;
+    ;;; The response is consumed.
+    (@interface func (export "transaction_insert")
+        (param $handle $http_cache_handle)
+        (param $resp_handle $response_handle)
+        (param $options_mask $http_cache_write_options_mask)
+        (param $options (@witx pointer $http_cache_write_options))
+        (result $err (expected $body_handle (error $fastly_status)))
+    )
+
+    ;;; Insert a response into the cache with the given options, and return a fresh cache handle
+    ;;; that can be used to retrieve and stream the response while it's being inserted.
+    ;;;
+    ;;; This helps avoid the "slow reader" problem on a teed stream, for example when a program wishes
+    ;;; to store a backend request in the cache while simultaneously streaming to a client in an HTTP
+    ;;; response.
+    ;;;
+    ;;; The response is consumed.
+    (@interface func (export "transaction_insert_and_stream_back")
+        (param $handle $http_cache_handle)
+        (param $resp_handle $response_handle)
+        (param $options_mask $http_cache_write_options_mask)
+        (param $options (@witx pointer $http_cache_write_options))
+        (result $err (expected (tuple $body_handle $http_cache_handle) (error $fastly_status)))
+    )
+
+    ;;; Update freshness lifetime, response headers, and caching settings without updating the
+    ;;; response body.
+    ;;;
+    ;;; Can only be used in if the cache handle state includes both of the flags:
+    ;;; - `$found`
+    ;;; - `$must_insert_or_update`
+    ;;;
+    ;;; The response is consumed.
+    (@interface func (export "transaction_update")
+        (param $handle $http_cache_handle)
+        (param $resp_handle $response_handle)
+        (param $options_mask $http_cache_write_options_mask)
+        (param $options (@witx pointer $http_cache_write_options))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Update freshness lifetime, response headers, and caching settings without updating the
+    ;;; response body, and return a fresh cache handle that can be used to retrieve and stream the
+    ;;; stored response.
+    ;;;
+    ;;; Can only be used in if the cache handle state includes both of the flags:
+    ;;; - `$found`
+    ;;; - `$must_insert_or_update`
+    ;;;
+    ;;; The response is consumed.
+    (@interface func (export "transaction_update_and_return_fresh")
+        (param $handle $http_cache_handle)
+        (param $resp_handle $response_handle)
+        (param $options_mask $http_cache_write_options_mask)
+        (param $options (@witx pointer $http_cache_write_options))
+        (result $err (expected $http_cache_handle (error $fastly_status)))
+    )
+
+    ;;; Disable request collapsing and response caching for this cache entry.
+    ;;;
+    ;;; In Varnish terms, this function stores a hit-for-pass object.
+    ;;;
+    ;;; Only the max age and, optionally, the vary rule are read from the options mask and struct
+    ;;; for this function.
+    (@interface func (export "transaction_record_not_cacheable")
+        (param $handle $http_cache_handle)
+        (param $options_mask $http_cache_write_options_mask)
+        (param $options (@witx pointer $http_cache_write_options))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Abandon an obligation to provide a response to the cache.
+    ;;;
+    ;;; Useful if there is an error before streaming is possible, e.g. if a backend is unreachable.
+    ;;;
+    ;;; If there are other requests collapsed on this transaction, one of those other requests will
+    ;;; be awoken and given the obligation to provide a response. Note that if subsequent requests
+    ;;; are unlikely to yield cacheable responses, this may lead to undesired serialization of
+    ;;; requests. Consider using `transaction_record_not_cacheable` to make lookups for this request
+    ;;; bypass the cache.
+    (@interface func (export "transaction_abandon")
+        (param $handle $http_cache_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Close an ongoing interaction with the cache.
+    ;;;
+    ;;; If the cache handle state includes `$must_insert_or_update` (and hence no insert or update
+    ;;; has been performed), closing the handle cancels any request collapsing, potentially choosing
+    ;;; a new waiter to perform the insertion/update.
+    (@interface func (export "close")
+        (param $handle $http_cache_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Prepare a suggested request to make to a backend to satisfy the looked-up request.
+    ;;;
+    ;;; If there is a stored, stale response, this suggested request may be for revalidation. If the
+    ;;; looked-up request is ranged, the suggested request will be unranged in order to try caching
+    ;;; the entire response.
+    (@interface func (export "get_suggested_backend_request")
+        (param $handle $http_cache_handle)
+        (result $err (expected $request_handle (error $fastly_status)))
+    )
+
+    ;;; Prepare a suggested set of cache write options for a given request and response pair.
+    ;;;
+    ;;; The ABI of this function includes several unusual types of input and output parameters.
+    ;;;
+    ;;; The bits set in the `options_mask` input parameter describe which cache options the guest is
+    ;;; requesting that the host provide.
+    ;;;
+    ;;; The `options` input parameter allows the guest to provide output parameters for
+    ;;; pointer/length options. When the corresponding bit is set in `options_mask`, the pointer and
+    ;;; length should be set in this record to be used by the host to provide the output.
+    ;;;
+    ;;; The `options_mask_out` output parameter is only used by the host to indicate the status of
+    ;;; pointer/length data in the `options_out` record. The flag for a given pointer/length
+    ;;; parameter is set by the host if the corresponding flag was set in `options_mask`, and the
+    ;;; value is present in the suggested options. If the host returns a status of `$buflen`, the
+    ;;; same set of flags will be set, but the length value of the corresponding fields in
+    ;;; `options_out` are set to the lengths that would be required to read the full value from the
+    ;;; host on a subsequent call.
+    ;;;
+    ;;; The `options_out` output parameter is where the host writes the suggested options that were
+    ;;; requested by the guest in `options_mask`. For pointer/length data, if there was enough room
+    ;;; to write the suggested option, the length field will contain the length of the data actually
+    ;;; written, while the pointer field will match the input pointer.
+    ;;;
+    ;;; The response is not consumed.
+    (@interface func (export "get_suggested_cache_options")
+        (param $handle $http_cache_handle)
+        (param $response $response_handle)
+        (param $options_mask $http_cache_write_options_mask)
+        (param $options (@witx pointer $http_cache_write_options))
+        (param $options_mask_out (@witx pointer $http_cache_write_options_mask))
+        (param $options_out (@witx pointer $http_cache_write_options))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Adjust a response into the appropriate form for storage and provides a storage action recommendation.
+    ;;;
+    ;;; For example, if the looked-up request contains conditional headers, this function will
+    ;;; interpret a `304 Not Modified` response for revalidation by updating headers.
+    ;;;
+    ;;; In addition to the updated response, this function returns the recommended storage action.
+    (@interface func (export "prepare_response_for_storage")
+        (param $handle $http_cache_handle)
+        (param $response $response_handle)
+        (result $err (expected (tuple $http_storage_action $response_handle) (error $fastly_status)))
+    )
+
+    ;;; Retrieve a stored response from the cache, returning the `$none` error if there was no found
+    ;;; response.
+    ;;;
+    ;;; If `transform_for_client` is set, the response will be adjusted according to the looked-up
+    ;;; request. For example, a response retrieved for a range request may be transformed into a
+    ;;; `206 Partial Content` response with an appropriate `content-range` header.
+    (@interface func (export "get_found_response")
+        (param $handle $http_cache_handle)
+        (param $transform_for_client u32)
+        (result $err (expected (tuple $response_handle $body_handle) (error $fastly_status)))
+    )
+
+    ;;; Get the state of a cache transaction.
+    ;;;
+    ;;; Primarily useful after performing the lookup to determine what subsequent operations are
+    ;;; possible and whether any insertion or update obligations exist.
+    (@interface func (export "get_state")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_lookup_state (error $fastly_status)))
+    )
+
+    ;;; Get the length of the found response, returning the `$none` error if there was no found
+    ;;; response or no length was provided.
+    (@interface func (export "get_length")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_object_length (error $fastly_status)))
+    )
+
+    ;;; Get the configured max age of the found response in nanoseconds, returning the `$none` error
+    ;;; if there was no found response.
+    (@interface func (export "get_max_age_ns")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Get the configured stale-while-revalidate period of the found response in nanoseconds,
+    ;;; returning the `$none` error if there was no found response.
+    (@interface func (export "get_stale_while_revalidate_ns")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Get the age of the found response in nanoseconds, returning the `$none` error if there was
+    ;;; no found response.
+    (@interface func (export "get_age_ns")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Get the number of cache hits for the found response, returning the `$none` error if there
+    ;;; was no found response.
+    ;;;
+    ;;; Note that this figure only reflects hits for a stored response in a particular cache server
+    ;;; or cluster, not the entire Fastly network.
+    (@interface func (export "get_hits")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_hit_count (error $fastly_status)))
+    )
+
+    ;;; Get whether a found response is marked as containing sensitive data, returning the `$none`
+    ;;; error if there was no found response.
+    (@interface func (export "get_sensitive_data")
+        (param $handle $http_cache_handle)
+        (result $err (expected $is_sensitive (error $fastly_status)))
+    )
+
+    ;;; Get the surrogate keys of the found response, returning the `$none` error if there was no
+    ;;; found response.
+    ;;;
+    ;;; The output is a list of surrogate keys separated by spaces.
+    ;;;
+    ;;; If the guest-provided output parameter is not long enough to contain the full list of
+    ;;; surrogate keys, the required size is written by the host to `nwritten_out` and the `$buflen`
+    ;;; error is returned.
+    (@interface func (export "get_surrogate_keys")
+        (param $handle $http_cache_handle)
+        (param $surrogate_keys_out_ptr (@witx pointer u8))
+        (param $surrogate_keys_out_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Get the vary rule of the found response, returning the `$none` error if there was no found
+    ;;; response.
+    ;;;
+    ;;; The output is a list of header names separated by spaces.
+    ;;;
+    ;;; If the guest-provided output parameter is not long enough to contain the full list of
+    ;;; surrogate keys, the required size is written by the host to `nwritten_out` and the `$buflen`
+    ;;; error is returned.
+    (@interface func (export "get_vary_rule")
+        (param $handle $http_cache_handle)
+        (param $vary_rule_out_ptr (@witx pointer u8))
+        (param $vary_rule_out_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+)

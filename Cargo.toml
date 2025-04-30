@@ -29,6 +29,7 @@ base64 = "0.21.2"
 clap = { version = "^4.0.18", features = ["derive"] }
 hyper = { version = "=0.14.26", features = ["full"] }
 itertools = "0.10.5"
+pin-project = "1.0.8"
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.3"
 serde_json = "1.0.59"
@@ -40,21 +41,21 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = "22.0.0"
-wasmtime-wasi = "22.0.0"
-wasmtime-wasi-nn = "22.0.0"
-wiggle = "22.0.0"
+wasmtime = { version =  "25.0.0", features = ["call-hook"] }
+wasmtime-wasi = "25.0.0"
+wasmtime-wasi-nn = "25.0.0"
+wiggle = "25.0.0"
 wat = "1.212.0"
-wasmparser = "0.208.0"
-wasm-encoder = { version = "0.208.0", features = ["wasmparser"] }
-wit-component = "0.208.0"
+wasmparser = "0.217.0"
+wasm-encoder = { version = "0.217.0", features = ["wasmparser"] }
+wit-component = "0.217.0"
 
 # Adapter dependencies
 byte-array-literals = { path = "crates/adapter/byte-array-literals" }
 bitflags = { version = "2.5.0", default-features = false }
 object = { version = "0.33", default-features = false, features = ["archive"] }
 wasi = { version = "0.11.0", default-features = false }
-wit-bindgen-rust-macro = { version = "0.25.0", default-features = false }
+wit-bindgen-rust-macro = { version = "0.32.0", default-features = false }
 
 [profile.release.package.viceroy-component-adapter]
 opt-level = 's'
