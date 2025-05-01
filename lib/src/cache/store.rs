@@ -1,6 +1,6 @@
 //! Data structures & implementation details for the Viceroy cache.
 
-use crate::cache::variance::VaryRule;
+use crate::{cache::variance::VaryRule, collecting_body::RequestedRange};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
@@ -408,28 +408,35 @@ pub(crate) struct CacheData {
 
 impl CacheData {
     /// Get a Body to read the cached object with.
+    ///
+    /// Note that if only 'to' is specified, it represents a point to count backwards from the
+    /// end of the body.
+    ///
+    /// The range is only respected if the length of the body is known before this call *and* the
+    /// range is valid; otherwise, the range is ignored, and the entire body is returned.
     pub(crate) fn get_body(
         &self,
         from: Option<u64>,
         to: Option<u64>,
     ) -> Result<Body, crate::Error> {
-        // Per the documentation of to_stream_for_range, if the range is invalid, the body contains
-        // the entire item.
+        // Construct a new RequestedRange.
         //
-        // For a streaming body, we may or may not know the full length;
-        // if we don't, then we return the entire body.
-        let length: Option<u64> = self.length();
-        let (from, to) = match (length, from, to) {
-            // No known length -> return the entire body.
-            (None, _, _) => (None, None),
-            // Invalid "from"
-            (Some(len), Some(from), _) if from >= len => (None, None),
-            (Some(len), _, Some(to)) if to >= len => (None, None),
-            // A valid range; fine, leave it.
-            _ => (from, to),
+        // Per the documentation of to_stream_for_range, if the range is invalid or the length is not
+        // known, the body contains the entire item.
+        // If only 'to' is specified, the bounds count backwards from the end.
+
+        let range = match (from, to, self.length()) {
+            (Some(from), Some(to), Some(length)) if (from <= to) && (to < length) => {
+                RequestedRange::Bounded(from..=to)
+            }
+            (_, Some(to), Some(length)) if (to < length) => {
+                RequestedRange::StartingFrom(length - to)
+            }
+            (Some(from), _, Some(length)) if (from <= length) => RequestedRange::StartingFrom(from),
+            _ => RequestedRange::Entire,
         };
 
-        self.body.read(from, to)
+        self.body.read(range)
     }
 
     /// Access to object's metadata
@@ -479,7 +486,7 @@ mod tests {
                     if let Some(found) = found {
                         let body = found
                             .body
-                            .read(None, None)
+                            .read(crate::collecting_body::RequestedRange::Entire)
                             .unwrap()
                             .read_into_string()
                             .await

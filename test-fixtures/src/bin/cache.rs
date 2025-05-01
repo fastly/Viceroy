@@ -504,7 +504,6 @@ fn test_nonconcurrent_range() {
         writer.write_all(body).unwrap();
         writer.finish().unwrap();
     }
-
     {
         let got = lookup(key.clone()).execute().unwrap().unwrap();
         poll_known_length(&got);
@@ -524,13 +523,14 @@ fn test_nonconcurrent_range() {
         assert_eq!(&got, b"beautiful world");
     }
 
+    // to_stream_from_range(None, Some(x)) gets the _last_ (x) bytes
     {
         let got = lookup(key.clone()).execute().unwrap().unwrap();
         let got = got
             .to_stream_from_range(None, Some(4))
             .unwrap()
             .into_bytes();
-        assert_eq!(&got, b"hello");
+        assert_eq!(std::str::from_utf8(&got).unwrap(), "orld");
     }
 }
 
