@@ -226,6 +226,7 @@ impl From<error::Error> for types::Error {
             Error::ObjectStoreError(e) => e.into(),
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
+            Error::ValueAbsent => types::Error::OptionalNone,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -253,7 +254,6 @@ impl From<error::Error> for types::Error {
             | Error::UnknownObjectStore(_)
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
-            | Error::ValueAbsent
             | Error::ToStr(_)
             | Error::InvalidAlpnRepsonse { .. }
             | Error::DeviceDetectionError(_)
