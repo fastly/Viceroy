@@ -509,12 +509,18 @@ impl FastlyHttpReq for Session {
 
         let grpc = backend_info_mask.contains(BackendConfigOptions::GRPC);
 
+        let uri = match Uri::builder()
+            .scheme(scheme)
+            .authority(origin_name)
+            .path_and_query("/")
+            .build()
+        {
+            Ok(uri) => uri,
+            Err(_) => return Err(Error::InvalidBackendUrl),
+        };
+
         let new_backend = Backend {
-            uri: Uri::builder()
-                .scheme(scheme)
-                .authority(origin_name)
-                .path_and_query("/")
-                .build()?,
+            uri: uri,
             override_host,
             cert_host,
             use_sni,
