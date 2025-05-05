@@ -194,6 +194,10 @@ impl CacheKeyObjects {
                     .iter()
                     .map(|v| v.variant(request_headers))
                     .collect();
+                // These are the existing cache entries that would be valid for this request,
+                // taking into account vary rules.
+                // They may be stale or not-yet-filled (i.e. obligation-only); let's see what we
+                // can get out of them.
                 let response_keyed_objects: Vec<_> = response_keys
                     .iter()
                     .filter_map(|v| key_objects.objects.get(v))
@@ -263,7 +267,8 @@ impl CacheKeyObjects {
     ///
     /// If a clear_obligation is provided, clear the "obligated" bit on that Variant in the same
     /// transaction (so there's only one wakeup). Note the clear_obligation variant may differ from
-    /// the variant inserted.
+    /// the variant inserted: we place the obligation marker based on the _existing_ Vary rules,
+    /// but we insert based on the Vary rule received in the response.
     pub fn insert(
         &self,
         request_headers: HeaderMap,
