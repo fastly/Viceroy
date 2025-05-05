@@ -346,10 +346,8 @@ pub struct Obligation {
 impl Obligation {
     /// Fulfill the obligation by providing write options and a body.
     pub fn complete(mut self, options: WriteOptions, body: Body) {
-        let mut request_headers = HeaderMap::default();
-        let mut variant = Variant::default();
-        std::mem::swap(&mut self.request_headers, &mut request_headers);
-        std::mem::swap(&mut self.variant, &mut variant);
+        let request_headers = std::mem::take(&mut self.request_headers);
+        let variant = std::mem::take(&mut self.variant);
         self.object
             .insert(request_headers, options, body, Some(variant));
         // Mild optimization: avoid re-acquiring the lock when we drop.
