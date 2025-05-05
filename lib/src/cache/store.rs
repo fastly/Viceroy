@@ -136,6 +136,10 @@ impl CacheKeyObjects {
         let mut sub = self.0.subscribe();
 
         loop {
+            // We set this flag if we find an obligation that we can wait on,
+            // i.e. whose vary rule matches our request headers.
+            // Note that if we find a completed request while computing this value,
+            // we return immediately.
             let mut awaitable = false;
             {
                 // The read-locked portion.
@@ -157,6 +161,9 @@ impl CacheKeyObjects {
                     awaitable = awaitable || cache_value.obligated;
                 }
             }
+            // Done computing awaitable, make it read-only:
+            let awaitable = awaitable;
+
             // TODO: cceckman-at-fastly: Stale-while-revalidate is slightly subtle, here.
             // If one of the entries above was within the SWR period *and* had an obligation,
             // we could go ahead and return it without generating an obligation.
