@@ -182,6 +182,9 @@ impl CacheKeyObjects {
             // Take the write lock with the intention of generating our own obligation.
             let mut obligated: Option<Obligation> = None;
             let mut data: Option<Arc<CacheData>> = None;
+            // Note that, even if this does modify the data table, we don't generate a
+            // notification: no task "waits" on a new obligation appearing, only on obligations
+            // being fulfilled.
             self.0.send_if_modified(|key_objects| {
                 // Now under the write lock.
                 // We might have a stale result, or someone else might have an obligaton;
@@ -195,21 +198,28 @@ impl CacheKeyObjects {
                     .iter()
                     .filter_map(|v| key_objects.objects.get(v))
                     .collect();
-                // First, if we raced to produce an obligation, defer in favor of the other.
-                if response_keyed_objects.iter().any(|data| data.obligated) {
-                    return false;
-                }
 
-                // Done dealing with other obligations; now we just deal with results that we have.
-                // Pick a fresh result if we now have it:
-                // fresh or stale.
+                // First, if we have fresh data, we can immediately short-circuit.
                 if let Some(fresh) = response_keyed_objects
-                    .into_iter()
+                    .iter()
                     .filter_map(|cache_value| cache_value.present.as_ref())
                     .filter(|cache_data| cache_data.meta.is_fresh())
                     .next()
                 {
                     data = Some(Arc::clone(fresh));
+                    // We have fresh data
+                    return false;
+                }
+
+                // TODO: cceckman-at-fastly: stale-while-revalidate:
+                // In a second pass over response_keyed_objects, we should check for stale data
+                // that can be revalidated, and return it- generating an obligation specifically
+                // for the key returned if we do so.
+                // For now, we just check if there's an existing obligation in any of them.
+
+                // Second, if we raced to produce an obligation, defer in favor of the existing
+                // obligation, without generating a new one.
+                if response_keyed_objects.iter().any(|data| data.obligated) {
                     return false;
                 }
 
