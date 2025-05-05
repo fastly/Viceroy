@@ -285,13 +285,22 @@ impl CacheKeyObjects {
                 }
             }
 
-            if !cache_key_objects.vary_rules.contains(meta.vary_rule()) {
-                // Insert at the front, run through the rules in order, so we tend towards fresher
-                // responses.
+            // Update the position of the vary rule: this is the most-recent-inserted, so keep it at the front.
+            let vary_rule = if let Some((i, _)) = cache_key_objects
+                .vary_rules
+                .iter()
+                .enumerate()
+                .find(|&(_, rule)| rule == &meta.vary_rule)
+            {
                 cache_key_objects
                     .vary_rules
-                    .push_front(meta.vary_rule().clone());
-            }
+                    .remove(i)
+                    .expect("index of a found item must be a valid index")
+            } else {
+                meta.vary_rule.clone()
+            };
+            cache_key_objects.vary_rules.push_front(vary_rule);
+
             let variant = meta.variant();
             let body = CollectingBody::new(body);
             let object = Arc::new(CacheData { body, meta });
