@@ -45,7 +45,6 @@ pub struct ObjectMeta {
     edge_ok_until: Option<Instant>,
 
     surrogate_keys: HashSet<String>,
-    sensitive_data: Option<bool>,
     */
 }
 
