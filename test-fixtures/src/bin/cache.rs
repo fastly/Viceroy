@@ -12,11 +12,13 @@ fn main() {
 
     test_single_body();
     test_insert_stale();
+
     test_vary();
     test_vary_multiple();
     test_novary_ignore_headers();
     test_vary_combine();
     test_vary_subtle();
+
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -114,12 +116,11 @@ fn test_single_body() {
     // We should be able to get two bodies from two different lookups:
     let b1 = f1.to_stream().unwrap();
     let _b2 = f2.to_stream().unwrap();
-    // But a second body from the same lookup should cause an error, while the first is
-    // outstanding:
-    // TODO: cceckman-at-fastly: Tidy up error types. This should return InvalidOperation per the
-    // API.
-    // assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
-    assert!(f1.to_stream().is_err());
+    // But a second body from the same lookup should cause an error-
+    // specifically an InvalidOperation error, per the API docs-
+    // while the first is outstanding:
+    eprintln!("{}", f1.to_stream().unwrap_err());
+    assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
     std::mem::drop(b1);
     // Now the prior read from that lookup can proceed:
     let _ = f1.to_stream().unwrap();

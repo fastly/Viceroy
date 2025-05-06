@@ -6,6 +6,7 @@ use http::HeaderMap;
 
 use crate::body::Body;
 use crate::cache::{CacheKey, VaryRule, WriteOptions};
+use crate::error::HandleError;
 use crate::session::{PeekableTask, PendingCacheTask, Session};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
@@ -22,23 +23,15 @@ fn load_cache_key(
 }
 
 fn load_write_options(
-    session: &Session,
     memory: &wiggle::GuestMemory<'_>,
     options_mask: types::CacheWriteOptionsMask,
-    options: types::CacheWriteOptions,
+    options: &types::CacheWriteOptions,
 ) -> Result<WriteOptions, Error> {
     let max_age = Duration::from_nanos(options.max_age_ns);
     let initial_age = if options_mask.contains(CacheWriteOptionsMask::INITIAL_AGE_NS) {
         Duration::from_nanos(options.initial_age_ns)
     } else {
         Duration::ZERO
-    };
-    let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
-        let handle = options.request_headers;
-        let parts = session.request_parts(handle)?;
-        parts.headers.clone()
-    } else {
-        HeaderMap::default()
     };
     let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
         let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
@@ -52,9 +45,31 @@ fn load_write_options(
     Ok(WriteOptions {
         max_age,
         initial_age,
-        request_headers,
         vary_rule,
     })
+}
+
+fn load_lookup_options(
+    session: &Session,
+    memory: &wiggle::GuestMemory<'_>,
+    options_mask: types::CacheLookupOptionsMask,
+    options: wiggle::GuestPtr<types::CacheLookupOptions>,
+) -> Result<HeaderMap, Error> {
+    let options = memory.read(options)?;
+    let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
+        let handle = options.request_headers;
+        let parts = session.request_parts(handle)?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+    if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
+        // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
+        return Err(Error::Unsupported {
+            msg: "service ID in cache lookup",
+        });
+    }
+    Ok(headers)
 }
 
 #[allow(unused_variables)]
@@ -67,21 +82,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let options = memory.read(options)?;
-        let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
-            let handle = options.request_headers;
-            let parts = self.request_parts(handle)?;
-            parts.headers.clone()
-        } else {
-            HeaderMap::default()
-        };
-        if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
-            // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
-            return Err(Error::Unsupported {
-                msg: "service ID in cache lookup",
-            });
-        }
-
+        let headers = load_lookup_options(self, memory, options_mask, options)?;
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
@@ -91,7 +92,7 @@ impl FastlyCache for Session {
         .await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
-        Ok(handle)
+        Ok(handle.into())
     }
 
     async fn insert(
@@ -107,13 +108,24 @@ impl FastlyCache for Session {
             return Err(Error::NotAvailable("Cache API primitives"));
         }
         let key = load_cache_key(memory, cache_key)?;
-        let options = load_write_options(self, memory, options_mask, memory.read(options)?)?;
+        let guest_options = memory.read(options)?;
+        let options = load_write_options(memory, options_mask, &guest_options)?;
         let cache = Arc::clone(self.cache());
+        // This is the only method that accepts REQUEST_HEADERS in the optons mask.
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            let handle = guest_options.request_headers;
+            let parts = self.request_parts(handle)?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
 
         // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
-        cache.insert(&key, options, read_body).await;
+        cache
+            .insert(&key, request_headers, options, read_body)
+            .await;
         Ok(handle)
     }
 
@@ -213,7 +225,10 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let h = self
+            .transaction_lookup_async(memory, cache_key, options_mask, options)
+            .await?;
+        self.cache_busy_handle_wait(memory, h).await
     }
 
     async fn transaction_lookup_async(
@@ -223,7 +238,27 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheBusyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let headers = load_lookup_options(self, memory, options_mask, options)?;
+        let key = load_cache_key(memory, cache_key)?;
+        let cache = Arc::clone(self.cache());
+
+        // Look up once, joining the transaction only if obligated:
+        let e = cache.transaction_lookup(&key, &headers, false).await;
+        let ready = e.found().is_some() || e.go_get().is_some();
+        // If we already got _something_, we can provide an already-complete PeekableTask.
+        // Otherwise we need to spawn it and let it block in the background.
+        let task = if ready {
+            PeekableTask::complete(e)
+        } else {
+            PeekableTask::spawn(Box::pin(async move {
+                Ok(cache.transaction_lookup(&key, &headers, true).await)
+            }))
+            .await
+        };
+
+        let task = PendingCacheTask::new(task);
+        let handle = self.insert_cache_op(task);
+        Ok(handle.into())
     }
 
     async fn cache_busy_handle_wait(
@@ -231,7 +266,13 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheBusyHandle,
     ) -> Result<types::CacheHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let handle = handle.into();
+        // Swap out for a distinct handle, so we don't hit a repeated `close`+`close_busy`:
+        let entry = self.cache_entry_mut(handle).await?;
+        let mut other_entry = entry.stub();
+        std::mem::swap(entry, &mut other_entry);
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(other_entry) })).await;
+        Ok(self.insert_cache_op(PendingCacheTask::new(task)).into())
     }
 
     async fn transaction_insert(
@@ -241,7 +282,11 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let (body, cache_handle) = self
+            .transaction_insert_and_stream_back(memory, handle, options_mask, options)
+            .await?;
+        let _ = self.take_cache_entry(cache_handle)?;
+        Ok(body)
     }
 
     async fn transaction_insert_and_stream_back(
@@ -251,7 +296,32 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        // TODO: cceckman-at-fastly: Handle all options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives"));
+        }
+
+        let guest_options = memory.read(options)?;
+        let options = load_write_options(memory, options_mask, &guest_options)?;
+        // No request headers here; request headers come from the original lookup.
+        if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            return Err(Error::InvalidArgument);
+        }
+
+        let entry = self.cache_entry_mut(handle).await?;
+        // The path here is:
+        // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
+        // CacheError::InvalidOperation
+        let obligation = entry
+            .take_go_get()
+            .ok_or(Error::HandleError(HandleError::InvalidCacheHandle(handle)))?;
+
+        let body_handle = self.insert_body(Body::empty());
+        let read_body = self.begin_streaming(body_handle)?;
+
+        obligation.complete(options, read_body);
+        Ok((body_handle, handle))
     }
 
     async fn transaction_update(
@@ -269,7 +339,12 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle.into()).await?;
+        if let Some(_) = entry.take_go_get() {
+            Ok(())
+        } else {
+            Err(Error::CacheError(crate::cache::Error::CannotWrite).into())
+        }
     }
 
     async fn close_busy(
@@ -277,10 +352,11 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheBusyHandle,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        // Don't wait for the transaction to complete; drop the future to cancel.
+        let _ = self.take_cache_entry(handle.into())?;
+        Ok(())
     }
 
-    /// Wait for the lookup to be complete, then discard the results.
     async fn close(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
@@ -304,11 +380,14 @@ impl FastlyCache for Session {
             if !found.meta().is_fresh() {
                 state |= types::CacheLookupState::STALE;
             }
-            // TODO:: stale-while-revalidate and go_get obligation.
+            // TODO:: stale-while-revalidate.
             // For now, usable if fresh.
             if found.meta().is_fresh() {
                 state |= types::CacheLookupState::USABLE;
             }
+        }
+        if entry.go_get().is_some() {
+            state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
         }
 
         Ok(state)
@@ -350,7 +429,7 @@ impl FastlyCache for Session {
             .cache_entry(handle.into())
             .await?
             .found()
-            .ok_or_else(|| Error::CacheError("key was not found in cache".to_owned()))?;
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
         // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
         // clean up the copying task.
         // We have to do this to allow `found`'s lifetime to end before self.session.body, which
@@ -360,10 +439,7 @@ impl FastlyCache for Session {
         if let Some(prev_handle) = found.last_body_handle {
             // Check if they're still reading the previous handle.
             if self.body(prev_handle).is_ok() {
-                // TODO: cceckman-at-fastly: more precise error types
-                return Err(Error::CacheError(
-                    format!("Found has a read outstanding already (BodyHandle {prev_handle}). Close this handle before reading")
-            ).into());
+                return Err(Error::CacheError(crate::cache::Error::HandleBodyUsed));
             }
         };
 
@@ -396,9 +472,7 @@ impl FastlyCache for Session {
         if let Some(found) = entry.found() {
             Ok(found.meta().max_age().as_nanos().try_into().unwrap())
         } else {
-            Err(Error::CacheError(
-                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
-            ))
+            Err(Error::CacheError(crate::cache::Error::Missing))
         }
     }
 
@@ -419,9 +493,7 @@ impl FastlyCache for Session {
         if let Some(found) = entry.found() {
             Ok(found.meta().age().as_nanos().try_into().unwrap())
         } else {
-            Err(Error::CacheError(
-                "Attempted to read metadata from CacheHandle that was not Found".to_owned(),
-            ))
+            Err(Error::CacheError(crate::cache::Error::Missing))
         }
     }
 

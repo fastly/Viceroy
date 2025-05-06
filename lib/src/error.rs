@@ -150,8 +150,8 @@ pub enum Error {
     Again,
 
     // TODO: cceckman-at-fastly ; better error types
-    #[error("Error from cache: {0}")]
-    CacheError(String),
+    #[error("cache error: {0}")]
+    CacheError(crate::cache::Error),
 }
 
 impl Error {
@@ -192,6 +192,7 @@ impl Error {
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
+            Error::CacheError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
@@ -218,8 +219,7 @@ impl Error {
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse(_, _)
-            | Error::CacheError(_) => FastlyStatus::Error,
+            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
         }
     }
 

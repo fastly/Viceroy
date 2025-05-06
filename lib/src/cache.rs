@@ -5,17 +5,65 @@ use proptest_derive::Arbitrary;
 
 use crate::{
     body::Body,
-    wiggle_abi::types::{BodyHandle, CacheOverrideTag},
-    Error,
+    component::fastly::api::types::Error as ComponentError,
+    wiggle_abi::types::{BodyHandle, CacheOverrideTag, FastlyStatus},
 };
-use fastly_shared::FastlyStatus;
+
 use http::{HeaderMap, HeaderValue};
 
 mod store;
 mod variance;
 
-use store::{CacheData, CacheKeyObjects, ObjectMeta};
+use store::{CacheData, CacheKeyObjects, ObjectMeta, Obligation};
 pub use variance::VaryRule;
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error("invalid key")]
+    InvalidKey,
+
+    #[error("handle is not writeable")]
+    CannotWrite,
+
+    #[error("no entry for key in cache")]
+    Missing,
+
+    #[error("cache entry's body is currently being read by another body")]
+    HandleBodyUsed,
+}
+
+impl From<Error> for crate::Error {
+    fn from(value: Error) -> Self {
+        crate::Error::CacheError(value)
+    }
+}
+
+impl From<&Error> for FastlyStatus {
+    fn from(value: &Error) -> Self {
+        match value {
+            // TODO: cceckman-at-fastly: These may not correspond to the same errors as the compute
+            // platform uses. Check!
+            Error::InvalidKey => FastlyStatus::Inval,
+            Error::CannotWrite => FastlyStatus::Badf,
+            Error::Missing => FastlyStatus::None,
+            Error::HandleBodyUsed => FastlyStatus::Badf,
+        }
+    }
+}
+
+impl From<Error> for ComponentError {
+    fn from(value: Error) -> Self {
+        match value {
+            // TODO: cceckman-at-fastly: These may not correspond to the same errors as the compute
+            // platform uses. Check!
+            Error::InvalidKey => ComponentError::InvalidArgument,
+            Error::CannotWrite => ComponentError::BadHandle,
+            Error::Missing => ComponentError::OptionalNone,
+            Error::HandleBodyUsed => ComponentError::BadHandle,
+        }
+    }
+}
 
 /// Primary cache key: an up-to-4KiB buffer.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,7 +78,7 @@ impl CacheKey {
 }
 
 impl TryFrom<&Vec<u8>> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
         value.as_slice().try_into()
@@ -38,11 +86,11 @@ impl TryFrom<&Vec<u8>> for CacheKey {
 }
 
 impl TryFrom<Vec<u8>> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
         if value.len() > Self::MAX_LENGTH {
-            Err(FastlyStatus::BUFLEN)
+            Err(Error::InvalidKey)
         } else {
             Ok(CacheKey(value))
         }
@@ -50,11 +98,11 @@ impl TryFrom<Vec<u8>> for CacheKey {
 }
 
 impl TryFrom<&[u8]> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() > CacheKey::MAX_LENGTH {
-            Err(FastlyStatus::BUFLEN)
+            Err(Error::InvalidKey)
         } else {
             Ok(CacheKey(value.to_owned()))
         }
@@ -62,22 +110,31 @@ impl TryFrom<&[u8]> for CacheKey {
 }
 
 impl TryFrom<&str> for CacheKey {
-    type Error = FastlyStatus;
+    type Error = Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.as_bytes().try_into()
     }
 }
 
-/// The result of a lookup: the object (if found), or an obligation to get it (if not).
+/// The result of a lookup: the object (if found), and/or an obligation to fetch.
 #[derive(Debug)]
 pub struct CacheEntry {
     key: CacheKey,
     found: Option<Found>,
-    // TODO: cceckman-at-fastly 2025-02-26: GoGet
+    go_get: Option<Obligation>,
 }
 
 impl CacheEntry {
+    /// Return a stub entry to hold in CacheBusy.
+    pub fn stub(&self) -> CacheEntry {
+        Self {
+            key: self.key.clone(),
+            found: None,
+            go_get: None,
+        }
+    }
+
     /// Returns the key used to generate this CacheEntry.
     pub fn key(&self) -> &CacheKey {
         &self.key
@@ -90,6 +147,16 @@ impl CacheEntry {
     /// Returns the data found in the cache, if any was present.
     pub fn found_mut(&mut self) -> Option<&mut Found> {
         self.found.as_mut()
+    }
+
+    /// Returns the obligation to fetch, if required
+    pub fn go_get(&self) -> Option<&Obligation> {
+        self.go_get.as_ref()
+    }
+
+    /// Extract the write obligation, if present.
+    pub fn take_go_get(&mut self) -> Option<Obligation> {
+        self.go_get.take()
     }
 }
 
@@ -109,7 +176,7 @@ pub struct Found {
 
 impl Found {
     /// Access the body of the cached object.
-    pub fn body(&self) -> Result<Body, Error> {
+    pub fn body(&self) -> Result<Body, crate::Error> {
         self.data.as_ref().get_body()
     }
 
@@ -123,7 +190,6 @@ impl Found {
 ///
 // TODO: cceckman-at-fastly:
 // Explain some about how this works:
-// - Request-keyed vs. response-keyed items; variance
 // - Request collapsing
 // - Stale-while-revalidate
 pub struct Cache {
@@ -144,7 +210,7 @@ impl Default for Cache {
 }
 
 impl Cache {
-    /// Perform a non-transactional lookup for the given cache key.
+    /// Perform a non-transactional lookup.
     pub async fn lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
         let found = self
             .inner
@@ -158,27 +224,66 @@ impl Cache {
         CacheEntry {
             key: key.clone(),
             found,
+            go_get: None,
+        }
+    }
+
+    /// Perform a transactional lookup.
+    pub async fn transaction_lookup(
+        &self,
+        key: &CacheKey,
+        headers: &HeaderMap,
+        ok_to_wait: bool,
+    ) -> CacheEntry {
+        let (found, obligation) = self
+            .inner
+            .get_with_by_ref(&key, async { Default::default() })
+            .await
+            .transaction_get(headers, ok_to_wait)
+            .await;
+        CacheEntry {
+            key: key.clone(),
+            found: found.map(|data| Found {
+                data,
+                last_body_handle: None,
+            }),
+            go_get: obligation,
         }
     }
 
     /// Perform a non-transactional lookup for the given cache key.
     /// Note: races with other insertions, including transactional insertions.
     /// Last writer wins!
-    pub async fn insert(&self, key: &CacheKey, options: WriteOptions, body: Body) {
+    pub async fn insert(
+        &self,
+        key: &CacheKey,
+        request_headers: HeaderMap,
+        options: WriteOptions,
+        body: Body,
+    ) {
         self.inner
             .get_with_by_ref(&key, async { Default::default() })
             .await
-            .insert(options, body);
+            .insert(request_headers, options, body, None);
     }
 }
 
 /// Options that can be applied to a write, e.g. insert or transaction_insert.
+#[derive(Default)]
 pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Duration,
-
-    pub request_headers: HeaderMap,
     pub vary_rule: VaryRule,
+}
+
+impl WriteOptions {
+    pub fn new(max_age: Duration) -> Self {
+        WriteOptions {
+            max_age,
+            initial_age: Duration::ZERO,
+            vary_rule: VaryRule::default(),
+        }
+    }
 }
 
 /// Optional override for response caching behavior.
@@ -292,11 +397,10 @@ mod tests {
                 let write_options = WriteOptions {
                     max_age: Duration::from_secs(max_age as u64),
                     initial_age: Duration::from_secs(initial_age as u64),
-                    request_headers: HeaderMap::default(),
                     vary_rule: VaryRule::default(),
                 };
 
-                cache.insert(&key, write_options, value.clone().into()).await;
+                cache.insert(&key, HeaderMap::default(), write_options, value.clone().into()).await;
 
                 let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
@@ -315,14 +419,15 @@ mod tests {
         let write_options = WriteOptions {
             max_age: Duration::from_secs(1),
             initial_age: Duration::from_secs(2),
-            request_headers: HeaderMap::default(),
             vary_rule: VaryRule::default(),
         };
 
         let mut body = Body::empty();
         body.push_back([1u8].as_slice());
 
-        cache.insert(&key, write_options, body).await;
+        cache
+            .insert(&key, HeaderMap::default(), write_options, body)
+            .await;
 
         let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
         let found = nonempty.found().expect("should have found inserted key");
@@ -342,11 +447,12 @@ mod tests {
         let write_options = WriteOptions {
             max_age: Duration::from_secs(100),
             initial_age: Duration::from_secs(2),
-            request_headers: request_headers.clone(),
             vary_rule: VaryRule::new([&header_name].into_iter()),
         };
         let body = Body::empty();
-        cache.insert(&key, write_options, body).await;
+        cache
+            .insert(&key, request_headers.clone(), write_options, body)
+            .await;
 
         let empty_headers = cache.lookup(&key, &HeaderMap::default()).await;
         assert!(empty_headers.found().is_none());

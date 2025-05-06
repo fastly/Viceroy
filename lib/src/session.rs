@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use crate::cache::{Cache, CacheEntry};
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::CacheHandle;
+use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle};
 
 use {
     self::downstream::DownstreamResponse,
@@ -1068,11 +1068,9 @@ impl Session {
 
     // ------- Core Cache API ------
 
-    /// Insert a pending cache operation.
-    pub fn insert_cache_op(&mut self, task: PendingCacheTask) -> CacheHandle {
-        self.async_items
-            .push(Some(AsyncItem::PendingCache(task)))
-            .into()
+    /// Insert a pending cache operation: CacheHandle or CacheBusyHandle
+    pub fn insert_cache_op(&mut self, task: PendingCacheTask) -> AsyncItemHandle {
+        self.async_items.push(Some(AsyncItem::PendingCache(task)))
     }
 
     /// Get mutable access to a cache entry, which may require blocking until the entry is
@@ -1414,5 +1412,25 @@ impl From<AsyncItemHandle> for CacheHandle {
 impl From<CacheHandle> for AsyncItemHandle {
     fn from(h: CacheHandle) -> AsyncItemHandle {
         AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for CacheBusyHandle {
+    fn from(h: AsyncItemHandle) -> CacheBusyHandle {
+        CacheBusyHandle::from(h.as_u32())
+    }
+}
+
+impl From<CacheBusyHandle> for AsyncItemHandle {
+    fn from(h: CacheBusyHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+// CacheBusyHandle and CacheHandle are equivalent; CacheHandle is just a "later" resolution.
+impl From<CacheBusyHandle> for CacheHandle {
+    fn from(h: CacheBusyHandle) -> CacheHandle {
+        let raw: u32 = h.into();
+        CacheHandle::from(raw)
     }
 }
