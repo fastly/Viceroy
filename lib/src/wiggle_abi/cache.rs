@@ -46,8 +46,8 @@ fn load_write_options(
         let slice = options
             .user_metadata_ptr
             .as_array(options.user_metadata_len);
-        let vary_rule_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
-        Bytes::copy_from_slice(vary_rule_bytes)
+        let user_metadata_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
+        Bytes::copy_from_slice(user_metadata_bytes)
     } else {
         Bytes::new()
     };
