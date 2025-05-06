@@ -23,6 +23,7 @@ fn main() {
     test_user_metadata();
 
     test_length_from_body();
+    test_inconsistent_body_length();
 
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
@@ -425,6 +426,39 @@ fn test_length_from_body() {
     let got = fetch.unwrap();
     poll_known_length(&got);
     assert_eq!(got.known_length().unwrap(), body.len() as u64);
+}
+
+fn test_inconsistent_body_length() {
+    // Body length can change when streaming completes.
+    let key = new_key();
+
+    {
+        let fetch = lookup(key.clone())
+            .execute()
+            .expect("failed initial lookup");
+        assert!(fetch.is_none());
+    }
+
+    let body = "hello beautiful world".as_bytes();
+    let extra_len = body.len() + 10;
+    let mut writer = insert(key.clone(), Duration::from_secs(10))
+        .known_length(extra_len as u64)
+        .execute()
+        .unwrap();
+
+    let found = lookup(key.clone()).execute().unwrap().unwrap();
+    // In metadata, so should be immediately available:
+    assert_eq!(found.known_length().unwrap(), extra_len as u64);
+
+    // Finish writing:
+    writer.write_all(body).unwrap();
+    writer.finish().unwrap();
+
+    // Doesn't immediately update the length, but it will be up to date by the time we've read all
+    // the bytes.
+    let got = found.to_stream().unwrap().into_bytes();
+    assert_eq!(got.len(), body.len());
+    assert_eq!(found.known_length().unwrap(), body.len() as u64);
 }
 
 fn new_key() -> CacheKey {
