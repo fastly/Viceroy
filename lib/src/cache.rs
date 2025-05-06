@@ -177,6 +177,8 @@ pub struct Found {
 
 impl Found {
     /// Access the body of the cached object.
+    ///
+    /// See [CacheData::get_body] for more on what `from` and `to` mean.
     pub fn body(&self, from: Option<u64>, to: Option<u64>) -> Result<Body, crate::Error> {
         self.data.as_ref().get_body(from, to)
     }

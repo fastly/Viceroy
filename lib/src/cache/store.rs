@@ -410,7 +410,7 @@ impl CacheData {
     /// Get a Body to read the cached object with.
     ///
     /// Note that if only 'to' is specified, it represents a point to count backwards from the
-    /// end of the body.
+    /// end of the body. Both bounds are inclusive.
     ///
     /// The range is only respected if the length of the body is known before this call *and* the
     /// range is valid; otherwise, the range is ignored, and the entire body is returned.
@@ -432,7 +432,7 @@ impl CacheData {
             (_, Some(to), Some(length)) if (to < length) => {
                 RequestedRange::StartingFrom(length - to)
             }
-            (Some(from), _, Some(length)) if (from <= length) => RequestedRange::StartingFrom(from),
+            (Some(from), _, Some(length)) if (from < length) => RequestedRange::StartingFrom(from),
             _ => RequestedRange::Entire,
         };
 
