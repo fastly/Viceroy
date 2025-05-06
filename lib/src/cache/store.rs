@@ -313,7 +313,7 @@ impl CacheKeyObjects {
             cache_key_objects.vary_rules.push_front(vary_rule);
 
             let variant = meta.variant();
-            let body = CollectingBody::new(body);
+            let body = CollectingBody::new(body, meta.length);
             let object = Arc::new(CacheData { body, meta });
 
             cache_key_objects

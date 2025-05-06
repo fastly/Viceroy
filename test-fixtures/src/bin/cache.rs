@@ -3,7 +3,7 @@
 use bytes::Bytes;
 use fastly::cache::core::*;
 use fastly::http::{HeaderName, HeaderValue};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -429,7 +429,7 @@ fn test_length_from_body() {
 }
 
 fn test_inconsistent_body_length() {
-    // Body length can change when streaming completes.
+    // If a body length is provided, writing an inconsistent length should generate an error.
     let key = new_key();
 
     {
@@ -450,15 +450,13 @@ fn test_inconsistent_body_length() {
     // In metadata, so should be immediately available:
     assert_eq!(found.known_length().unwrap(), extra_len as u64);
 
-    // Finish writing:
+    // Finish writing, but it's a short write:
     writer.write_all(body).unwrap();
     writer.finish().unwrap();
 
-    // Doesn't immediately update the length, but it will be up to date by the time we've read all
-    // the bytes.
-    let got = found.to_stream().unwrap().into_bytes();
-    assert_eq!(got.len(), body.len());
-    assert_eq!(found.known_length().unwrap(), body.len() as u64);
+    let mut got = found.to_stream().unwrap();
+    let mut data = Vec::new();
+    got.read_to_end(&mut data).unwrap_err();
 }
 
 fn new_key() -> CacheKey {

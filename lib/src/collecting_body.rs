@@ -55,10 +55,10 @@ impl CollectingBody {
     /// Writes to the StreamingBody are collected, and propagated to all readers of this
     /// CollectingBody.
     // TODO: Expected length?
-    pub fn new(from: Body) -> CollectingBody {
+    pub fn new(from: Body, length: Option<u64>) -> CollectingBody {
         let (tx, rx) = watch::channel(CollectingBodyInner::default());
         let body = CollectingBody { inner: rx };
-        tokio::task::spawn(Self::tee(from, tx));
+        tokio::task::spawn(Self::tee(from, tx, length));
         body
     }
 
@@ -68,19 +68,33 @@ impl CollectingBody {
     /// into a `tokio::sync::watch` channel, which (a) accumulates the body + trailers and (b)
     /// notifies any subscribed readers of the updates. The readers can safely miss updates or
     /// start late, as they always can eventually read the state.
-    async fn tee(mut rx: Body, tx: watch::Sender<CollectingBodyInner>) {
+    async fn tee(
+        mut rx: Body,
+        tx: watch::Sender<CollectingBodyInner>,
+        expected_length: Option<u64>,
+    ) {
         // IMPORTANT IMPLEMENTATION NOTE:
         // This should always exit with the watched state as Error or Complete.
 
         // Read data first:
+        let mut length = 0;
         while let Some(chunk) = rx.data().await {
             match chunk {
                 Ok(data) => {
-                    tx.send_modify(move |state| {
+                    tx.send_modify(|state| {
                         if let CollectingBodyInner::Streaming(ref mut chunks) = state {
+                            length += data.len();
                             chunks.push(data);
                         } else {
                             panic!("received data after CollectingBody is complete");
+                        }
+
+                        // Generate length-exceeded error before exiting send_modify.
+                        match expected_length {
+                            Some(expected_length) if (length as u64) > expected_length => {
+                                *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
+                            }
+                            _ => (),
                         }
                     });
                 }
@@ -94,7 +108,19 @@ impl CollectingBody {
             }
         }
 
-        // Then wait for trailers (if any) to be present:
+        // We're done with all the data.
+        // Check that we didn't underfill.
+        match expected_length {
+            Some(expected_length) if (length as u64) != expected_length => {
+                tx.send_modify(move |state| {
+                    *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
+                });
+                return;
+            }
+            _ => (),
+        }
+
+        // Then wait for trailers (if any) to be present, which is the "finish" signal.
         let trailers = rx.trailers().await;
         tx.send_modify(move |state| match trailers {
             Ok(trailers) => {
@@ -238,7 +264,7 @@ mod tests {
         let (mut tx, rx) = StreamingBody::new();
         let chunk: Chunk = rx.into();
         let body: Body = chunk.into();
-        let collect = CollectingBody::new(body);
+        let collect = CollectingBody::new(body, None);
 
         let data: Vec<u8> = (0..10).collect();
 
@@ -257,7 +283,7 @@ mod tests {
         let (mut tx, rx) = StreamingBody::new();
         let chunk: Chunk = rx.into();
         let body: Body = chunk.into();
-        let collect = CollectingBody::new(body);
+        let collect = CollectingBody::new(body, None);
 
         let data: Arc<Vec<u8>> = Arc::new((0..10).collect());
 
@@ -300,7 +326,7 @@ mod tests {
         let (mut tx, rx) = StreamingBody::new();
         let chunk: Chunk = rx.into();
         let body: Body = chunk.into();
-        let collect = CollectingBody::new(body);
+        let collect = CollectingBody::new(body, None);
 
         let data: Arc<Vec<u8>> = Arc::new((0..10).collect());
         tx.send_chunk(&data[0..2]).await.unwrap();
@@ -338,7 +364,7 @@ mod tests {
         let (mut tx, rx) = StreamingBody::new();
         let chunk: Chunk = rx.into();
         let body: Body = chunk.into();
-        let collect = CollectingBody::new(body);
+        let collect = CollectingBody::new(body, None);
 
         let data: Arc<Vec<u8>> = Arc::new((0..10).collect());
         tx.send_chunk(&data[0..2]).await.unwrap();
@@ -374,7 +400,7 @@ mod tests {
         let (mut tx, rx) = StreamingBody::new();
         let chunk: Chunk = rx.into();
         let body: Body = chunk.into();
-        let collect = CollectingBody::new(body);
+        let collect = CollectingBody::new(body, None);
         // Start a concurrent read, read some of it:
         let reader = {
             tokio::task::spawn(async move {
@@ -410,8 +436,49 @@ mod tests {
         tx.send_chunk(b"hello".as_slice()).await.unwrap();
         tx.finish().unwrap();
 
-        let collect = CollectingBody::new(body);
+        let collect = CollectingBody::new(body, None);
         let data = collect.read().unwrap().read_into_vec().await.unwrap();
         assert_eq!(data, b"hello");
+    }
+
+    #[tokio::test]
+    async fn precise_length() {
+        let (mut tx, rx) = StreamingBody::new();
+        // Write the full stream before reading:
+        let chunk: Chunk = rx.into();
+        let body: Body = chunk.into();
+        const BODY: &[u8] = b"hello";
+        tx.send_chunk(BODY).await.unwrap();
+        tx.finish().unwrap();
+
+        let collect = CollectingBody::new(body, Some(BODY.len() as u64));
+        let data = collect.read().unwrap().read_into_vec().await.unwrap();
+        assert_eq!(data, BODY);
+    }
+
+    #[tokio::test]
+    async fn error_on_underfill() {
+        let (mut tx, rx) = StreamingBody::new();
+
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)), Some(10));
+
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+
+        let err = collect.read().unwrap().read_into_vec().await.unwrap_err();
+        assert!(matches!(err, Error::UnfinishedStreamingBody));
+    }
+
+    #[tokio::test]
+    async fn error_on_overfill() {
+        let (mut tx, rx) = StreamingBody::new();
+
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)), Some(2));
+
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+
+        let err = collect.read().unwrap().read_into_vec().await.unwrap_err();
+        assert!(matches!(err, Error::UnfinishedStreamingBody));
     }
 }
