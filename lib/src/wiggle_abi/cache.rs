@@ -421,7 +421,7 @@ impl FastlyCache for Session {
         let len: u32 = md_bytes
             .len()
             .try_into()
-            .map_err(|_| crate::Error::CacheError(crate::cache::Error::TooLargeUserMetadata))?;
+            .expect("user metadata must be shorter than u32 can indicate");
         if len > user_metadata_out_len {
             memory.write(nwritten_out, len)?;
             return Err(Error::BufferLengthError {
