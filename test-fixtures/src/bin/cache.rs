@@ -439,24 +439,46 @@ fn test_inconsistent_body_length() {
         assert!(fetch.is_none());
     }
 
-    let body = "hello beautiful world".as_bytes();
-    let extra_len = body.len() + 10;
-    let mut writer = insert(key.clone(), Duration::from_secs(10))
-        .known_length(extra_len as u64)
-        .execute()
-        .unwrap();
+    // Short write:
+    {
+        let body = "hello beautiful world".as_bytes();
+        let extra_len = body.len() + 10;
+        let mut writer = insert(key.clone(), Duration::from_secs(10))
+            .known_length(extra_len as u64)
+            .execute()
+            .unwrap();
 
-    let found = lookup(key.clone()).execute().unwrap().unwrap();
-    // In metadata, so should be immediately available:
-    assert_eq!(found.known_length().unwrap(), extra_len as u64);
+        let found = lookup(key.clone()).execute().unwrap().unwrap();
+        // In metadata, so should be immediately available:
+        assert_eq!(found.known_length().unwrap(), extra_len as u64);
 
-    // Finish writing, but it's a short write:
-    writer.write_all(body).unwrap();
-    writer.finish().unwrap();
+        // Finish writing, but it's a short write:
+        writer.write_all(body).unwrap();
+        writer.finish().unwrap();
 
-    let mut got = found.to_stream().unwrap();
-    let mut data = Vec::new();
-    got.read_to_end(&mut data).unwrap_err();
+        let mut got = found.to_stream().unwrap();
+        let mut data = Vec::new();
+        got.read_to_end(&mut data).unwrap_err();
+    }
+
+    // Long write:
+    {
+        let body = "hello beautiful world".as_bytes();
+        let extra_len = body.len() - 3;
+        let mut writer = insert(key.clone(), Duration::from_secs(10))
+            .known_length(extra_len as u64)
+            .execute()
+            .unwrap();
+
+        let found = lookup(key.clone()).execute().unwrap().unwrap();
+        assert_eq!(found.known_length().unwrap(), extra_len as u64);
+        writer.write_all(body).unwrap();
+        writer.finish().unwrap();
+
+        let mut got = found.to_stream().unwrap();
+        let mut data = Vec::new();
+        got.read_to_end(&mut data).unwrap_err();
+    }
 }
 
 fn new_key() -> CacheKey {
