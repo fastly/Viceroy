@@ -283,6 +283,7 @@ pub struct WriteOptions {
     pub user_metadata: Bytes,
     pub length: Option<u64>,
     pub sensitive_data: bool,
+    pub edge_max_age: Duration,
 }
 
 impl WriteOptions {
@@ -294,6 +295,7 @@ impl WriteOptions {
             user_metadata: Bytes::new(),
             length: None,
             sensitive_data: false,
+            edge_max_age: max_age,
         }
     }
 }

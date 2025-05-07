@@ -53,6 +53,20 @@ fn load_write_options(
         });
     }
 
+    let edge_max_age = if options_mask.contains(api::WriteOptionsMask::EDGE_MAX_AGE_NS) {
+        Duration::from_nanos(options.edge_max_age_ns)
+    } else {
+        max_age
+    };
+    if edge_max_age > max_age {
+        tracing::error!(
+            "deliver node max age {} must be less than TTL {}",
+            edge_max_age.as_secs(),
+            max_age.as_secs()
+        );
+        return Err(Error::InvalidArgument);
+    }
+
     Ok(WriteOptions {
         max_age,
         initial_age,
@@ -60,6 +74,7 @@ fn load_write_options(
         user_metadata,
         length,
         sensitive_data,
+        edge_max_age,
     })
 }
 
