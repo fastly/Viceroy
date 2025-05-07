@@ -56,7 +56,15 @@ fn load_write_options(
     } else {
         None
     };
+
     let sensitive_data = options_mask.contains(CacheWriteOptionsMask::SENSITIVE_DATA);
+
+    // SERVICE_ID differences are observable- but we don't implement that behavior. Error explicitly.
+    if options_mask.contains(CacheWriteOptionsMask::SERVICE_ID) {
+        return Err(Error::Unsupported {
+            msg: "cache on_behalf_of is not supported in Viceroy",
+        });
+    }
 
     Ok(WriteOptions {
         max_age,
