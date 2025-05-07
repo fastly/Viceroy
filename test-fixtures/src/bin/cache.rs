@@ -359,28 +359,28 @@ fn test_vary_combine() {
 fn test_user_metadata() {
     let key = new_key();
 
-    let mut writer = insert(key.clone(), Duration::from_secs(10))
+    let writer = insert(key.clone(), Duration::from_secs(10))
         .user_metadata(Bytes::copy_from_slice(b"hi there"))
         .execute()
         .unwrap();
 
     // Body not yet written, but we should be able to read the metadata right away.
     {
-        let fetch = lookup(key.clone()).execute().unwrap();
-        let Some(got) = fetch else {
-            panic!("did not fetch streaming")
-        };
+        let got = lookup(key.clone())
+            .execute()
+            .unwrap()
+            .expect("did not fetch streaming");
         let md = got.user_metadata();
         assert_eq!(&md, b"hi there".as_slice());
     }
 
-    writer.finish();
+    writer.finish().unwrap();
 
     {
-        let fetch = lookup(key.clone()).execute().unwrap();
-        let Some(got) = fetch else {
-            panic!("did not fetch streaming")
-        };
+        let got = lookup(key.clone())
+            .execute()
+            .unwrap()
+            .expect("did not fetch streaming");
         let md = got.user_metadata();
         assert_eq!(&md, b"hi there".as_slice());
     }
