@@ -1,6 +1,7 @@
 //! Data structures & implementation details for the Viceroy cache.
 
 use crate::cache::variance::VaryRule;
+use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -33,6 +34,8 @@ pub struct ObjectMeta {
 
     request_headers: HeaderMap,
     vary_rule: VaryRule,
+
+    user_metadata: Bytes,
     // TODO: cceckman-at-fastly: for future work!
     /*
     never_cache: bool, // Aka "hit for pass"
@@ -41,7 +44,6 @@ pub struct ObjectMeta {
 
     surrogate_keys: HashSet<String>,
     length: Option<usize>,
-    user_metadata: Option<Bytes>,
     sensitive_data: Option<bool>,
     */
 }
@@ -77,6 +79,10 @@ impl ObjectMeta {
     pub fn variant(&self) -> Variant {
         self.vary_rule.variant(&self.request_headers)
     }
+
+    pub fn user_metadata(&self) -> Bytes {
+        self.user_metadata.clone()
+    }
 }
 
 impl ObjectMeta {
@@ -86,6 +92,7 @@ impl ObjectMeta {
             vary_rule,
             max_age,
             initial_age,
+            user_metadata,
             ..
         } = value;
         ObjectMeta {
@@ -94,6 +101,7 @@ impl ObjectMeta {
             max_age,
             request_headers,
             vary_rule,
+            user_metadata,
         }
     }
 }
@@ -489,8 +497,8 @@ mod tests {
             h3,
             WriteOptions {
                 max_age: Duration::from_secs(100),
-                initial_age: Duration::ZERO,
                 vary_rule: vary.clone(),
+                ..Default::default()
             },
             make_body(""),
             None,

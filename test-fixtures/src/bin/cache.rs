@@ -1,5 +1,6 @@
 //! A guest program to test the core cache API works properly.
 
+use bytes::Bytes;
 use fastly::cache::core::*;
 use fastly::http::{HeaderName, HeaderValue};
 use std::io::Write;
@@ -19,6 +20,7 @@ fn main() {
     test_vary_combine();
     test_vary_subtle();
 
+    test_user_metadata();
     // We don't have a way of testing "incomplete streaming results in an error"
     // in a single instance. If we fail to close the (write) body handle, the underlying host object
     // is still hanging around, ready for more writes, until the instance is done.
@@ -352,6 +354,36 @@ fn test_vary_combine() {
         .execute()
         .unwrap();
     assert!(r.is_none());
+}
+
+fn test_user_metadata() {
+    let key = new_key();
+
+    let writer = insert(key.clone(), Duration::from_secs(10))
+        .user_metadata(Bytes::copy_from_slice(b"hi there"))
+        .execute()
+        .unwrap();
+
+    // Body not yet written, but we should be able to read the metadata right away.
+    {
+        let got = lookup(key.clone())
+            .execute()
+            .unwrap()
+            .expect("did not fetch streaming");
+        let md = got.user_metadata();
+        assert_eq!(&md, b"hi there".as_slice());
+    }
+
+    writer.finish().unwrap();
+
+    {
+        let got = lookup(key.clone())
+            .execute()
+            .unwrap()
+            .expect("did not fetch streaming");
+        let md = got.user_metadata();
+        assert_eq!(&md, b"hi there".as_slice());
+    }
 }
 
 fn new_key() -> CacheKey {

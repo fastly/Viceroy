@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use fastly::cache::core::*;
 use http::HeaderName;
 use std::io::{Read, Write};
@@ -10,6 +11,7 @@ fn main() {
     test_implicit_cancel_of_pending();
     test_explicit_cancel();
     test_collapse_across_vary();
+    test_user_metadata();
 }
 
 fn new_key() -> CacheKey {
@@ -149,4 +151,33 @@ fn test_collapse_across_vary() {
     // because according to the most recent vary rule they are distinct.
     assert!(!txn2.pending().unwrap());
     assert!(!txn1.pending().unwrap());
+}
+
+fn test_user_metadata() {
+    let key = new_key();
+
+    let l1 = Transaction::lookup(key.clone()).execute().unwrap();
+
+    let body = l1
+        .insert(Duration::from_secs(10))
+        .user_metadata(Bytes::copy_from_slice(b"hi there"))
+        .execute()
+        .unwrap();
+
+    // Body not yet written, but we should be able to read the metadata right away.
+    {
+        let l2 = Transaction::lookup(key.clone()).execute().unwrap();
+        let got = l2.found().unwrap();
+        let md = got.user_metadata();
+        assert_eq!(&md, b"hi there".as_slice());
+    }
+
+    body.finish().unwrap();
+
+    {
+        let l2 = Transaction::lookup(key.clone()).execute().unwrap();
+        let got = l2.found().unwrap();
+        let md = got.user_metadata();
+        assert_eq!(&md, b"hi there".as_slice());
+    }
 }

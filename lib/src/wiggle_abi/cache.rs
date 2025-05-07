@@ -2,6 +2,7 @@ use core::str;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use http::HeaderMap;
 
 use crate::body::Body;
@@ -41,11 +42,21 @@ fn load_write_options(
     } else {
         VaryRule::default()
     };
+    let user_metadata = if options_mask.contains(CacheWriteOptionsMask::USER_METADATA) {
+        let slice = options
+            .user_metadata_ptr
+            .as_array(options.user_metadata_len);
+        let user_metadata_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
+        Bytes::copy_from_slice(user_metadata_bytes)
+    } else {
+        Bytes::new()
+    };
 
     Ok(WriteOptions {
         max_age,
         initial_age,
         vary_rule,
+        user_metadata,
     })
 }
 
@@ -111,7 +122,7 @@ impl FastlyCache for Session {
         let guest_options = memory.read(options)?;
         let options = load_write_options(memory, options_mask, &guest_options)?;
         let cache = Arc::clone(self.cache());
-        // This is the only method that accepts REQUEST_HEADERS in the optons mask.
+        // This is the only method that accepts REQUEST_HEADERS in the options mask.
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             let handle = guest_options.request_headers;
             let parts = self.request_parts(handle)?;
@@ -401,7 +412,30 @@ impl FastlyCache for Session {
         user_metadata_out_len: u32,
         nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry(handle.into()).await?;
+
+        let md_bytes = entry
+            .found()
+            .map(|found| found.meta().user_metadata())
+            .ok_or(crate::Error::CacheError(crate::cache::Error::Missing))?;
+        let len: u32 = md_bytes
+            .len()
+            .try_into()
+            .expect("user metadata must be shorter than u32 can indicate");
+        if len > user_metadata_out_len {
+            memory.write(nwritten_out, len)?;
+            return Err(Error::BufferLengthError {
+                buf: "user_metadata_out_ptr",
+                len: "user_metadata_out_len",
+            });
+        }
+        let user_metadata = memory
+            .as_slice_mut(user_metadata_out_ptr.as_array(user_metadata_out_len))?
+            .ok_or(Error::SharedMemory)?;
+        user_metadata[..(len as usize)].copy_from_slice(&md_bytes);
+        memory.write(nwritten_out, len)?;
+
+        Ok(())
     }
 
     async fn get_body(
