@@ -56,6 +56,7 @@ fn load_write_options(
     } else {
         None
     };
+    let sensitive_data = options_mask.contains(CacheWriteOptionsMask::SENSITIVE_DATA);
 
     Ok(WriteOptions {
         max_age,
@@ -63,6 +64,7 @@ fn load_write_options(
         vary_rule,
         user_metadata,
         length,
+        sensitive_data,
     })
 }
 
