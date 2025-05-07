@@ -94,6 +94,9 @@ impl ObjectMeta {
             initial_age,
             user_metadata,
             length,
+            // There is no API that returns whether a cache entry has sensitive data.
+            // Viceroy doesn't change any behavior w/rt sensitive data; so, we ignore it here.
+            sensitive_data: _,
             ..
         } = value;
         ObjectMeta {

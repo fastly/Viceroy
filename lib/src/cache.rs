@@ -282,6 +282,7 @@ pub struct WriteOptions {
     pub vary_rule: VaryRule,
     pub user_metadata: Bytes,
     pub length: Option<u64>,
+    pub sensitive_data: bool,
 }
 
 impl WriteOptions {
@@ -292,6 +293,7 @@ impl WriteOptions {
             vary_rule: VaryRule::default(),
             user_metadata: Bytes::new(),
             length: None,
+            sensitive_data: false,
         }
     }
 }
