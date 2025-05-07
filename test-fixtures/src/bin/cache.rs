@@ -232,6 +232,7 @@ fn test_edge_expired() {
         writer.flush().unwrap();
     }
 
+    // According to current Compute Platform behavior... still fresh!
     let found = lookup(key.clone())
         .execute()
         .unwrap()
