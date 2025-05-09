@@ -1070,6 +1070,7 @@ interface cache {
     user-metadata,
     sensitive-data,
     edge-max-age-ns,
+    service-id,
   }
 
   /// Configuration for several hostcalls that write to the cache:
@@ -1097,6 +1098,7 @@ interface cache {
     length: object-length,
     user-metadata: list<u8>,
     edge-max-age-ns: duration-ns,
+    service-id: list<u8>,
   }
 
   flags get-body-options-mask {

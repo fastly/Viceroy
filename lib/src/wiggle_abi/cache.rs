@@ -57,12 +57,36 @@ fn load_write_options(
         None
     };
 
+    let sensitive_data = options_mask.contains(CacheWriteOptionsMask::SENSITIVE_DATA);
+
+    // SERVICE_ID differences are observable- but we don't implement that behavior. Error explicitly.
+    if options_mask.contains(CacheWriteOptionsMask::SERVICE_ID) {
+        return Err(Error::Unsupported {
+            msg: "cache on_behalf_of is not supported in Viceroy",
+        });
+    }
+    let edge_max_age = if options_mask.contains(CacheWriteOptionsMask::EDGE_MAX_AGE_NS) {
+        Duration::from_nanos(options.edge_max_age_ns)
+    } else {
+        max_age
+    };
+    if edge_max_age > max_age {
+        tracing::error!(
+            "deliver node max age {} must be less than TTL {}",
+            edge_max_age.as_secs(),
+            max_age.as_secs()
+        );
+        return Err(Error::InvalidArgument);
+    }
+
     Ok(WriteOptions {
         max_age,
         initial_age,
         vary_rule,
         user_metadata,
         length,
+        sensitive_data,
+        edge_max_age,
     })
 }
 

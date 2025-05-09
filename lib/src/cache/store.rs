@@ -45,7 +45,6 @@ pub struct ObjectMeta {
     edge_ok_until: Option<Instant>,
 
     surrogate_keys: HashSet<String>,
-    sensitive_data: Option<bool>,
     */
 }
 
@@ -95,6 +94,11 @@ impl ObjectMeta {
             initial_age,
             user_metadata,
             length,
+            // There is no API that returns whether a cache entry has sensitive data.
+            // Viceroy doesn't change any behavior w/rt sensitive data; so, we ignore it here.
+            sensitive_data: _,
+            // Similarly, edge_max_age has no effect and cannot be read.
+            edge_max_age: _,
             ..
         } = value;
         ObjectMeta {

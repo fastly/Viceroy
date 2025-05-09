@@ -38,6 +38,8 @@ pub struct CacheWriteOptions {
     pub user_metadata_ptr: *const u8,
     pub user_metadata_len: usize,
     pub edge_max_age_ns: u64,
+    pub service_id_ptr: *const u8,
+    pub service_id_len: usize,
 }
 
 bitflags::bitflags! {
@@ -53,6 +55,7 @@ bitflags::bitflags! {
         const USER_METADATA = 1 << 7;
         const SENSITIVE_DATA = 1 << 8;
         const EDGE_MAX_AGE_NS = 1 << 9;
+        const SERVICE_ID = 1 << 10;
     }
 }
 
@@ -177,6 +180,10 @@ mod cache {
                 Self::EDGE_MAX_AGE_NS,
                 value.contains(CacheWriteOptionsMask::EDGE_MAX_AGE_NS),
             );
+            flags.set(
+                Self::SERVICE_ID,
+                value.contains(CacheWriteOptionsMask::SERVICE_ID),
+            );
             flags
         }
     }
@@ -238,6 +245,7 @@ mod cache {
             length: (*options).length,
             user_metadata: make_vec!(user_metadata_ptr, user_metadata_len),
             edge_max_age_ns: (*options).edge_max_age_ns,
+            service_id: make_vec!(service_id_ptr, service_id_len),
         }
     }
 
