@@ -71,7 +71,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
 impl kv_store::Host for ComponentCtx {
     async fn open(&mut self, name: Vec<u8>) -> Result<Option<kv_store::Handle>, types::Error> {
         let name = String::from_utf8(name)?;
-        if self.session.kv_store.store_exists(&name)? {
+        if self.session.kv_store().store_exists(&name)? {
             // todo (byoung), handle optional/none/error case
             let h = self.session.kv_store_handle(&name)?;
             Ok(Some(h.into()))

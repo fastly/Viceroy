@@ -13,6 +13,7 @@ use {
         future::Future,
         net::SocketAddr,
         pin::Pin,
+        sync::Arc,
         task::{self, Poll},
     },
     tracing::{event, Level},
@@ -31,7 +32,7 @@ use {
 /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
 /// [serv]: https://docs.rs/hyper/latest/hyper/server/struct.Server.html
 pub struct ViceroyService {
-    ctx: ExecuteCtx,
+    ctx: Arc<ExecuteCtx>,
 }
 
 impl ViceroyService {
@@ -50,7 +51,7 @@ impl ViceroyService {
     /// # }
     /// ```
     pub fn new(ctx: ExecuteCtx) -> Self {
-        Self { ctx }
+        Self { ctx: Arc::new(ctx) }
     }
 
     /// An internal helper, create a [`RequestService`](struct.RequestService.html).
@@ -101,14 +102,14 @@ impl<'addr> Service<&'addr AddrStream> for ViceroyService {
 /// [viceroy]: struct.ViceroyService.html
 #[derive(Clone)]
 pub struct RequestService {
-    ctx: ExecuteCtx,
+    ctx: Arc<ExecuteCtx>,
     local_addr: SocketAddr,
     remote_addr: SocketAddr,
 }
 
 impl RequestService {
     /// Create a new request service.
-    fn new(ctx: ExecuteCtx, addr: &AddrStream) -> Self {
+    fn new(ctx: Arc<ExecuteCtx>, addr: &AddrStream) -> Self {
         let local_addr = addr.local_addr();
         let remote_addr = addr.remote_addr();
 

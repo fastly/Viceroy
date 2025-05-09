@@ -26,7 +26,7 @@ impl FastlyObjectStore for Session {
         name: GuestPtr<str>,
     ) -> Result<ObjectStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
-        if self.kv_store.store_exists(name)? {
+        if self.kv_store().store_exists(name)? {
             Ok(self.kv_store_handle(name)?.into())
         } else {
             Err(Error::ObjectStoreError(

@@ -11,7 +11,7 @@ use {
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
             UnknownImportBehavior,
         },
-        downstream::prepare_request,
+        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest},
         error::ExecutionError,
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
@@ -41,7 +41,7 @@ use {
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
-    tokio::sync::oneshot::{self, Sender},
+    tokio::sync::oneshot,
     tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
@@ -51,6 +51,8 @@ use {
 };
 
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+
+const REGION_NONE: &[u8] = b"none";
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
@@ -81,7 +83,6 @@ pub struct GuestProfileConfig {
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
 /// request. Note that it is very important that `ExecuteCtx` be cheaply clonable, as it is cloned
 /// every time that a viceroy service handles an incoming connection.
-#[derive(Clone)]
 pub struct ExecuteCtx {
     /// A reference to the global context for Wasm compilation.
     engine: Engine,
@@ -405,69 +406,36 @@ impl ExecuteCtx {
     /// # }
     /// ```
     pub async fn handle_request(
-        self,
+        self: Arc<Self>,
         incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
         let req = prepare_request(incoming_req)?;
-        let (sender, receiver) = oneshot::channel();
 
         let req_id = self
             .next_req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
-        // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
-        // if the guest sends one, while the guest continues to run afterward within its task.
-        let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
-            active_cpu_time_us.clone(),
-            self.run_guest(
-                req,
-                req_id,
-                sender,
-                local,
-                remote,
-                active_cpu_time_us.clone(),
-            )
-            .instrument(info_span!("request", id = req_id)),
-        ));
+        let metadata = DownstreamMetadata {
+            req_id,
+            server_addr: local,
+            client_addr: remote,
+            compliance_region: Vec::from(REGION_NONE),
+        };
 
-        let res = receiver.await;
+        let res = self.spawn_guest(req, metadata).await;
+
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
 
-        let resp = match res {
-            Ok(resp) => (resp, None),
-            Err(_) => match guest_handle
-                .await
-                .expect("guest worker finished without panicking")
-            {
-                Ok(_) => (Response::new(Body::empty()), None),
-                Err(ExecutionError::WasmTrap(_e)) => {
-                    event!(
-                        Level::ERROR,
-                        "There was an error handling the request {}",
-                        _e.to_string()
-                    );
-                    #[allow(unused_mut)]
-                    let mut response = Response::builder()
-                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::empty())
-                        .unwrap();
-                    (response, Some(_e))
-                }
-                Err(e) => panic!("failed to run guest: {}", e),
-            },
-        };
+        info!("response status: {:?}", res.0.status());
 
-        info!("response status: {:?}", resp.0.status());
-
-        Ok(resp)
+        Ok(res)
     }
 
     pub async fn handle_request_with_runtime_error(
-        self,
+        self: Arc<Self>,
         incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
@@ -487,37 +455,68 @@ impl ExecuteCtx {
         Ok(resp)
     }
 
-    async fn run_guest(
-        self,
+    async fn spawn_guest(
+        self: Arc<Self>,
         req: Request<Body>,
-        req_id: u64,
-        sender: Sender<Response<Body>>,
-        local: SocketAddr,
-        remote: SocketAddr,
-        active_cpu_time_us: Arc<AtomicU64>,
-    ) -> Result<(), ExecutionError> {
-        info!("handling request {} {}", req.method(), req.uri());
-        let start_timestamp = Instant::now();
-        let session = Session::new(
-            req_id,
+        metadata: DownstreamMetadata,
+    ) -> (Response<Body>, Option<anyhow::Error>) {
+        let (sender, receiver) = oneshot::channel();
+        let downstream = DownstreamRequest {
             req,
             sender,
-            local,
-            remote,
-            active_cpu_time_us,
-            &self,
-            self.acls.clone(),
-            self.backends.clone(),
-            self.device_detection.clone(),
-            self.geolocation.clone(),
-            self.tls_config.clone(),
-            self.dictionaries.clone(),
-            self.config_path.clone(),
-            self.object_store.clone(),
-            self.secret_stores.clone(),
-            self.shielding_sites.clone(),
-            self.cache.clone(),
+            metadata,
+        };
+
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
+
+        // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
+        // if the guest sends one, while the guest continues to run afterward within its task.
+        let req_id = downstream.metadata.req_id;
+        let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
+            active_cpu_time_us.clone(),
+            self.run_guest(downstream, active_cpu_time_us)
+                .instrument(info_span!("request", id = req_id)),
+        ));
+
+        if let Ok(resp) = receiver.await {
+            return (resp, None);
+        }
+
+        match guest_handle
+            .await
+            .expect("guest worker finished without panicking")
+        {
+            Ok(_) => (Response::new(Body::empty()), None),
+            Err(ExecutionError::WasmTrap(e)) => {
+                event!(
+                    Level::ERROR,
+                    "There was an error handling the request {}",
+                    e.to_string()
+                );
+                #[allow(unused_mut)]
+                let mut response = Response::builder()
+                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::empty())
+                    .unwrap();
+                (response, Some(e))
+            }
+            Err(e) => panic!("failed to run guest: {}", e),
+        }
+    }
+
+    async fn run_guest(
+        self: Arc<Self>,
+        downstream: DownstreamRequest,
+        active_cpu_time_us: Arc<AtomicU64>,
+    ) -> Result<(), ExecutionError> {
+        info!(
+            "handling request {} {}",
+            downstream.req.method(),
+            downstream.req.uri()
         );
+        let start_timestamp = Instant::now();
+        let req_id = downstream.metadata.req_id;
+        let session = Session::new(downstream, active_cpu_time_us, self.clone());
 
         let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
             let now = SystemTime::now()
@@ -650,35 +649,28 @@ impl ExecuteCtx {
         }
     }
 
-    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
+    pub async fn run_main(
+        self: Arc<Self>,
+        program_name: &str,
+        args: &[String],
+    ) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
-        let req_id = 0;
+        let metadata = DownstreamMetadata {
+            req_id: 0,
+            server_addr: (Ipv4Addr::LOCALHOST, 80).into(),
+            client_addr: (Ipv4Addr::LOCALHOST, 0).into(),
+            compliance_region: Vec::from(REGION_NONE),
+        };
         let (sender, receiver) = oneshot::channel();
-        let local = (Ipv4Addr::LOCALHOST, 80).into();
-        let remote = (Ipv4Addr::LOCALHOST, 0).into();
-        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
-
-        let session = Session::new(
-            req_id,
+        let downstream = DownstreamRequest {
             req,
             sender,
-            local,
-            remote,
-            active_cpu_time_us.clone(),
-            &self,
-            self.acls.clone(),
-            self.backends.clone(),
-            self.device_detection.clone(),
-            self.geolocation.clone(),
-            self.tls_config.clone(),
-            self.dictionaries.clone(),
-            self.config_path.clone(),
-            self.object_store.clone(),
-            self.secret_stores.clone(),
-            self.shielding_sites.clone(),
-            self.cache.clone(),
-        );
+            metadata,
+        };
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
+
+        let session = Session::new(downstream, active_cpu_time_us.clone(), self.clone());
 
         if let Instance::Component(_) = self.instance_pre.as_ref() {
             panic!("components not currently supported with `run`");
@@ -733,6 +725,26 @@ impl ExecuteCtx {
         drop(receiver);
 
         result
+    }
+
+    pub fn cache(&self) -> &Arc<Cache> {
+        &self.cache
+    }
+
+    pub fn config_path(&self) -> Option<&Path> {
+        self.config_path.as_deref()
+    }
+
+    pub fn object_store(&self) -> &ObjectStores {
+        &self.object_store
+    }
+
+    pub fn secret_stores(&self) -> &Arc<SecretStores> {
+        &self.secret_stores
+    }
+
+    pub fn shielding_sites(&self) -> &ShieldingSites {
+        &self.shielding_sites
     }
 }
 

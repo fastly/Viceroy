@@ -1,8 +1,31 @@
 //! Operations related to handling the "downstream" (end-client) request
+use std::net::SocketAddr;
 
-use crate::{body::Body, error::DownstreamRequestError};
+use crate::body::Body;
+use crate::error::DownstreamRequestError;
 use http::Request;
 use hyper::Uri;
+use tokio::sync::oneshot::Sender;
+
+pub struct DownstreamMetadata {
+    // A unique request ID.
+    pub req_id: u64,
+    /// The IP address and port that received this request.
+    pub server_addr: SocketAddr,
+    /// The downstream IP address and port for this request.
+    pub client_addr: SocketAddr,
+    /// The compliance region that this request was received in.
+    ///
+    /// For now this is just always `"none"`, but we place the field in the session
+    /// to make it easier to implement custom configuration values later on.
+    pub compliance_region: Vec<u8>,
+}
+
+pub struct DownstreamRequest {
+    pub req: hyper::Request<Body>,
+    pub metadata: DownstreamMetadata,
+    pub sender: Sender<hyper::Response<Body>>,
+}
 
 /// Canonicalize the incoming request into the form expected by host calls.
 ///
