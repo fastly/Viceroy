@@ -38,7 +38,7 @@ fn main() {
 /// may still observe the body as "streaming" for a period of time.
 ///
 /// If we didn't provide a known .length() along with the insert data, we can sleep+poll until the
-/// length is known, implying that the whole bosy is available.
+/// length is known, implying that the whole body is available.
 ///
 /// This is an ugly hack. Sorry.
 fn poll_known_length(found: &Found) {
