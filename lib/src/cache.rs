@@ -1,3 +1,8 @@
+//! Support for caching in Viceroy.
+//!
+//! Currently, this supports only the [core cache
+//! API](https://docs.rs/fastly/latest/fastly/cache/core/index.html), and only a subset of that.
+
 use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
@@ -18,6 +23,7 @@ mod variance;
 use store::{CacheData, CacheKeyObjects, ObjectMeta, Obligation};
 pub use variance::VaryRule;
 
+/// Errors that can occur when retrieving data from the cache.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -172,13 +178,13 @@ pub struct Found {
     /// (This is an implementation restriction within the compute platform).
     /// We mirror the BodyHandle here when we create it; we can later check whether the handle is
     /// still valid, to find an outstanding read.
-    pub last_body_handle: Option<BodyHandle>,
+    pub(crate) last_body_handle: Option<BodyHandle>,
 }
 
 impl Found {
     /// Access the body of the cached object.
     ///
-    /// See [CacheData::get_body] for more on what `from` and `to` mean.
+    #[doc=include_str!("cache/range.md")]
     pub fn body(&self, from: Option<u64>, to: Option<u64>) -> Result<Body, crate::Error> {
         self.data.as_ref().get_body(from, to)
     }
