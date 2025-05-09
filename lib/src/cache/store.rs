@@ -36,6 +36,8 @@ pub struct ObjectMeta {
     vary_rule: VaryRule,
 
     user_metadata: Bytes,
+
+    length: Option<u64>,
     // TODO: cceckman-at-fastly: for future work!
     /*
     never_cache: bool, // Aka "hit for pass"
@@ -43,7 +45,6 @@ pub struct ObjectMeta {
     edge_ok_until: Option<Instant>,
 
     surrogate_keys: HashSet<String>,
-    length: Option<usize>,
     sensitive_data: Option<bool>,
     */
 }
@@ -93,6 +94,7 @@ impl ObjectMeta {
             max_age,
             initial_age,
             user_metadata,
+            length,
             ..
         } = value;
         ObjectMeta {
@@ -102,6 +104,7 @@ impl ObjectMeta {
             request_headers,
             vary_rule,
             user_metadata,
+            length,
         }
     }
 }
@@ -310,7 +313,7 @@ impl CacheKeyObjects {
             cache_key_objects.vary_rules.push_front(vary_rule);
 
             let variant = meta.variant();
-            let body = CollectingBody::new(body);
+            let body = CollectingBody::new(body, meta.length);
             let object = Arc::new(CacheData { body, meta });
 
             cache_key_objects
@@ -412,6 +415,11 @@ impl CacheData {
     /// Access to object's metadata
     pub(crate) fn get_meta(&self) -> &ObjectMeta {
         &self.meta
+    }
+
+    /// Return the length of this object, if known.
+    pub fn length(&self) -> Option<u64> {
+        self.body.length().or_else(|| self.meta.length)
     }
 }
 

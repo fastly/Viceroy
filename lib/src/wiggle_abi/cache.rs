@@ -51,12 +51,18 @@ fn load_write_options(
     } else {
         Bytes::new()
     };
+    let length = if options_mask.contains(CacheWriteOptionsMask::LENGTH) {
+        Some(options.length)
+    } else {
+        None
+    };
 
     Ok(WriteOptions {
         max_age,
         initial_age,
         vary_rule,
         user_metadata,
+        length,
     })
 }
 
@@ -494,7 +500,14 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheObjectLength, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let found = self
+            .cache_entry(handle.into())
+            .await?
+            .found()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        found
+            .length()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))
     }
 
     async fn get_max_age_ns(

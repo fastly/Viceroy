@@ -39,12 +39,18 @@ fn load_write_options(
     } else {
         Bytes::new()
     };
+    let length = if options_mask.contains(api::WriteOptionsMask::LENGTH) {
+        Some(options.length)
+    } else {
+        None
+    };
 
     Ok(WriteOptions {
         max_age,
         initial_age,
         vary_rule,
         user_metadata,
+        length,
     })
 }
 
@@ -458,11 +464,16 @@ impl api::Host for ComponentCtx {
         Ok(Some(md_bytes.into()))
     }
 
-    async fn get_length(&mut self, _handle: api::Handle) -> Result<u64, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+    async fn get_length(&mut self, handle: api::Handle) -> Result<u64, types::Error> {
+        let found = self
+            .session
+            .cache_entry(handle.into())
+            .await?
+            .found()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        found
+            .length()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing).into())
     }
 
     async fn get_max_age_ns(&mut self, handle: api::Handle) -> Result<u64, types::Error> {

@@ -185,6 +185,11 @@ impl Found {
     pub fn meta(&self) -> &ObjectMeta {
         self.data.get_meta()
     }
+
+    /// The length of the cached object, if known.
+    pub fn length(&self) -> Option<u64> {
+        self.data.length()
+    }
 }
 
 /// Cache for a service.
@@ -276,6 +281,7 @@ pub struct WriteOptions {
     pub initial_age: Duration,
     pub vary_rule: VaryRule,
     pub user_metadata: Bytes,
+    pub length: Option<u64>,
 }
 
 impl WriteOptions {
@@ -285,6 +291,7 @@ impl WriteOptions {
             initial_age: Duration::ZERO,
             vary_rule: VaryRule::default(),
             user_metadata: Bytes::new(),
+            length: None,
         }
     }
 }
