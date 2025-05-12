@@ -4,8 +4,8 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingCacheTask, PendingKvDeleteTask, PendingKvInsertTask,
-    PendingKvListTask, PendingKvLookupTask,
+    AsyncItem, PeekableTask, PendingCacheTask, PendingDownstreamReqTask, PendingKvDeleteTask,
+    PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
 };
 
 use std::collections::HashMap;
@@ -49,6 +49,8 @@ use {
     http::{request, response, HeaderMap, Response},
 };
 
+const NEXT_REQ_ACCEPT_MAX: usize = 5;
+const NEXT_REQ_TIMEOUT: Duration = Duration::from_secs(10);
 const NGWAF_ALLOW_VERDICT: &str = "allow";
 
 /// Data specific to an individual request, including any host-side
@@ -73,9 +75,12 @@ pub struct Session {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     downstream_resp: DownstreamResponse,
+    /// Handle for receiving a new downstream request.
+    downstream_pending_handle: Option<AsyncItemHandle>,
     /// A handle map for items that provide blocking operations. These items are grouped together
     /// in order to support generic async operations that work across different object types.
     async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
+    /// The context for executing the service that is shared between sessions.
     ctx: Arc<ExecuteCtx>,
     /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Request`][req]s.
     ///
@@ -115,6 +120,8 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
+    /// How many additional downstream requests have been receive by this Session.
+    next_req_accepted: usize,
 }
 
 impl Session {
@@ -154,6 +161,8 @@ impl Session {
             kv_store_by_name: PrimaryMap::new(),
             secret_stores_by_name: PrimaryMap::new(),
             secrets_by_name: PrimaryMap::new(),
+            downstream_pending_handle: None,
+            next_req_accepted: 0,
 
             ctx,
         }
@@ -1095,8 +1104,14 @@ impl Session {
     /// stored within each [`SelectTarget`].
     pub fn reinsert_select_targets(&mut self, targets: Vec<SelectTarget>) {
         for target in targets {
-            self.async_items[target.handle] = Some(target.item);
+            self.reinsert_async_handle(target.handle, target.item);
         }
+    }
+
+    pub fn reinsert_async_handle(&mut self, handle: AsyncItemHandle, item: AsyncItem) {
+        // Invalid handle, reinsert the item.
+        debug_assert!(self.async_items[handle].is_none());
+        self.async_items[handle] = Some(item);
     }
 
     /// Returns the unique identifier for the request this session is processing.
@@ -1144,6 +1159,113 @@ impl Session {
 
     pub fn shielding_sites(&self) -> &ShieldingSites {
         self.ctx.shielding_sites()
+    }
+
+    pub async fn register_pending_downstream_req(&mut self) -> Result<AsyncItemHandle, Error> {
+        let rx = if self.next_req_accepted < NEXT_REQ_ACCEPT_MAX {
+            self.ctx.register_pending_downstream().await
+        } else {
+            None
+        };
+
+        if rx.is_none() {
+            self.next_req_accepted = NEXT_REQ_ACCEPT_MAX;
+        } else {
+            self.next_req_accepted += 1;
+        }
+
+        let task = PendingDownstreamReqTask::new(rx, NEXT_REQ_TIMEOUT);
+        self.insert_pending_downstream_req(task)
+    }
+
+    pub fn take_pending_downstream_req(
+        &mut self,
+        handle: AsyncItemHandle,
+        require_ready: bool,
+    ) -> Result<PendingDownstreamReqTask, Error> {
+        let mut item = self.take_async_item(handle)?;
+        let ready = item.is_ready();
+
+        match (item, (ready, require_ready)) {
+            (AsyncItem::PendingDownstream(pending), (true, _) | (false, false)) => {
+                self.downstream_pending_handle = None;
+                Ok(pending)
+            }
+            (item @ AsyncItem::PendingDownstream(_), (false, true)) => {
+                self.reinsert_async_handle(handle, item);
+                Err(Error::Again)
+            }
+            (item, _) => {
+                self.reinsert_async_handle(handle, item);
+                Err(HandleError::InvalidPendingDownstreamHandle(handle.into()).into())
+            }
+        }
+    }
+
+    pub async fn resolve_pending_downstream_req(
+        &mut self,
+        handle: AsyncItemHandle,
+    ) -> Result<(RequestHandle, BodyHandle), Error> {
+        let item = self.take_pending_downstream_req(handle, true)?;
+        let downstream = item.recv().await?;
+
+        let (parts, body) = downstream.req.into_parts();
+        let req_handle = self.req_parts.push(Some(parts));
+        let body_handle = self.async_items.push(Some(AsyncItem::Body(body)));
+
+        self.downstream_resp = DownstreamResponse::new(downstream.sender);
+        self.downstream_metadata = downstream.metadata;
+        self.downstream_req_handle = req_handle;
+        self.downstream_req_body_handle = body_handle.into();
+
+        Ok((req_handle, body_handle.into()))
+    }
+
+    pub fn insert_pending_downstream_req(
+        &mut self,
+        task: PendingDownstreamReqTask,
+    ) -> Result<AsyncItemHandle, Error> {
+        if self.downstream_pending_handle.is_some() {
+            return Err(Error::InvalidArgument);
+        }
+
+        let handle = self.async_items.push(Some(AsyncItem::from(task)));
+        self.downstream_pending_handle = Some(handle);
+
+        Ok(handle)
+    }
+
+    pub fn abandon_pending_downstream_req(&mut self, handle: AsyncItemHandle) -> Result<(), Error> {
+        let item = self.take_pending_downstream_req(handle, false)?;
+
+        // Check for an unprocessed request:
+        let unhandled = item.try_recv();
+
+        // And then spawn a new session for it:
+        if let Some(ds_req) = unhandled {
+            self.retry_pending_downstream_req(ds_req);
+        }
+
+        Ok(())
+    }
+
+    pub fn retry_pending_downstream_req(&mut self, req: DownstreamRequest) {
+        let ctx = self.ctx().clone();
+        tokio::spawn(ctx.retry_request(req));
+    }
+
+    pub fn ctx(&self) -> &Arc<ExecuteCtx> {
+        &self.ctx
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let ds = self.downstream_pending_handle.take();
+
+        if let Some(downstream) = ds {
+            let _ = self.abandon_pending_downstream_req(downstream);
+        }
     }
 }
 

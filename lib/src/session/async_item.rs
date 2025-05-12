@@ -1,4 +1,7 @@
+use std::time::{Duration, Instant};
+
 use crate::cache::CacheEntry;
+use crate::downstream::DownstreamRequest;
 use crate::object_store::{KvStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
@@ -51,6 +54,62 @@ impl PendingKvListTask {
     }
 }
 
+/// This is very similar to a [PeekableTask] task, but is intentionally
+/// set up so that it has no spawned tokio tasks separating us from the
+/// [oneshot::Sender] and detecting when it's dropped.
+///
+/// The `try_recv()` method can be used to make sure that we safely recover
+/// any pending requests that are sent to us without dropping them.
+#[derive(Debug)]
+pub enum PendingDownstreamReqTask {
+    Complete(Result<DownstreamRequest, Error>),
+    Waiting(oneshot::Receiver<DownstreamRequest>, Instant),
+}
+
+impl PendingDownstreamReqTask {
+    pub fn new(
+        rx: Option<oneshot::Receiver<DownstreamRequest>>,
+        timeout: Duration,
+    ) -> PendingDownstreamReqTask {
+        if let Some(rx) = rx {
+            PendingDownstreamReqTask::Waiting(rx, Instant::now() + timeout)
+        } else {
+            PendingDownstreamReqTask::Complete(Err(Error::NoDownstreamReqsAvailable))
+        }
+    }
+
+    pub fn try_recv(self) -> Option<DownstreamRequest> {
+        match self {
+            Self::Waiting(mut rx, _) => {
+                rx.close();
+                rx.try_recv().ok()
+            }
+            Self::Complete(res) => res.ok(),
+        }
+    }
+
+    pub async fn recv(self) -> Result<DownstreamRequest, Error> {
+        match self {
+            Self::Waiting(rx, _) => rx.await.map_err(|_| Error::NoDownstreamReqsAvailable),
+            Self::Complete(res) => res,
+        }
+    }
+
+    pub async fn await_ready(&mut self) {
+        if let Self::Waiting(rx, deadline) = self {
+            let v = if Instant::now() > *deadline {
+                rx.close();
+                rx.try_recv().ok()
+            } else {
+                rx.await.ok()
+            };
+
+            let res = v.ok_or(Error::NoDownstreamReqsAvailable);
+            *self = Self::Complete(res);
+        }
+    }
+}
+
 /// An async item, waiting for a cache lookup to complete.
 #[derive(Debug)]
 pub struct PendingCacheTask(PeekableTask<CacheEntry>);
@@ -80,6 +139,7 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
+    PendingDownstream(PendingDownstreamReqTask),
     PendingKvLookup(PendingKvLookupTask),
     PendingKvInsert(PendingKvInsertTask),
     PendingKvDelete(PendingKvDeleteTask),
@@ -244,6 +304,7 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
+            Self::PendingDownstream(req) => req.await_ready().await,
             Self::PendingKvLookup(req) => req.0.await_ready().await,
             Self::PendingKvInsert(req) => req.0.await_ready().await,
             Self::PendingKvDelete(req) => req.0.await_ready().await,
@@ -290,6 +351,12 @@ impl From<PendingKvListTask> for AsyncItem {
 impl From<PendingCacheTask> for AsyncItem {
     fn from(task: PendingCacheTask) -> Self {
         Self::PendingCache(task)
+    }
+}
+
+impl From<PendingDownstreamReqTask> for AsyncItem {
+    fn from(task: PendingDownstreamReqTask) -> Self {
+        Self::PendingDownstream(task)
     }
 }
 

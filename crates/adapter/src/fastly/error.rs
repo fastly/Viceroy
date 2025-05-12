@@ -14,6 +14,7 @@ impl FastlyStatus {
     pub const INVALID_ARGUMENT: Self = Self(2);
     pub const UNSUPPORTED: Self = Self(5);
     pub const NONE: Self = FastlyStatus(10);
+    pub const AGAIN: Self = FastlyStatus(14);
 }
 
 impl From<crate::bindings::fastly::api::types::Error> for FastlyStatus {
@@ -35,6 +36,7 @@ impl From<crate::bindings::fastly::api::types::Error> for FastlyStatus {
             Error::HttpHeadTooLarge => 11,
             Error::HttpInvalidStatus => 12,
             Error::LimitExceeded => 13,
+            Error::Again => 14,
         })
     }
 }

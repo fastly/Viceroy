@@ -20,6 +20,7 @@ mod logging;
 mod memory;
 mod request;
 mod response;
+mod reusable_sessions;
 mod secret_store;
 mod sending_response;
 mod shielding;

@@ -117,14 +117,20 @@
 (typename $secret_handle (handle))
 ;;; A handle to an ACL.
 (typename $acl_handle (handle))
+;;; A handle to a request promise.
+(typename $request_promise_handle (handle))
 ;;; A handle to an object supporting generic async operations.
-;;; Can be either a `body_handle` or a `pending_request_handle`.
+;;; Can be a `body_handle`, a `pending_request_handle`,
+;;; `cache_handle`, `cache_busy_handle`, `cache_replace_handle` (see cache.witx),
+;;; a `request_promise_handle`, or other handles.
 ;;;
 ;;; Each async item has an associated I/O action:
 ;;;
 ;;; * Pending requests: awaiting the response headers / `Response` object
 ;;; * Normal bodies: reading bytes from the body
 ;;; * Streaming bodies: writing bytes to the body
+;;; * Cache handles: the caller has been selected to perform a fetch, or there is data ready
+;;; * Request promise: a new request is ready, or there will be no request provided via this handle
 ;;;
 ;;; For writing bytes, note that there is a large host-side buffer that bytes can eagerly be written
 ;;; into, even before the origin itself consumes that data.
@@ -542,3 +548,14 @@
         (field $message_len u32)
     )
 )
+
+(typename $next_request_options_mask
+    (flags (@witx repr u32)
+        $reserved
+    ))
+
+(typename $next_request_options
+    (record
+        ;; Reserved for future use.
+        (field $reserved u64)
+    ))

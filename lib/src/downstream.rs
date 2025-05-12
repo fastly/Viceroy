@@ -7,6 +7,7 @@ use http::Request;
 use hyper::Uri;
 use tokio::sync::oneshot::Sender;
 
+#[derive(Debug)]
 pub struct DownstreamMetadata {
     // A unique request ID.
     pub req_id: u64,
@@ -21,6 +22,7 @@ pub struct DownstreamMetadata {
     pub compliance_region: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct DownstreamRequest {
     pub req: hyper::Request<Body>,
     pub metadata: DownstreamMetadata,

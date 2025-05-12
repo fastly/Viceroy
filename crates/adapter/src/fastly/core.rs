@@ -97,6 +97,7 @@ pub type PendingObjectStoreListHandle = u32;
 pub type PendingObjectStoreLookupHandle = u32;
 pub type PendingRequestHandle = u32;
 pub type RequestHandle = u32;
+pub type RequestPromiseHandle = u32;
 pub type ResponseHandle = u32;
 pub type SecretHandle = u32;
 pub type SecretStoreHandle = u32;
@@ -641,6 +642,98 @@ pub mod fastly_http_body {
             }
             Err(e) => e.into(),
         }
+    }
+}
+
+pub mod fastly_http_downstream {
+    use super::*;
+    use crate::bindings::fastly::api::http_downstream;
+
+    bitflags::bitflags! {
+        #[derive(Default, Clone, Debug, PartialEq, Eq)]
+        #[repr(transparent)]
+        pub struct NextRequestOptionsMask: u32 {
+            const RESERVED = 1 << 0;
+        }
+    }
+
+    impl From<NextRequestOptionsMask>
+        for crate::bindings::fastly::api::http_downstream::NextRequestOptionsMask
+    {
+        fn from(options: NextRequestOptionsMask) -> Self {
+            let mut flags = Self::empty();
+            flags.set(
+                Self::RESERVED,
+                options.contains(NextRequestOptionsMask::RESERVED),
+            );
+            flags
+        }
+    }
+
+    #[repr(C)]
+    pub struct NextRequestOptions {
+        pub reserved: u64,
+    }
+
+    #[export_name = "fastly_http_downstream#next_req"]
+    pub fn next_req(
+        options_mask: NextRequestOptionsMask,
+        options: *const NextRequestOptions,
+        handle_out: *mut RequestPromiseHandle,
+    ) -> FastlyStatus {
+        let options_mask = http_downstream::NextRequestOptionsMask::from(options_mask);
+        let options = http_downstream::NextRequestOptions {
+            reserved: unsafe { (*options).reserved },
+        };
+
+        match http_downstream::next_req(options_mask, options) {
+            Ok(res) => {
+                unsafe {
+                    *handle_out = res;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(err) => {
+                unsafe {
+                    *handle_out = INVALID_HANDLE;
+                }
+
+                err.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#next_req_wait"]
+    pub fn next_req_wait(
+        handle: RequestPromiseHandle,
+        req_handle_out: *mut RequestHandle,
+        body_handle_out: *mut BodyHandle,
+    ) -> FastlyStatus {
+        match http_downstream::next_req_wait(handle) {
+            Ok(res) => {
+                unsafe {
+                    *req_handle_out = res.0;
+                    *body_handle_out = res.1;
+                }
+
+                FastlyStatus::OK
+            }
+            Err(err) => {
+                unsafe {
+                    *req_handle_out = INVALID_HANDLE;
+                    *body_handle_out = INVALID_HANDLE;
+                }
+
+                err.into()
+            }
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#next_req_abandon"]
+    pub fn next_req_abandon(handle: RequestPromiseHandle) -> FastlyStatus {
+        let res = http_downstream::next_req_abandon(handle);
+        convert_result(res)
     }
 }
 
