@@ -329,7 +329,7 @@ impl Test {
             self.backends.start_servers().await;
         }
 
-        let ctx = ExecuteCtx::new(
+        let ctx = ExecuteCtx::build(
             &self.module_path,
             ProfilingStrategy::None,
             HashSet::new(),
@@ -347,7 +347,8 @@ impl Test {
         .with_shielding_sites(self.shielding_sites.clone())
         .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
-        .with_log_stdout(self.log_stdout);
+        .with_log_stdout(self.log_stdout)
+        .finish()?;
 
         if self.via_hyper {
             let svc = ViceroyService::new(ctx);

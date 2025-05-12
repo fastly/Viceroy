@@ -89,19 +89,19 @@ pub struct ExecuteCtx {
     /// An almost-linked Instance: each import function is linked, just needs a Store
     instance_pre: Arc<Instance>,
     /// The acls for this execution.
-    acls: Arc<Acls>,
+    acls: Acls,
     /// The backends for this execution.
-    backends: Arc<Backends>,
+    backends: Backends,
     /// The device detection mappings for this execution.
-    device_detection: Arc<DeviceDetection>,
+    device_detection: DeviceDetection,
     /// The geolocation mappings for this execution.
-    geolocation: Arc<Geolocation>,
+    geolocation: Geolocation,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
-    dictionaries: Arc<Dictionaries>,
+    dictionaries: Dictionaries,
     /// Path to the config, defaults to None
-    config_path: Arc<Option<PathBuf>>,
+    config_path: Option<PathBuf>,
     /// Where to direct logging endpoint messages, defaults to stdout
     capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// Whether to treat stdout as a logging endpoint
@@ -115,7 +115,7 @@ pub struct ExecuteCtx {
     /// The secret stores for this execution.
     secret_stores: Arc<SecretStores>,
     /// The shielding sites for this execution.
-    shielding_sites: Arc<ShieldingSites>,
+    shielding_sites: ShieldingSites,
     /// The cache for this service.
     cache: Arc<Cache>,
     // `Arc` for the two fields below because this struct must be `Clone`.
@@ -126,15 +126,15 @@ pub struct ExecuteCtx {
 }
 
 impl ExecuteCtx {
-    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
-    pub fn new(
+    /// Build a new execution context, given the path to a module and a set of experimental wasi modules.
+    pub fn build(
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
-    ) -> Result<Self, Error> {
+    ) -> Result<ExecuteCtxBuilder, Error> {
         let input = fs::read(&module_path)?;
 
         let is_wat = module_path
@@ -232,28 +232,50 @@ impl ExecuteCtx {
             }
         })));
 
-        Ok(Self {
+        let inner = Self {
             engine,
             instance_pre: Arc::new(instance_pre),
-            acls: Arc::new(Acls::new()),
-            backends: Arc::new(Backends::default()),
-            device_detection: Arc::new(DeviceDetection::default()),
-            geolocation: Arc::new(Geolocation::default()),
+            acls: Acls::new(),
+            backends: Backends::default(),
+            device_detection: DeviceDetection::default(),
+            geolocation: Geolocation::default(),
             tls_config: TlsConfig::new()?,
-            dictionaries: Arc::new(Dictionaries::default()),
-            config_path: Arc::new(None),
+            dictionaries: Dictionaries::default(),
+            config_path: None,
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
             secret_stores: Arc::new(SecretStores::new()),
-            shielding_sites: Arc::new(ShieldingSites::new()),
+            shielding_sites: ShieldingSites::new(),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
             cache: Arc::new(Cache::default()),
-        })
+        };
+
+        Ok(ExecuteCtxBuilder { inner })
+    }
+
+    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
+    pub fn new(
+        module_path: impl AsRef<Path>,
+        profiling_strategy: ProfilingStrategy,
+        wasi_modules: HashSet<ExperimentalModule>,
+        guest_profile_config: Option<GuestProfileConfig>,
+        unknown_import_behavior: UnknownImportBehavior,
+        adapt_components: bool,
+    ) -> Result<Arc<Self>, Error> {
+        ExecuteCtx::build(
+            module_path,
+            profiling_strategy,
+            wasi_modules,
+            guest_profile_config,
+            unknown_import_behavior,
+            adapt_components,
+        )?
+        .finish()
     }
 
     /// Get the engine for this execution context.
@@ -266,21 +288,9 @@ impl ExecuteCtx {
         &self.acls
     }
 
-    /// Set the acls for this execution context.
-    pub fn with_acls(mut self, acls: Acls) -> Self {
-        self.acls = Arc::new(acls);
-        self
-    }
-
     /// Get the backends for this execution context.
     pub fn backends(&self) -> &Backends {
         &self.backends
-    }
-
-    /// Set the backends for this execution context.
-    pub fn with_backends(mut self, backends: Backends) -> Self {
-        self.backends = Arc::new(backends);
-        self
     }
 
     /// Get the device detection mappings for this execution context.
@@ -288,21 +298,9 @@ impl ExecuteCtx {
         &self.device_detection
     }
 
-    /// Set the device detection mappings for this execution context.
-    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
-        self.device_detection = Arc::new(device_detection);
-        self
-    }
-
     /// Get the geolocation mappings for this execution context.
     pub fn geolocation(&self) -> &Geolocation {
         &self.geolocation
-    }
-
-    /// Set the geolocation mappings for this execution context.
-    pub fn with_geolocation(mut self, geolocation: Geolocation) -> Self {
-        self.geolocation = Arc::new(geolocation);
-        self
     }
 
     /// Get the dictionaries for this execution context.
@@ -310,45 +308,9 @@ impl ExecuteCtx {
         &self.dictionaries
     }
 
-    /// Set the dictionaries for this execution context.
-    pub fn with_dictionaries(mut self, dictionaries: Dictionaries) -> Self {
-        self.dictionaries = Arc::new(dictionaries);
-        self
-    }
-
-    /// Set the object store for this execution context.
-    pub fn with_object_stores(mut self, object_store: ObjectStores) -> Self {
-        self.object_store = object_store;
-        self
-    }
-
-    /// Set the secret stores for this execution context.
-    pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
-        self.secret_stores = Arc::new(secret_stores);
-        self
-    }
-    /// Set the shielding sites for this execution context.
-    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
-        self.shielding_sites = Arc::new(shielding_sites);
-        self
-    }
-
-    /// Set the path to the config for this execution context.
-    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
-        self.config_path = Arc::new(Some(config_path));
-        self
-    }
-
     /// Where to direct logging endpoint messages. Defaults to stdout.
     pub fn capture_logs(&self) -> Arc<Mutex<dyn Write + Send>> {
         self.capture_logs.clone()
-    }
-
-    /// Set where to direct logging endpoint messages for this execution
-    /// context. Defaults to stdout.
-    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
-        self.capture_logs = capture_logs;
-        self
     }
 
     /// Whether to treat stdout as a logging endpoint.
@@ -356,21 +318,9 @@ impl ExecuteCtx {
         self.log_stdout
     }
 
-    /// Set the stdout logging policy for this execution context.
-    pub fn with_log_stdout(mut self, log_stdout: bool) -> Self {
-        self.log_stdout = log_stdout;
-        self
-    }
-
     /// Whether to treat stderr as a logging endpoint.
     pub fn log_stderr(&self) -> bool {
         self.log_stderr
-    }
-
-    /// Set the stderr logging policy for this execution context.
-    pub fn with_log_stderr(mut self, log_stderr: bool) -> Self {
-        self.log_stderr = log_stderr;
-        self
     }
 
     /// Gets the TLS configuration
@@ -745,6 +695,88 @@ impl ExecuteCtx {
 
     pub fn shielding_sites(&self) -> &ShieldingSites {
         &self.shielding_sites
+    }
+}
+
+pub struct ExecuteCtxBuilder {
+    inner: ExecuteCtx,
+}
+
+impl ExecuteCtxBuilder {
+    pub fn finish(self) -> Result<Arc<ExecuteCtx>, Error> {
+        Ok(Arc::new(self.inner))
+    }
+
+    /// Set the acls for this execution context.
+    pub fn with_acls(mut self, acls: Acls) -> Self {
+        self.inner.acls = acls;
+        self
+    }
+
+    /// Set the backends for this execution context.
+    pub fn with_backends(mut self, backends: Backends) -> Self {
+        self.inner.backends = backends;
+        self
+    }
+
+    /// Set the device detection mappings for this execution context.
+    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
+        self.inner.device_detection = device_detection;
+        self
+    }
+
+    /// Set the geolocation mappings for this execution context.
+    pub fn with_geolocation(mut self, geolocation: Geolocation) -> Self {
+        self.inner.geolocation = geolocation;
+        self
+    }
+
+    /// Set the dictionaries for this execution context.
+    pub fn with_dictionaries(mut self, dictionaries: Dictionaries) -> Self {
+        self.inner.dictionaries = dictionaries;
+        self
+    }
+
+    /// Set the object store for this execution context.
+    pub fn with_object_stores(mut self, object_store: ObjectStores) -> Self {
+        self.inner.object_store = object_store;
+        self
+    }
+
+    /// Set the secret stores for this execution context.
+    pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
+        self.inner.secret_stores = Arc::new(secret_stores);
+        self
+    }
+    /// Set the shielding sites for this execution context.
+    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
+        self.inner.shielding_sites = shielding_sites;
+        self
+    }
+
+    /// Set the path to the config for this execution context.
+    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
+        self.inner.config_path = Some(config_path);
+        self
+    }
+
+    /// Set where to direct logging endpoint messages for this execution
+    /// context. Defaults to stdout.
+    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
+        self.inner.capture_logs = capture_logs;
+        self
+    }
+
+    /// Set the stdout logging policy for this execution context.
+    pub fn with_log_stdout(mut self, log_stdout: bool) -> Self {
+        self.inner.log_stdout = log_stdout;
+        self
+    }
+
+    /// Set the stderr logging policy for this execution context.
+    pub fn with_log_stderr(mut self, log_stderr: bool) -> Self {
+        self.inner.log_stderr = log_stderr;
+        self
     }
 }
 

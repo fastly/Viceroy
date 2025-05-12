@@ -50,8 +50,8 @@ impl ViceroyService {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(ctx: ExecuteCtx) -> Self {
-        Self { ctx: Arc::new(ctx) }
+    pub fn new(ctx: Arc<ExecuteCtx>) -> Self {
+        Self { ctx }
     }
 
     /// An internal helper, create a [`RequestService`](struct.RequestService.html).
