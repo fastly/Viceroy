@@ -113,13 +113,13 @@ pub struct ExecuteCtx {
     /// The ObjectStore associated with this instance of Viceroy
     object_store: ObjectStores,
     /// The secret stores for this execution.
-    secret_stores: Arc<SecretStores>,
+    secret_stores: SecretStores,
     /// The shielding sites for this execution.
     shielding_sites: ShieldingSites,
     /// The cache for this service.
     cache: Arc<Cache>,
-    // `Arc` for the two fields below because this struct must be `Clone`.
-    epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
+    epoch_increment_thread: Option<JoinHandle<()>>,
+    // `Arc` so that it can be tracked both by this context and `epoch_increment_thread`.
     epoch_increment_stop: Arc<AtomicBool>,
     /// Configuration for guest profiling if enabled
     guest_profile_config: Option<Arc<GuestProfileConfig>>,
@@ -225,12 +225,12 @@ impl ExecuteCtx {
             .as_ref()
             .map(|c| c.sample_period)
             .unwrap_or(DEFAULT_EPOCH_INTERRUPTION_PERIOD);
-        let epoch_increment_thread = Some(Arc::new(thread::spawn(move || {
+        let epoch_increment_thread = Some(thread::spawn(move || {
             while !epoch_increment_stop_clone.load(Ordering::Relaxed) {
                 thread::sleep(sample_period);
                 engine_clone.increment_epoch();
             }
-        })));
+        }));
 
         let inner = Self {
             engine,
@@ -247,7 +247,7 @@ impl ExecuteCtx {
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
-            secret_stores: Arc::new(SecretStores::new()),
+            secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
             epoch_increment_thread,
             epoch_increment_stop,
@@ -689,7 +689,7 @@ impl ExecuteCtx {
         &self.object_store
     }
 
-    pub fn secret_stores(&self) -> &Arc<SecretStores> {
+    pub fn secret_stores(&self) -> &SecretStores {
         &self.secret_stores
     }
 
@@ -745,7 +745,7 @@ impl ExecuteCtxBuilder {
 
     /// Set the secret stores for this execution context.
     pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
-        self.inner.secret_stores = Arc::new(secret_stores);
+        self.inner.secret_stores = secret_stores;
         self
     }
     /// Set the shielding sites for this execution context.
@@ -805,11 +805,9 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
 
 impl Drop for ExecuteCtx {
     fn drop(&mut self) {
-        if let Some(arc) = self.epoch_increment_thread.take() {
-            if let Ok(join_handle) = Arc::try_unwrap(arc) {
-                self.epoch_increment_stop.store(true, Ordering::Relaxed);
-                join_handle.join().unwrap();
-            }
+        if let Some(join_handle) = self.epoch_increment_thread.take() {
+            self.epoch_increment_stop.store(true, Ordering::Relaxed);
+            join_handle.join().unwrap();
         }
     }
 }

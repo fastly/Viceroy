@@ -921,7 +921,7 @@ impl Session {
             .push(SecretLookup::Injected { plaintext })
     }
 
-    pub fn secret_stores(&self) -> &Arc<SecretStores> {
+    pub fn secret_stores(&self) -> &SecretStores {
         self.ctx.secret_stores()
     }
 
