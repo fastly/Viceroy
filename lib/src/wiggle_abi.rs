@@ -206,11 +206,11 @@ impl UserErrorConversion for Session {
     fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, anyhow::Error> {
         match e {
             Error::UnknownBackend(ref backend) => {
-                let config_path = &self.config_path();
+                let config_path = self.config_path();
                 let backends_buffer = itertools::join(self.backend_names(), ",");
                 let backends_len = self.backend_names().count();
 
-                match (backends_len, (**config_path).as_ref()) {
+                match (backends_len, config_path) {
                     (_, None) => event!(
                         Level::WARN,
                         "Attempted to access backend '{}', but no manifest file was provided to define backends. \

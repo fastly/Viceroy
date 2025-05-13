@@ -18,14 +18,14 @@ impl fastly_shielding::FastlyShielding for Session {
             return Err(Error::ValueAbsent);
         };
 
-        let running_on = self.shielding_sites.is_local(&name);
+        let running_on = self.shielding_sites().is_local(&name);
         let unencrypted = self
-            .shielding_sites
+            .shielding_sites()
             .get_unencrypted(&name)
             .map(|x| x.to_string())
             .unwrap_or_default();
         let encrypted = self
-            .shielding_sites
+            .shielding_sites()
             .get_encrypted(&name)
             .map(|x| x.to_string())
             .unwrap_or_default();

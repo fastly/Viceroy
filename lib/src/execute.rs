@@ -11,7 +11,7 @@ use {
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
             UnknownImportBehavior,
         },
-        downstream::prepare_request,
+        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest},
         error::ExecutionError,
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
@@ -41,7 +41,7 @@ use {
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
-    tokio::sync::oneshot::{self, Sender},
+    tokio::sync::oneshot,
     tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
@@ -51,6 +51,8 @@ use {
 };
 
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
+
+const REGION_NONE: &[u8] = b"none";
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
@@ -81,26 +83,25 @@ pub struct GuestProfileConfig {
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
 /// request. Note that it is very important that `ExecuteCtx` be cheaply clonable, as it is cloned
 /// every time that a viceroy service handles an incoming connection.
-#[derive(Clone)]
 pub struct ExecuteCtx {
     /// A reference to the global context for Wasm compilation.
     engine: Engine,
     /// An almost-linked Instance: each import function is linked, just needs a Store
     instance_pre: Arc<Instance>,
     /// The acls for this execution.
-    acls: Arc<Acls>,
+    acls: Acls,
     /// The backends for this execution.
-    backends: Arc<Backends>,
+    backends: Backends,
     /// The device detection mappings for this execution.
-    device_detection: Arc<DeviceDetection>,
+    device_detection: DeviceDetection,
     /// The geolocation mappings for this execution.
-    geolocation: Arc<Geolocation>,
+    geolocation: Geolocation,
     /// Preloaded TLS certificates and configuration
     tls_config: TlsConfig,
     /// The dictionaries for this execution.
-    dictionaries: Arc<Dictionaries>,
+    dictionaries: Dictionaries,
     /// Path to the config, defaults to None
-    config_path: Arc<Option<PathBuf>>,
+    config_path: Option<PathBuf>,
     /// Where to direct logging endpoint messages, defaults to stdout
     capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// Whether to treat stdout as a logging endpoint
@@ -112,28 +113,28 @@ pub struct ExecuteCtx {
     /// The ObjectStore associated with this instance of Viceroy
     object_store: ObjectStores,
     /// The secret stores for this execution.
-    secret_stores: Arc<SecretStores>,
+    secret_stores: SecretStores,
     /// The shielding sites for this execution.
-    shielding_sites: Arc<ShieldingSites>,
+    shielding_sites: ShieldingSites,
     /// The cache for this service.
     cache: Arc<Cache>,
-    // `Arc` for the two fields below because this struct must be `Clone`.
-    epoch_increment_thread: Option<Arc<JoinHandle<()>>>,
+    epoch_increment_thread: Option<JoinHandle<()>>,
+    // `Arc` so that it can be tracked both by this context and `epoch_increment_thread`.
     epoch_increment_stop: Arc<AtomicBool>,
     /// Configuration for guest profiling if enabled
     guest_profile_config: Option<Arc<GuestProfileConfig>>,
 }
 
 impl ExecuteCtx {
-    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
-    pub fn new(
+    /// Build a new execution context, given the path to a module and a set of experimental wasi modules.
+    pub fn build(
         module_path: impl AsRef<Path>,
         profiling_strategy: ProfilingStrategy,
         wasi_modules: HashSet<ExperimentalModule>,
         guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
-    ) -> Result<Self, Error> {
+    ) -> Result<ExecuteCtxBuilder, Error> {
         let input = fs::read(&module_path)?;
 
         let is_wat = module_path
@@ -224,35 +225,57 @@ impl ExecuteCtx {
             .as_ref()
             .map(|c| c.sample_period)
             .unwrap_or(DEFAULT_EPOCH_INTERRUPTION_PERIOD);
-        let epoch_increment_thread = Some(Arc::new(thread::spawn(move || {
+        let epoch_increment_thread = Some(thread::spawn(move || {
             while !epoch_increment_stop_clone.load(Ordering::Relaxed) {
                 thread::sleep(sample_period);
                 engine_clone.increment_epoch();
             }
-        })));
+        }));
 
-        Ok(Self {
+        let inner = Self {
             engine,
             instance_pre: Arc::new(instance_pre),
-            acls: Arc::new(Acls::new()),
-            backends: Arc::new(Backends::default()),
-            device_detection: Arc::new(DeviceDetection::default()),
-            geolocation: Arc::new(Geolocation::default()),
+            acls: Acls::new(),
+            backends: Backends::default(),
+            device_detection: DeviceDetection::default(),
+            geolocation: Geolocation::default(),
             tls_config: TlsConfig::new()?,
-            dictionaries: Arc::new(Dictionaries::default()),
-            config_path: Arc::new(None),
+            dictionaries: Dictionaries::default(),
+            config_path: None,
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
-            secret_stores: Arc::new(SecretStores::new()),
-            shielding_sites: Arc::new(ShieldingSites::new()),
+            secret_stores: SecretStores::new(),
+            shielding_sites: ShieldingSites::new(),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
             cache: Arc::new(Cache::default()),
-        })
+        };
+
+        Ok(ExecuteCtxBuilder { inner })
+    }
+
+    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
+    pub fn new(
+        module_path: impl AsRef<Path>,
+        profiling_strategy: ProfilingStrategy,
+        wasi_modules: HashSet<ExperimentalModule>,
+        guest_profile_config: Option<GuestProfileConfig>,
+        unknown_import_behavior: UnknownImportBehavior,
+        adapt_components: bool,
+    ) -> Result<Arc<Self>, Error> {
+        ExecuteCtx::build(
+            module_path,
+            profiling_strategy,
+            wasi_modules,
+            guest_profile_config,
+            unknown_import_behavior,
+            adapt_components,
+        )?
+        .finish()
     }
 
     /// Get the engine for this execution context.
@@ -265,21 +288,9 @@ impl ExecuteCtx {
         &self.acls
     }
 
-    /// Set the acls for this execution context.
-    pub fn with_acls(mut self, acls: Acls) -> Self {
-        self.acls = Arc::new(acls);
-        self
-    }
-
     /// Get the backends for this execution context.
     pub fn backends(&self) -> &Backends {
         &self.backends
-    }
-
-    /// Set the backends for this execution context.
-    pub fn with_backends(mut self, backends: Backends) -> Self {
-        self.backends = Arc::new(backends);
-        self
     }
 
     /// Get the device detection mappings for this execution context.
@@ -287,21 +298,9 @@ impl ExecuteCtx {
         &self.device_detection
     }
 
-    /// Set the device detection mappings for this execution context.
-    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
-        self.device_detection = Arc::new(device_detection);
-        self
-    }
-
     /// Get the geolocation mappings for this execution context.
     pub fn geolocation(&self) -> &Geolocation {
         &self.geolocation
-    }
-
-    /// Set the geolocation mappings for this execution context.
-    pub fn with_geolocation(mut self, geolocation: Geolocation) -> Self {
-        self.geolocation = Arc::new(geolocation);
-        self
     }
 
     /// Get the dictionaries for this execution context.
@@ -309,45 +308,9 @@ impl ExecuteCtx {
         &self.dictionaries
     }
 
-    /// Set the dictionaries for this execution context.
-    pub fn with_dictionaries(mut self, dictionaries: Dictionaries) -> Self {
-        self.dictionaries = Arc::new(dictionaries);
-        self
-    }
-
-    /// Set the object store for this execution context.
-    pub fn with_object_stores(mut self, object_store: ObjectStores) -> Self {
-        self.object_store = object_store;
-        self
-    }
-
-    /// Set the secret stores for this execution context.
-    pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
-        self.secret_stores = Arc::new(secret_stores);
-        self
-    }
-    /// Set the shielding sites for this execution context.
-    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
-        self.shielding_sites = Arc::new(shielding_sites);
-        self
-    }
-
-    /// Set the path to the config for this execution context.
-    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
-        self.config_path = Arc::new(Some(config_path));
-        self
-    }
-
     /// Where to direct logging endpoint messages. Defaults to stdout.
     pub fn capture_logs(&self) -> Arc<Mutex<dyn Write + Send>> {
         self.capture_logs.clone()
-    }
-
-    /// Set where to direct logging endpoint messages for this execution
-    /// context. Defaults to stdout.
-    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
-        self.capture_logs = capture_logs;
-        self
     }
 
     /// Whether to treat stdout as a logging endpoint.
@@ -355,21 +318,9 @@ impl ExecuteCtx {
         self.log_stdout
     }
 
-    /// Set the stdout logging policy for this execution context.
-    pub fn with_log_stdout(mut self, log_stdout: bool) -> Self {
-        self.log_stdout = log_stdout;
-        self
-    }
-
     /// Whether to treat stderr as a logging endpoint.
     pub fn log_stderr(&self) -> bool {
         self.log_stderr
-    }
-
-    /// Set the stderr logging policy for this execution context.
-    pub fn with_log_stderr(mut self, log_stderr: bool) -> Self {
-        self.log_stderr = log_stderr;
-        self
     }
 
     /// Gets the TLS configuration
@@ -405,69 +356,36 @@ impl ExecuteCtx {
     /// # }
     /// ```
     pub async fn handle_request(
-        self,
+        self: Arc<Self>,
         incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
         let req = prepare_request(incoming_req)?;
-        let (sender, receiver) = oneshot::channel();
 
         let req_id = self
             .next_req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
-        // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
-        // if the guest sends one, while the guest continues to run afterward within its task.
-        let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
-            active_cpu_time_us.clone(),
-            self.run_guest(
-                req,
-                req_id,
-                sender,
-                local,
-                remote,
-                active_cpu_time_us.clone(),
-            )
-            .instrument(info_span!("request", id = req_id)),
-        ));
+        let metadata = DownstreamMetadata {
+            req_id,
+            server_addr: local,
+            client_addr: remote,
+            compliance_region: Vec::from(REGION_NONE),
+        };
 
-        let res = receiver.await;
+        let res = self.spawn_guest(req, metadata).await;
+
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
 
-        let resp = match res {
-            Ok(resp) => (resp, None),
-            Err(_) => match guest_handle
-                .await
-                .expect("guest worker finished without panicking")
-            {
-                Ok(_) => (Response::new(Body::empty()), None),
-                Err(ExecutionError::WasmTrap(_e)) => {
-                    event!(
-                        Level::ERROR,
-                        "There was an error handling the request {}",
-                        _e.to_string()
-                    );
-                    #[allow(unused_mut)]
-                    let mut response = Response::builder()
-                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::empty())
-                        .unwrap();
-                    (response, Some(_e))
-                }
-                Err(e) => panic!("failed to run guest: {}", e),
-            },
-        };
+        info!("response status: {:?}", res.0.status());
 
-        info!("response status: {:?}", resp.0.status());
-
-        Ok(resp)
+        Ok(res)
     }
 
     pub async fn handle_request_with_runtime_error(
-        self,
+        self: Arc<Self>,
         incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
@@ -487,37 +405,68 @@ impl ExecuteCtx {
         Ok(resp)
     }
 
-    async fn run_guest(
-        self,
+    async fn spawn_guest(
+        self: Arc<Self>,
         req: Request<Body>,
-        req_id: u64,
-        sender: Sender<Response<Body>>,
-        local: SocketAddr,
-        remote: SocketAddr,
-        active_cpu_time_us: Arc<AtomicU64>,
-    ) -> Result<(), ExecutionError> {
-        info!("handling request {} {}", req.method(), req.uri());
-        let start_timestamp = Instant::now();
-        let session = Session::new(
-            req_id,
+        metadata: DownstreamMetadata,
+    ) -> (Response<Body>, Option<anyhow::Error>) {
+        let (sender, receiver) = oneshot::channel();
+        let downstream = DownstreamRequest {
             req,
             sender,
-            local,
-            remote,
-            active_cpu_time_us,
-            &self,
-            self.acls.clone(),
-            self.backends.clone(),
-            self.device_detection.clone(),
-            self.geolocation.clone(),
-            self.tls_config.clone(),
-            self.dictionaries.clone(),
-            self.config_path.clone(),
-            self.object_store.clone(),
-            self.secret_stores.clone(),
-            self.shielding_sites.clone(),
-            self.cache.clone(),
+            metadata,
+        };
+
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
+
+        // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
+        // if the guest sends one, while the guest continues to run afterward within its task.
+        let req_id = downstream.metadata.req_id;
+        let guest_handle = tokio::task::spawn(CpuTimeTracking::new(
+            active_cpu_time_us.clone(),
+            self.run_guest(downstream, active_cpu_time_us)
+                .instrument(info_span!("request", id = req_id)),
+        ));
+
+        if let Ok(resp) = receiver.await {
+            return (resp, None);
+        }
+
+        match guest_handle
+            .await
+            .expect("guest worker finished without panicking")
+        {
+            Ok(_) => (Response::new(Body::empty()), None),
+            Err(ExecutionError::WasmTrap(e)) => {
+                event!(
+                    Level::ERROR,
+                    "There was an error handling the request {}",
+                    e.to_string()
+                );
+                #[allow(unused_mut)]
+                let mut response = Response::builder()
+                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::empty())
+                    .unwrap();
+                (response, Some(e))
+            }
+            Err(e) => panic!("failed to run guest: {}", e),
+        }
+    }
+
+    async fn run_guest(
+        self: Arc<Self>,
+        downstream: DownstreamRequest,
+        active_cpu_time_us: Arc<AtomicU64>,
+    ) -> Result<(), ExecutionError> {
+        info!(
+            "handling request {} {}",
+            downstream.req.method(),
+            downstream.req.uri()
         );
+        let start_timestamp = Instant::now();
+        let req_id = downstream.metadata.req_id;
+        let session = Session::new(downstream, active_cpu_time_us, self.clone());
 
         let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
             let now = SystemTime::now()
@@ -650,35 +599,28 @@ impl ExecuteCtx {
         }
     }
 
-    pub async fn run_main(self, program_name: &str, args: &[String]) -> Result<(), anyhow::Error> {
+    pub async fn run_main(
+        self: Arc<Self>,
+        program_name: &str,
+        args: &[String],
+    ) -> Result<(), anyhow::Error> {
         // placeholders for request, result sender channel, and remote IP
         let req = Request::get("http://example.com/").body(Body::empty())?;
-        let req_id = 0;
+        let metadata = DownstreamMetadata {
+            req_id: 0,
+            server_addr: (Ipv4Addr::LOCALHOST, 80).into(),
+            client_addr: (Ipv4Addr::LOCALHOST, 0).into(),
+            compliance_region: Vec::from(REGION_NONE),
+        };
         let (sender, receiver) = oneshot::channel();
-        let local = (Ipv4Addr::LOCALHOST, 80).into();
-        let remote = (Ipv4Addr::LOCALHOST, 0).into();
-        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
-
-        let session = Session::new(
-            req_id,
+        let downstream = DownstreamRequest {
             req,
             sender,
-            local,
-            remote,
-            active_cpu_time_us.clone(),
-            &self,
-            self.acls.clone(),
-            self.backends.clone(),
-            self.device_detection.clone(),
-            self.geolocation.clone(),
-            self.tls_config.clone(),
-            self.dictionaries.clone(),
-            self.config_path.clone(),
-            self.object_store.clone(),
-            self.secret_stores.clone(),
-            self.shielding_sites.clone(),
-            self.cache.clone(),
-        );
+            metadata,
+        };
+        let active_cpu_time_us = Arc::new(AtomicU64::new(0));
+
+        let session = Session::new(downstream, active_cpu_time_us.clone(), self.clone());
 
         if let Instance::Component(_) = self.instance_pre.as_ref() {
             panic!("components not currently supported with `run`");
@@ -734,6 +676,108 @@ impl ExecuteCtx {
 
         result
     }
+
+    pub fn cache(&self) -> &Arc<Cache> {
+        &self.cache
+    }
+
+    pub fn config_path(&self) -> Option<&Path> {
+        self.config_path.as_deref()
+    }
+
+    pub fn object_store(&self) -> &ObjectStores {
+        &self.object_store
+    }
+
+    pub fn secret_stores(&self) -> &SecretStores {
+        &self.secret_stores
+    }
+
+    pub fn shielding_sites(&self) -> &ShieldingSites {
+        &self.shielding_sites
+    }
+}
+
+pub struct ExecuteCtxBuilder {
+    inner: ExecuteCtx,
+}
+
+impl ExecuteCtxBuilder {
+    pub fn finish(self) -> Result<Arc<ExecuteCtx>, Error> {
+        Ok(Arc::new(self.inner))
+    }
+
+    /// Set the acls for this execution context.
+    pub fn with_acls(mut self, acls: Acls) -> Self {
+        self.inner.acls = acls;
+        self
+    }
+
+    /// Set the backends for this execution context.
+    pub fn with_backends(mut self, backends: Backends) -> Self {
+        self.inner.backends = backends;
+        self
+    }
+
+    /// Set the device detection mappings for this execution context.
+    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
+        self.inner.device_detection = device_detection;
+        self
+    }
+
+    /// Set the geolocation mappings for this execution context.
+    pub fn with_geolocation(mut self, geolocation: Geolocation) -> Self {
+        self.inner.geolocation = geolocation;
+        self
+    }
+
+    /// Set the dictionaries for this execution context.
+    pub fn with_dictionaries(mut self, dictionaries: Dictionaries) -> Self {
+        self.inner.dictionaries = dictionaries;
+        self
+    }
+
+    /// Set the object store for this execution context.
+    pub fn with_object_stores(mut self, object_store: ObjectStores) -> Self {
+        self.inner.object_store = object_store;
+        self
+    }
+
+    /// Set the secret stores for this execution context.
+    pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
+        self.inner.secret_stores = secret_stores;
+        self
+    }
+    /// Set the shielding sites for this execution context.
+    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
+        self.inner.shielding_sites = shielding_sites;
+        self
+    }
+
+    /// Set the path to the config for this execution context.
+    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
+        self.inner.config_path = Some(config_path);
+        self
+    }
+
+    /// Set where to direct logging endpoint messages for this execution
+    /// context. Defaults to stdout.
+    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
+        self.inner.capture_logs = capture_logs;
+        self
+    }
+
+    /// Set the stdout logging policy for this execution context.
+    pub fn with_log_stdout(mut self, log_stdout: bool) -> Self {
+        self.inner.log_stdout = log_stdout;
+        self
+    }
+
+    /// Set the stderr logging policy for this execution context.
+    pub fn with_log_stderr(mut self, log_stderr: bool) -> Self {
+        self.inner.log_stderr = log_stderr;
+        self
+    }
 }
 
 fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Option<&PathBuf>) {
@@ -761,11 +805,9 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
 
 impl Drop for ExecuteCtx {
     fn drop(&mut self) {
-        if let Some(arc) = self.epoch_increment_thread.take() {
-            if let Ok(join_handle) = Arc::try_unwrap(arc) {
-                self.epoch_increment_stop.store(true, Ordering::Relaxed);
-                join_handle.join().unwrap();
-            }
+        if let Some(join_handle) = self.epoch_increment_thread.take() {
+            self.epoch_increment_stop.store(true, Ordering::Relaxed);
+            join_handle.join().unwrap();
         }
     }
 }

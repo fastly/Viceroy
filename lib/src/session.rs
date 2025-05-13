@@ -11,8 +11,8 @@ pub use async_item::{
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::Write;
-use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::net::IpAddr;
+use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -24,9 +24,10 @@ use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle};
 use {
     self::downstream::DownstreamResponse,
     crate::{
-        acl::{Acl, Acls},
+        acl::Acl,
         body::Body,
-        config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
+        config::{Backend, Backends, Dictionaries, LoadedDictionary},
+        downstream::{DownstreamMetadata, DownstreamRequest},
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
@@ -45,27 +46,17 @@ use {
     },
     cranelift_entity::{entity_impl, PrimaryMap},
     futures::future::{self, FutureExt},
-    http::{request, response, HeaderMap, Request, Response},
-    tokio::sync::oneshot::Sender,
+    http::{request, response, HeaderMap, Response},
 };
 
 const NGWAF_ALLOW_VERDICT: &str = "allow";
-const REGION_NONE: &[u8] = b"none";
 
 /// Data specific to an individual request, including any host-side
 /// allocations on behalf of the guest processing the request.
 pub struct Session {
-    /// The downstream IP address and port for this session.
-    downstream_client_addr: SocketAddr,
-    /// The IP address and port that received this session.
-    downstream_server_addr: SocketAddr,
     /// The amount of time we've spent on this session in microseconds.
     pub active_cpu_time_us: Arc<AtomicU64>,
-    /// The compliance region that this request was received in.
-    ///
-    /// For now this is just always `"none"`, but we place the field in the session
-    /// to make it easier to implement custom configuration values later on.
-    downstream_compliance_region: Vec<u8>,
+    downstream_metadata: DownstreamMetadata,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
     downstream_req_handle: RequestHandle,
@@ -85,6 +76,7 @@ pub struct Session {
     /// A handle map for items that provide blocking operations. These items are grouped together
     /// in order to support generic async operations that work across different object types.
     async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
+    ctx: Arc<ExecuteCtx>,
     /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Request`][req]s.
     ///
     /// [parts]: https://docs.rs/http/latest/http/request/struct.Parts.html
@@ -101,52 +93,20 @@ pub struct Session {
     log_endpoints: PrimaryMap<EndpointHandle, LogEndpoint>,
     /// A by-name map for logging endpoints.
     log_endpoints_by_name: HashMap<Vec<u8>, EndpointHandle>,
-    /// The ACLs configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    acls: Arc<Acls>,
     /// Active ACL handles.
     acl_handles: PrimaryMap<AclHandle, Arc<Acl>>,
-    /// The backends configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    backends: Arc<Backends>,
-    /// The Device Detection configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    device_detection: Arc<DeviceDetection>,
     /// The NGWAF verdict to return when using the `inspect` hostcall.
     ngwaf_verdict: String,
-    /// The Geolocations configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    geolocation: Arc<Geolocation>,
     /// The backends dynamically added by the program. This is separated from
     /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
     dynamic_backends: Backends,
-    /// The TLS configuration for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    tls_config: TlsConfig,
-    /// The dictionaries configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    dictionaries: Arc<Dictionaries>,
     /// The dictionaries that have been opened by the guest.
     loaded_dictionaries: PrimaryMap<DictionaryHandle, LoadedDictionary>,
-    /// The ObjectStore configured for this execution.
-    ///
-    /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) kv_store: ObjectStores,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
     kv_store_by_name: PrimaryMap<KvStoreHandle, ObjectStoreKey>,
-    /// The secret stores configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    secret_stores: Arc<SecretStores>,
     /// The secret stores configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -155,44 +115,17 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
-    /// The shielding information we've been given.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    pub(crate) shielding_sites: Arc<ShieldingSites>,
-    /// The path to the configuration file used for this invocation of Viceroy.
-    ///
-    /// Created prior to guest execution, and never modified.
-    config_path: Arc<Option<PathBuf>>,
-    /// The ID for the client request being processed.
-    req_id: u64,
-    /// The cache for this service.
-    cache: Arc<Cache>,
 }
 
 impl Session {
     /// Create an empty session.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        req_id: u64,
-        req: Request<Body>,
-        resp_sender: Sender<Response<Body>>,
-        server_addr: SocketAddr,
-        client_addr: SocketAddr,
+        downstream: DownstreamRequest,
         active_cpu_time_us: Arc<AtomicU64>,
-        ctx: &ExecuteCtx,
-        acls: Arc<Acls>,
-        backends: Arc<Backends>,
-        device_detection: Arc<DeviceDetection>,
-        geolocation: Arc<Geolocation>,
-        tls_config: TlsConfig,
-        dictionaries: Arc<Dictionaries>,
-        config_path: Arc<Option<PathBuf>>,
-        kv_store: ObjectStores,
-        secret_stores: Arc<SecretStores>,
-        shielding_sites: Arc<ShieldingSites>,
-        cache: Arc<Cache>,
+        ctx: Arc<ExecuteCtx>,
     ) -> Session {
-        let (parts, body) = req.into_parts();
+        let (parts, body) = downstream.req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
 
         let mut async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>> = PrimaryMap::new();
@@ -202,9 +135,7 @@ impl Session {
         let downstream_req_body_handle = async_items.push(Some(AsyncItem::Body(body))).into();
 
         Session {
-            downstream_server_addr: server_addr,
-            downstream_client_addr: client_addr,
-            downstream_compliance_region: Vec::from(REGION_NONE),
+            downstream_metadata: downstream.metadata,
             downstream_req_handle,
             downstream_req_body_handle,
             downstream_req_original_headers,
@@ -212,29 +143,19 @@ impl Session {
             async_items,
             req_parts,
             resp_parts: PrimaryMap::new(),
-            downstream_resp: DownstreamResponse::new(resp_sender),
+            downstream_resp: DownstreamResponse::new(downstream.sender),
             capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
-            acls,
             acl_handles: PrimaryMap::new(),
-            backends,
-            device_detection,
-            geolocation,
             ngwaf_verdict: NGWAF_ALLOW_VERDICT.to_string(),
             dynamic_backends: Backends::default(),
-            tls_config,
-            dictionaries,
             loaded_dictionaries: PrimaryMap::new(),
-            kv_store,
             kv_store_by_name: PrimaryMap::new(),
-            secret_stores,
-            shielding_sites,
             secret_stores_by_name: PrimaryMap::new(),
             secrets_by_name: PrimaryMap::new(),
-            config_path,
-            req_id,
-            cache,
+
+            ctx,
         }
     }
 
@@ -242,17 +163,17 @@ impl Session {
 
     /// Retrieve the downstream client IP address associated with this session.
     pub fn downstream_client_ip(&self) -> IpAddr {
-        self.downstream_client_addr.ip()
+        self.downstream_metadata.client_addr.ip()
     }
 
     /// Retrieve the IP address the downstream client connected to for this session.
     pub fn downstream_server_ip(&self) -> IpAddr {
-        self.downstream_server_addr.ip()
+        self.downstream_metadata.server_addr.ip()
     }
 
     /// Retrieve the compliance region that received the request for this session.
     pub fn downstream_compliance_region(&self) -> &[u8] {
-        self.downstream_compliance_region.as_slice()
+        self.downstream_metadata.compliance_region.as_slice()
     }
 
     /// Retrieve the handle corresponding to the downstream request.
@@ -617,7 +538,7 @@ impl Session {
     // ----- ACLs API -----
 
     pub fn acl_handle_by_name(&mut self, name: &str) -> Option<AclHandle> {
-        let acl = self.acls.get_acl(name)?;
+        let acl = self.ctx.acls().get_acl(name)?;
         Some(self.acl_handles.push(acl.clone()))
     }
 
@@ -627,11 +548,16 @@ impl Session {
 
     // ----- Backends API -----
 
+    /// Get the collection of static backends.
+    pub fn backends(&self) -> &Backends {
+        self.ctx.backends()
+    }
+
     /// Look up a backend by name.
     pub fn backend(&self, name: &str) -> Option<&Arc<Backend>> {
         // it doesn't actually matter what order we do this search, because
         // the namespaces should be unique.
-        self.backends
+        self.backends()
             .get(name)
             .or_else(|| self.dynamic_backends.get(name))
     }
@@ -643,7 +569,7 @@ impl Session {
 
     /// Return the full list of static and dynamic backend names as an [`Iterator`].
     pub fn backend_names(&self) -> impl Iterator<Item = &String> {
-        self.backends.keys().chain(self.dynamic_backends.keys())
+        self.backends().keys().chain(self.dynamic_backends.keys())
     }
 
     /// Try to add a backend with the given name prefix to our set of current backends.
@@ -651,7 +577,7 @@ impl Session {
     /// the caller should signal an appropriate error.
     pub fn add_backend(&mut self, name: &str, info: Backend) -> bool {
         // if this name already exists, either as a built in or dynamic backend, say no
-        if self.backends.contains_key(name) || self.dynamic_backends.contains_key(name) {
+        if self.backends().contains_key(name) || self.dynamic_backends.contains_key(name) {
             return false;
         }
 
@@ -665,13 +591,14 @@ impl Session {
 
     /// Access the TLS configuration.
     pub fn tls_config(&self) -> &TlsConfig {
-        &self.tls_config
+        self.ctx.tls_config()
     }
 
     // ----- Device Detection API -----
 
     pub fn device_detection_lookup(&self, user_agent: &str) -> Option<String> {
-        self.device_detection
+        self.ctx
+            .device_detection()
             .lookup(user_agent)
             .map(|data| data.to_string())
     }
@@ -680,7 +607,7 @@ impl Session {
 
     /// Look up a dictionary-handle by name.
     pub fn dictionary_handle(&mut self, name: &str) -> Result<DictionaryHandle, Error> {
-        if let Some(dict) = self.dictionaries.get(name) {
+        if let Some(dict) = self.dictionaries().get(name) {
             let loaded = dict.load().map_err(|err| Error::Other(err.into()))?;
             Ok(self.loaded_dictionaries.push(loaded))
         } else {
@@ -698,14 +625,17 @@ impl Session {
     }
 
     /// Access the dictionary map.
-    pub fn dictionaries(&self) -> &Arc<Dictionaries> {
-        &self.dictionaries
+    pub fn dictionaries(&self) -> &Dictionaries {
+        self.ctx.dictionaries()
     }
 
     // ----- Geolocation API -----
 
     pub fn geolocation_lookup(&self, addr: &IpAddr) -> Option<String> {
-        self.geolocation.lookup(addr).map(|data| data.to_string())
+        self.ctx
+            .geolocation()
+            .lookup(addr)
+            .map(|data| data.to_string())
     }
 
     // ----- NGWAF Inspect API -----
@@ -719,6 +649,11 @@ impl Session {
     }
 
     // ----- KV Store API -----
+
+    pub fn kv_store(&self) -> &ObjectStores {
+        self.ctx.object_store()
+    }
+
     pub fn kv_store_handle(&mut self, key: &str) -> Result<KvStoreHandle, Error> {
         let obj_key = ObjectStoreKey::new(key);
         Ok(self.kv_store_by_name.push(obj_key))
@@ -743,7 +678,7 @@ impl Session {
             Some(m) => m,
         };
 
-        self.kv_store
+        self.kv_store()
             .insert(obj_store_key, obj_key, obj, mode, generation, metadata, ttl)
     }
 
@@ -798,7 +733,7 @@ impl Session {
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
     ) -> Result<(), KvStoreError> {
-        self.kv_store.delete(obj_store_key, obj_key)
+        self.kv_store().delete(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingKvDelete`] into the session.
@@ -852,7 +787,7 @@ impl Session {
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
     ) -> Result<ObjectValue, KvStoreError> {
-        self.kv_store.lookup(obj_store_key, obj_key)
+        self.kv_store().lookup(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingLookup`] into the session.
@@ -910,7 +845,7 @@ impl Session {
     ) -> Result<Vec<u8>, KvStoreError> {
         let limit = limit.unwrap_or(1000);
 
-        self.kv_store.list(obj_store_key, cursor, prefix, limit)
+        self.kv_store().list(obj_store_key, cursor, prefix, limit)
     }
 
     /// Insert a [`PendingList`] into the session.
@@ -959,7 +894,7 @@ impl Session {
     // ----- Secret Store API -----
 
     pub fn secret_store_handle(&mut self, name: &str) -> Option<SecretStoreHandle> {
-        self.secret_stores.get_store(name)?;
+        self.secret_stores().get_store(name)?;
         Some(self.secret_stores_by_name.push(name.to_string()))
     }
 
@@ -968,7 +903,7 @@ impl Session {
     }
 
     pub fn secret_handle(&mut self, store_name: &str, secret_name: &str) -> Option<SecretHandle> {
-        self.secret_stores
+        self.secret_stores()
             .get_store(store_name)?
             .get_secret(secret_name)?;
         Some(self.secrets_by_name.push(SecretLookup::Standard {
@@ -986,8 +921,8 @@ impl Session {
             .push(SecretLookup::Injected { plaintext })
     }
 
-    pub fn secret_stores(&self) -> &Arc<SecretStores> {
-        &self.secret_stores
+    pub fn secret_stores(&self) -> &SecretStores {
+        self.ctx.secret_stores()
     }
 
     // ----- Pending Requests API -----
@@ -1133,7 +1068,7 @@ impl Session {
 
     /// Access the cache.
     pub fn cache(&self) -> &Arc<Cache> {
-        &self.cache
+        self.ctx.cache()
     }
 
     // -------- Scheduling APIs ----------
@@ -1170,12 +1105,12 @@ impl Session {
 
     /// Returns the unique identifier for the request this session is processing.
     pub fn req_id(&self) -> u64 {
-        self.req_id
+        self.downstream_metadata.req_id
     }
 
     /// Access the path to the configuration file for this invocation.
-    pub fn config_path(&self) -> &Arc<Option<PathBuf>> {
-        &self.config_path
+    pub fn config_path(&self) -> Option<&Path> {
+        self.ctx.config_path()
     }
 
     pub fn async_item_mut(
@@ -1209,6 +1144,10 @@ impl Session {
         let done_index = selected.future().await;
 
         Ok(done_index)
+    }
+
+    pub fn shielding_sites(&self) -> &ShieldingSites {
+        self.ctx.shielding_sites()
     }
 }
 

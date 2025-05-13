@@ -11,16 +11,16 @@ impl shielding::Host for ComponentCtx {
         // Validate input name and return the unsupported error.
         let name = String::from_utf8(name)?;
 
-        let running_on = self.session.shielding_sites.is_local(&name);
+        let running_on = self.session.shielding_sites().is_local(&name);
         let unencrypted = self
             .session
-            .shielding_sites
+            .shielding_sites()
             .get_unencrypted(&name)
             .map(|x| x.to_string())
             .unwrap_or_default();
         let encrypted = self
             .session
-            .shielding_sites
+            .shielding_sites()
             .get_encrypted(&name)
             .map(|x| x.to_string())
             .unwrap_or_default();

@@ -32,7 +32,7 @@ impl FastlyKvStore for Session {
         name: GuestPtr<str>,
     ) -> Result<KvStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
-        if self.kv_store.store_exists(&name)? {
+        if self.kv_store().store_exists(&name)? {
             self.kv_store_handle(&name)
         } else {
             Err(Error::ObjectStoreError(
