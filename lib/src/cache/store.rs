@@ -1,6 +1,6 @@
 //! Data structures & implementation details for the Viceroy cache.
 
-use crate::cache::variance::VaryRule;
+use crate::{cache::variance::VaryRule, collecting_body::RequestedRange};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
@@ -408,8 +408,31 @@ pub(crate) struct CacheData {
 
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn get_body(&self) -> Result<Body, crate::Error> {
-        self.body.read()
+    ///
+    #[doc=include_str!("range.md")]
+    pub(crate) fn get_body(
+        &self,
+        from: Option<u64>,
+        to: Option<u64>,
+    ) -> Result<Body, crate::Error> {
+        // Construct a new RequestedRange.
+        //
+        // Per the documentation of to_stream_for_range, if the range is invalid or the length is not
+        // known, the body contains the entire item.
+        // If only 'to' is specified, the bounds count backwards from the end.
+
+        let range = match (from, to, self.length()) {
+            (Some(from), Some(to), Some(length)) if (from <= to) && (to < length) => {
+                RequestedRange::Bounded(from..=to)
+            }
+            (_, Some(to), Some(length)) if (to < length) => {
+                RequestedRange::StartingFrom(length - to)
+            }
+            (Some(from), _, Some(length)) if (from < length) => RequestedRange::StartingFrom(from),
+            _ => RequestedRange::Entire,
+        };
+
+        self.body.read(range)
     }
 
     /// Access to object's metadata
@@ -457,7 +480,13 @@ mod tests {
                         obligation.complete(WriteOptions::new(Duration::from_secs(100)), body);
                     }
                     if let Some(found) = found {
-                        let body = found.body.read().unwrap().read_into_string().await.unwrap();
+                        let body = found
+                            .body
+                            .read(crate::collecting_body::RequestedRange::Entire)
+                            .unwrap()
+                            .read_into_string()
+                            .await
+                            .unwrap();
                         assert_eq!(&body, "hello");
                     }
                 }
@@ -538,13 +567,23 @@ mod tests {
             make_body("object 1"),
         );
         if let (Some(found), None) = busy1.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .get_body(None, None)
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 1");
         } else {
             panic!("expected to block on object 1")
         }
         if let (Some(found), None) = busy2.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .get_body(None, None)
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 2");
         } else {
             panic!("expected to block on object 2")
