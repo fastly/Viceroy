@@ -116,6 +116,21 @@ pub enum Error {
     #[error("Could not load native certificates: {0}")]
     BadCerts(std::io::Error),
 
+    #[error("No valid CA certificates could be added")]
+    TlsNoCertsAdded,
+
+    #[error("No CA certificates available")]
+    TlsNoCAAvailable,
+
+    #[error("No valid CA certificates found in provided certificate bundle")]
+    TlsNoValidCACerts,
+
+    #[error("Invalid or missing host for TLS connection")]
+    TlsInvalidHost,
+
+    #[error("TLS certificate validation failed")]
+    TlsCertificateValidationFailed,
+
     #[error("Could not generate new backend name from '{0}'")]
     BackendNameRegistryError(String),
 
@@ -197,6 +212,11 @@ impl Error {
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
             | Error::BadCerts(_)
+            | Error::TlsNoCertsAdded
+            | Error::TlsNoCAAvailable
+            | Error::TlsNoValidCACerts
+            | Error::TlsInvalidHost
+            | Error::TlsCertificateValidationFailed
             | Error::DownstreamRequestError(_)
             | Error::DownstreamRespSending
             | Error::FastlyConfig(_)
