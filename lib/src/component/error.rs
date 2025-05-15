@@ -259,7 +259,12 @@ impl From<error::Error> for types::Error {
             | Error::InvalidAlpnRepsonse { .. }
             | Error::DeviceDetectionError(_)
             | Error::Again
-            | Error::SharedMemory => types::Error::GenericError,
+            | Error::SharedMemory
+            | Error::TlsNoCertsAdded
+            | Error::TlsNoCAAvailable
+            | Error::TlsNoValidCACerts
+            | Error::TlsInvalidHost
+            | Error::TlsCertificateValidationFailed => types::Error::GenericError,
         }
     }
 }
