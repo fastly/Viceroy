@@ -43,6 +43,8 @@ fn main() {
     run_test!(test_implicit_cancel_of_pending);
     run_test!(test_explicit_cancel);
     run_test!(test_collapse_across_vary);
+
+    eprintln!("Completed all tests for version {service}")
 }
 
 fn new_key() -> CacheKey {
@@ -579,14 +581,12 @@ fn test_implicit_cancel_of_pending() {
     let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
     let (t1, pending) = ready_and_pending(busy1, busy2);
 
-    // TODO: Currently, Compute Platform requires that t1 is dropped before pending-
-    // drop of a CacheBusyHandle blocks on the *obligatee of the transaction* completing its
+    // Note: previously, Compute Platform required that `t1` is dropped before `pending`:
+    // drop of a `CacheBusyHandle` blocks on the *obligatee of the transaction* completing its
     // obligation.
-    // This fix is rolling out (expect it early May 2025), but in the mean time, we have to allow
-    // this:
-    std::mem::drop(t1);
+    // The fix was rolled out in May 2025; this tests the updated behavior.
     std::mem::drop(pending);
-    // assert!(t1.must_insert_or_update());
+    assert!(t1.must_insert_or_update());
 }
 
 fn test_explicit_cancel() {
