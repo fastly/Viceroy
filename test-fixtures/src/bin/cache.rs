@@ -26,6 +26,8 @@ fn main() {
 
     run_test!(test_single_body);
     run_test!(test_insert_stale);
+    run_test!(test_edge_expired);
+    run_test!(test_edge_expires_after_ttl);
 
     run_test!(test_vary);
     run_test!(test_vary_multiple);
@@ -220,6 +222,46 @@ fn test_insert_stale() {
     assert!(found.is_stale());
     assert!(found.age() >= Duration::from_secs(2));
     assert!(found.ttl() == Duration::from_secs(1));
+}
+
+fn test_edge_expired() {
+    let key = new_key();
+
+    // Expired on the edge, but not for users.
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(100))
+            .initial_age(Duration::from_secs(2))
+            .deliver_node_max_age(Duration::from_secs(1))
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.flush().unwrap();
+    }
+
+    let found = lookup(key.clone())
+        .execute()
+        .unwrap()
+        .expect("still considered fresh");
+    assert!(found.is_usable());
+    assert!(!found.is_stale());
+    assert!(found.age() >= Duration::from_secs(2));
+    assert!(
+        found.ttl() > Duration::from_secs(1),
+        "got ttl: {}",
+        found.ttl().as_secs_f32()
+    );
+}
+
+fn test_edge_expires_after_ttl() {
+    let key = new_key();
+
+    // Error for the delivery max age to be greater than the TTL.
+    let result = insert(key.clone(), Duration::from_secs(1))
+        .deliver_node_max_age(Duration::from_secs(100))
+        .execute();
+    if !result.is_err() {
+        panic!("error to provide deliver_node_max_age > ttl");
+    }
 }
 
 fn test_vary() {
