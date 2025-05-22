@@ -39,6 +39,7 @@ fn main() {
     run_test!(test_inconsistent_body_length);
 
     run_test!(test_user_metadata);
+    run_test!(test_service_id);
 
     run_test!(test_racing_transactions);
     run_test!(test_implicit_cancel_of_fetch);
@@ -498,6 +499,19 @@ fn test_user_metadata() {
         let md = got.user_metadata();
         assert_eq!(&md, b"hi there".as_slice());
     }
+}
+
+fn test_service_id() {
+    let key = new_key();
+
+    let Err(e) = insert(key.clone(), Duration::from_secs(10))
+        .on_behalf_of("NRF5TZWykaNWzn1WCb7hj2")
+        .execute()
+    else {
+        panic!("unexpected success at using on_behalf_of");
+    };
+
+    assert!(matches!(e, CacheError::Unsupported), "{}", e);
 }
 
 fn test_length_from_body() {
