@@ -204,7 +204,7 @@ fn test_insert_stale() {
             .execute()
             .unwrap();
         write!(writer, "hello").unwrap();
-        writer.flush().unwrap();
+        writer.finish().unwrap();
     }
 
     let Some(found) = lookup(key.clone()).execute().unwrap() else {
@@ -236,7 +236,7 @@ fn test_edge_expired() {
             .execute()
             .unwrap();
         write!(writer, "hello").unwrap();
-        writer.flush().unwrap();
+        writer.finish().unwrap();
     }
 
     // According to current Compute Platform behavior... still fresh!
