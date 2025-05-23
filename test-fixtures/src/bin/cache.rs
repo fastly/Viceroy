@@ -7,28 +7,62 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Run a test function with wrapped logging.
+/// This makes it easy to tell what test failed when run on Compute Platform.
+macro_rules! run_test {
+    ($name:ident) => {{
+        eprintln!("running test: {}", stringify!($name));
+        $name();
+        eprintln!("completed test: {}", stringify!($name));
+    }};
+}
+
 fn main() {
-    test_non_concurrent();
-    test_concurrent();
+    let service = std::env::var("FASTLY_SERVICE_VERSION").unwrap();
+    eprintln!("Running tests; version {service}");
 
-    test_single_body();
-    test_insert_stale();
+    run_test!(test_non_concurrent);
+    run_test!(test_concurrent);
 
-    test_vary();
-    test_vary_multiple();
-    test_novary_ignore_headers();
-    test_vary_combine();
-    test_vary_subtle();
+    run_test!(test_single_body);
+    run_test!(test_insert_stale);
 
-    test_user_metadata();
+    run_test!(test_vary);
+    run_test!(test_vary_multiple);
+    run_test!(test_novary_ignore_headers);
+    run_test!(test_vary_subtle);
+    run_test!(test_vary_combine);
 
-    test_length_from_body();
-    test_inconsistent_body_length();
+    run_test!(test_length_from_body);
+    run_test!(test_inconsistent_body_length);
 
-    // We don't have a way of testing "incomplete streaming results in an error"
-    // in a single instance. If we fail to close the (write) body handle, the underlying host object
-    // is still hanging around, ready for more writes, until the instance is done.
-    // Oh well -- that's what we have collecting_body::tests::unfinished_stream for.
+    run_test!(test_user_metadata);
+
+    run_test!(test_racing_transactions);
+    run_test!(test_implicit_cancel_of_fetch);
+    run_test!(test_implicit_cancel_of_pending);
+    run_test!(test_explicit_cancel);
+    run_test!(test_collapse_across_vary);
+
+    eprintln!("Completed all tests for version {service}")
+}
+
+fn new_key() -> CacheKey {
+    Uuid::new_v4().into_bytes().to_vec().into()
+}
+
+/// Among two transactions started in order,
+/// assert that the first is ready and the second is pending,
+/// and convert the former to a Transaction.
+fn ready_and_pending(
+    busy1: PendingTransaction,
+    busy2: PendingTransaction,
+) -> (Transaction, PendingTransaction) {
+    let b1 = busy1.pending().expect("error checking status");
+    let b2 = busy2.pending().expect("error checking status");
+    assert!(!b1);
+    assert!(b2);
+    (busy1.wait().unwrap(), busy2)
 }
 
 /// Wait for the length of a cached object to be known.
@@ -130,22 +164,32 @@ fn test_single_body() {
         .execute()
         .unwrap()
         .expect("could not perform first fetch");
-    let f2 = lookup(key.clone())
-        .execute()
-        .unwrap()
-        .expect("could not perform second fetch");
 
-    // We should be able to get two bodies from two different lookups:
     let b1 = f1.to_stream().unwrap();
-    let _b2 = f2.to_stream().unwrap();
-    // But a second body from the same lookup should cause an error-
-    // specifically an InvalidOperation error, per the API docs-
-    // while the first is outstanding:
-    eprintln!("{}", f1.to_stream().unwrap_err());
+
+    // Reading a second body from the same Found results in an error, as documented:
     assert!(matches!(f1.to_stream(), Err(CacheError::InvalidOperation)));
-    std::mem::drop(b1);
-    // Now the prior read from that lookup can proceed:
-    let _ = f1.to_stream().unwrap();
+
+    // If the existing body is read out and closed...
+    let v1 = b1.into_bytes();
+    // A new body can be read:
+    let b2 = f1.to_stream().unwrap();
+
+    // TODO: This is a difference between compute platform and Viceroy.
+    // In Viceroy, it's sufficient to close the body, then the read can proceed:
+    if std::env::var("FASTLY_HOSTNAME").unwrap() == "localhost" {
+        b2.into_handle().close().unwrap();
+        let b3 = f1
+            .to_stream()
+            .expect("should be able to re-read body after close of existing body");
+        let v3 = b3.into_bytes();
+        assert_eq!(&v1, &v3);
+    } else {
+        b2.into_handle().close().unwrap();
+        // In Compute Platform, the body must complete:
+        f1.to_stream()
+            .expect_err("should be able to re-read body after close of existing body");
+    }
 }
 
 fn test_insert_stale() {
@@ -160,7 +204,12 @@ fn test_insert_stale() {
         writer.flush().unwrap();
     }
 
-    let found = lookup(key.clone()).execute().unwrap().unwrap();
+    let Some(found) = lookup(key.clone()).execute().unwrap() else {
+        // Compute platform only returns stale results if stale-while-revalidate.
+        // Viceroy is slightly more lenient, at the moment, and might produce a stale result-
+        // but will still tell you it's stale.
+        return;
+    };
 
     // NOTE: from cceckman-at-fastly:
     // The compute platform currently does not return stale objects unless
@@ -255,7 +304,7 @@ fn test_vary_multiple() {
         let r = lookup(key.clone())
             .header(&h2, "assert")
             .header(&h1, "test")
-            // no h3
+            // No h3; note that H3 doesn't have a value when inserted
             .execute()
             .unwrap();
         let body = r.unwrap().to_stream().unwrap().into_string();
@@ -357,16 +406,18 @@ fn test_vary_combine() {
     }
 
     let r = lookup(key.clone())
-        .header(&h1, "trust, verify")
-        .execute()
-        .unwrap();
-    assert!(r.is_some());
-
-    let r = lookup(key.clone())
         .header_values(&h1, [&trust, &verify])
         .execute()
         .unwrap();
     assert!(r.is_some());
+
+    // A comma-delimited value is considered distinct from multiple values.
+    // This may lead to suboptimal caching in some cases, but is safe from information leakage.
+    let r = lookup(key.clone())
+        .header(&h1, "trust, verify")
+        .execute()
+        .unwrap();
+    assert!(r.is_none());
 
     // Order matters for HTTP header values:
     let r = lookup(key.clone())
@@ -481,6 +532,124 @@ fn test_inconsistent_body_length() {
     }
 }
 
-fn new_key() -> CacheKey {
-    Uuid::new_v4().into_bytes().to_vec().into()
+fn test_racing_transactions() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let (tx, pending) = ready_and_pending(busy1, busy2);
+    assert!(tx.found().is_none());
+    // The first to resolve should have the obligation to insert:
+    assert!(tx.must_insert());
+    let mut body = tx.insert(Duration::from_secs(100)).execute().unwrap();
+
+    // Once we've started streaming, the other transaction should complete:
+    let tx = pending.wait().unwrap();
+    assert!(!tx.must_insert());
+    let found = tx.found().unwrap();
+    assert_eq!(found.ttl(), Duration::from_secs(100));
+    let mut rd_body = found.to_stream().unwrap();
+
+    // Write the body and read it back:
+    body.write(b"hello").unwrap();
+    body.finish().unwrap();
+
+    let mut read = String::new();
+    rd_body.read_to_string(&mut read).unwrap();
+    assert_eq!(&read, "hello");
+}
+
+fn test_implicit_cancel_of_fetch() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let (t1, pending) = ready_and_pending(busy1, busy2);
+
+    // Cancel via dropping:
+    assert!(t1.must_insert_or_update());
+    std::mem::drop(t1);
+    let t2 = pending.wait().unwrap();
+    assert!(t2.found().is_none());
+    assert!(t2.must_insert_or_update());
+}
+
+fn test_implicit_cancel_of_pending() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let (t1, pending) = ready_and_pending(busy1, busy2);
+
+    // Note: previously, Compute Platform required that `t1` is dropped before `pending`:
+    // drop of a `CacheBusyHandle` blocks on the *obligatee of the transaction* completing its
+    // obligation.
+    // The fix was rolled out in May 2025; this tests the updated behavior.
+    std::mem::drop(pending);
+    assert!(t1.must_insert_or_update());
+}
+
+fn test_explicit_cancel() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let (tx, pending) = ready_and_pending(busy1, busy2);
+
+    // Cancel explicitly:
+    assert!(tx.must_insert_or_update());
+    tx.cancel_insert_or_update().unwrap();
+
+    let t2 = pending.wait().unwrap();
+    assert!(!t2.found().is_some());
+    assert!(t2.must_insert_or_update());
+}
+
+fn test_collapse_across_vary() {
+    let key = new_key();
+
+    let header1 = HeaderName::from_static("header1");
+    let header2 = HeaderName::from_static("header2");
+
+    // Prefill with distinct vary rules, with stale responses:
+    let b = insert(key.clone(), Duration::ZERO)
+        .header(&header1, "value1")
+        .vary_by([&header1].into_iter())
+        .execute()
+        .unwrap();
+    b.finish().unwrap();
+
+    let b = insert(key.clone(), Duration::ZERO)
+        .header(&header2, "value2")
+        .vary_by([&header2].into_iter())
+        .execute()
+        .unwrap();
+    b.finish().unwrap();
+
+    // vary: header2 is the most recent value.
+    // If we start a transaction that matches both rules:
+    let txn2 = Transaction::lookup(key.clone())
+        .header(&header2, "value2")
+        .header(&header1, "value1")
+        .execute_async()
+        .unwrap();
+    // And a transaction that matches only the header1 rule:
+    let txn1 = Transaction::lookup(key.clone())
+        .header(&header1, "value1")
+        .execute_async()
+        .unwrap();
+
+    // Are these requests collapsed?
+    //
+    // If we are using the most-recent-received Vary rule as a heuristic for "what do we expect the
+    // next Vary rule to be", then we should *not* collapse them: the most recent vary rule is
+    // `header2`, and these have distinct `header2` values.
+    //
+    // However, if we're saying "collapse based on any vary rule received in the past", they would
+    // not be collapsed.
+    //
+    // We err on the side of "less latency, more requests": both of these should be outstanding,
+    // because according to the most recent vary rule they are distinct.
+    assert!(!txn2.pending().unwrap());
+    assert!(!txn1.pending().unwrap());
 }

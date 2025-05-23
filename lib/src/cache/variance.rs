@@ -9,7 +9,7 @@
 //! The core cache API provides the bones of this.
 //!
 
-use std::{fmt::Write, str::FromStr};
+use std::{collections::HashSet, str::FromStr};
 
 use bytes::{Bytes, BytesMut};
 pub use http::HeaderName;
@@ -34,32 +34,37 @@ impl FromStr for VaryRule {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let headers: Result<Vec<HeaderName>, InvalidHeaderName> =
             s.split(" ").map(HeaderName::try_from).collect();
-        let mut headers = headers?;
-        headers.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-        Ok(VaryRule { headers })
+        Ok(VaryRule::new(headers?.iter()))
     }
 }
 
 impl VaryRule {
     pub fn new<'a>(headers: impl Iterator<Item = &'a HeaderName>) -> VaryRule {
-        VaryRule {
-            headers: headers.cloned().collect(),
-        }
+        // Deduplicate:
+        let headers: HashSet<HeaderName> = headers.cloned().collect();
+        let mut headers: Vec<HeaderName> = headers.into_iter().collect();
+        headers.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        VaryRule { headers }
     }
 
     /// Construct the Variant for the given headers: the (header, value) pairs that must be present
     /// for a request to match a response.
     pub fn variant(&self, headers: &HeaderMap) -> Variant {
         let mut buf = BytesMut::new();
+        // Include the count, to avoid confusion from values that might contain our marker phrases.
+        buf.extend_from_slice(format!("[headers: {}]", self.headers.len()).as_bytes());
+
         for header in self.headers.iter() {
-            write!(&mut buf, "{}: ", header.as_str()).unwrap();
-            for (i, value) in headers.get_all(header).iter().enumerate() {
-                if i != 0 {
-                    write!(&mut buf, ", ").unwrap();
-                }
-                buf.extend(value.as_bytes());
+            buf.extend_from_slice(format!("[header: {}]", header.as_str().len()).as_bytes());
+            buf.extend_from_slice(header.as_str().as_bytes());
+
+            let values = headers.get_all(header);
+            buf.extend_from_slice(format!("[values: {}]", values.iter().count()).as_bytes());
+
+            for value in values.iter() {
+                buf.extend_from_slice(format!("[value: {}]", value.as_bytes().len()).as_bytes());
+                buf.extend_from_slice(value.as_bytes());
             }
-            write!(&mut buf, "\r\n").unwrap();
         }
         Variant {
             signature: buf.into(),
@@ -77,4 +82,18 @@ pub struct Variant {
     /// sequence. However, since header values may contain arbitrary bytes, this is a Bytes rather
     /// than a String.
     signature: Bytes,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VaryRule;
+
+    #[test]
+    fn vary_rule_uniqe_sorted() {
+        let vary1: VaryRule = "unknown-header Accept content-type".parse().unwrap();
+        let vary2: VaryRule = "content-type unknown-header unknown-header Accept"
+            .parse()
+            .unwrap();
+        assert_eq!(vary1, vary2);
+    }
 }
