@@ -26,6 +26,8 @@ fn main() {
 
     run_test!(test_single_body);
     run_test!(test_insert_stale);
+    run_test!(test_edge_expired);
+    run_test!(test_edge_expires_after_ttl);
 
     run_test!(test_vary);
     run_test!(test_vary_multiple);
@@ -37,6 +39,7 @@ fn main() {
     run_test!(test_inconsistent_body_length);
 
     run_test!(test_user_metadata);
+    run_test!(test_service_id);
 
     run_test!(test_racing_transactions);
     run_test!(test_implicit_cancel_of_fetch);
@@ -220,6 +223,47 @@ fn test_insert_stale() {
     assert!(found.is_stale());
     assert!(found.age() >= Duration::from_secs(2));
     assert!(found.ttl() == Duration::from_secs(1));
+}
+
+fn test_edge_expired() {
+    let key = new_key();
+
+    // Expired on the edge, but not for users.
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(100))
+            .initial_age(Duration::from_secs(2))
+            .deliver_node_max_age(Duration::from_secs(1))
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.flush().unwrap();
+    }
+
+    // According to current Compute Platform behavior... still fresh!
+    let found = lookup(key.clone())
+        .execute()
+        .unwrap()
+        .expect("still considered fresh");
+    assert!(found.is_usable());
+    assert!(!found.is_stale());
+    assert!(found.age() >= Duration::from_secs(2));
+    assert!(
+        found.ttl() > Duration::from_secs(1),
+        "got ttl: {}",
+        found.ttl().as_secs_f32()
+    );
+}
+
+fn test_edge_expires_after_ttl() {
+    let key = new_key();
+
+    // Error for the delivery max age to be greater than the TTL.
+    let result = insert(key.clone(), Duration::from_secs(1))
+        .deliver_node_max_age(Duration::from_secs(100))
+        .execute();
+    if !result.is_err() {
+        panic!("error to provide deliver_node_max_age > ttl");
+    }
 }
 
 fn test_vary() {
@@ -455,6 +499,19 @@ fn test_user_metadata() {
         let md = got.user_metadata();
         assert_eq!(&md, b"hi there".as_slice());
     }
+}
+
+fn test_service_id() {
+    let key = new_key();
+
+    let Err(e) = insert(key.clone(), Duration::from_secs(10))
+        .on_behalf_of("NRF5TZWykaNWzn1WCb7hj2")
+        .execute()
+    else {
+        panic!("unexpected success at using on_behalf_of");
+    };
+
+    assert!(matches!(e, CacheError::Unsupported), "{}", e);
 }
 
 fn test_length_from_body() {
