@@ -48,16 +48,24 @@ impl TlsConfig {
         let mut roots = rustls::RootCertStore::empty();
         match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
+                let mut cert_added = false;
                 for cert in certs {
-                    if let Err(e) = roots.add(&rustls::Certificate(cert.0)) {
-                        warn!("failed to load certificate: {e}");
+                    match roots.add(&rustls::Certificate(cert.0)) {
+                        Ok(_) => cert_added = true,
+                        Err(e) => {
+                            // Log but continue trying other certs
+                            warn!("failed to load certificate: {e}");
+                        }
                     }
+                }
+                if !cert_added {
+                    return Err(Error::TlsNoCertsAdded);
                 }
             }
             Err(err) => return Err(Error::BadCerts(err)),
         }
         if roots.is_empty() {
-            warn!("no CA certificates available");
+            return Err(Error::TlsNoCAAvailable);
         }
 
         let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
@@ -143,6 +151,13 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 ignored
             );
         }
+        if added == 0 && !self.backend.ca_certs.is_empty() {
+            return Box::pin(async {
+                Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                    Error::TlsNoValidCACerts,
+                )))
+            });
+        }
         let config = if self.backend.ca_certs.is_empty() {
             config
                 .partial_config
@@ -153,9 +168,26 @@ impl hyper::service::Service<Uri> for BackendConnector {
         };
 
         Box::pin(async move {
-            let tcp = connect_fut.await.map_err(Box::new)?;
+            let tcp = match connect_fut.await {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                        Error::IoError(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("TCP connection error: {}", e),
+                        )),
+                    )))
+                }
+            };
 
-            let remote_addr = tcp.peer_addr()?;
+            let remote_addr = match tcp.peer_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    return Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                        Error::IoError(e),
+                    )))
+                }
+            };
             let metadata = ConnMetadata {
                 direct_pass: false,
                 remote_addr,
@@ -163,7 +195,18 @@ impl hyper::service::Service<Uri> for BackendConnector {
 
             let conn = if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
-                    config.with_client_auth_cert(certed_key.certs(), certed_key.key())?
+                    match config.with_client_auth_cert(certed_key.certs(), certed_key.key()) {
+                        Ok(cfg) => cfg,
+                        Err(_) => {
+                            return Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                                Error::InvalidClientCert(
+                                    crate::config::ClientCertError::InvalidCertificateData(
+                                        "Client certificate validation failed".to_string(),
+                                    ),
+                                ),
+                            )))
+                        }
+                    }
                 } else {
                     config.with_no_client_auth()
                 };
@@ -173,14 +216,45 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 }
                 let connector = TlsConnector::from(Arc::new(config));
 
-                let cert_host = backend
-                    .cert_host
-                    .as_deref()
-                    .or_else(|| backend.uri.host())
-                    .unwrap_or_default();
-                let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
+                let cert_host = match backend.cert_host.as_deref().or_else(|| backend.uri.host()) {
+                    Some(host) => host,
+                    None => {
+                        return Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                            Error::TlsInvalidHost,
+                        )))
+                    }
+                };
 
-                let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+                let dnsname = match ServerName::try_from(cert_host) {
+                    Ok(name) => name,
+                    Err(_) => {
+                        let err_msg = format!("Invalid DNS name: {}", cert_host);
+                        tracing::error!("{}", err_msg);
+                        return Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                            Error::TlsInvalidHost,
+                        )));
+                    }
+                };
+
+                // Connect with proper validation
+                let tls = match connector.connect(dnsname, tcp).await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        // Log detailed error information for certificate issues
+                        tracing::error!("TLS certificate validation failed: {}", e);
+                        if e.to_string().contains("certificate validation failed") {
+                            return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                                Box::new(Error::TlsCertificateValidationFailed),
+                            ));
+                        }
+                        return Err(Box::<dyn std::error::Error + Send + Sync>::from(Box::new(
+                            Error::IoError(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("TLS connection error: {}", e),
+                            )),
+                        )));
+                    }
+                };
 
                 if backend.grpc {
                     let (_, tls_state) = tls.get_ref();
