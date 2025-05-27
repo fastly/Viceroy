@@ -291,8 +291,13 @@ impl HttpBody for Body {
                                         decoder_state.get_mut().get_mut().split().freeze();
                                     // put the body back, so we can poll it again next time
                                     self.chunks.push_front(chunk);
-
-                                    return Poll::Ready(Some(Ok(resulting_bytes)));
+                                    if resulting_bytes.is_empty() {
+                                        // If we got no bytes from this chunk, it might be just the gzip header
+                                        // we'll continue the loop to process more chunks
+                                        continue;
+                                    } else {
+                                        return Poll::Ready(Some(Ok(resulting_bytes)));
+                                    }
                                 }
                             }
                         }
