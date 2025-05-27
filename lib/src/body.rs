@@ -343,3 +343,41 @@ impl HttpBody for Body {
         SizeHint::with_exact(size)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use bytes::BytesMut;
+    use http_body::Body as _;
+    use tokio::task::JoinSet;
+
+    use crate::streaming_body::StreamingBody;
+
+    use super::Chunk;
+
+    #[tokio::test]
+    async fn empty_gzip_chunk() {
+        // echo -n '' | gzip >empty.gz
+        // gunzip <empty.gz | wc -c
+        // -> 0
+        const EMPTY_GZ: &[u8] = include_bytes!("empty.gz");
+        let mut js = JoinSet::new();
+        let (mut send, recv) = StreamingBody::new();
+        js.spawn(async move {
+            send.send_chunk(Chunk::compressed_body(EMPTY_GZ.into()))
+                .await
+                .unwrap();
+            send.finish().unwrap();
+        });
+        js.spawn(async move {
+            let mut body: super::Body = recv.into();
+            let mut received = BytesMut::new();
+            while let Some(chunk) = body.data().await {
+                let chunk = chunk.unwrap();
+                assert!(!chunk.is_empty());
+                received.extend_from_slice(&chunk);
+            }
+            assert!(received.is_empty());
+        });
+        js.join_all().await;
+    }
+}
