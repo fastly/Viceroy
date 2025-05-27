@@ -447,14 +447,12 @@ impl FastlyCache for Session {
             if !found.meta().is_fresh() {
                 state |= types::CacheLookupState::STALE;
             }
-            // TODO:: stale-while-revalidate.
-            // For now, usable if fresh.
-            if found.meta().is_fresh() {
+            if found.meta().is_usable() {
                 state |= types::CacheLookupState::USABLE;
             }
         }
         if entry.go_get().is_some() {
-            state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
+            state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE;
         }
 
         Ok(state)

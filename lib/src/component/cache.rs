@@ -479,9 +479,7 @@ impl api::Host for ComponentCtx {
             if !found.meta().is_fresh() {
                 state |= api::LookupState::STALE;
             }
-            // TODO:: stale-while-revalidate.
-            // For now, usable if fresh.
-            if found.meta().is_fresh() {
+            if found.meta().is_usable() {
                 state |= api::LookupState::USABLE;
             }
         }
