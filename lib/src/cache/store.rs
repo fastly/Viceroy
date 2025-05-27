@@ -1,6 +1,6 @@
 //! Data structures & implementation details for the Viceroy cache.
 
-use crate::cache::variance::VaryRule;
+use crate::cache::{variance::VaryRule, Error};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
@@ -31,6 +31,8 @@ pub struct ObjectMeta {
     initial_age: Duration,
     /// Freshness lifetime
     max_age: Duration,
+    /// stale-while-revalidate period; after max_age.
+    stale_while_revalidate: Duration,
 
     request_headers: HeaderMap,
     vary_rule: VaryRule,
@@ -41,9 +43,6 @@ pub struct ObjectMeta {
     // TODO: cceckman-at-fastly: for future work!
     /*
     never_cache: bool, // Aka "hit for pass"
-    stale_while_revalidate_until: Option<Instant>,
-    edge_ok_until: Option<Instant>,
-
     surrogate_keys: HashSet<String>,
     */
 }
@@ -63,6 +62,11 @@ impl ObjectMeta {
     /// Return true if the entry is fresh at the current time.
     pub fn is_fresh(&self) -> bool {
         self.age() < self.max_age
+    }
+
+    /// Return true if the entry is usable even if stale.
+    pub fn is_usable(&self) -> bool {
+        self.age() < (self.max_age + self.stale_while_revalidate)
     }
 
     /// The request headers associated with this request.
@@ -92,6 +96,7 @@ impl ObjectMeta {
             vary_rule,
             max_age,
             initial_age,
+            stale_while_revalidate,
             user_metadata,
             length,
             // There is no API that returns whether a cache entry has sensitive data.
@@ -104,6 +109,7 @@ impl ObjectMeta {
         ObjectMeta {
             inserted,
             initial_age,
+            stale_while_revalidate,
             max_age,
             request_headers,
             vary_rule,
@@ -172,18 +178,21 @@ impl CacheKeyObjects {
                             // We have fresh data; no need to generate an obligaton.
                             return (Some(Arc::clone(data)), None);
                         }
+                        if data.meta.is_usable() && cache_value.obligated {
+                            // It's not fresh, but it's within SWR, and someone has already been
+                            // obligated to freshen it.
+                            // So we can go ahead and use the current data, without generating an
+                            // obligation.
+                            return (Some(Arc::clone(data)), None);
+                        }
                     }
+                    // Not usable, but if there's an obligation for it, we can wait on that
+                    // obligation.
                     awaitable = awaitable || cache_value.obligated;
                 }
             }
             // Done computing awaitable, make it read-only:
             let awaitable = awaitable;
-
-            // TODO: cceckman-at-fastly: Stale-while-revalidate is slightly subtle, here.
-            // If one of the entries above was within the SWR period *and* had an obligation,
-            // we could go ahead and return it without generating an obligation.
-            // However, we have to proceed to the write lock to produce an obligation.
-            // So, expect some change to the above control flow in the SWR implementation.
 
             // If we found an acceptable in-progress request while under the read lock,
             // we can await. The subscription ensures that, even though we're
@@ -193,7 +202,7 @@ impl CacheKeyObjects {
                 continue;
             }
 
-            // There's nothing fresh in the cache, and no obligation we can wait on.
+            // There's nothing usable in the cache, and no obligation we can wait on.
             // Take the write lock with the intention of generating our own obligation.
             let mut obligated: Option<Obligation> = None;
             let mut data: Option<Arc<CacheData>> = None;
@@ -215,34 +224,75 @@ impl CacheKeyObjects {
                 // can get out of them.
                 let response_keyed_objects: Vec<_> = response_keys
                     .iter()
-                    .filter_map(|v| key_objects.objects.get(v))
+                    .filter_map(|k| key_objects.objects.get(k).map(|v| (k, v)))
                     .collect();
 
                 // First, if we have fresh data, we can immediately short-circuit.
                 if let Some(fresh) = response_keyed_objects
                     .iter()
-                    .filter_map(|cache_value| cache_value.present.as_ref())
+                    .filter_map(|(_, cache_value)| cache_value.present.as_ref())
                     .filter(|cache_data| cache_data.meta.is_fresh())
                     .next()
                 {
                     data = Some(Arc::clone(fresh));
-                    // We have fresh data
+                    // Return without modifying anything.
                     return false;
                 }
 
-                // TODO: cceckman-at-fastly: stale-while-revalidate:
-                // In a second pass over response_keyed_objects, we should check for stale data
-                // that can be revalidated, and return it- generating an obligation specifically
-                // for the key returned if we do so.
-                // For now, we just check if there's an existing obligation in any of them.
+                // If we have _stale but revalidatable_ entries, we can try to revalidate them
+                // instead.
+                if let Some((variant, revalidatable)) = response_keyed_objects
+                    .iter()
+                    .filter(|(_, cache_value)| {
+                        cache_value
+                            .present
+                            .as_ref()
+                            .is_some_and(|data| data.meta.is_usable())
+                    })
+                    .next()
+                {
+                    let d = revalidatable.present.as_ref().unwrap();
+                    data = Some(Arc::clone(d));
+                    // Already an obligation? We've captured the data to return, so we're done.
+                    if revalidatable.obligated {
+                        return false;
+                    }
+                    let variant = Variant::clone(variant);
 
-                // Second, if we raced to produce an obligation, defer in favor of the existing
-                // obligation, without generating a new one.
-                if response_keyed_objects.iter().any(|data| data.obligated) {
+                    key_objects.objects.insert(
+                        variant.clone(),
+                        CacheValue {
+                            obligated: true,
+                            present: Some(Arc::clone(d)),
+                        },
+                    );
+
+                    obligated = Some(Obligation {
+                        object: Arc::clone(&self),
+                        variant,
+                        request_headers: request_headers.clone(),
+                        completed: false,
+                        present: data.clone(),
+                    });
+                    // We did modify the state of things; be honest, return true.
+                    // This may lead to an unnecessary wakeups and a small performance penalty; oh
+                    // well.
+                    return true;
+                }
+
+                // Nothing existing is usable, even with revalidation.
+                // We'll do an insert (or wait for one).
+
+                // We may have raced to produce an obligation to insert.
+                // Defer in favor of the existing obligation, without generating a new one.
+                if response_keyed_objects
+                    .iter()
+                    .any(|(_, value)| value.obligated)
+                {
                     return false;
                 }
 
-                // Finally, generate an obligation based on the most recent vary rule
+                // Finally, generate an obligation to insert based on the most recent vary rule
                 // (or an empty default if there have been no vary rules so far.
                 let response_key = response_keys.into_iter().next().unwrap_or_else(|| {
                     key_objects.vary_rules.push_front(VaryRule::default());
@@ -258,9 +308,8 @@ impl CacheKeyObjects {
                     variant: response_key,
                     request_headers: request_headers.clone(),
                     completed: false,
+                    present: None,
                 });
-
-                // TODO: If there is a stale-while-revalidate result above, include it as well.
 
                 // We have modified the table. In theory we don't need to issue a notification,
                 // since any task waiting would be waiting on the *completion* of an obligation
@@ -364,12 +413,13 @@ pub struct Obligation {
     object: Arc<CacheKeyObjects>,
     request_headers: HeaderMap,
     variant: Variant,
+    present: Option<Arc<CacheData>>,
     completed: bool,
 }
 
 impl Obligation {
-    /// Fulfill the obligation by providing write options and a body.
-    pub fn complete(mut self, options: WriteOptions, body: Body) {
+    /// Fulfill the obligation by providing a new entire entry.
+    pub fn insert(mut self, options: WriteOptions, body: Body) {
         let request_headers = std::mem::take(&mut self.request_headers);
         let variant = std::mem::take(&mut self.variant);
         self.object
@@ -377,6 +427,25 @@ impl Obligation {
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
         self.completed = true;
+    }
+
+    /// Fulfill the obligation by freshening the existing entry.
+    pub(super) fn update(mut self, options: WriteOptions) -> Result<(), (Self, crate::Error)> {
+        let Some(present) = &self.present else {
+            return Err((self, Error::NotRevalidatable.into()));
+        };
+        let body = match present.get_body() {
+            Ok(body) => body,
+            Err(e) => return Err((self, e)),
+        };
+        let request_headers = std::mem::take(&mut self.request_headers);
+        let variant = std::mem::take(&mut self.variant);
+        self.object
+            .insert(request_headers, options, body, Some(variant));
+        // Mild optimization: avoid re-acquiring the lock when we drop.
+        // We've already cleared the obligation flag.
+        self.completed = true;
+        Ok(())
     }
 }
 
@@ -458,7 +527,7 @@ mod tests {
 
                     if let Some(obligation) = obligation {
                         let body: Body = "hello".as_bytes().into();
-                        obligation.complete(WriteOptions::new(Duration::from_secs(100)), body);
+                        obligation.insert(WriteOptions::new(Duration::from_secs(100)), body);
                     }
                     if let Some(found) = found {
                         let body = found.body.read().unwrap().read_into_string().await.unwrap();
@@ -525,7 +594,7 @@ mod tests {
         // Anotehr transaction on the same headers should pick up the same result:
         let busy1 = objects.transaction_get(&h1, true);
         let busy2 = objects.transaction_get(&h2, true);
-        obligation2.unwrap().complete(
+        obligation2.unwrap().insert(
             WriteOptions {
                 vary_rule: vary.clone(),
                 max_age: Duration::from_secs(100),
@@ -533,7 +602,7 @@ mod tests {
             },
             make_body("object 2"),
         );
-        obligation1.unwrap().complete(
+        obligation1.unwrap().insert(
             WriteOptions {
                 vary_rule: vary.clone(),
                 max_age: Duration::from_secs(100),
@@ -573,7 +642,7 @@ mod tests {
         let (found1, obligation1) = objects.transaction_get(&h1, true).await;
         assert!(found1.is_none());
         let obligation1 = obligation1.unwrap();
-        obligation1.complete(
+        obligation1.insert(
             WriteOptions {
                 max_age: Duration::from_secs(100),
                 vary_rule: vary.clone(),
@@ -625,7 +694,7 @@ mod tests {
 
         let c: Chunk = Bytes::new().into();
         let b: Body = c.into();
-        obligation.complete(WriteOptions::new(Duration::from_secs(100)), b);
+        obligation.insert(WriteOptions::new(Duration::from_secs(100)), b);
         let (Some(_), None) = ko.transaction_get(&empty_headers, false).await else {
             panic!("unexpected value")
         };

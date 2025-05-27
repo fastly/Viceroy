@@ -32,6 +32,9 @@ pub enum Error {
 
     #[error("cache entry's body is currently being read by another body")]
     HandleBodyUsed,
+
+    #[error("cache entry is not revalidatable")]
+    NotRevalidatable,
 }
 
 impl From<Error> for crate::Error {
@@ -49,6 +52,7 @@ impl From<&Error> for FastlyStatus {
             Error::CannotWrite => FastlyStatus::Badf,
             Error::Missing => FastlyStatus::None,
             Error::HandleBodyUsed => FastlyStatus::Badf,
+            Error::NotRevalidatable => FastlyStatus::Badf,
         }
     }
 }
@@ -62,6 +66,7 @@ impl From<Error> for ComponentError {
             Error::CannotWrite => ComponentError::BadHandle,
             Error::Missing => ComponentError::OptionalNone,
             Error::HandleBodyUsed => ComponentError::BadHandle,
+            Error::NotRevalidatable => ComponentError::BadHandle,
         }
     }
 }
@@ -158,6 +163,24 @@ impl CacheEntry {
     /// Extract the write obligation, if present.
     pub fn take_go_get(&mut self) -> Option<Obligation> {
         self.go_get.take()
+    }
+
+    /// Insert the provided body into the cache.
+    pub fn insert(&mut self, options: WriteOptions, body: Body) -> Result<(), crate::Error> {
+        let go_get = self.take_go_get().ok_or(Error::NotRevalidatable)?;
+        go_get.insert(options, body);
+        Ok(())
+    }
+
+    /// Freshen the existing body according to the provided options.
+    pub fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
+        let go_get = self.take_go_get().ok_or(Error::NotRevalidatable)?;
+        let Err((go_get, err)) = go_get.update(options) else {
+            return Ok(());
+        };
+        // On failure, preserve the obligation.
+        self.go_get = Some(go_get);
+        Err(err)
     }
 }
 
@@ -275,10 +298,11 @@ impl Cache {
 }
 
 /// Options that can be applied to a write, e.g. insert or transaction_insert.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Duration,
+    pub stale_while_revalidate: Duration,
     pub vary_rule: VaryRule,
     pub user_metadata: Bytes,
     pub length: Option<u64>,
@@ -291,6 +315,7 @@ impl WriteOptions {
         WriteOptions {
             max_age,
             initial_age: Duration::ZERO,
+            stale_while_revalidate: Duration::ZERO,
             vary_rule: VaryRule::default(),
             user_metadata: Bytes::new(),
             length: None,
@@ -479,5 +504,106 @@ mod tests {
             .collect();
         let mismatched_headers = cache.lookup(&key, &r2_headers).await;
         assert!(mismatched_headers.found.is_none());
+    }
+
+    #[tokio::test]
+    async fn insert_stale_while_revalidate() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        // Insert an already-stale entry, with an SWR period:
+        let write_options = WriteOptions {
+            max_age: Duration::from_secs(1),
+            initial_age: Duration::from_secs(2),
+            stale_while_revalidate: Duration::from_secs(10),
+            ..Default::default()
+        };
+
+        let mut body = Body::empty();
+        body.push_back([1u8].as_slice());
+        cache
+            .insert(&key, HeaderMap::default(), write_options, body)
+            .await;
+
+        let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
+        let found = nonempty.found().expect("should have found inserted key");
+        assert!(!found.meta().is_fresh());
+        assert!(found.meta().is_usable());
+    }
+
+    #[tokio::test]
+    async fn insert_and_revalidate() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        // Insert an already-stale entry, with an SWR period:
+        let write_options = WriteOptions {
+            max_age: Duration::from_secs(1),
+            initial_age: Duration::from_secs(2),
+            stale_while_revalidate: Duration::from_secs(10),
+            ..Default::default()
+        };
+
+        let mut body = Body::empty();
+        body.push_back([1u8].as_slice());
+        cache
+            .insert(&key, HeaderMap::default(), write_options, body)
+            .await;
+
+        let mut txn1 = cache
+            .transaction_lookup(&key, &HeaderMap::default(), true)
+            .await;
+        let found = txn1.found().expect("should have found inserted key");
+        assert!(!found.meta().is_fresh());
+        assert!(found.meta().is_usable());
+
+        assert!(txn1.go_get().is_some());
+
+        // Another lookup should not get the obligation *or* block
+        {
+            let txn2 = cache
+                .transaction_lookup(&key, &HeaderMap::default(), true)
+                .await;
+            let found = txn2.found().expect("should have found inserted key");
+            assert!(!found.meta().is_fresh());
+            assert!(found.meta().is_usable());
+            assert!(txn2.go_get().is_none());
+        }
+
+        txn1.update(WriteOptions {
+            max_age: Duration::from_secs(10),
+            stale_while_revalidate: Duration::from_secs(10),
+            ..WriteOptions::default()
+        })
+        .unwrap();
+
+        // After this, should get the new response:
+        let txn3 = cache
+            .transaction_lookup(&key, &HeaderMap::default(), true)
+            .await;
+        assert!(txn3.go_get().is_none());
+        let found = txn3.found().expect("should find updated entry");
+        assert!(found.meta().is_usable());
+        assert!(found.meta().is_fresh());
+    }
+
+    #[tokio::test]
+    async fn cannot_revalidate_first_insert() {
+        let cache = Cache::default();
+        let key = ([1u8].as_slice()).try_into().unwrap();
+
+        let mut txn1 = cache
+            .transaction_lookup(&key, &HeaderMap::default(), false)
+            .await;
+        assert!(txn1.found().is_none());
+        let opts = WriteOptions {
+            max_age: Duration::from_secs(10),
+            stale_while_revalidate: Duration::from_secs(10),
+            ..WriteOptions::default()
+        };
+        txn1.update(opts.clone()).unwrap_err();
+
+        // But we should still be able to insert.
+        txn1.insert(opts.clone(), Body::empty()).unwrap();
     }
 }

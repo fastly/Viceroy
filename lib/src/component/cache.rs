@@ -29,6 +29,13 @@ fn load_write_options(
     } else {
         Duration::ZERO
     };
+    let stale_while_revalidate =
+        if options_mask.contains(api::WriteOptionsMask::STALE_WHILE_REVALIDATE_NS) {
+            Duration::from_nanos(options.stale_while_revalidate_ns)
+        } else {
+            Duration::ZERO
+        };
+
     let vary_rule = if options_mask.contains(api::WriteOptionsMask::VARY_RULE) {
         options.vary_rule.parse()?
     } else {
@@ -70,6 +77,7 @@ fn load_write_options(
     Ok(WriteOptions {
         max_age,
         initial_age,
+        stale_while_revalidate,
         vary_rule,
         user_metadata,
         length,
@@ -406,20 +414,34 @@ impl api::Host for ComponentCtx {
         let body_handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(body_handle)?;
 
-        obligation.complete(write_options, read_body);
+        obligation.insert(write_options, read_body);
         Ok((body_handle.into(), handle))
     }
 
     async fn transaction_update(
         &mut self,
-        _handle: api::Handle,
-        _options_mask: api::WriteOptionsMask,
-        _options: api::WriteOptions,
+        handle: api::Handle,
+        options_mask: api::WriteOptionsMask,
+        options: api::WriteOptions,
     ) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        // TODO: cceckman-at-fastly: Handle all options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives").into());
         }
-        .into())
+
+        let options = load_write_options(options_mask, &options)?;
+        // No request headers here; request headers come from the original lookup.
+        if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
+            return Err(Error::InvalidArgument.into());
+        }
+
+        let entry = self.session.cache_entry_mut(handle.into()).await?;
+        // The path here is:
+        // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
+        // CacheError::InvalidOperation
+        entry.update(options)?;
+        Ok(())
     }
 
     async fn transaction_cancel(&mut self, handle: api::Handle) -> Result<(), types::Error> {

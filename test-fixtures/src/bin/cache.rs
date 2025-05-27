@@ -41,6 +41,8 @@ fn main() {
     run_test!(test_user_metadata);
     run_test!(test_service_id);
 
+    run_test!(test_stale_while_revalidate);
+
     run_test!(test_racing_transactions);
     run_test!(test_implicit_cancel_of_fetch);
     run_test!(test_implicit_cancel_of_pending);
@@ -587,6 +589,58 @@ fn test_inconsistent_body_length() {
         let mut data = Vec::new();
         got.read_to_end(&mut data).unwrap_err();
     }
+}
+
+fn test_stale_while_revalidate() {
+    let key = new_key();
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(1))
+            .initial_age(Duration::from_secs(2))
+            .user_metadata(Bytes::from_static(b"version 1"))
+            .stale_while_revalidate(Duration::from_secs(100))
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.finish().unwrap();
+    }
+
+    // A normal lookup will get the stale result, but can't pick up an obligation.
+    {
+        let found = lookup(key.clone()).execute().unwrap().unwrap();
+        assert!(found.is_stale());
+        assert!(found.is_usable());
+    }
+
+    // Transactional lookups will all complete, with the stale result.
+    let txn1 = Transaction::lookup(key.clone()).execute().unwrap();
+    let txn2 = Transaction::lookup(key.clone()).execute().unwrap();
+    for txn in [&txn1, &txn2] {
+        assert!(txn.found().unwrap().is_stale());
+        assert!(txn.found().unwrap().is_usable());
+        assert_eq!(
+            txn.found().unwrap().user_metadata().iter().as_slice(),
+            b"version 1"
+        );
+    }
+
+    // One of these should get the obligation:
+    eprintln!("1 must_insert_or_update: {}", txn1.must_insert_or_update());
+    eprintln!("2 must_insert_or_update: {}", txn2.must_insert_or_update());
+    eprintln!("1 must_insert: {}", txn1.must_insert());
+    eprintln!("2 must_insert: {}", txn2.must_insert());
+
+    // Update without modifying the body:
+    txn1.update(Duration::from_secs(100))
+        .user_metadata(Bytes::from_static(b"version 2"))
+        .execute()
+        .unwrap();
+
+    // A new request should read the new metadata:
+    let found = lookup(key.clone()).execute().unwrap().unwrap();
+    assert_eq!(found.user_metadata().iter().as_slice(), b"version 2");
+    // And the original body:
+    let body = found.to_stream().unwrap().into_string();
+    assert_eq!(&body, "hello");
 }
 
 fn test_racing_transactions() {
