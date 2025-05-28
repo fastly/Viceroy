@@ -22,12 +22,13 @@ mod macros;
 pub mod fastly;
 
 mod descriptors;
+
 use crate::descriptors::{Descriptor, Descriptors, StreamType};
 
 pub mod bindings {
     wit_bindgen_rust_macro::generate!({
         path: "../../lib/wit",
-        world: "fastly:api/compute",
+        world: "compute",
         raw_strings,
         runtime_path: "crate::bindings::wit_bindgen_rt_shim",
         disable_run_ctors_once_workaround: true,

@@ -99,6 +99,10 @@ impl http_body::Host for ComponentCtx {
         }
     }
 
+    async fn abandon(&mut self, _h: http_types::BodyHandle) -> Result<(), types::Error> {
+        Err(Error::NotAvailable("Body abandoning not available").into())
+    }
+
     async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), types::Error> {
         // Drop the body and pass up an error if the handle does not exist
         if self.session.is_streaming_body(h.into()) {
@@ -123,13 +127,13 @@ impl http_body::Host for ComponentCtx {
     async fn trailer_append(
         &mut self,
         h: http_types::BodyHandle,
-        name: String,
+        name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
         // Appending trailers is always allowed for bodies and streaming bodies.
         if self.session.is_streaming_body(h.into()) {
             let body = self.session.streaming_body_mut(h.into())?;
-            let name = HeaderName::from_bytes(name.as_bytes())?;
+            let name = HeaderName::from_bytes(&name)?;
             let value = HeaderValue::from_bytes(value.as_slice())?;
             body.append_trailer(name, value);
             Ok(())
@@ -139,7 +143,7 @@ impl http_body::Host for ComponentCtx {
                 return Err(Error::InvalidArgument.into());
             }
 
-            let name = HeaderName::from_bytes(name.as_bytes())?;
+            let name = HeaderName::from_bytes(&name)?;
             let value = HeaderValue::from_bytes(value.as_slice())?;
             trailers.append(name, value);
             Ok(())
@@ -184,7 +188,7 @@ impl http_body::Host for ComponentCtx {
     async fn trailer_value_get(
         &mut self,
         h: http_types::BodyHandle,
-        name: String,
+        name: Vec<u8>,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         // Read operations are not allowed on streaming bodies.
@@ -203,7 +207,7 @@ impl http_body::Host for ComponentCtx {
         }
 
         let value = {
-            let name = HeaderName::from_bytes(name.as_bytes())?;
+            let name = HeaderName::from_bytes(&name)?;
             if let Some(value) = trailers.get(&name) {
                 value
             } else {
@@ -225,7 +229,7 @@ impl http_body::Host for ComponentCtx {
     async fn trailer_values_get(
         &mut self,
         h: http_types::BodyHandle,
-        name: String,
+        name: Vec<u8>,
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
@@ -240,7 +244,7 @@ impl http_body::Host for ComponentCtx {
         }
 
         let trailers = &mut body.trailers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let (buf, next) = headers::write_values(
             trailers.get_all(&name).into_iter(),
             b'\0',

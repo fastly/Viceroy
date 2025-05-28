@@ -4,8 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[async_trait::async_trait]
 impl acl::Host for ComponentCtx {
-    async fn open(&mut self, acl_name: Vec<u8>) -> Result<acl::AclHandle, types::Error> {
-        let acl_name = String::from_utf8(acl_name)?;
+    async fn open(&mut self, acl_name: String) -> Result<acl::AclHandle, types::Error> {
         let handle = self
             .session
             .acl_handle_by_name(&acl_name)
