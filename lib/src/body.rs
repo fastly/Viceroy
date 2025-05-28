@@ -116,6 +116,35 @@ impl Body {
         self.extend(body)
     }
 
+    /// Analogue to the AsyncRead traits, but without running through std::io::Result.
+    ///
+    /// Attempts to read at least one byte into the buffer.
+    /// Waits until at least one byte is available. If an error is encountered,
+    /// returns the error; if the stream ends, returns Ok(0).
+    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, error::Error> {
+        // poll_data may return empty chunks, which we need to filter out.
+        // Loop until we get a nonempty chunk, an error, or an end-of-stream.
+        loop {
+            match self.data().await {
+                None => return Ok(0),
+                Some(Err(e)) => return Err(e),
+
+                // Empty chunk; avoid signaling end-of-stream, wait for more data:
+                Some(Ok(bytes)) if bytes.is_empty() => continue,
+
+                Some(Ok(src)) => {
+                    let copy_len = std::cmp::min(buf.len(), src.len());
+                    buf[..copy_len].copy_from_slice(&src[..copy_len]);
+                    let remainder = &src[copy_len..];
+                    if !remainder.is_empty() {
+                        self.chunks.push_front(remainder.into());
+                    }
+                    return Ok(copy_len);
+                }
+            }
+        }
+    }
+
     /// Read the entire body into a byte vector.
     pub async fn read_into_vec(self) -> Result<Vec<u8>, error::Error> {
         let mut body = Box::new(self);
@@ -353,10 +382,9 @@ impl HttpBody for Body {
 mod tests {
     use std::io::Read;
 
-    use bytes::{Buf, Bytes, BytesMut};
+    use bytes::{Bytes, BytesMut};
     use flate2::{Compression, GzBuilder};
     use http::HeaderMap;
-    use http_body::Body as _;
     use proptest::prelude::*;
 
     use crate::body::Chunk;
@@ -384,10 +412,10 @@ mod tests {
         let all_chunks = chunk_lengths.into_iter().chain(std::iter::once(body.len()));
         let mut remaining: &[u8] = &body;
         for chunk_length in all_chunks {
-            let len = std::cmp::min(remaining.len(), chunk_length);
-            if len == 0 {
+            if remaining.len() == 0 {
                 break;
             }
+            let len = std::cmp::min(remaining.len(), chunk_length);
             let to_send = &remaining[..len];
             remaining = &remaining[len..];
             let Ok(_) = sender.send_data(Bytes::copy_from_slice(to_send)).await else {
@@ -397,36 +425,42 @@ mod tests {
         let _ = sender.send_trailers(HeaderMap::default()).await;
     }
 
+    /// Check that the Body produces the given data, when read using the AsyncRead-like API.
+    async fn check_body_read(
+        mut body: crate::body::Body,
+        want: Bytes,
+    ) -> Result<(), TestCaseError> {
+        let mut got = BytesMut::new();
+        let buf = &mut [0u8; 16];
+        while let Ok(n) = body.read(buf).await {
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&buf[..n]);
+        }
+        prop_assert_eq!(got.len(), want.len());
+        for (i, (got, want)) in got.into_iter().zip(want.into_iter()).enumerate() {
+            prop_assert_eq!(got, want, "@{}: {} != {}", i, got, want);
+        }
+
+        Ok(())
+    }
+
     /// Test that a given body can round-trip, even if the body is split into chunks.
-    async fn test_roundtrip_body(
+    async fn test_chunked_body(
         bytes: Bytes,
         chunk_lengths: Vec<usize>,
     ) -> Result<(), TestCaseError> {
         let mut js = tokio::task::JoinSet::default();
-        let (sender, mut body) = hyper::Body::channel();
+        let (sender, body) = hyper::Body::channel();
         js.spawn({
             let bytes = bytes.clone();
-            // let gz_bytes = ungz_bytes.clone();
             async move {
                 trickle_body(sender, bytes, chunk_lengths).await;
                 Ok(())
             }
         });
-        js.spawn(async move {
-            let mut received = BytesMut::new();
-            while let Some(chunk) = body.data().await {
-                let chunk = chunk.unwrap();
-                // Technically permissible, but undesirable.
-                // prop_assert_ne!(chunk.len(), 0);
-                received.extend_from_slice(&chunk);
-            }
-            let got_body = received.freeze();
-            prop_assert_eq!(got_body.len(), bytes.len());
-            for (i, (got, want)) in got_body.into_iter().zip(bytes.into_iter()).enumerate() {
-                prop_assert_eq!(got, want, "{}: {} != {}", i, got, want);
-            }
-            Ok(())
-        });
+        js.spawn(check_body_read(body.into(), bytes));
         let results = js.join_all().await;
         for result in results {
             result?;
@@ -434,9 +468,9 @@ mod tests {
         Ok(())
     }
 
-    /// Test that a given body can round-trip the Gzip decoder, even if the body
+    /// Test that a given body can round-trip the Gzip decoder, even if the compressed body
     /// is split into chunks.
-    async fn test_ungzip_body(
+    async fn test_gzip_body(
         ungz_bytes: Bytes,
         chunk_lengths: Vec<usize>,
     ) -> Result<(), TestCaseError> {
@@ -446,28 +480,13 @@ mod tests {
         let (sender, gz_body) = hyper::Body::channel();
         js.spawn({
             let gz_bytes = gz_bytes.clone();
-            // let gz_bytes = ungz_bytes.clone();
             async move {
                 trickle_body(sender, gz_bytes, chunk_lengths).await;
                 Ok(())
             }
         });
-        let mut ungz_body: crate::body::Body = Chunk::compressed_body(gz_body).into();
-        js.spawn(async move {
-            let mut received = BytesMut::new();
-            while let Some(chunk) = ungz_body.data().await {
-                let chunk = chunk.unwrap();
-                // Technically permissible, but undesirable.
-                // prop_assert_ne!(chunk.len(), 0);
-                received.extend_from_slice(&chunk);
-            }
-            let got_body = received.freeze();
-            prop_assert_eq!(got_body.len(), ungz_bytes.len());
-            for (i, (got, want)) in got_body.into_iter().zip(ungz_bytes.into_iter()).enumerate() {
-                prop_assert_eq!(got, want, "{}: {} != {}", i, got, want);
-            }
-            Ok(())
-        });
+        let ungz_body: crate::body::Body = Chunk::compressed_body(gz_body).into();
+        js.spawn(check_body_read(ungz_body, ungz_bytes));
         let results = js.join_all().await;
         for result in results {
             result?;
@@ -475,100 +494,33 @@ mod tests {
         Ok(())
     }
 
-    // TODO: Update this to support zero-length input chunks.
-    // It's possible, in principle, to send a zero-length chunk from the server side;
-    // but it appears we don't handle it well.
     proptest! {
         #[test]
         fn gzip_chunks_reproduce_body(
             (body, chunk_lengths) in some_bytes().prop_flat_map(|bytes| {
                     let len = bytes.len();
-                    let chunk_length_strategy= proptest::collection::vec(1..=len, 0..=(len/8));
+                    let chunk_length_strategy= proptest::collection::vec(0..=len, 0..=(len/8));
             (Just(bytes), chunk_length_strategy)
             }),
         ) {
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            return rt.block_on(test_ungzip_body(body, chunk_lengths));
+            return rt.block_on(test_gzip_body(body, chunk_lengths));
         }
 
     }
 
-    // TODO: Update this to support zero-length input chunks.
-    // It's possible, in principle, to send a zero-length chunk from the server side;
-    // but it appears we don't handle it well.
     proptest! {
         #[test]
         fn chunks_reproduce_body(
             (body, chunk_lengths) in some_bytes().prop_flat_map(|bytes| {
                     let len = bytes.len();
-                    let chunk_length_strategy= proptest::collection::vec(1..=len, 0..=(len/8));
+                    let chunk_length_strategy= proptest::collection::vec(0..=len, 0..=(len/8));
             (Just(bytes), chunk_length_strategy)
             }),
         ) {
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            return rt.block_on(test_roundtrip_body(body, chunk_lengths));
+            return rt.block_on(test_chunked_body(body, chunk_lengths));
         }
 
-    }
-
-    #[tokio::test]
-    async fn directed_nonempty_chunks() {
-        let data = b"hello world";
-        let gz_data: Bytes = {
-            let mut encoder = GzBuilder::new()
-                .mtime(32)
-                .buf_read(Bytes::from_static(data).reader(), Compression::best());
-            let mut compressed = Vec::new();
-            encoder.read_to_end(&mut compressed).unwrap();
-            compressed.into()
-        };
-
-        let len = gz_data.len();
-        for cutpoint in 0..(len - 1) {
-            let mut js = tokio::task::JoinSet::default();
-            let (mut sender, gz_body) = hyper::Body::channel();
-            js.spawn({
-                let gz_data = gz_data.clone();
-                async move {
-                    let head = &gz_data[..cutpoint];
-                    let tail = &gz_data[cutpoint..];
-                    let Ok(_) = sender.send_data(Bytes::copy_from_slice(head)).await else {
-                        return;
-                    };
-                    // Force yield, so hyper can't collapse adjacent sends.
-                    tokio::task::yield_now().await;
-                    // Send the remainder:
-                    let Ok(_) = sender.send_data(Bytes::copy_from_slice(tail)).await else {
-                        return;
-                    };
-                    tokio::task::yield_now().await;
-                    let Ok(_) = sender.send_trailers(HeaderMap::default()).await else {
-                        return;
-                    };
-                }
-            });
-
-            let mut ungz_body: crate::body::Body = Chunk::compressed_body(gz_body).into();
-            js.spawn(async move {
-                let mut received = BytesMut::new();
-                while let Some(chunk) = ungz_body.data().await {
-                    let chunk = chunk.unwrap();
-                    // assert_ne!(chunk.len(), 0);
-                    received.extend_from_slice(&chunk);
-                }
-                let got_body = received.freeze();
-                assert_eq!(got_body.len(), data.len());
-                for (i, (got, &want)) in got_body.into_iter().zip(data.into_iter()).enumerate() {
-                    assert_eq!(got, want, "{i}: {got} != {want}");
-                }
-            });
-            js.join_all().await;
-
-            /*
-            let r = test_nonempty_chunks(vec![cutpoint], gz_data.clone()).await;
-            if let Err(c) = r {
-                panic!("error with cutpoint {cutpoint}: {c}");
-            }*/
-        }
     }
 }

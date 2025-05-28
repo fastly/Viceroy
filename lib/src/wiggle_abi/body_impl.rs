@@ -16,7 +16,6 @@ use {
             },
         },
     },
-    http_body::Body as HttpBody,
     std::convert::TryInto,
     wiggle::{GuestMemory, GuestPtr},
 };
@@ -62,23 +61,14 @@ impl FastlyHttpBody for Session {
         // only normal bodies (not streaming bodies) can be read from
         let body = self.body_mut(body_handle)?;
 
-        if let Some(chunk) = body.data().await {
-            // pass up any error encountered when reading a chunk
-            let mut chunk = chunk?;
-            // split the chunk, saving any bytes that don't fit into the destination buffer
-            let copy_len = std::cmp::min(buf_len as usize, chunk.len());
-            let extra_bytes = chunk.split_off(copy_len);
-            // `chunk.len()` is now the smaller of (1) the destination buffer and (2) the available data.
-            memory.copy_from_slice(&chunk, buf.as_array(u32::try_from(copy_len).unwrap()))?;
-            // if there are leftover bytes, put them back at the front of the body
-            if !extra_bytes.is_empty() {
-                body.push_front(extra_bytes);
-            }
-
-            Ok(chunk.len() as u32)
-        } else {
-            Ok(0)
-        }
+        let array = buf.as_array(buf_len);
+        let slice = memory.as_slice_mut(array)?.ok_or(Error::SharedMemory)?;
+        let n = body
+            .read(slice)
+            .await?
+            .try_into()
+            .expect("guest buffer size must be less than u32");
+        Ok(n)
     }
 
     async fn write(

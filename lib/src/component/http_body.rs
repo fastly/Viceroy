@@ -4,7 +4,6 @@ use {
         headers,
     },
     crate::{body::Body, error::Error, linking::ComponentCtx},
-    ::http_body::Body as HttpBody,
     http::header::{HeaderName, HeaderValue},
 };
 
@@ -81,22 +80,11 @@ impl http_body::Host for ComponentCtx {
         // only normal bodies (not streaming bodies) can be read from
         let body = self.session.body_mut(h.into())?;
 
-        if let Some(chunk) = body.data().await {
-            // pass up any error encountered when reading a chunk
-            let mut chunk = chunk?;
-            // split the chunk, saving any bytes that don't fit into the destination buffer
-            let extra_bytes = chunk.split_off(std::cmp::min(chunk_size as usize, chunk.len()));
-            // `chunk.len()` is now the smaller of (1) the destination buffer and (2) the available data.
-            let chunk = chunk.to_vec();
-            // if there are leftover bytes, put them back at the front of the body
-            if !extra_bytes.is_empty() {
-                body.push_front(extra_bytes);
-            }
-
-            Ok(chunk)
-        } else {
-            Ok(Vec::new())
-        }
+        let mut buffer = Vec::new();
+        buffer.resize(chunk_size as usize, 0u8);
+        let len = body.read(&mut buffer).await?;
+        buffer.truncate(len);
+        Ok(buffer)
     }
 
     async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), types::Error> {
