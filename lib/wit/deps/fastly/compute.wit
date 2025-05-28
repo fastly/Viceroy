@@ -52,6 +52,7 @@ interface types {
     limit-exceeded
   }
 
+  /// A handle to an individual secret.
   type secret-handle = u32;
 }
 
@@ -59,14 +60,19 @@ interface http-types {
 
   use types.{secret-handle};
 
+  /// A handle to an HTTP request or response body.
   type body-handle = u32;
 
+  /// A handle to an HTTP request.
   type request-handle = u32;
+  /// A handle to a currently-pending asynchronous HTTP request.
   type pending-request-handle = u32;
+  /// A handle to an HTTP response.
   type response-handle = u32;
   type request = tuple<request-handle, body-handle>;
   type response = tuple<response-handle, body-handle>;
 
+  /// A tag indicating HTTP protocol versions.
   enum http-version {
     http09,
     http10,
@@ -98,9 +104,9 @@ interface http-types {
     connect-timeout,
     first-byte-timeout,
     between-bytes-timeout,
-    use-ssl,
-    ssl-min-version,
-    ssl-max-version,
+    use-tls,
+    tls-min-version,
+    tls-max-version,
     cert-hostname,
     ca-cert,
     ciphers,
@@ -117,22 +123,26 @@ interface http-types {
     connect-timeout: u32,
     first-byte-timeout: u32,
     between-bytes-timeout: u32,
-    ssl-min-version: option<tls-version>,
-    ssl-max-version: option<tls-version>,
+    tls-min-version: option<tls-version>,
+    tls-max-version: option<tls-version>,
     cert-hostname: string,
     ca-cert: string,
     ciphers: string,
     sni-hostname: string,
     client-cert: string,
     client-key: secret-handle,
+    http-keepalive-time-ms: u32,
+    tcp-keepalive-enable: u32,
+    tcp-keepalive-interval-secs: u32,
+    tcp-keepalive-probes: u32,
+    tcp-keepalive-time-secs: u32,
   }
 
+  /// HTTP status codes.
   type http-status = u16;
 }
 
-/*
- * Fastly UAP
- */
+/// Fastly UAP
 interface uap {
 
   use types.{error};
@@ -144,12 +154,11 @@ interface uap {
     patch: func(max-len: u64) -> result<string, error>;
   }
 
-  parse: func(user-agent: string) -> result<user-agent, error>;
+  /// Parse a user agent string.
+  parse: func(user-agent: list<u8>) -> result<user-agent, error>;
 }
 
-/*
- * Fastly HTTP Body
- */
+/// Fastly HTTP Body
 interface http-body {
 
   use types.{error};
@@ -168,13 +177,33 @@ interface http-body {
 
   write: func(h: body-handle, buf: list<u8>, end: write-end) -> result<u32, error>;
 
+  /// Frees the body on the host.
+  ///
+  /// For streaming bodies, this is a _successful_ stream termination, which will signal
+  /// via framing that the body transfer is complete.
   close: func(h: body-handle) -> result<_, error>;
 
+  /// Frees a streaming body on the host _unsuccessfully_, so that framing makes clear that
+  /// the body is incomplete.
+  abandon: func(h: body-handle) -> result<_, error>;
+
+  /// Returns a u64 body length if the length of a body is known, or `FastlyStatus::None`
+  /// otherwise.
+  ///
+  /// If the length is unknown, it is likely due to the body arising from an HTTP/1.1 message with
+  /// chunked encoding, an HTTP/2 or later message with no `content-length`, or being a streaming
+  /// body.
+  ///
+  /// Note that receiving a length from this function does not guarantee that the full number of
+  /// bytes can actually be read from the body. For example, when proxying a response from a
+  /// backend, this length may reflect the `content-length` promised in the response, but if the
+  /// backend connection is closed prematurely, fewer bytes may be delivered before this body
+  /// handle can no longer be read.
   known-length: func(h: body-handle) -> result<u64, error>;
 
   trailer-append: func(
     h: body-handle,
-    name: string,
+    name: list<u8>,
     value: list<u8>,
   ) -> result<_, error>;
 
@@ -186,35 +215,32 @@ interface http-body {
 
   trailer-value-get: func(
     h: body-handle,
-    name: string,
+    name: list<u8>,
     max-len: u64,
   ) -> result<option<list<u8>>, error>;
 
   trailer-values-get: func(
     h: body-handle,
-    name: string,
+    name: list<u8>,
     max-len: u64,
     cursor: u32
   ) -> result<option<tuple<list<u8>, option<u32>>>, error>;
 }
 
-/*
- * Fastly Log
- */
+/// Fastly Log
 interface log {
 
   use types.{error};
 
+  /// A handle to a logging endpoint.
   type handle = u32;
 
   endpoint-get: func(name: string) -> result<handle, error>;
 
-  write: func(h: handle, msg: string) -> result<u32, error>;
+  write: func(h: handle, msg: list<u8>) -> result<u32, error>;
 }
 
-/*
- * Fastly HTTP Req
- */
+/// Fastly HTTP Req
 interface http-req {
 
   use types.{error};
@@ -224,6 +250,8 @@ interface http-req {
     dynamic-backend-config
   };
 
+  /// An override for response caching behavior.
+  /// A zero value indicates that the origin response's cache control headers should be used.
   flags cache-override-tag {
     /// Do not cache the response to this request, regardless of the origin response's headers.
     pass,
@@ -232,41 +260,105 @@ interface http-req {
     pci,
   }
 
+  /// TLS client certificate verified result from downstream.
   enum client-cert-verify-result {
+    /// Success value.
+    ///
+    /// This indicates that client certificate verified successfully.
     ok,
+    /// bad certificate error.
+    ///
+    /// This error means the certificate is corrupt
+    /// (e.g., the certificate signatures do not verify correctly).
     bad-certificate,
+    /// certificate revoked error.
+    ///
+    /// This error means the client certificate is revoked by its signer.
     certificate-revoked,
+    /// certificate expired error.
+    ///
+    /// This error means the client certificate has expired or is not currently valid.
     certificate-expired,
+    /// unknown CA error.
+    ///
+    /// This error means the valid certificate chain or partial chain was received,
+    /// but the certificate was not accepted because the CA certificate could not be
+    /// located or could not be matched with a known trust anchor.
     unknown-ca,
+    /// certificate missing error.
+    ///
+    /// This error means the client does not provide a certificate
+    /// during the handshake..
     certificate-missing,
+    /// certificate unknown error.
+    ///
+    /// This error means the client certificate was received, but some other (unspecified)
+    /// issue arose in processing the certificate, rendering it unacceptable.
     certificate-unknown,
   }
 
   enum send-error-detail-tag {
+      /// The $send_error_detail struct has not been populated.
       uninitialized,
+      /// There was no send error.
       ok,
+      /// The system encountered a timeout when trying to find an IP address for the backend
+      /// hostname.
       dns-timeout,
+      /// The system encountered a DNS error when trying to find an IP address for the backend
+      /// hostname. The fields $dns_error_rcode and $dns_error_info_code may be set in the
+      /// $send_error_detail.
       dns-error,
+      /// The system cannot determine which backend to use, or the specified backend was invalid.
       destination-not-found,
+      /// The system considers the backend to be unavailable; e.g., recent attempts to communicate
+      /// with it may have failed, or a health check may indicate that it is down.
       destination-unavailable,
+      /// The system cannot find a route to the next-hop IP address.
       destination-ip-unroutable,
+      /// The system's connection to the backend was refused.
       connection-refused,
+      /// The system's connection to the backend was closed before a complete response was
+      /// received.
       connection-terminated,
+      /// The system's attempt to open a connection to the backend timed out.
       connection-timeout,
+      /// The system is configured to limit the number of connections it has to the backend, and
+      /// that limit has been exceeded.
       connection-limit-reached,
+      /// The system encountered an error when verifying the certificate presented by the backend.
       tls-certificate-error,
+      /// The system encountered an error with the backend TLS configuration.
       tls-configuration-error,
+      /// The system received an incomplete response to the request from the backend.
       http-incomplete-response,
+      /// The system received a response to the request whose header section was considered too
+      /// large.
       http-response-header-section-too-large,
+      /// The system received a response to the request whose body was considered too large.
       http-response-body-too-large,
+      /// The system reached a configured time limit waiting for the complete response.
       http-response-timeout,
+      /// The system received a response to the request whose status code or reason phrase was
+      /// invalid.
       http-response-status-invalid,
+      /// The process of negotiating an upgrade of the HTTP version between the system and the
+      /// backend failed.
       http-upgrade-failed,
+      /// The system encountered an HTTP protocol error when communicating with the backend. This
+      /// error will only be used when a more specific one is not defined.
       http-protocol-error,
+      /// An invalid cache key was provided for the request.
       http-request-cache-key-invalid,
+      /// An invalid URI was provided for the request.
       http-request-uri-invalid,
+      /// The system encountered an unexpected internal error.
       internal-error,
+      /// The system received a TLS alert from the backend. The field $tls_alert_id may be set in
+      /// the $send_error_detail.
       tls-alert-received,
+      /// The system encountered a TLS error when communicating with the backend, either during
+      /// the handshake or afterwards.
       tls-protocol-error,
   }
 
@@ -313,7 +405,7 @@ interface http-req {
     tag: cache-override-tag,
     ttl: u32,
     stale-while-revalidate: u32,
-    sk: option<string>
+    sk: option<list<u8>>
   ) -> result<_, error>;
 
   downstream-client-ip-addr: func() -> result<list<u8>, error>;
@@ -322,15 +414,15 @@ interface http-req {
 
   downstream-client-h2-fingerprint: func(max-len: u64) -> result<list<u8>, error>;
 
-  downstream-client-request-id: func(max-len: u64) -> result<string, error>;
+  downstream-client-request-id: func(max-len: u64) -> result<list<u8>, error>;
 
   downstream-client-oh-fingerprint: func(max-len: u64) -> result<list<u8>, error>;
 
   downstream-client-ddos-detected: func() -> result<u32, error>;
 
-  downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<string, error>;
+  downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<list<u8>, error>;
 
-  downstream-tls-protocol: func(max-len: u64) -> result<string, error>;
+  downstream-tls-protocol: func(max-len: u64) -> result<list<u8>, error>;
 
   downstream-tls-client-hello: func(max-len: u64) -> result<list<u8>, error>;
 
@@ -361,32 +453,33 @@ interface http-req {
 
   header-value-get: func(
     h: request-handle,
-    name: string,
+    name: list<u8>,
     max-len: u64,
   ) -> result<option<list<u8>>, error>;
 
   header-values-get: func(
     h: request-handle,
-    name: string,
+    name: list<u8>,
     max-len: u64,
     cursor: u32
   ) -> result<option<tuple<list<u8>, option<u32>>>, error>;
 
   header-values-set: func(
     h: request-handle,
-    name: string,
+    name: list<u8>,
+    /// contains multiple values separated by \0
     values: list<u8>
   ) -> result<_, error>;
 
-  header-insert: func(h: request-handle, name: string, value: list<u8>) -> result<_, error>;
+  header-insert: func(h: request-handle, name: list<u8>, value: list<u8>) -> result<_, error>;
 
   header-append: func(
     h: request-handle,
-    name: string,
+    name: list<u8>,
     value: list<u8>,
   ) -> result<_, error>;
 
-  header-remove: func(h: request-handle, name: string) -> result<_, error>;
+  header-remove: func(h: request-handle, name: list<u8>) -> result<_, error>;
 
   method-get: func(h: request-handle, max-len: u64) -> result<string, error>;
 
@@ -422,14 +515,17 @@ interface http-req {
 result<pending-request-handle, error>;
 
   send-async-v2: func(
-    h: request-handle,
-    b: body-handle,
+    req-handle: request-handle,
+    body-handle: body-handle,
     backend: string,
     streaming: bool,
   ) -> result<pending-request-handle, error>;
 
-  send-async-streaming: func(h: request-handle, b: body-handle, backend: string)
--> result<pending-request-handle, error>;
+  send-async-streaming: func(
+    h: request-handle,
+    b: body-handle,
+    backend: string
+  ) -> result<pending-request-handle, error>;
 
   pending-req-poll: func(
     h: pending-request-handle,
@@ -451,8 +547,11 @@ result<pending-request-handle, error>;
 
   pending-req-select-v2: func(
     h: list<pending-request-handle>
-  ) -> result<tuple<u32, response>, error-with-detail>;
+  ) -> result<tuple<u32, result<response, send-error-detail>>, error>;
 
+  /// Returns whether or not the original client request arrived with a
+  /// Fastly-Key belonging to a user with the rights to purge content on this
+  /// service.
   fastly-key-is-valid: func() -> result<bool, error>;
 
   close: func(h: request-handle) -> result<_, error>;
@@ -478,11 +577,13 @@ result<pending-request-handle, error>;
     backend: string,
   ) -> result<_, error>;
 
+  /// Adjust how this requests's framing headers are determined.
   framing-headers-mode-set: func(
     h: request-handle,
     mode: framing-headers-mode,
   ) -> result<_, error>;
 
+  /// Create a backend for later use
   register-dynamic-backend: func(
     prefix: string,
     target: string,
@@ -490,23 +591,25 @@ result<pending-request-handle, error>;
     config: dynamic-backend-config,
   ) -> result<_, error>;
 
+  /// Hostcall for Fastly Compute guests to inspect request HTTP traffic
+  /// using the NGWAF lookaside service.
   inspect: func(
     h: request-handle,
     b: body-handle,
     options: inspect-config-options,
     info: inspect-config,
     max-len: u64
-  ) -> result<string, error>;
+  ) -> result<list<u8>, error>;
 
+  /// Instead of having this request cache in this service's space, use the
+  /// cache of the named service
   on-behalf-of: func(
     h: request-handle,
-    service: list<u8>,
+    service: string,
   ) -> result<_, error>;
 }
 
-/*
- * Fastly HTTP Resp
- */
+/// Fastly HTTP Resp
 interface http-resp {
   use types.{error};
 
@@ -525,38 +628,39 @@ interface http-resp {
 
   header-value-get: func(
     h: response-handle,
-    name: string,
+    name: list<u8>,
     max-len: u64,
   ) -> result<option<list<u8>>, error>;
 
   header-values-get: func(
     h: response-handle,
-    name: string,
+    name: list<u8>,
     max-len: u64,
     cursor: u32
   ) -> result<option<tuple<list<u8>, option<u32>>>, error>;
 
   header-values-set: func(
     h: response-handle,
-    name: string,
+    name: list<u8>,
+    /// contains multiple values separated by \0
     values: list<u8>
   ) -> result<_, error>;
 
   header-insert: func(
     h: response-handle,
-    name: string,
+    name: list<u8>,
     value: list<u8>,
   ) -> result<_, error>;
 
   header-append: func(
     h: response-handle,
-    name: string,
+    name: list<u8>,
     value: list<u8>,
   ) -> result<_, error>;
 
   header-remove: func(
     h: response-handle,
-    name: string,
+    name: list<u8>,
   ) -> result<_, error>;
 
   version-get: func(h: response-handle) -> result<http-version, error>;
@@ -587,21 +691,26 @@ interface http-resp {
     no-keepalive,
   }
 
+  /// Adjust the response's connection reuse mode.
   http-keepalive-mode-set: func(h: response-handle, mode: keepalive-mode) ->
 result<_, error>;
 
+  /// Hostcall for getting the destination IP used for this request.
+  ///
+  /// The buffer for the IP address must be 16 bytes. `addr_octets_out`
+  /// will be set to 4 for IPv4 addresses, and 16 for IPv6.
   get-addr-dest-ip: func(h: response-handle) -> result<list<u8>, error>;
 
+  /// Hostcall for getting the destination port used for this request.
   get-addr-dest-port: func(h: response-handle) -> result<u16, error>;
 }
 
-/*
- * Fastly Dictionary
- */
+/// Fastly Dictionary
 interface dictionary {
 
   use types.{error};
 
+  /// A handle to an Edge Dictionary.
   type handle = u32;
 
   open: func(name: string) -> result<handle, error>;
@@ -610,30 +719,24 @@ interface dictionary {
     h: handle,
     key: string,
     max-len: u64,
-  ) -> result<option<list<u8>>, error>;
+  ) -> result<option<string>, error>;
 }
 
-/*
- * Fastly Geo
- */
+/// Fastly Geo
 interface geo {
   use types.{error};
 
   lookup: func(addr-octets: list<u8>, max-len: u64) -> result<list<u8>, error>;
 }
 
-/*
- * Fastly device detection
- */
+/// Fastly device detection
 interface device-detection {
   use types.{error};
 
   lookup: func(user-agent: string, max-len: u64) -> result<option<list<u8>>, error>;
 }
 
-/*
- * Fastly edge-rate-limiter
- */
+/// Fastly edge-rate-limiter
 interface erl {
   use types.{error};
 
@@ -677,17 +780,19 @@ interface erl {
   ) -> result<u32, error>;
 }
 
-/*
- * Fastly Object Store
- */
+/// Fastly Object Store
 interface object-store {
 
   use types.{error};
   use http-types.{body-handle};
 
+  /// (DEPRECATED) A handle to an Object Store.
   type handle = u32;
+  /// (DEPRECATED) A handle to a pending Object Store lookup.
   type pending-lookup-handle = u32;
+  /// (DEPRECATED) A handle to a pending Object Store insert.
   type pending-insert-handle = u32;
+  /// (DEPRECATED) A handle to a pending Object Store delete.
   type pending-delete-handle = u32;
 
   open: func(name: string) -> result<option<handle>, error>;
@@ -732,31 +837,49 @@ interface object-store {
   ) -> result<_, error>;
 }
 
-/*
- * Fastly KV Store
- */
+/// Fastly KV Store (adapter)
+///
+/// -- find the component version in github.com:fastly/edge-storage
 interface kv-store {
 
   use types.{error};
   use http-types.{body-handle};
 
+  /// A handle to an KV Store.
   type handle = u32;
+  /// A handle to a KV Store lookup.
   type lookup-handle = u32;
+  /// A handle to a KV Store insert.
   type insert-handle = u32;
+  /// A handle to a KV Store delete.
   type delete-handle = u32;
+  /// A handle to a KV Store list.
   type list-handle = u32;
 
   enum kv-status {
+    /// There was no error.
     ok,
+    /// KV store cannot or will not process the request due to something that is perceived to be a client error
+    /// This will map to the api's 400 codes
     bad-request,
+    /// KV store cannot find the requested resource
+    /// This will map to the api's 404 codes
     not-found,
+    /// KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)
+    /// This will map to the api's 412 codes
     precondition-failed,
+    /// The size limit for a KV store key was exceeded.
+    /// This will map to the api's 413 codes
     payload-too-large,
+    /// The system encountered an unexpected internal error.
+    /// This will map to all remaining http error codes
     internal-error,
+    /// Too many requests have been made to the KV store.
+    /// This will map to the api's 429 codes
     too-many-requests,
   }
 
-  open: func(name: list<u8>) -> result<option<handle>, error>;
+  open: func(name: string) -> result<option<handle>, error>;
 
   lookup: func(
     store: handle,
@@ -765,7 +888,7 @@ interface kv-store {
 
   resource lookup-result {
     body: func() -> body-handle;
-    metadata: func(max-len: u64) -> result<option<list<u8>>, error>;
+    metadata: func(max-len: u64) -> result<option<string>, error>;
     generation: func() -> u64;
   }
 
@@ -791,7 +914,7 @@ interface kv-store {
   record insert-config {
     mode: insert-mode,
     if-generation-match: u64,
-    metadata: list<u8>,
+    metadata: string,
     time-to-live-sec: u32,
   }
 
@@ -830,9 +953,9 @@ interface kv-store {
 
   record list-config {
     mode: list-mode,
-    cursor: list<u8>,
+    cursor: string,
     limit: u32,
-    prefix: list<u8>,
+    prefix: string,
   }
 
   %list: func(
@@ -846,13 +969,12 @@ interface kv-store {
   ) -> result<tuple<option<body-handle>, kv-status>, error>;
 }
 
-/*
- * Fastly Secret Store
- */
+/// Fastly Secret Store
 interface secret-store {
 
   use types.{error, secret-handle};
 
+  /// A handle to a Secret Store.
   type store-handle = u32;
 
   open: func(name: string) -> result<store-handle, error>;
@@ -870,24 +992,29 @@ interface secret-store {
   from-bytes: func(bytes: list<u8>) -> result<secret-handle, error>;
 }
 
-/*
- * Fastly ACL
- */
+/// Fastly ACL
 interface acl {
 
   use types.{error};
   use http-types.{body-handle};
 
+  /// A handle to an ACL.
   type acl-handle = u32;
 
   enum acl-error {
+    /// The $acl_error has not been initialized.
     uninitialized,
+    /// There was no error.
     ok,
+    /// This will map to the api's 204 code.
+    /// It indicates that the request succeeded, yet returned nothing.
     no-content,
+    /// This will map to the api's 429 code.
+    /// Too many requests have been made.
     too-many-requests,
   }
 
-  open: func(name: list<u8>) -> result<acl-handle, error>;
+  open: func(name: string) -> result<acl-handle, error>;
 
   lookup: func(
     acl: acl-handle,
@@ -896,12 +1023,14 @@ interface acl {
   ) -> result<tuple<option<body-handle>, acl-error>, error>;
 }
 
-/*
- * Fastly backend
- */
+/// Fastly backend
 interface backend {
   use types.{error};
   use http-types.{tls-version};
+
+  type timeout-ms = u32;
+  type timeout-secs = u32;
+  type probe-count = u32;
 
   exists: func(backend: string) -> result<bool, error>;
 
@@ -940,19 +1069,37 @@ interface backend {
   /// Get the between byte timeout of the backend.
   get-between-bytes-timeout-ms: func(backend: string) -> result<u32, error>;
 
-  /// Returns `true` if the backend is configured to use SSL.
-  is-ssl: func(backend: string) -> result<bool, error>;
+  /// Returns `true` if the backend is configured to use TLS.
+  is-tls: func(backend: string) -> result<bool, error>;
 
-  /// Get the minimum SSL version this backend will use.
-  get-ssl-min-version: func(backend: string) -> result<option<tls-version>, error>;
+  /// Get the minimum TLS version this backend will use.
+  get-tls-min-version: func(backend: string) -> result<option<tls-version>, error>;
 
   /// Get the maximum SSL version this backend will use.
-  get-ssl-max-version: func(backend: string) -> result<option<tls-version>, error>;
+  get-tls-max-version: func(backend: string) -> result<option<tls-version>, error>;
+
+  get-http-keepalive-time: func(
+    backend: string,
+  ) -> result<timeout-ms, error>;
+
+  get-tcp-keepalive-enable: func(
+    backend: string,
+  ) -> result<bool, error>;
+
+  get-tcp-keepalive-interval: func(
+    backend: string,
+  ) -> result<timeout-secs, error>;
+
+  get-tcp-keepalive-probes: func(
+    backend: string,
+  ) -> result<probe-count, error>;
+
+  get-tcp-keepalive-time: func(
+    backend: string,
+  ) -> result<timeout-secs, error>;
 }
 
-/*
- * Fastly Async IO
- */
+/// Fastly Async IO
 interface async-io {
   use types.{error};
 
@@ -991,22 +1138,27 @@ interface async-io {
   is-ready: func(handle: handle) -> result<bool, error>;
 }
 
-/*
- * Fastly Purge
- */
+/// Fastly Purge
+///
+/// See the [Fastly purge documentation] for details.
+///
+/// [Fastly purge documentation]: https://www.fastly.com/documentation/guides/concepts/edge-state/cache/purging/
 interface purge {
 
   use types.{error};
 
   flags purge-options-mask {
     soft-purge,
+    /// all ret_buf fields must be populated
     ret-buf
   }
 
-  /*
-   * A surrogate key can be a max of 1024 characters.
-   * A surrogate key must contain only printable ASCII characters (those between `0x21` and `0x7E`, inclusive).
-   */
+  /// Purge a surrogate key for the current service.
+  ///
+  /// A surrogate key can be a max of 1024 characters.
+  /// A surrogate key must contain only printable ASCII characters (those between `0x21` and `0x7E`, inclusive).
+  ///
+  /// Returns a JSON purge response as in https://developer.fastly.com/reference/api/purging/#purge-tag
   purge-surrogate-key: func(
     surrogate-keys: string,
     purge-options: purge-options-mask,
@@ -1014,9 +1166,7 @@ interface purge {
   ) -> result<option<string>, error>;
 }
 
-/*
- * Fastly Cache
- */
+/// Fastly Cache
 interface cache {
 
   use types.{error};
@@ -1026,41 +1176,30 @@ interface cache {
   type handle = u32;
   /// Handle that can be used to check whether or not a cache lookup is waiting on another client.
   type busy-handle = u32;
-  /// Handle for an in-progress Replace operation
-  type replace-handle = u32;
-
+  type cache-replace-handle = u32;
   type object-length = u64;
   type duration-ns = u64;
   type cache-hit-count = u64;
-  type cache-replace-strategy = u32;
 
   flags lookup-options-mask {
+    reserved,
     request-headers,
+    service-id,
+    always-use-requested-range,
   }
 
   /// Extensible options for cache lookup operations; currently used for both `lookup` and `transaction_lookup`.
   record lookup-options {
-    /**
-     * A full request handle, but used only for its headers
-     */
+    /// A full request handle, but used only for its headers
     request-headers: request-handle,
+
+    service-id: string,
   }
 
-  flags replace-options-mask {
-    request-headers,
-    replace-strategy,
-  }
-
-  record replace-options {
-    /**
-     * A full request handle, but used only for its headers
-     */
-    request-headers: request-handle,
-    replace-strategy: cache-replace-strategy,
-  }
-
+  /// Options mask for `http_cache_write_options`.
   flags write-options-mask {
     reserved,
+    /// Only allowed for non-transactional `insert`
     request-headers,
     vary-rule,
     initial-age-ns,
@@ -1079,7 +1218,7 @@ interface cache {
   /// - `transaction-insert-and-stream-back`
   /// - `transaction-update`
   ///
-  /// Some options are only allowed for certain of these hostcalls; see `write-options-mask`.
+  /// Some options are only allowed for certain of these hostcalls; see `cache-write-options-mask`.
   record write-options {
     /// this is a required field; there's no flag for it
     max-age-ns: duration-ns,
@@ -1098,7 +1237,7 @@ interface cache {
     length: object-length,
     user-metadata: list<u8>,
     edge-max-age-ns: duration-ns,
-    service-id: list<u8>,
+    service-id: string,
   }
 
   flags get-body-options-mask {
@@ -1142,81 +1281,6 @@ interface cache {
     options-mask: write-options-mask,
     options: write-options,
   ) -> result<body-handle, error>;
-
-  /// The entrypoint to the replace API.
-  ///
-  /// This operation always participates in request collapsing and may return stale objects.
-  replace: func(
-    key: list<u8>,
-    options-mask: replace-options-mask,
-    options: replace-options,
-  ) -> result<replace-handle, error>;
-
-  /// Replace an object in the cache with the given metadata
-  ///
-  /// The returned handle is to a streaming body that is used for writing the object into
-  /// the cache.
-  replace-insert: func(
-    handle: replace-handle,
-    options-mask: write-options-mask,
-    options: write-options,
-  ) -> result<body-handle, error>;
-
-  /// Gets the age of the existing object during replace, returning the
-  /// `$none` error if there was no object.
-  replace-get-age-ns: func(
-    handle: replace-handle,
-  ) -> result<duration-ns, error>;
-
-  /// Gets a range of the existing object body, returning the `$none` error if there
-  /// was no existing object.
-  ///
-  /// The returned `body_handle` must be closed before calling this function
-  /// again on the same `cache_replace_handle`.
-  replace-get-body: func(
-    handle: replace-handle,
-    options-mask: get-body-options-mask,
-    options: get-body-options,
-  ) -> result<body-handle, error>;
-
-  /// Gets the number of cache hits for the existing object during replace,
-  /// returning the `$none` error if there was no object.
-  replace-get-hits: func(
-    handle: replace-handle,
-  ) -> result<cache-hit-count, error>;
-
-  /// Gets the content length of the existing object during replace,
-  /// returning the `$none` error if there was no object, or no content
-  /// length was provided.
-  replace-get-length: func(
-    handle: replace-handle,
-  ) -> result<object-length, error>;
-
-  /// Gets the configured max age of the existing object during replace,
-  /// returning the `$none` error if there was no object.
-  replace-get-max-age-ns: func(
-    handle: replace-handle,
-  ) -> result<duration-ns, error>;
-
-  /// Gets the configured stale-while-revalidate period of the existing
-  /// object during replace, returning the `$none` error if there was no
-  /// object.
-  replace-get-stale-while-revalidate-ns: func(
-    handle: replace-handle,
-  ) -> result<duration-ns, error>;
-
-  /// Gets the lookup state of the existing object during replace, returning
-  /// the `$none` error if there was no object.
-  replace-get-state: func(
-    handle: replace-handle,
-  ) -> result<lookup-state, error>;
-
-  /// Gets the user metadata of the existing object during replace, returning
-  /// the `$none` error if there was no object.
-  replace-get-user-metadata: func(
-    handle: replace-handle,
-    max-len: u64,
-  ) -> result<option<list<u8>>, error>;
 
   /// The entrypoint to the request-collapsing cache transaction API.
   ///
@@ -1338,11 +1402,500 @@ interface cache {
   /// Gets the number of cache hits for the found object, returning the `$none` error if there
   /// was no found object.
   get-hits: func(handle: handle) -> result<u64, error>;
+
+  flags replace-options-mask {
+    reserved,
+    request-headers,
+    replace-strategy,
+    service-id,
+    always-use-requested-range,
+  }
+
+  /// Extensible options for cache replace operations
+  record replace-options {
+    /// a full request handle, but used only for its headers
+    request-headers: request-handle,
+    replace-strategy: replace-strategy,
+    service-id: string,
+  }
+
+  enum replace-strategy {
+    immediate,
+    immediate-force-miss,
+    wait,
+  }
+
+  /// The entrypoint to the replace API.
+  ///
+  /// This operation always participates in request collapsing and may return stale objects.
+  replace: func(
+    key: list<u8>,
+    mask: replace-options-mask,
+    options: replace-options,
+  ) -> result<cache-replace-handle, error>;
+
+  /// Replace an object in the cache with the given metadata
+  ///
+  /// The returned handle is to a streaming body that is used for writing the object into
+  /// the cache.
+  replace-insert: func(
+    h: cache-replace-handle,
+    mask: write-options-mask,
+    options: write-options,
+  ) -> result<body-handle, error>;
+
+  /// Gets the age of the existing object during replace, returning
+  /// `None` if there was no object.
+  replace-get-age-ns: func(
+    h: cache-replace-handle,
+  ) -> result<option<duration-ns>, error>;
+
+  /// Gets a range of the existing object body, returning `None` if there
+  /// was no existing object.
+  ///
+  /// The returned `body_handle` must be closed before calling this function
+  /// again on the same `cache_replace_handle`.
+  replace-get-body: func(
+    h: cache-replace-handle,
+    mask: get-body-options-mask,
+    options: get-body-options,
+  ) -> result<option<body-handle>, error>;
+
+  /// Gets the number of cache hits for the existing object during replace,
+  /// returning `None` if there was no object.
+  replace-get-hits: func(
+    h: cache-replace-handle,
+  ) -> result<option<cache-hit-count>, error>;
+
+  /// Gets the content length of the existing object during replace,
+  /// returning `None` if there was no object, or no content
+  /// length was provided.
+  replace-get-length: func(
+    h: cache-replace-handle,
+  ) -> result<option<object-length>, error>;
+
+  /// Gets the configured max age of the existing object during replace,
+  /// returning the `$none` error if there was no object.
+  replace-get-max-age-ns: func(
+    h: cache-replace-handle,
+  ) -> result<option<duration-ns>, error>;
+
+  /// Gets the configured stale-while-revalidate period of the existing
+  /// object during replace, returning the `$none` error if there was no
+  /// object.
+  replace-get-stale-while-revalidate-ns: func(
+    h: cache-replace-handle,
+  ) -> result<option<duration-ns>, error>;
+
+  /// Gets the lookup state of the existing object during replace, returning
+  /// the `$none` error if there was no object.
+  replace-get-state: func(
+    h: cache-replace-handle,
+  ) -> result<option<lookup-state>, error>;
+
+  /// Gets the user metadata of the existing object during replace, returning
+  /// the `$none` error if there was no object.
+  replace-get-user-metadata: func(
+    h: cache-replace-handle,
+    max-len: u64,
+  ) -> result<option<list<u8>>, error>;
+
+}
+
+/// Proposed hostcall interface for the HTTP Cache API
+///
+/// Overall, this should look very familiar to users of the Core Cache API. The primary differences
+/// are:
+///
+/// - HTTP `request_handle`s and `response_handle`s are used rather than relying on the user to
+///   encode headers, status codes, etc in `user_metadata`.
+///
+/// - Convenience functions specific to HTTP semantics are provided, such as `is_request_cacheable`,
+///   `get_suggested_backend_request`, `get_suggested_cache_options`, and
+///   `transaction_record_not_cacheable`.
+///
+/// The HTTP-specific behavior of these functions is intended to support applications that match the
+/// normative guidance in RFC 9111. For example, `is_request_cacheable` returns `false` for `POST`
+/// requests. However, this answer along with those of many of these functions explicitly provide
+/// _suggestions_; they do not necessarily need to be followed if custom behavior is required, such
+/// as caching `POST` responses when the application author knows that to be safe.
+///
+/// The starting points for this API are `lookup` (no request collapsing) and `transaction_lookup`
+/// (request collapsing).
+interface http-cache {
+  use types.{error};
+  use http-types.{request-handle, response-handle, body-handle};
+  use cache.{lookup-state, object-length, duration-ns, cache-hit-count};
+
+  /// A handle to an HTTP Cache transaction.
+  type cache-handle = u32;
+
+  /// The suggested action to take for spec-recommended behavior following
+  /// `prepare_response_for_storage`.
+  enum storage-action {
+    /// Insert the response into cache (`transaction_insert*`).
+    insert,
+    /// Update the stale response in cache (`transaction_update*`).
+    update,
+    /// Do not store this response.
+    do-not-store,
+    /// Do not store this response, and furthermore record its non-cacheability for other pending
+    /// requests (`transaction_record_not_cacheable`).
+    record-uncacheable,
+  }
+
+  /// Non-required options for cache lookups.
+  ///
+  /// This record is always provided along with an `http_cache_lookup_options_mask` value that
+  /// indicates which of the fields in this record are valid.
+  record cache-lookup-options {
+    /// Cache key to use in lieu of the automatically-generated cache key based on the request's
+    /// properties.
+    override-key: list<u8>,
+  }
+
+  /// Options mask for `http_cache_lookup_options`.
+  flags cache-lookup-options-mask {
+    reserved,
+    override-key,
+  }
+
+  flags cache-write-options-mask {
+    reserved,
+    vary-rule,
+    initial-age-ns,
+    stale-while-revalidate-ns,
+    surrogate-keys,
+    length,
+    sensitive-data,
+  }
+
+  /// Options for cache insertions and updates.
+  ///
+  /// This record is always provided along with an `http_cache_write_options_mask` value that
+  /// indicates which of the fields in this record are valid.
+  record cache-write-options {
+    /// The maximum age of the response before it is considered stale, in nanoseconds.
+    ///
+    /// This field is required; there is no flag for it in `http_cache_write_options_mask`.
+    max-age-ns: duration-ns,
+
+    /// A list of header names to use when calculating variants for this response.
+    ///
+    /// The format is a string containing header names separated by spaces.
+    vary-rule: string,
+
+    /// The initial age of the response in nanoseconds.
+    ///
+    /// If this field is not set, the default value is zero.
+    ///
+    /// This age is used to determine the freshness lifetime of the response as well as to
+    /// prioritize which variant to return if a subsequent lookup matches more than one vary rule
+    initial-age-ns: duration-ns,
+
+    /// The maximum duration after `max_age` during which the response may be delivered stale
+    /// while being revalidated, in nanoseconds.
+    ///
+    /// If this field is not set, the default value is zero.
+    stale-while-revalidate-ns: duration-ns,
+
+    /// A list of surrogate keys that may be used to purge this response.
+    ///
+    /// The format is a string containing [valid surrogate
+    /// keys](https://www.fastly.com/documentation/reference/http/http-headers/Surrogate-Key/)
+    /// separated by spaces.
+    ///
+    /// If this field is not set, no surrogate keys will be associated with the response. This
+    /// means that the response cannot be purged except via a purge-all operation.
+    surrogate-keys: string,
+
+    /// The length of the response body.
+    ///
+    /// If this field is not set, the length of the body is treated as unknown.
+    ///
+    /// When possible, this field should be set so that other clients waiting to retrieve the
+    /// body have enough information to synthesize a `content-length` even before the complete
+    /// body is inserted to the cache.
+    length: object-length,
+  }
+
+  /// Determine whether a request is cacheable per conservative RFC 9111 semantics.
+  ///
+  /// In particular, this function checks whether the request method is `GET` or `HEAD`, and
+  /// considers requests with other methods uncacheable. Applications where it is safe to cache
+  /// responses to other methods should consider using their own cacheability check instead of
+  /// this function.
+  is-request-cacheable: func(req-handle: request-handle) -> result<bool, error>;
+
+  /// Retrieves the default cache key for the request.
+  ///
+  /// The `$key_out` parameter must point to an array of size `key_out_len`.
+  ///
+  /// If the guest-provided output parameter is not long enough to contain the full key,
+  /// the required size is written by the host to `nwritten_out` and the `$buflen`
+  /// error is returned.
+  ///
+  /// At the moment, HTTP cache keys must always be 32 bytes.
+  get-suggested-cache-key: func(
+    req-handle: request-handle,
+    max-len: u64,
+  ) -> result<list<u8>, error>;
+
+  /// Perform a cache lookup based on the given request without participating in request
+  /// collapsing.
+  ///
+  /// The request is not consumed.
+  lookup: func(
+    req-handle: request-handle,
+    options-mask: cache-lookup-options-mask,
+    options: cache-lookup-options,
+  ) -> result<cache-handle, error>;
+
+  /// Perform a cache lookup based on the given request.
+  ///
+  /// This operation always participates in request collapsing and may return an obligation to
+  /// insert or update responses, and/or stale responses. To bypass request collapsing, use
+  /// `lookup` instead.
+  ///
+  /// The request is not consumed.
+  transaction-lookup: func(
+    req-handle: request-handle,
+    options-mask: cache-lookup-options-mask,
+    options: cache-lookup-options,
+  ) -> result<cache-handle, error>;
+
+  /// Insert a response into the cache with the given options, returning a streaming body handle
+  /// that is ready for writing or appending.
+  ///
+  /// Can only be used if the cache handle state includes the `$must_insert_or_update` flag.
+  ///
+  /// The response is consumed.
+  transaction-insert: func(
+    handle: cache-handle,
+    resp-handle: response-handle,
+    options-mask: cache-write-options-mask,
+    options: cache-write-options,
+  ) -> result<body-handle, error>;
+
+  /// Insert a response into the cache with the given options, and return a fresh cache handle
+  /// that can be used to retrieve and stream the response while it's being inserted.
+  ///
+  /// This helps avoid the "slow reader" problem on a teed stream, for example when a program wishes
+  /// to store a backend request in the cache while simultaneously streaming to a client in an HTTP
+  /// response.
+  ///
+  /// The response is consumed.
+  transaction-insert-and-stream-back: func(
+    handle: cache-handle,
+    resp-handle: response-handle,
+    options-mask: cache-write-options-mask,
+    options: cache-write-options,
+  ) -> result<tuple<body-handle, cache-handle>, error>;
+
+  /// Update freshness lifetime, response headers, and caching settings without updating the
+  /// response body.
+  ///
+  /// Can only be used in if the cache handle state includes both of the flags:
+  /// - `$found`
+  /// - `$must_insert_or_update`
+  ///
+  /// The response is consumed.
+  transaction-update: func(
+    handle: cache-handle,
+    resp-handle: response-handle,
+    options-mask: cache-write-options-mask,
+    options: cache-write-options,
+  ) -> result<_, error>;
+
+  /// Update freshness lifetime, response headers, and caching settings without updating the
+  /// response body, and return a fresh cache handle that can be used to retrieve and stream the
+  /// stored response.
+  ///
+  /// Can only be used in if the cache handle state includes both of the flags:
+  /// - `$found`
+  /// - `$must_insert_or_update`
+  ///
+  /// The response is consumed.
+  transaction-update-and-return-fresh: func(
+    handle: cache-handle,
+    resp-handle: response-handle,
+    options-mask: cache-write-options-mask,
+    options: cache-write-options,
+  ) -> result<cache-handle, error>;
+
+  /// Disable request collapsing and response caching for this cache entry.
+  ///
+  /// In Varnish terms, this function stores a hit-for-pass object.
+  ///
+  /// Only the max age and, optionally, the vary rule are read from the options mask and struct
+  /// for this function.
+  transaction-record-not-cacheable: func(
+    handle: cache-handle,
+    options-mask: cache-write-options-mask,
+    options: cache-write-options,
+  ) -> result<_, error>;
+
+  /// Abandon an obligation to provide a response to the cache.
+  ///
+  /// Useful if there is an error before streaming is possible, e.g. if a backend is unreachable.
+  ///
+  /// If there are other requests collapsed on this transaction, one of those other requests will
+  /// be awoken and given the obligation to provide a response. Note that if subsequent requests
+  /// are unlikely to yield cacheable responses, this may lead to undesired serialization of
+  /// requests. Consider using `transaction_record_not_cacheable` to make lookups for this request
+  /// bypass the cache.
+  transaction-abandon: func(
+    handle: cache-handle,
+  ) -> result<_, error>;
+
+  /// Close an ongoing interaction with the cache.
+  ///
+  /// If the cache handle state includes `$must_insert_or_update` (and hence no insert or update
+  /// has been performed), closing the handle cancels any request collapsing, potentially choosing
+  /// a new waiter to perform the insertion/update.
+  close: func(
+    handle: cache-handle,
+  ) -> result<_, error>;
+
+  /// Prepare a suggested request to make to a backend to satisfy the looked-up request.
+  ///
+  /// If there is a stored, stale response, this suggested request may be for revalidation. If the
+  /// looked-up request is ranged, the suggested request will be unranged in order to try caching
+  /// the entire response.
+  get-suggested-backend-request: func(
+    handle: cache-handle,
+  ) -> result<request-handle, error>;
+
+  resource suggested-cache-options {
+    max-age-ns: func() -> duration-ns;
+    vary-rule: func(max-len: u64) -> result<list<u8>, error>;
+    initial-age-ns: func() -> duration-ns;
+    stale-while-revalidate-ns: func() -> duration-ns;
+    surrogate-keys: func(max-len: u64) -> result<list<u8>, error>;
+    length: func() -> option<object-length>;
+    sensitive-data: func() -> bool;
+  }
+
+  /// Prepare a suggested set of cache write options for a given request and response pair.
+  ///
+  /// The ABI of this function includes several unusual types of input and output parameters.
+  ///
+  /// The bits set in the `options_mask` input parameter describe which cache options the guest is
+  /// requesting that the host provide.
+  ///
+  /// The `options` input parameter allows the guest to provide output parameters for
+  /// pointer/length options. When the corresponding bit is set in `options_mask`, the pointer and
+  /// length should be set in this record to be used by the host to provide the output.
+  ///
+  /// The `options_mask_out` output parameter is only used by the host to indicate the status of
+  /// pointer/length data in the `options_out` record. The flag for a given pointer/length
+  /// parameter is set by the host if the corresponding flag was set in `options_mask`, and the
+  /// value is present in the suggested options. If the host returns a status of `$buflen`, the
+  /// same set of flags will be set, but the length value of the corresponding fields in
+  /// `options_out` are set to the lengths that would be required to read the full value from the
+  /// host on a subsequent call.
+  ///
+  /// The `options_out` output parameter is where the host writes the suggested options that were
+  /// requested by the guest in `options_mask`. For pointer/length data, if there was enough room
+  /// to write the suggested option, the length field will contain the length of the data actually
+  /// written, while the pointer field will match the input pointer.
+  ///
+  /// The response is not consumed.
+  get-suggested-cache-options: func(
+    handle: cache-handle,
+    response: response-handle,
+  ) -> result<suggested-cache-options, error>;
+
+  /// Adjust a response into the appropriate form for storage and provides a storage action recommendation.
+  ///
+  /// For example, if the looked-up request contains conditional headers, this function will
+  /// interpret a `304 Not Modified` response for revalidation by updating headers.
+  ///
+  /// In addition to the updated response, this function returns the recommended storage action.
+  prepare-response-for-storage: func(
+    handle: cache-handle,
+    response: response-handle,
+  ) -> result<tuple<storage-action, response-handle>, error>;
+
+  /// Retrieve a stored response from the cache, returning the `$none` error if there was no found
+  /// response.
+  ///
+  /// If `transform_for_client` is set, the response will be adjusted according to the looked-up
+  /// request. For example, a response retrieved for a range request may be transformed into a
+  /// `206 Partial Content` response with an appropriate `content-range` header.
+  get-found-response: func(
+    handle: cache-handle,
+    transform-for-client: u32,
+  ) -> result<tuple<response-handle, body-handle>, error>;
+
+  /// Get the state of a cache transaction.
+  ///
+  /// Primarily useful after performing the lookup to determine what subsequent operations are
+  /// possible and whether any insertion or update obligations exist.
+  get-state: func(
+    handle: cache-handle,
+  ) -> result<lookup-state, error>;
+
+  /// Get the length of the found response, returning the `$none` error if there was no found
+  /// response or no length was provided.
+  get-length: func(handle: cache-handle) -> result<object-length, error>;
+
+  /// Get the configured max age of the found response in nanoseconds, returning the `$none` error
+  /// if there was no found response.
+  get-max-age-ns: func(handle: cache-handle) -> result<duration-ns, error>;
+
+  /// Get the configured stale-while-revalidate period of the found response in nanoseconds,
+  /// returning the `$none` error if there was no found response.
+  get-stale-while-revalidate-ns: func(
+    handle: cache-handle,
+  ) -> result<duration-ns, error>;
+
+  /// Get the age of the found response in nanoseconds, returning the `$none` error if there was
+  /// no found response.
+  get-age-ns: func(handle: cache-handle) -> result<duration-ns, error>;
+
+  /// Get the number of cache hits for the found response, returning the `$none` error if there
+  /// was no found response.
+  ///
+  /// Note that this figure only reflects hits for a stored response in a particular cache server
+  /// or cluster, not the entire Fastly network.
+  get-hits: func(handle: cache-handle) -> result<cache-hit-count, error>;
+
+  /// Get whether a found response is marked as containing sensitive data, returning the `$none`
+  /// error if there was no found response.
+  get-sensitive-data: func(handle: cache-handle) -> result<bool, error>;
+
+  /// Get the surrogate keys of the found response, returning the `$none` error if there was no
+  /// found response.
+  ///
+  /// The output is a list of surrogate keys separated by spaces.
+  ///
+  /// If the guest-provided output parameter is not long enough to contain the full list of
+  /// surrogate keys, the required size is written by the host to `nwritten_out` and the `$buflen`
+  /// error is returned.
+  get-surrogate-keys: func(
+    handle: cache-handle,
+    max-len: u64,
+  ) -> result<list<u8>, error>;
+
+  /// Get the vary rule of the found response, returning the `$none` error if there was no found
+  /// response.
+  ///
+  /// The output is a list of header names separated by spaces.
+  ///
+  /// If the guest-provided output parameter is not long enough to contain the full list of
+  /// surrogate keys, the required size is written by the host to `nwritten_out` and the `$buflen`
+  /// error is returned.
+  get-vary-rule: func(
+    handle: cache-handle,
+    max-len: u64,
+  ) -> result<list<u8>, error>;
 }
 
 interface config-store {
   use types.{error};
 
+  /// A handle to an Config Store.
   type handle = u32;
 
   /// Attempt to open the named config store.
@@ -1353,14 +1906,14 @@ interface config-store {
     store: handle,
     key: string,
     max-len: u64,
-  ) -> result<option<list<u8>>, error>;
+  ) -> result<option<string>, error>;
 }
 
 interface shielding {
   use types.{error};
 
   shield-info: func(
-    name: list<u8>,
+    name: string,
     max-len: u64,
   ) -> result<list<u8>, error>;
 
@@ -1370,20 +1923,18 @@ interface shielding {
   }
 
   record shield-backend-options {
-    cache-key: list<u8>,
+    cache-key: string,
   }
 
   backend-for-shield: func(
-    name: list<u8>,
+    name: string,
     options-mask: shield-backend-options-mask,
     options: shield-backend-options,
     max-len: u64,
-  ) -> result<list<u8>, error>;
+  ) -> result<string, error>;
 }
 
-/*
- * Fastly Image Optimizer
- */
+/// Fastly Image Optimizer
 interface image-optimizer {
 
   use http-types.{body-handle, request-handle, response};
@@ -1395,7 +1946,9 @@ interface image-optimizer {
   }
 
   record image-optimizer-transform-config {
-    sdk-claims-opts: list<u8>,
+    /// Contains any Image Optimizer API parameters that were set
+    /// as well as the Image Optimizer region the request is meant for.
+    sdk-claims-opts: string,
   }
 
   enum image-optimizer-error-tag {
@@ -1413,12 +1966,13 @@ interface image-optimizer {
   transform-image-optimizer-request: func(
     origin-image-request: request-handle,
     origin-image-request-body: body-handle,
-    origin-image-request-backend: list<u8>,
+    origin-image-request-backend: string,
     io-transform-config-mask: image-optimizer-transform-config-options,
     io-transform-config: image-optimizer-transform-config,
     io-error-detail: image-optimizer-error-detail,
   ) -> result<response, error>;
 }
+
 
 interface reactor {
   use http-types.{request-handle, body-handle};
@@ -1439,38 +1993,42 @@ interface compute-runtime {
 }
 
 world compute {
-    import wasi:clocks/wall-clock@0.2.0;
-    import wasi:clocks/monotonic-clock@0.2.0;
-    import wasi:io/error@0.2.0;
-    import wasi:io/streams@0.2.0;
-    import wasi:random/random@0.2.0;
-    import wasi:cli/environment@0.2.0;
-    import wasi:cli/exit@0.2.0;
-    import wasi:cli/stdout@0.2.0;
-    import wasi:cli/stderr@0.2.0;
-    import wasi:cli/stdin@0.2.0;
+  import wasi:clocks/wall-clock@0.2.0;
+  import wasi:clocks/monotonic-clock@0.2.0;
+  import wasi:io/error@0.2.0;
+  import wasi:io/streams@0.2.0;
+  import wasi:random/random@0.2.0;
+  import wasi:cli/environment@0.2.0;
+  import wasi:cli/exit@0.2.0;
+  import wasi:cli/stdout@0.2.0;
+  import wasi:cli/stderr@0.2.0;
+  import wasi:cli/stdin@0.2.0;
 
-    import acl;
-    import async-io;
-    import backend;
-    import cache;
-    import compute-runtime;
-    import dictionary;
-    import geo;
-    import device-detection;
-    import erl;
-    import http-body;
-    import http-req;
-    import http-resp;
-    import image-optimizer;
-    import log;
-    import kv-store;
-    import object-store;
-    import purge;
-    import secret-store;
-    import shielding;
-    import config-store;
-    import uap;
+  // public interfaces
+  import acl;
+  import async-io;
+  import backend;
+  import cache;
+  import compute-runtime;
+  import dictionary;
+  import geo;
+  import device-detection;
+  import erl;
+  import http-body;
+  import http-req;
+  import http-resp;
+  import image-optimizer;
+  import log;
+  import kv-store;
+  import object-store;
+  import purge;
+  import secret-store;
+  import config-store;
+  import uap;
 
-    export reactor;
+  // experimental interfaces
+  import http-cache;
+  import shielding;
+
+  export reactor;
 }

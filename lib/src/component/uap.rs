@@ -48,7 +48,7 @@ impl uap::HostUserAgent for ComponentCtx {
 
 #[async_trait::async_trait]
 impl uap::Host for ComponentCtx {
-    async fn parse(&mut self, _user_agent: String) -> Result<Resource<UserAgent>, types::Error> {
+    async fn parse(&mut self, _user_agent: Vec<u8>) -> Result<Resource<UserAgent>, types::Error> {
         // not available
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }

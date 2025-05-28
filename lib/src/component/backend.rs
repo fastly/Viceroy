@@ -129,7 +129,7 @@ impl backend::Host for ComponentCtx {
         .into())
     }
 
-    async fn is_ssl(&mut self, backend: String) -> Result<bool, types::Error> {
+    async fn is_tls(&mut self, backend: String) -> Result<bool, types::Error> {
         let backend = self
             .session
             .backend(&backend)
@@ -137,7 +137,7 @@ impl backend::Host for ComponentCtx {
         Ok(backend.uri.scheme() == Some(&http::uri::Scheme::HTTPS))
     }
 
-    async fn get_ssl_min_version(
+    async fn get_tls_min_version(
         &mut self,
         backend: String,
     ) -> Result<Option<http_types::TlsVersion>, types::Error> {
@@ -153,7 +153,7 @@ impl backend::Host for ComponentCtx {
         .into())
     }
 
-    async fn get_ssl_max_version(
+    async fn get_tls_max_version(
         &mut self,
         backend: String,
     ) -> Result<Option<http_types::TlsVersion>, types::Error> {
@@ -165,6 +165,41 @@ impl backend::Host for ComponentCtx {
         // health checks are not enabled in Viceroy :(
         Err(Error::Unsupported {
             msg: "ssl version flags are not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_http_keepalive_time(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_http_keepalive_time` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_enable(&mut self, _backend: String) -> Result<bool, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_enable` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_interval(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_interval` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_probes(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_probes` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_time(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_time` is not supported in Viceroy",
         }
         .into())
     }
