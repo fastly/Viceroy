@@ -2,8 +2,6 @@
 members = [
     "cli",
     "lib",
-    "crates/adapter",
-    "crates/adapter/byte-array-literals",
 ]
 resolver = "2"
 

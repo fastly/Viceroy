@@ -12,7 +12,8 @@ impl FastlyStatus {
     pub const OK: Self = FastlyStatus(0);
     pub const UNKNOWN_ERROR: Self = FastlyStatus(1);
     pub const INVALID_ARGUMENT: Self = Self(2);
-    pub const UNSUPPORTED: Self = Self(5);
+    pub const BUFFER_LEN: Self = Self(4);
+    pub const UNSUPPORTED: Self = FastlyStatus(5);
     pub const NONE: Self = FastlyStatus(10);
 }
 

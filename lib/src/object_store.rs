@@ -12,7 +12,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct ObjectValue {
     pub body: Vec<u8>,
-    pub metadata: Vec<u8>,
+    pub metadata: String,
     pub metadata_len: usize,
     pub generation: u64,
     pub expiration: Option<SystemTime>,
@@ -91,7 +91,7 @@ impl ObjectStores {
         obj: Vec<u8>,
         mode: KvInsertMode,
         generation: Option<u64>,
-        metadata: Option<Vec<u8>>,
+        metadata: Option<String>,
         ttl: Option<std::time::Duration>,
     ) -> Result<(), KvStoreError> {
         // manages ttl
@@ -148,7 +148,7 @@ impl ObjectStores {
 
         let mut obj_val = ObjectValue {
             body: out_obj,
-            metadata: vec![],
+            metadata: String::new(),
             metadata_len: 0,
             generation: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -693,7 +693,7 @@ mod tests {
             val3.clone().into(),
             KvInsertMode::Overwrite,
             None,
-            Some(val2.as_bytes().to_vec()),
+            Some(val2.to_owned()),
             None,
         );
         match res {
@@ -709,7 +709,7 @@ mod tests {
         match res {
             Ok(ov) => {
                 assert_eq!(ov.body, val3.as_bytes().to_vec());
-                assert_eq!(ov.metadata, val2.as_bytes().to_vec());
+                assert_eq!(ov.metadata, val2.to_owned());
             }
             Err(_) => panic!("should have been OK"),
         }

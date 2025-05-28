@@ -21,7 +21,7 @@ use {
 
 pub struct LookupResult {
     body: http_body::BodyHandle,
-    metadata: Option<Vec<u8>>,
+    metadata: Option<String>,
     generation: u64,
 }
 
@@ -38,7 +38,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
         &mut self,
         rep: wasmtime::component::Resource<kv_store::LookupResult>,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, TrappableError> {
+    ) -> Result<Option<String>, TrappableError> {
         let res = self.table().get(&rep)?;
         let Some(md) = res.metadata.as_ref() else {
             return Ok(None);
@@ -69,8 +69,7 @@ impl kv_store::HostLookupResult for ComponentCtx {
 
 #[async_trait::async_trait]
 impl kv_store::Host for ComponentCtx {
-    async fn open(&mut self, name: Vec<u8>) -> Result<Option<kv_store::Handle>, types::Error> {
-        let name = String::from_utf8(name)?;
+    async fn open(&mut self, name: String) -> Result<Option<kv_store::Handle>, types::Error> {
         if self.session.kv_store().store_exists(&name)? {
             // todo (byoung), handle optional/none/error case
             let h = self.session.kv_store_handle(&name)?;
@@ -250,13 +249,13 @@ impl kv_store::Host for ComponentCtx {
         let store = self.session.get_kv_store_key(store.into()).unwrap();
 
         let cursor = if mask.contains(kv_store::ListConfigOptions::CURSOR) {
-            Some(String::from_utf8(options.cursor)?)
+            Some(options.cursor)
         } else {
             None
         };
 
         let prefix = if mask.contains(kv_store::ListConfigOptions::PREFIX) {
-            Some(String::from_utf8(options.prefix)?)
+            Some(options.prefix)
         } else {
             None
         };

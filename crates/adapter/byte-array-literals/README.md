@@ -12,4 +12,6 @@ data section, at least when compiled with opt-level='s' on today's rustc
 macro.
 
 It is very possible this cheat code will abruptly stop working in some future
-compiler, but we'll cross that bridge when we get to it.
+compiler, but we'll cross that bridge when we get to it. If it does, it will
+manifest as additional constant data being present the same way using a normal
+string literal does, so it will be a loud failure when it happens.
