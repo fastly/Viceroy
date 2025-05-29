@@ -6,7 +6,7 @@ use {
     hyper::StatusCode,
 };
 
-viceroy_test!(cache_nontransactional, |is_component| {
+viceroy_test!(cache, |is_component| {
     if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
         eprintln!("WARNING: Skipping cache tests.");
         eprintln!(
