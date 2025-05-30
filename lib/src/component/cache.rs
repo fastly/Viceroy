@@ -20,38 +20,57 @@ fn get_key(key: Vec<u8>) -> Result<CacheKey, types::Error> {
 }
 
 fn load_write_options(
-    options_mask: api::WriteOptionsMask,
+    mut options_mask: api::WriteOptionsMask,
     options: &api::WriteOptions,
 ) -> Result<WriteOptions, Error> {
+    // Headers must be handled before load_write_options:
+    assert!(
+        !options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS),
+        "Viceroy bug! headers must be handled before load_write_options"
+    );
+
+    // Clear each bit of options_mask as we handle it, to make sure we catch any unknown options.
+
     let max_age = Duration::from_nanos(options.max_age_ns);
+
     let initial_age = if options_mask.contains(api::WriteOptionsMask::INITIAL_AGE_NS) {
         Duration::from_nanos(options.initial_age_ns)
     } else {
         Duration::ZERO
     };
+    options_mask &= !api::WriteOptionsMask::INITIAL_AGE_NS;
+
     let stale_while_revalidate =
         if options_mask.contains(api::WriteOptionsMask::STALE_WHILE_REVALIDATE_NS) {
             Duration::from_nanos(options.stale_while_revalidate_ns)
         } else {
             Duration::ZERO
         };
+    options_mask &= !api::WriteOptionsMask::STALE_WHILE_REVALIDATE_NS;
 
     let vary_rule = if options_mask.contains(api::WriteOptionsMask::VARY_RULE) {
         options.vary_rule.parse()?
     } else {
         VaryRule::default()
     };
+    options_mask &= !api::WriteOptionsMask::VARY_RULE;
+
     let user_metadata = if options_mask.contains(api::WriteOptionsMask::USER_METADATA) {
         Bytes::copy_from_slice(&options.user_metadata)
     } else {
         Bytes::new()
     };
+    options_mask &= !api::WriteOptionsMask::USER_METADATA;
+
     let length = if options_mask.contains(api::WriteOptionsMask::LENGTH) {
         Some(options.length)
     } else {
         None
     };
+    options_mask &= !api::WriteOptionsMask::LENGTH;
+
     let sensitive_data = options_mask.contains(api::WriteOptionsMask::SENSITIVE_DATA);
+    options_mask &= !api::WriteOptionsMask::SENSITIVE_DATA;
 
     // SERVICE_ID differences are observable- but we don't implement that behavior. Error explicitly.
     if options_mask.contains(api::WriteOptionsMask::SERVICE_ID) {
@@ -59,6 +78,7 @@ fn load_write_options(
             msg: "cache on_behalf_of is not supported in Viceroy",
         });
     }
+    options_mask &= !api::WriteOptionsMask::SERVICE_ID;
 
     let edge_max_age = if options_mask.contains(api::WriteOptionsMask::EDGE_MAX_AGE_NS) {
         Duration::from_nanos(options.edge_max_age_ns)
@@ -73,12 +93,20 @@ fn load_write_options(
         );
         return Err(Error::InvalidArgument);
     }
+    options_mask &= !api::WriteOptionsMask::EDGE_MAX_AGE_NS;
 
     let surrogate_keys = if options_mask.contains(api::WriteOptionsMask::SURROGATE_KEYS) {
         options.surrogate_keys.as_bytes().try_into()?
     } else {
         SurrogateKeySet::default()
     };
+    options_mask &= !api::WriteOptionsMask::SURROGATE_KEYS;
+
+    if options_mask != api::WriteOptionsMask::empty() {
+        return Err(Error::Unsupported {
+            msg: "unknown cache write option provided",
+        });
+    }
 
     Ok(WriteOptions {
         max_age,
@@ -129,7 +157,6 @@ impl api::Host for ComponentCtx {
     ) -> Result<api::BodyHandle, types::Error> {
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
-        let write_options = load_write_options(options_mask, &options)?;
 
         let request_headers = if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
             let handle = options.request_headers;
@@ -138,11 +165,15 @@ impl api::Host for ComponentCtx {
         } else {
             HeaderMap::default()
         };
+        let options = load_write_options(
+            options_mask & !api::WriteOptionsMask::REQUEST_HEADERS,
+            &options,
+        )?;
 
         let handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(handle)?;
         cache
-            .insert(&key, request_headers, write_options, read_body)
+            .insert(&key, request_headers, options, read_body)
             .await;
         Ok(handle.into())
     }
@@ -389,11 +420,11 @@ impl api::Host for ComponentCtx {
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
     ) -> Result<(http_types::BodyHandle, api::Handle), types::Error> {
-        let write_options = load_write_options(options_mask, &options)?;
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
             return Err(Error::InvalidArgument.into());
         }
+        let options = load_write_options(options_mask, &options)?;
 
         let entry = self.session.cache_entry_mut(handle.into()).await?;
         // The path here is:
@@ -409,7 +440,7 @@ impl api::Host for ComponentCtx {
         let body_handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(body_handle)?;
 
-        obligation.insert(write_options, read_body);
+        obligation.insert(options, read_body);
         Ok((body_handle.into(), handle))
     }
 
@@ -419,11 +450,11 @@ impl api::Host for ComponentCtx {
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
     ) -> Result<(), types::Error> {
-        let options = load_write_options(options_mask, &options)?;
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
             return Err(Error::InvalidArgument.into());
         }
+        let options = load_write_options(options_mask, &options)?;
 
         let entry = self.session.cache_entry_mut(handle.into()).await?;
         // The path here is:
