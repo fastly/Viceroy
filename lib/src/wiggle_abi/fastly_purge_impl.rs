@@ -9,11 +9,24 @@ use {
 impl FastlyPurge for Session {
     fn purge_surrogate_key(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _surrogate_key: GuestPtr<str>,
-        _options_mask: PurgeOptionsMask,
+        memory: &mut GuestMemory<'_>,
+        surrogate_key: GuestPtr<str>,
+        options_mask: PurgeOptionsMask,
         _options: GuestPtr<PurgeOptions>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("FastlyPurge"))
+        if options_mask.contains(PurgeOptionsMask::SOFT_PURGE) {
+            return Err(Error::NotAvailable("soft purge"));
+        }
+        if options_mask.contains(PurgeOptionsMask::RET_BUF) {
+            return Err(Error::NotAvailable("purge response"));
+        }
+
+        let key = memory
+            .as_str(surrogate_key)?
+            .ok_or(Error::SharedMemory)?
+            .parse()?;
+        let purged = self.cache().purge(key);
+        tracing::debug!("{purged} variants purged");
+        Ok(())
     }
 }

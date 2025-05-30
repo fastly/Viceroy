@@ -13,7 +13,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{variance::Variant, WriteOptions};
+use super::{variance::Variant, SurrogateKeySet, WriteOptions};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -40,11 +40,7 @@ pub struct ObjectMeta {
     user_metadata: Bytes,
 
     length: Option<u64>,
-    // TODO: cceckman-at-fastly: for future work!
-    /*
-    never_cache: bool, // Aka "hit for pass"
-    surrogate_keys: HashSet<String>,
-    */
+    surrogate_keys: SurrogateKeySet,
 }
 
 impl ObjectMeta {
@@ -104,6 +100,7 @@ impl ObjectMeta {
             sensitive_data: _,
             // Similarly, edge_max_age has no effect and cannot be read.
             edge_max_age: _,
+            surrogate_keys,
             ..
         } = value;
         ObjectMeta {
@@ -115,6 +112,7 @@ impl ObjectMeta {
             vary_rule,
             user_metadata,
             length,
+            surrogate_keys,
         }
     }
 }
@@ -376,6 +374,41 @@ impl CacheKeyObjects {
                 .present = Some(object);
         });
     }
+
+    /// Purge all variants associated with the given key.
+    ///
+    /// Returns the number of variants purged.
+    pub fn purge(&self, key: &super::SurrogateKey) -> usize {
+        let mut drop_count = 0;
+        // This _shouldn't_ ever need a send- since we're only removing things, and only those
+        // which don't have obligations.
+        // But, we do it anyway, if we actually modified things.
+        self.0.send_if_modified(|cache_key_objects| {
+            let count = cache_key_objects.objects.len();
+            let new_objects: HashMap<_, _> = cache_key_objects
+                .objects
+                .drain()
+                .filter(|(_, value)| {
+                    let Some(present) = value.present.as_ref() else {
+                        // We may be considering an entry which is obligated, but not yet written.
+                        // In this case, we don't know its surrogate keys, so we leave it in the
+                        // set.
+                        return true;
+                        // Note that this means we also don't have to do anything fancy with
+                        // ensuring the uniqueness of the obligation- we can't get in a situation
+                        // where the CacheData was purged from under an obligation.
+                    };
+                    // Preserve the items that do _not_ contain the key:
+                    !present.get_meta().surrogate_keys.0.contains(key)
+                })
+                .collect();
+            drop_count = count - new_objects.len();
+            cache_key_objects.objects = new_objects;
+            // Modified if any entries were dropped:
+            drop_count != 0
+        });
+        drop_count
+    }
 }
 
 #[derive(Debug, Default)]
@@ -473,8 +506,6 @@ impl Drop for Obligation {
 /// The data stored in cache for a metadata-complete entry.
 #[derive(Debug)]
 pub(crate) struct CacheData {
-    // TODO: cceckman-at-fastly
-    // - surrogate keys
     meta: ObjectMeta,
     body: CollectingBody,
 }

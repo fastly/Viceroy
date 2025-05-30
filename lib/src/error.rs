@@ -149,7 +149,6 @@ pub enum Error {
     #[error("Resource temporarily unavailable")]
     Again,
 
-    // TODO: cceckman-at-fastly ; better error types
     #[error("cache error: {0}")]
     CacheError(crate::cache::Error),
 }

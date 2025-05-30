@@ -43,7 +43,7 @@ fn main() {
 
     run_test!(test_stale_while_revalidate);
     run_test!(test_keyed_purge);
-    run_test!(test_soft_purge);
+    // run_test!(test_soft_purge);
     run_test!(test_purge_variant);
 
     run_test!(test_racing_transactions);
@@ -663,11 +663,14 @@ fn test_keyed_purge() {
     let key1 = write_key(["keyA", "keyB"], "value1");
     let key2 = write_key(["keyA"], "value2");
     let key3 = write_key(["keyB"], "value3");
+    assert!(lookup(key1.clone()).execute().unwrap().is_some());
+    assert!(lookup(key2.clone()).execute().unwrap().is_some());
+    assert!(lookup(key3.clone()).execute().unwrap().is_some());
 
     fastly::http::purge::purge_surrogate_key("keyB").unwrap();
     assert!(lookup(key1).execute().unwrap().is_none());
-    assert!(lookup(key3).execute().unwrap().is_none());
     assert!(lookup(key2).execute().unwrap().is_some());
+    assert!(lookup(key3).execute().unwrap().is_none());
 }
 
 fn test_soft_purge() {

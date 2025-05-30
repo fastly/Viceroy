@@ -39,9 +39,9 @@ impl FromStr for VaryRule {
 }
 
 impl VaryRule {
-    pub fn new<'a>(headers: impl Iterator<Item = &'a HeaderName>) -> VaryRule {
+    pub fn new<'a>(headers: impl IntoIterator<Item = &'a HeaderName>) -> VaryRule {
         // Deduplicate:
-        let headers: HashSet<HeaderName> = headers.cloned().collect();
+        let headers: HashSet<HeaderName> = headers.into_iter().cloned().collect();
         let mut headers: Vec<HeaderName> = headers.into_iter().collect();
         headers.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         VaryRule { headers }
