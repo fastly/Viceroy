@@ -42,6 +42,7 @@ fn load_write_options(
     } else {
         Duration::ZERO
     };
+
     options_mask &= !CacheWriteOptionsMask::INITIAL_AGE_NS;
 
     let stale_while_revalidate =
