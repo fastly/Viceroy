@@ -2,7 +2,7 @@ use {
     super::fastly::api::{cache as api, http_types, types},
     crate::{
         body::Body,
-        cache::{self, CacheKey, VaryRule, WriteOptions},
+        cache::{self, CacheKey, SurrogateKeySet, VaryRule, WriteOptions},
         error::{Error, HandleError},
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask},
@@ -74,6 +74,12 @@ fn load_write_options(
         return Err(Error::InvalidArgument);
     }
 
+    let surrogate_keys = if options_mask.contains(api::WriteOptionsMask::SURROGATE_KEYS) {
+        options.surrogate_keys.as_bytes().try_into()?
+    } else {
+        SurrogateKeySet::default()
+    };
+
     Ok(WriteOptions {
         max_age,
         initial_age,
@@ -82,6 +88,7 @@ fn load_write_options(
         user_metadata,
         length,
         sensitive_data,
+        surrogate_keys,
         edge_max_age,
     })
 }
@@ -120,12 +127,6 @@ impl api::Host for ComponentCtx {
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
     ) -> Result<api::BodyHandle, types::Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives").into());
-        }
-
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
         let write_options = load_write_options(options_mask, &options)?;
@@ -257,7 +258,7 @@ impl api::Host for ComponentCtx {
         _options_mask: api::GetBodyOptionsMask,
         _options: api::GetBodyOptions,
     ) -> Result<http_types::BodyHandle, types::Error> {
-        // TODO: cceckman-at-fastly: Handle options,
+        // TODO: cceckman-at-fastly: Handle range options,
         // then remove this guard.
         if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
             return Err(Error::NotAvailable("Cache API primitives").into());
@@ -388,12 +389,6 @@ impl api::Host for ComponentCtx {
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
     ) -> Result<(http_types::BodyHandle, api::Handle), types::Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives").into());
-        }
-
         let write_options = load_write_options(options_mask, &options)?;
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
@@ -424,12 +419,6 @@ impl api::Host for ComponentCtx {
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
     ) -> Result<(), types::Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives").into());
-        }
-
         let options = load_write_options(options_mask, &options)?;
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {

@@ -6,7 +6,7 @@ use bytes::Bytes;
 use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::{CacheKey, VaryRule, WriteOptions};
+use crate::cache::{CacheKey, SurrogateKeySet, VaryRule, WriteOptions};
 use crate::error::HandleError;
 use crate::session::{PeekableTask, PendingCacheTask, Session};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
@@ -86,6 +86,16 @@ fn load_write_options(
         return Err(Error::InvalidArgument);
     }
 
+    let surrogate_keys = if options_mask.contains(CacheWriteOptionsMask::SURROGATE_KEYS) {
+        let slice = options
+            .surrogate_keys_ptr
+            .as_array(options.surrogate_keys_len);
+        let surrogate_keys_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
+        surrogate_keys_bytes.try_into()?
+    } else {
+        SurrogateKeySet::default()
+    };
+
     Ok(WriteOptions {
         max_age,
         initial_age,
@@ -95,6 +105,7 @@ fn load_write_options(
         length,
         sensitive_data,
         edge_max_age,
+        surrogate_keys,
     })
 }
 
@@ -151,11 +162,6 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
         let key = load_cache_key(memory, cache_key)?;
         let guest_options = memory.read(options)?;
         let options = load_write_options(memory, options_mask, &guest_options)?;
@@ -169,7 +175,6 @@ impl FastlyCache for Session {
             HeaderMap::default()
         };
 
-        // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
         cache
@@ -345,12 +350,6 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
-
         let guest_options = memory.read(options)?;
         let options = load_write_options(memory, options_mask, &guest_options)?;
         // No request headers here; request headers come from the original lookup.
@@ -380,12 +379,6 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(), Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
-
         let guest_options = memory.read(options)?;
         let options = load_write_options(memory, options_mask, &guest_options)?;
         // No request headers here; request headers come from the original lookup.
@@ -499,7 +492,7 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
+        // TODO: cceckman-at-fastly: Handle range options,
         // then remove this guard.
         if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
             return Err(Error::NotAvailable("Cache API primitives"));
