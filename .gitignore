@@ -3,3 +3,4 @@ publish
 vendor/
 verify-publishable/
 .vscode
+crates/adapter/Cargo.lock

@@ -168,4 +168,39 @@ impl backend::Host for ComponentCtx {
         }
         .into())
     }
+
+    async fn get_http_keepalive_time(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_http_keepalive_time` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_enable(&mut self, _backend: String) -> Result<bool, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_enable` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_interval(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_interval` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_probes(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_probes` is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_time(&mut self, _backend: String) -> Result<u32, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`get_tcp_keepalive_time` is not supported in Viceroy",
+        }
+        .into())
+    }
 }

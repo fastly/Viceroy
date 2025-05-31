@@ -102,7 +102,7 @@ impl http_req::Host for ComponentCtx {
         _tag: http_req::CacheOverrideTag,
         _ttl: u32,
         _stale_while_revalidate: u32,
-        _sk: Option<String>,
+        _sk: Option<Vec<u8>>,
     ) -> Result<(), types::Error> {
         // For now, we ignore caching directives because we never cache anything
         Ok(())
@@ -145,11 +145,11 @@ impl http_req::Host for ComponentCtx {
     async fn downstream_tls_cipher_openssl_name(
         &mut self,
         _max_len: u64,
-    ) -> Result<String, types::Error> {
+    ) -> Result<Vec<u8>, types::Error> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
-    async fn downstream_tls_protocol(&mut self, _max_len: u64) -> Result<String, types::Error> {
+    async fn downstream_tls_protocol(&mut self, _max_len: u64) -> Result<Vec<u8>, types::Error> {
         Err(Error::NotAvailable("Client TLS data").into())
     }
 
@@ -211,15 +211,16 @@ impl http_req::Host for ComponentCtx {
     async fn header_value_get(
         &mut self,
         h: http_types::RequestHandle,
-        name: String,
+        name: Vec<u8>,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
 
+        let name = core::str::from_utf8(&name)?;
         let headers = &self.session.request_parts(h.into())?.headers;
-        let value = if let Some(value) = headers.get(&name) {
+        let value = if let Some(value) = headers.get(name) {
             value
         } else {
             return Ok(None);
@@ -235,13 +236,13 @@ impl http_req::Host for ComponentCtx {
     async fn header_values_get(
         &mut self,
         h: http_types::RequestHandle,
-        name: String,
+        name: Vec<u8>,
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
         let headers = &self.session.request_parts(h.into())?.headers;
 
-        let values = headers.get_all(HeaderName::from_str(&name)?);
+        let values = headers.get_all(HeaderName::from_bytes(&name)?);
 
         let (buf, next) = write_values(
             values.into_iter(),
@@ -264,7 +265,7 @@ impl http_req::Host for ComponentCtx {
     async fn header_values_set(
         &mut self,
         h: http_types::RequestHandle,
-        name: String,
+        name: Vec<u8>,
         values: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -273,7 +274,7 @@ impl http_req::Host for ComponentCtx {
 
         let headers = &mut self.session.request_parts_mut(h.into())?.headers;
 
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let values = {
             // split slice along nul bytes
             let mut iter = values.split(|b| *b == 0);
@@ -298,7 +299,7 @@ impl http_req::Host for ComponentCtx {
     async fn header_insert(
         &mut self,
         h: http_types::RequestHandle,
-        name: String,
+        name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -306,7 +307,7 @@ impl http_req::Host for ComponentCtx {
         }
 
         let headers = &mut self.session.request_parts_mut(h.into())?.headers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
 
@@ -316,7 +317,7 @@ impl http_req::Host for ComponentCtx {
     async fn header_append(
         &mut self,
         h: http_types::RequestHandle,
-        name: String,
+        name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -324,7 +325,7 @@ impl http_req::Host for ComponentCtx {
         }
 
         let headers = &mut self.session.request_parts_mut(h.into())?.headers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
 
@@ -334,14 +335,14 @@ impl http_req::Host for ComponentCtx {
     async fn header_remove(
         &mut self,
         h: http_types::RequestHandle,
-        name: String,
+        name: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
 
         let headers = &mut self.session.request_parts_mut(h.into())?.headers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         headers
             .remove(name)
             .ok_or(types::Error::from(types::Error::InvalidArgument))?;
@@ -355,7 +356,7 @@ impl http_req::Host for ComponentCtx {
         method: String,
     ) -> Result<(), types::Error> {
         let method_ref = &mut self.session.request_parts_mut(h.into())?.method;
-        *method_ref = Method::from_bytes(method.as_bytes())?;
+        *method_ref = Method::from_str(&method)?;
         Ok(())
     }
 
@@ -592,10 +593,10 @@ impl http_req::Host for ComponentCtx {
     async fn pending_req_select_v2(
         &mut self,
         h: Vec<http_types::PendingRequestHandle>,
-    ) -> Result<(u32, http_types::Response), http_req::ErrorWithDetail> {
+    ) -> Result<(u32, Result<http_types::Response, http_req::SendErrorDetail>), types::Error> {
         self.pending_req_select(h)
             .await
-            .map_err(types::Error::with_empty_detail)
+            .map(|(n, resp)| (n, Ok(resp)))
     }
 
     async fn fastly_key_is_valid(&mut self) -> Result<bool, types::Error> {
@@ -827,7 +828,10 @@ impl http_req::Host for ComponentCtx {
         Err(Error::NotAvailable("Client H2 fingerprint").into())
     }
 
-    async fn downstream_client_request_id(&mut self, max_len: u64) -> Result<String, types::Error> {
+    async fn downstream_client_request_id(
+        &mut self,
+        max_len: u64,
+    ) -> Result<Vec<u8>, types::Error> {
         let result = format!("{:032x}", self.session.req_id());
 
         if result.len() > usize::try_from(max_len).unwrap() {
@@ -836,7 +840,7 @@ impl http_req::Host for ComponentCtx {
             ));
         }
 
-        Ok(result)
+        Ok(result.into_bytes())
     }
 
     async fn downstream_client_oh_fingerprint(
@@ -903,7 +907,7 @@ impl http_req::Host for ComponentCtx {
         info_mask: http_req::InspectConfigOptions,
         info: http_req::InspectConfig,
         buf_max_len: u64,
-    ) -> Result<String, types::Error> {
+    ) -> Result<Vec<u8>, types::Error> {
         use http_req::InspectConfigOptions as Flags;
 
         // Make sure we're given valid handles, even though we won't use them.
@@ -926,7 +930,7 @@ impl http_req::Host for ComponentCtx {
         let ngwaf_resp_len = ngwaf_resp.len();
 
         match u64::try_from(ngwaf_resp_len) {
-            Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_max_len => Ok(ngwaf_resp),
+            Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_max_len => Ok(ngwaf_resp.into_bytes()),
             too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
         }
     }
@@ -934,7 +938,7 @@ impl http_req::Host for ComponentCtx {
     async fn on_behalf_of(
         &mut self,
         _: http_req::RequestHandle,
-        _: Vec<u8>,
+        _: String,
     ) -> Result<(), types::Error> {
         Err(types::Error::Unsupported)
     }

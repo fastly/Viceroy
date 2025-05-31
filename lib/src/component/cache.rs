@@ -143,7 +143,7 @@ impl api::Host for ComponentCtx {
         key: Vec<u8>,
         _options_mask: api::ReplaceOptionsMask,
         _options: api::ReplaceOptions,
-    ) -> Result<api::ReplaceHandle, types::Error> {
+    ) -> Result<api::CacheReplaceHandle, types::Error> {
         let _key: CacheKey = get_key(key)?;
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -153,8 +153,8 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_age_ns(
         &mut self,
-        _handle: api::ReplaceHandle,
-    ) -> Result<api::DurationNs, types::Error> {
+        _handle: api::CacheReplaceHandle,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -163,17 +163,20 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_body(
         &mut self,
-        _handle: api::ReplaceHandle,
+        _handle: api::CacheReplaceHandle,
         _options_mask: api::GetBodyOptionsMask,
         _options: api::GetBodyOptions,
-    ) -> Result<http_types::BodyHandle, types::Error> {
+    ) -> Result<Option<http_types::BodyHandle>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
         .into())
     }
 
-    async fn replace_get_hits(&mut self, _handle: api::ReplaceHandle) -> Result<u64, types::Error> {
+    async fn replace_get_hits(
+        &mut self,
+        _handle: api::CacheReplaceHandle,
+    ) -> Result<Option<u64>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -182,8 +185,8 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_length(
         &mut self,
-        _handle: api::ReplaceHandle,
-    ) -> Result<u64, types::Error> {
+        _handle: api::CacheReplaceHandle,
+    ) -> Result<Option<u64>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -192,8 +195,8 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_max_age_ns(
         &mut self,
-        _handle: api::ReplaceHandle,
-    ) -> Result<api::DurationNs, types::Error> {
+        _handle: api::CacheReplaceHandle,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -202,8 +205,8 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_stale_while_revalidate_ns(
         &mut self,
-        _handle: api::ReplaceHandle,
-    ) -> Result<api::DurationNs, types::Error> {
+        _handle: api::CacheReplaceHandle,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -212,8 +215,8 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_state(
         &mut self,
-        _handle: api::ReplaceHandle,
-    ) -> Result<api::LookupState, types::Error> {
+        _handle: api::CacheReplaceHandle,
+    ) -> Result<Option<api::LookupState>, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
@@ -222,7 +225,7 @@ impl api::Host for ComponentCtx {
 
     async fn replace_get_user_metadata(
         &mut self,
-        _handle: api::ReplaceHandle,
+        _handle: api::CacheReplaceHandle,
         _max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         Err(Error::Unsupported {
@@ -233,7 +236,7 @@ impl api::Host for ComponentCtx {
 
     async fn replace_insert(
         &mut self,
-        _handle: api::ReplaceHandle,
+        _handle: api::CacheReplaceHandle,
         _options_mask: api::WriteOptionsMask,
         _options: api::WriteOptions,
     ) -> Result<api::BodyHandle, types::Error> {

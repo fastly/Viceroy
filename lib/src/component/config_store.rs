@@ -15,7 +15,7 @@ impl config_store::Host for ComponentCtx {
         store: config_store::Handle,
         name: String,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
+    ) -> Result<Option<String>, types::Error> {
         let dict = &self.session.dictionary(store.into())?.contents;
 
         let item = if let Some(item) = dict.get(&name) {
@@ -28,6 +28,6 @@ impl config_store::Host for ComponentCtx {
             return Err(types::Error::BufferLen(u64::try_from(item.len()).unwrap()));
         }
 
-        Ok(Some(item.as_bytes().to_owned()))
+        Ok(Some(item.to_owned()))
     }
 }

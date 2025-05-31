@@ -7,9 +7,9 @@ use std::str::FromStr;
 
 #[async_trait::async_trait]
 impl shielding::Host for ComponentCtx {
-    async fn shield_info(&mut self, name: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
+    async fn shield_info(&mut self, name: String, max_len: u64) -> Result<Vec<u8>, types::Error> {
         // Validate input name and return the unsupported error.
-        let name = String::from_utf8(name)?;
+        let name = name;
 
         let running_on = self.session.shielding_sites().is_local(&name);
         let unencrypted = self
@@ -52,16 +52,16 @@ impl shielding::Host for ComponentCtx {
 
     async fn backend_for_shield(
         &mut self,
-        name: Vec<u8>,
+        name: String,
         options_mask: shielding::ShieldBackendOptionsMask,
         options: shielding::ShieldBackendOptions,
         max_len: u64,
-    ) -> Result<Vec<u8>, types::Error> {
+    ) -> Result<String, types::Error> {
         // Validate our inputs and return the unsupported error.
-        let shield_uri = String::from_utf8(name)?;
+        let shield_uri = name;
 
         if options_mask.contains(shielding::ShieldBackendOptionsMask::CACHE_KEY) {
-            let _ = String::from_utf8(options.cache_key)?;
+            let _ = options.cache_key;
         }
 
         let Ok(uri) = Uri::from_str(&shield_uri) else {
@@ -83,7 +83,7 @@ impl shielding::Host for ComponentCtx {
             return Err(Error::BackendNameRegistryError(new_name).into());
         }
 
-        let new_name_bytes = new_name.as_bytes().to_vec();
+        let new_name_bytes = new_name.to_owned();
 
         let target_len = new_name_bytes.len() as u64;
 
