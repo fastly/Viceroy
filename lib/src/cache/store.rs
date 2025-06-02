@@ -4,7 +4,7 @@ use crate::cache::{variance::VaryRule, Error};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
@@ -41,6 +41,10 @@ pub struct ObjectMeta {
 
     length: Option<u64>,
     surrogate_keys: SurrogateKeySet,
+
+    // Soft-purge bit: atomic so we don't have to wrap the whole thing in a lock.
+    // This can only transition false -> true.
+    soft_purge: AtomicBool,
 }
 
 impl ObjectMeta {
@@ -57,7 +61,7 @@ impl ObjectMeta {
 
     /// Return true if the entry is fresh at the current time.
     pub fn is_fresh(&self) -> bool {
-        self.age() < self.max_age
+        !self.soft_purge.load(std::sync::atomic::Ordering::SeqCst) && (self.age() < self.max_age)
     }
 
     /// Return true if the entry is usable even if stale.
@@ -113,6 +117,7 @@ impl ObjectMeta {
             user_metadata,
             length,
             surrogate_keys,
+            soft_purge: AtomicBool::new(false),
         }
     }
 }
@@ -378,8 +383,37 @@ impl CacheKeyObjects {
     /// Purge all variants associated with the given key.
     ///
     /// Returns the number of variants purged.
-    pub fn purge(&self, key: &super::SurrogateKey) -> usize {
+    pub fn purge(&self, key: &super::SurrogateKey, soft_purge: bool) -> usize {
         let mut drop_count = 0;
+
+        let filter = |value: &CacheValue| -> bool {
+            let Some(present) = value.present.as_ref() else {
+                // We may be considering an entry which is obligated, but not yet written.
+                // In this case, we don't know its surrogate keys, so we leave it in the
+                // set.
+                return true;
+                // Note that this means we also don't have to do anything fancy with
+                // ensuring the uniqueness of the obligation- we can't get in a situation
+                // where the CacheData was purged from under an obligation.
+            };
+
+            if !present.get_meta().surrogate_keys.0.contains(key) {
+                // Doesn't have this surrogate key; keep it.
+                return true;
+            }
+
+            if soft_purge {
+                present
+                    .meta
+                    .soft_purge
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return true;
+            } else {
+                // Filter it out.
+                return false;
+            }
+        };
+
         // This _shouldn't_ ever need a send- since we're only removing things, and only those
         // which don't have obligations.
         // But, we do it anyway, if we actually modified things.
@@ -388,19 +422,7 @@ impl CacheKeyObjects {
             let new_objects: HashMap<_, _> = cache_key_objects
                 .objects
                 .drain()
-                .filter(|(_, value)| {
-                    let Some(present) = value.present.as_ref() else {
-                        // We may be considering an entry which is obligated, but not yet written.
-                        // In this case, we don't know its surrogate keys, so we leave it in the
-                        // set.
-                        return true;
-                        // Note that this means we also don't have to do anything fancy with
-                        // ensuring the uniqueness of the obligation- we can't get in a situation
-                        // where the CacheData was purged from under an obligation.
-                    };
-                    // Preserve the items that do _not_ contain the key:
-                    !present.get_meta().surrogate_keys.0.contains(key)
-                })
+                .filter(|(_, v)| filter(v))
                 .collect();
             drop_count = count - new_objects.len();
             cache_key_objects.objects = new_objects;

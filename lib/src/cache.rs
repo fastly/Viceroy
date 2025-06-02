@@ -305,13 +305,16 @@ impl Cache {
             .insert(request_headers, options, body, None);
     }
 
-    /// Purge all cache entries corresponding to the given surrogate key.
+    /// Purge/soft-purge all cache entries corresponding to the given surrogate key.
     /// Returns the number of entries (variants) purged.
     ///
     /// Note: this does not block concurrent reads _or inserts_; an insertion can race with the
     /// purge.
-    pub fn purge(&self, key: SurrogateKey) -> usize {
-        self.inner.iter().map(|(_, entry)| entry.purge(&key)).sum()
+    pub fn purge(&self, key: SurrogateKey, soft_purge: bool) -> usize {
+        self.inner
+            .iter()
+            .map(|(_, entry)| entry.purge(&key, soft_purge))
+            .sum()
     }
 }
 

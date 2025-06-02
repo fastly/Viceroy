@@ -43,7 +43,7 @@ fn main() {
 
     run_test!(test_stale_while_revalidate);
     run_test!(test_keyed_purge);
-    // run_test!(test_soft_purge);
+    run_test!(test_soft_purge);
     run_test!(test_purge_variant);
 
     run_test!(test_racing_transactions);
@@ -689,7 +689,7 @@ fn test_soft_purge() {
     let key2 = write_key(["keyA"], "value2");
     let key3 = write_key(["keyB"], "value3");
 
-    fastly::http::purge::purge_surrogate_key("keyB").unwrap();
+    fastly::http::purge::soft_purge_surrogate_key("keyB").unwrap();
     // Allow either of two behaviors:
     // - Does not return stale results
     // - Returns stale results, but marks them stale
