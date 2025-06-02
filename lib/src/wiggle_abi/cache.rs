@@ -34,6 +34,13 @@ fn load_write_options(
     } else {
         Duration::ZERO
     };
+    let stale_while_revalidate =
+        if options_mask.contains(CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS) {
+            Duration::from_nanos(options.stale_while_revalidate_ns)
+        } else {
+            Duration::ZERO
+        };
+
     let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
         let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
         let vary_rule_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
@@ -82,6 +89,7 @@ fn load_write_options(
     Ok(WriteOptions {
         max_age,
         initial_age,
+        stale_while_revalidate,
         vary_rule,
         user_metadata,
         length,
@@ -361,7 +369,7 @@ impl FastlyCache for Session {
         let body_handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(body_handle)?;
 
-        obligation.complete(options, read_body);
+        obligation.insert(options, read_body);
         Ok((body_handle, handle))
     }
 
@@ -372,7 +380,25 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        // TODO: cceckman-at-fastly: Handle all options,
+        // then remove this guard.
+        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
+            return Err(Error::NotAvailable("Cache API primitives"));
+        }
+
+        let guest_options = memory.read(options)?;
+        let options = load_write_options(memory, options_mask, &guest_options)?;
+        // No request headers here; request headers come from the original lookup.
+        if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            return Err(Error::InvalidArgument);
+        }
+
+        let entry = self.cache_entry_mut(handle).await?;
+        // The path here is:
+        // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
+        // CacheError::InvalidOperation
+        entry.update(options)?;
+        Ok(())
     }
 
     async fn transaction_cancel(
@@ -421,14 +447,12 @@ impl FastlyCache for Session {
             if !found.meta().is_fresh() {
                 state |= types::CacheLookupState::STALE;
             }
-            // TODO:: stale-while-revalidate.
-            // For now, usable if fresh.
-            if found.meta().is_fresh() {
+            if found.meta().is_usable() {
                 state |= types::CacheLookupState::USABLE;
             }
         }
         if entry.go_get().is_some() {
-            state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
+            state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE;
         }
 
         Ok(state)
