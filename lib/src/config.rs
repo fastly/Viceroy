@@ -53,7 +53,7 @@ pub use crate::object_store::ObjectStores;
 
 /// Types and deserializers for secret store configuration settings.
 mod secret_store;
-pub use crate::secret_store::SecretStores;
+pub use crate::secret_store::{SecretStore, SecretStores};
 
 pub use crate::shielding_site::ShieldingSites;
 
