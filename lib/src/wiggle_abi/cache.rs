@@ -25,21 +25,32 @@ fn load_cache_key(
 
 fn load_write_options(
     memory: &wiggle::GuestMemory<'_>,
-    options_mask: types::CacheWriteOptionsMask,
+    mut options_mask: types::CacheWriteOptionsMask,
     options: &types::CacheWriteOptions,
 ) -> Result<WriteOptions, Error> {
+    // Headers must be handled before this:
+    assert!(
+        !options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS),
+        "Viceroy bug! headers must be handled before load_write_options"
+    );
+
+    // Clear each bit of options_mask as we handle it, to make sure we catch any unknown options.
     let max_age = Duration::from_nanos(options.max_age_ns);
+
     let initial_age = if options_mask.contains(CacheWriteOptionsMask::INITIAL_AGE_NS) {
         Duration::from_nanos(options.initial_age_ns)
     } else {
         Duration::ZERO
     };
+    options_mask &= !CacheWriteOptionsMask::INITIAL_AGE_NS;
+
     let stale_while_revalidate =
         if options_mask.contains(CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS) {
             Duration::from_nanos(options.stale_while_revalidate_ns)
         } else {
             Duration::ZERO
         };
+    options_mask &= !CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS;
 
     let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
         let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
@@ -49,6 +60,8 @@ fn load_write_options(
     } else {
         VaryRule::default()
     };
+    options_mask &= !CacheWriteOptionsMask::VARY_RULE;
+
     let user_metadata = if options_mask.contains(CacheWriteOptionsMask::USER_METADATA) {
         let slice = options
             .user_metadata_ptr
@@ -58,13 +71,17 @@ fn load_write_options(
     } else {
         Bytes::new()
     };
+    options_mask &= !CacheWriteOptionsMask::USER_METADATA;
+
     let length = if options_mask.contains(CacheWriteOptionsMask::LENGTH) {
         Some(options.length)
     } else {
         None
     };
+    options_mask &= !CacheWriteOptionsMask::LENGTH;
 
     let sensitive_data = options_mask.contains(CacheWriteOptionsMask::SENSITIVE_DATA);
+    options_mask &= !CacheWriteOptionsMask::SENSITIVE_DATA;
 
     // SERVICE_ID differences are observable- but we don't implement that behavior. Error explicitly.
     if options_mask.contains(CacheWriteOptionsMask::SERVICE_ID) {
@@ -72,6 +89,8 @@ fn load_write_options(
             msg: "cache on_behalf_of is not supported in Viceroy",
         });
     }
+    options_mask &= !CacheWriteOptionsMask::SERVICE_ID;
+
     let edge_max_age = if options_mask.contains(CacheWriteOptionsMask::EDGE_MAX_AGE_NS) {
         Duration::from_nanos(options.edge_max_age_ns)
     } else {
@@ -84,6 +103,11 @@ fn load_write_options(
             max_age.as_secs()
         );
         return Err(Error::InvalidArgument);
+    }
+    options_mask &= !CacheWriteOptionsMask::EDGE_MAX_AGE_NS;
+
+    if !options_mask.is_empty() {
+        return Err(Error::NotAvailable("unknown cache write option"));
     }
 
     Ok(WriteOptions {
@@ -101,7 +125,7 @@ fn load_write_options(
 fn load_lookup_options(
     session: &Session,
     memory: &wiggle::GuestMemory<'_>,
-    options_mask: types::CacheLookupOptionsMask,
+    mut options_mask: types::CacheLookupOptionsMask,
     options: wiggle::GuestPtr<types::CacheLookupOptions>,
 ) -> Result<HeaderMap, Error> {
     let options = memory.read(options)?;
@@ -112,12 +136,20 @@ fn load_lookup_options(
     } else {
         HeaderMap::default()
     };
+
+    options_mask &= !types::CacheLookupOptionsMask::REQUEST_HEADERS;
+
     if options_mask.contains(types::CacheLookupOptionsMask::SERVICE_ID) {
         // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
         return Err(Error::Unsupported {
-            msg: "service ID in cache lookup",
+            msg: "service ID in cache lookup is not supported in Viceroy",
         });
     }
+
+    if !options_mask.is_empty() {
+        return Err(Error::NotAvailable("unknown cache lookup option"));
+    }
+
     Ok(headers)
 }
 
@@ -151,15 +183,9 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
         let key = load_cache_key(memory, cache_key)?;
         let guest_options = memory.read(options)?;
-        let options = load_write_options(memory, options_mask, &guest_options)?;
-        let cache = Arc::clone(self.cache());
+
         // This is the only method that accepts REQUEST_HEADERS in the options mask.
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             let handle = guest_options.request_headers;
@@ -168,8 +194,13 @@ impl FastlyCache for Session {
         } else {
             HeaderMap::default()
         };
+        let options = load_write_options(
+            memory,
+            options_mask & !CacheWriteOptionsMask::REQUEST_HEADERS,
+            &guest_options,
+        )?;
+        let cache = Arc::clone(self.cache());
 
-        // TODO: cceckman-at-fastly - handle options
         let handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(handle)?;
         cache
@@ -345,18 +376,12 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
-
         let guest_options = memory.read(options)?;
-        let options = load_write_options(memory, options_mask, &guest_options)?;
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             return Err(Error::InvalidArgument);
         }
+        let options = load_write_options(memory, options_mask, &guest_options)?;
 
         let entry = self.cache_entry_mut(handle).await?;
         // The path here is:
@@ -380,18 +405,12 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(), Error> {
-        // TODO: cceckman-at-fastly: Handle all options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
-        }
-
         let guest_options = memory.read(options)?;
-        let options = load_write_options(memory, options_mask, &guest_options)?;
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             return Err(Error::InvalidArgument);
         }
+        let options = load_write_options(memory, options_mask, &guest_options)?;
 
         let entry = self.cache_entry_mut(handle).await?;
         // The path here is:
@@ -499,10 +518,8 @@ impl FastlyCache for Session {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: cceckman-at-fastly: Handle options,
-        // then remove this guard.
-        if !std::env::var("ENABLE_EXPERIMENTAL_CACHE_API").is_ok_and(|v| v == "1") {
-            return Err(Error::NotAvailable("Cache API primitives"));
+        if !options_mask.is_empty() {
+            return Err(Error::NotAvailable("unknown cache get_body option").into());
         }
 
         // We wind up re-borrowing `found` and `self.session` several times here, to avoid
