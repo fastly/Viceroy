@@ -76,7 +76,7 @@ mod uap_impl;
 // contain all of the `typename`'s defined in the `witx` file, and other modules will export traits
 // that *must* be implemented by our `ctx` type. See the `from_witx` documentation for more.
 wiggle::from_witx!({
-    witx: ["$CARGO_MANIFEST_DIR/compute-at-edge-abi/compute-at-edge.witx"],
+    witx: ["$CARGO_MANIFEST_DIR/wasm_abi/compute-at-edge-abi/compute-at-edge.witx"],
     errors: { fastly_status => Error },
     async: {
         fastly_acl::lookup,

@@ -184,8 +184,8 @@ manifest_version = 2
 [local_server.backends.origin]
 url = "https://127.0.0.1:443"
 [local_server.backends.origin.client_certificate]
-certificate_file = "../test-fixtures/data/client.crt"
-key_file = "../test-fixtures/data/client.key"
+certificate_file = "test-fixtures/data/client.crt"
+key_file = "test-fixtures/data/client.key"
 "#;
 
     let files_parsed = crate::config::FastlyConfig::from_str(files).unwrap();

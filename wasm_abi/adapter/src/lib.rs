@@ -27,7 +27,7 @@ use crate::descriptors::{Descriptor, Descriptors, StreamType};
 
 pub mod bindings {
     wit_bindgen_rust_macro::generate!({
-        path: "../../lib/wit",
+        path: "../../wasm_abi/wit",
         world: "compute",
         std_feature,
         raw_strings,
