@@ -750,7 +750,7 @@ mod tests {
         let result = cache.lookup(&key, &HeaderMap::default()).await;
         assert!(result.found().is_some());
 
-        assert_eq!(cache.purge("two".parse().unwrap()), 1);
+        assert_eq!(cache.purge("two".parse().unwrap(), false), 1);
         let result = cache.lookup(&key, &HeaderMap::default()).await;
         assert!(result.found().is_none());
     }
@@ -793,8 +793,36 @@ mod tests {
         assert!(cache.lookup(&key, &h1).await.found().is_some());
         assert!(cache.lookup(&key, &h2).await.found().is_some());
 
-        assert_eq!(cache.purge("two".parse().unwrap()), 1);
+        assert_eq!(cache.purge("two".parse().unwrap(), false), 1);
         assert!(cache.lookup(&key, &h1).await.found().is_none());
         assert!(cache.lookup(&key, &h2).await.found().is_some());
+    }
+
+    #[tokio::test]
+    async fn soft_purge() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+
+        let surrogate_keys: SurrogateKeySet = "one two three".parse().unwrap();
+        let opts = WriteOptions {
+            max_age: Duration::from_secs(100),
+            surrogate_keys: surrogate_keys.clone(),
+            ..WriteOptions::default()
+        };
+
+        cache
+            .insert(&key, HeaderMap::default(), opts.clone(), Body::empty())
+            .await;
+        let result = cache.lookup(&key, &HeaderMap::default()).await;
+        assert!(result.found().is_some());
+
+        assert_eq!(cache.purge("two".parse().unwrap(), true), 1);
+        let result = cache
+            .transaction_lookup(&key, &HeaderMap::default(), false)
+            .await;
+        let found = result.found().unwrap();
+        assert!(!found.meta().is_fresh());
+        assert!(found.meta().is_usable());
+        assert!(result.go_get().is_some());
     }
 }
