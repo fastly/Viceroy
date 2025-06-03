@@ -49,6 +49,9 @@ fn main() {
     run_test!(test_explicit_cancel);
     run_test!(test_collapse_across_vary);
 
+    run_test!(test_surrogate_keys_unsupported);
+    run_test!(test_range_request_unsupported);
+
     eprintln!("Completed all tests for version {service}")
 }
 
@@ -763,4 +766,37 @@ fn test_collapse_across_vary() {
     // because according to the most recent vary rule they are distinct.
     assert!(!txn2.pending().unwrap());
     assert!(!txn1.pending().unwrap());
+}
+
+fn test_surrogate_keys_unsupported() {
+    if !insert(new_key(), Duration::from_secs(100))
+        .surrogate_keys(["hello"])
+        .execute()
+        .is_err()
+    {
+        panic!("surrogate keys are not yet supported in Viceroy");
+    }
+}
+
+fn test_range_request_unsupported() {
+    let key = new_key();
+
+    let body = "abc123def".as_bytes();
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(10))
+            .known_length(body.len() as u64)
+            .execute()
+            .unwrap();
+        writer.write_all(body).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let fetch = lookup(key.clone()).execute().unwrap();
+    let Some(got) = fetch else {
+        panic!("did not fetch from cache")
+    };
+    let got = got.to_stream_from_range(Some(3), Some(5));
+    if !got.is_err() {
+        panic!("range requests are not yet supported in Viceroy");
+    }
 }

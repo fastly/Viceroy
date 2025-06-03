@@ -172,15 +172,18 @@ impl CacheEntry {
         Ok(())
     }
 
-    /// Freshen the existing body according to the provided options.
+    /// Freshen the existing cache item according to the new write options,
+    /// without changing the body.
     pub fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
         let go_get = self.take_go_get().ok_or(Error::NotRevalidatable)?;
-        let Err((go_get, err)) = go_get.update(options) else {
-            return Ok(());
-        };
-        // On failure, preserve the obligation.
-        self.go_get = Some(go_get);
-        Err(err)
+        match go_get.update(options) {
+            Ok(()) => Ok(()),
+            Err((go_get, err)) => {
+                // On failure, preserve the obligation.
+                self.go_get = Some(go_get);
+                Err(err)
+            }
+        }
     }
 }
 
