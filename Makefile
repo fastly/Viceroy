@@ -75,12 +75,12 @@ package-check:
 	rm -rf .cargo/
 	rm -rf verify-publishable/
 
-# Re-generate the adapter, and move it into `lib/adapter`
+# Regenerate the adapter, and move it into `lib/data`.
 .PHONY: adapter
 adapter:
 	cd crates/adapter && cargo build --release \
 		-p viceroy-component-adapter \
 		--target wasm32-unknown-unknown
-	mkdir -p lib/adapter
+	mkdir -p lib/data
 	cp crates/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
 		lib/data/viceroy-component-adapter.wasm
