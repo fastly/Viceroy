@@ -1,5 +1,6 @@
 use super::FastlyStatus;
 use crate::{alloc_result_opt, bindings::fastly::api::config_store, TrappingUnwrap};
+use core::mem::ManuallyDrop;
 
 pub type ConfigStoreHandle = u32;
 
@@ -10,10 +11,10 @@ pub fn open(
     store_handle_out: *mut ConfigStoreHandle,
 ) -> FastlyStatus {
     let name = crate::make_str!(name, name_len);
-    match config_store::open(name) {
+    match config_store::Handle::open(name) {
         Ok(res) => {
             unsafe {
-                *store_handle_out = res;
+                *store_handle_out = res.take_handle();
             }
             FastlyStatus::OK
         }
@@ -31,11 +32,9 @@ pub fn get(
     nwritten: *mut usize,
 ) -> FastlyStatus {
     let key = crate::make_str!(key, key_len);
+    let store_handle =
+        ManuallyDrop::new(unsafe { config_store::Handle::from_handle(store_handle) });
     alloc_result_opt!(value, value_max_len, nwritten, {
-        config_store::get(
-            store_handle,
-            key,
-            u64::try_from(value_max_len).trapping_unwrap(),
-        )
+        store_handle.get(key, u64::try_from(value_max_len).trapping_unwrap())
     })
 }

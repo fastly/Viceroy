@@ -8,9 +8,6 @@ use std::str::FromStr;
 #[async_trait::async_trait]
 impl shielding::Host for ComponentCtx {
     async fn shield_info(&mut self, name: String, max_len: u64) -> Result<Vec<u8>, types::Error> {
-        // Validate input name and return the unsupported error.
-        let name = name;
-
         let running_on = self.session.shielding_sites().is_local(&name);
         let unencrypted = self
             .session

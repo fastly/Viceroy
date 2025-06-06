@@ -1,12 +1,14 @@
 use {
-    super::fastly::api::{cache as api, http_types, types},
+    super::fastly::api::{cache as api, http_body, types},
     crate::{
         body::Body,
         cache::{self, CacheKey, VaryRule, WriteOptions},
+        component::component::Resource,
+        component::fastly::api::cache::Host,
         error::{Error, HandleError},
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask, Session},
-        wiggle_abi::types::CacheHandle,
+        wiggle_abi::types::{CacheBusyHandle, CacheHandle},
     },
     bytes::Bytes,
     http::HeaderMap,
@@ -117,7 +119,10 @@ fn load_lookup_options(
     options: api::LookupOptions,
 ) -> Result<HeaderMap, Error> {
     let headers = if options_mask.contains(api::LookupOptionsMask::REQUEST_HEADERS) {
-        let handle = options.request_headers;
+        let handle = match options.request_headers {
+            Some(handle) => handle,
+            None => return Err(Error::InvalidArgument),
+        };
         let parts = session.request_parts(handle.into())?;
         parts.headers.clone()
     } else {
@@ -132,13 +137,13 @@ fn load_lookup_options(
 }
 
 #[async_trait::async_trait]
-impl api::Host for ComponentCtx {
+impl api::HostHandle for ComponentCtx {
     async fn lookup(
         &mut self,
         key: Vec<u8>,
         options_mask: api::LookupOptionsMask,
         options: api::LookupOptions,
-    ) -> Result<api::Handle, types::Error> {
+    ) -> Result<Resource<api::Handle>, types::Error> {
         let headers = load_lookup_options(&self.session, options_mask, options)?;
 
         let key: CacheKey = get_key(key)?;
@@ -153,149 +158,14 @@ impl api::Host for ComponentCtx {
         Ok(handle.into())
     }
 
-    async fn insert(
-        &mut self,
-        key: Vec<u8>,
-        options_mask: api::WriteOptionsMask,
-        options: api::WriteOptions,
-    ) -> Result<api::BodyHandle, types::Error> {
-        let key: CacheKey = get_key(key)?;
-        let cache = Arc::clone(self.session.cache());
-
-        let request_headers = if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
-            let handle = options.request_headers;
-            let parts = self.session.request_parts(handle.into())?;
-            parts.headers.clone()
-        } else {
-            HeaderMap::default()
-        };
-        let options = load_write_options(
-            options_mask & !api::WriteOptionsMask::REQUEST_HEADERS,
-            &options,
-        )?;
-
-        let handle = self.session.insert_body(Body::empty());
-        let read_body = self.session.begin_streaming(handle)?;
-        cache
-            .insert(&key, request_headers, options, read_body)
-            .await;
-        Ok(handle.into())
-    }
-
-    async fn replace(
-        &mut self,
-        key: Vec<u8>,
-        _options_mask: api::ReplaceOptionsMask,
-        _options: api::ReplaceOptions,
-    ) -> Result<api::CacheReplaceHandle, types::Error> {
-        let _key: CacheKey = get_key(key)?;
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_age_ns(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-    ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_body(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-        _options_mask: api::GetBodyOptionsMask,
-        _options: api::GetBodyOptions,
-    ) -> Result<Option<http_types::BodyHandle>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_hits(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-    ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_length(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-    ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_max_age_ns(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-    ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_stale_while_revalidate_ns(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-    ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_state(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-    ) -> Result<Option<api::LookupState>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_user_metadata(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-        _max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_insert(
-        &mut self,
-        _handle: api::CacheReplaceHandle,
-        _options_mask: api::WriteOptionsMask,
-        _options: api::WriteOptions,
-    ) -> Result<api::BodyHandle, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
     async fn get_body(
         &mut self,
-        handle: api::Handle,
+        handle: Resource<api::Handle>,
         options_mask: api::GetBodyOptionsMask,
         _options: api::GetBodyOptions,
-    ) -> Result<http_types::BodyHandle, types::Error> {
+    ) -> Result<Resource<http_body::BodyHandle>, types::Error> {
+        let handle = handle.into();
+
         if options_mask != api::GetBodyOptionsMask::empty() {
             return Err(Error::NotAvailable("unknown cache get_body option").into());
         }
@@ -310,7 +180,7 @@ impl api::Host for ComponentCtx {
 
         let found = self
             .session
-            .cache_entry(handle.into())
+            .cache_entry(handle)
             .await?
             .found()
             .ok_or_else(|| Error::CacheError(cache::Error::Missing))?;
@@ -332,11 +202,11 @@ impl api::Host for ComponentCtx {
         // Finalize by committing the handle as "the last read".
         // We have to borrow `found` again, this time as mutable.
         self.session
-            .cache_entry_mut(handle.into())
+            .cache_entry_mut(handle)
             .await?
             .found_mut()
             .unwrap()
-            .last_body_handle = Some(body_handle.into());
+            .last_body_handle = Some(body_handle);
 
         Ok(body_handle.into())
     }
@@ -346,7 +216,7 @@ impl api::Host for ComponentCtx {
         key: Vec<u8>,
         options_mask: api::LookupOptionsMask,
         options: api::LookupOptions,
-    ) -> Result<api::Handle, types::Error> {
+    ) -> Result<Resource<api::Handle>, types::Error> {
         let h = self
             .transaction_lookup_async(key, options_mask, options)
             .await?;
@@ -358,7 +228,7 @@ impl api::Host for ComponentCtx {
         key: Vec<u8>,
         options_mask: api::LookupOptionsMask,
         options: api::LookupOptions,
-    ) -> Result<api::BusyHandle, types::Error> {
+    ) -> Result<Resource<api::BusyHandle>, types::Error> {
         let headers = load_lookup_options(&self.session, options_mask, options)?;
 
         let key: CacheKey = get_key(key)?;
@@ -380,32 +250,15 @@ impl api::Host for ComponentCtx {
 
         let task = PendingCacheTask::new(task);
         let handle: CacheHandle = self.session.insert_cache_op(task).into();
-        Ok(handle.into())
-    }
-
-    async fn cache_busy_handle_wait(
-        &mut self,
-        handle: api::BusyHandle,
-    ) -> Result<api::Handle, types::Error> {
-        let handle = handle.into();
-        // Swap out for a distinct handle, so we don't hit a repeated `close`+`close_busy`:
-        let entry = self.session.cache_entry_mut(handle).await?;
-        let mut other_entry = entry.stub();
-        std::mem::swap(entry, &mut other_entry);
-        let task = PeekableTask::spawn(Box::pin(async move { Ok(other_entry) })).await;
-        let h: CacheHandle = self
-            .session
-            .insert_cache_op(PendingCacheTask::new(task))
-            .into();
-        Ok(h.into())
+        Ok(CacheBusyHandle::from(handle).into())
     }
 
     async fn transaction_insert(
         &mut self,
-        handle: api::Handle,
+        handle: Resource<api::Handle>,
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
-    ) -> Result<http_types::BodyHandle, types::Error> {
+    ) -> Result<Resource<http_body::BodyHandle>, types::Error> {
         let (body, cache_handle) = self
             .transaction_insert_and_stream_back(handle, options_mask, options)
             .await?;
@@ -415,37 +268,36 @@ impl api::Host for ComponentCtx {
 
     async fn transaction_insert_and_stream_back(
         &mut self,
-        handle: api::Handle,
+        handle: Resource<api::Handle>,
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
-    ) -> Result<(http_types::BodyHandle, api::Handle), types::Error> {
+    ) -> Result<(Resource<http_body::BodyHandle>, Resource<api::Handle>), types::Error> {
+        let handle: CacheHandle = handle.into();
+
         // No request headers here; request headers come from the original lookup.
         if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
             return Err(Error::InvalidArgument.into());
         }
         let options = load_write_options(options_mask, &options)?;
 
-        let entry = self.session.cache_entry_mut(handle.into()).await?;
+        let entry = self.session.cache_entry_mut(handle).await?;
         // The path here is:
         // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
         // CacheError::InvalidOperation
-        let obligation =
-            entry
-                .take_go_get()
-                .ok_or(Error::HandleError(HandleError::InvalidCacheHandle(
-                    handle.into(),
-                )))?;
+        let obligation = entry
+            .take_go_get()
+            .ok_or(Error::HandleError(HandleError::InvalidCacheHandle(handle)))?;
 
         let body_handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(body_handle)?;
 
         obligation.insert(options, read_body);
-        Ok((body_handle.into(), handle))
+        Ok((body_handle.into(), handle.into()))
     }
 
     async fn transaction_update(
         &mut self,
-        handle: api::Handle,
+        handle: Resource<api::Handle>,
         options_mask: api::WriteOptionsMask,
         options: api::WriteOptions,
     ) -> Result<(), types::Error> {
@@ -463,7 +315,10 @@ impl api::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn transaction_cancel(&mut self, handle: api::Handle) -> Result<(), types::Error> {
+    async fn transaction_cancel(
+        &mut self,
+        handle: Resource<api::Handle>,
+    ) -> Result<(), types::Error> {
         let entry = self.session.cache_entry_mut(handle.into()).await?;
         if let Some(_) = entry.take_go_get() {
             Ok(())
@@ -472,23 +327,10 @@ impl api::Host for ComponentCtx {
         }
     }
 
-    async fn close_busy(&mut self, handle: api::BusyHandle) -> Result<(), types::Error> {
-        // Don't wait for the transaction to complete; drop the future to cancel.
-        let _ = self.session.take_cache_entry(handle.into())?;
-        Ok(())
-    }
-
-    async fn close(&mut self, handle: api::Handle) -> Result<(), types::Error> {
-        let _ = self
-            .session
-            .take_cache_entry(handle.into())?
-            .task()
-            .recv()
-            .await?;
-        Ok(())
-    }
-
-    async fn get_state(&mut self, handle: api::Handle) -> Result<api::LookupState, types::Error> {
+    async fn get_state(
+        &mut self,
+        handle: Resource<api::Handle>,
+    ) -> Result<api::LookupState, types::Error> {
         let entry = self.session.cache_entry_mut(handle.into()).await?;
 
         let mut state = api::LookupState::empty();
@@ -511,7 +353,7 @@ impl api::Host for ComponentCtx {
 
     async fn get_user_metadata(
         &mut self,
-        handle: api::Handle,
+        handle: Resource<api::Handle>,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         let entry = self.session.cache_entry(handle.into()).await?;
@@ -527,7 +369,7 @@ impl api::Host for ComponentCtx {
         Ok(Some(md_bytes.into()))
     }
 
-    async fn get_length(&mut self, handle: api::Handle) -> Result<u64, types::Error> {
+    async fn get_length(&mut self, handle: Resource<api::Handle>) -> Result<u64, types::Error> {
         let found = self
             .session
             .cache_entry(handle.into())
@@ -539,7 +381,7 @@ impl api::Host for ComponentCtx {
             .ok_or(Error::CacheError(crate::cache::Error::Missing).into())
     }
 
-    async fn get_max_age_ns(&mut self, handle: api::Handle) -> Result<u64, types::Error> {
+    async fn get_max_age_ns(&mut self, handle: Resource<api::Handle>) -> Result<u64, types::Error> {
         let entry = self.session.cache_entry_mut(handle.into()).await?;
         if let Some(found) = entry.found() {
             Ok(found.meta().max_age().as_nanos().try_into().unwrap())
@@ -550,7 +392,7 @@ impl api::Host for ComponentCtx {
 
     async fn get_stale_while_revalidate_ns(
         &mut self,
-        _handle: api::Handle,
+        _handle: Resource<api::Handle>,
     ) -> Result<u64, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
@@ -558,7 +400,7 @@ impl api::Host for ComponentCtx {
         .into())
     }
 
-    async fn get_age_ns(&mut self, handle: api::Handle) -> Result<u64, types::Error> {
+    async fn get_age_ns(&mut self, handle: Resource<api::Handle>) -> Result<u64, types::Error> {
         let entry = self.session.cache_entry_mut(handle.into()).await?;
         if let Some(found) = entry.found() {
             Ok(found.meta().age().as_nanos().try_into().unwrap())
@@ -567,10 +409,191 @@ impl api::Host for ComponentCtx {
         }
     }
 
-    async fn get_hits(&mut self, _handle: api::Handle) -> Result<u64, types::Error> {
+    async fn get_hits(&mut self, _handle: Resource<api::Handle>) -> Result<u64, types::Error> {
         Err(Error::Unsupported {
             msg: "Cache API primitives not yet supported",
         }
         .into())
+    }
+
+    async fn drop(&mut self, _handle: Resource<api::Handle>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl api::Host for ComponentCtx {
+    async fn insert(
+        &mut self,
+        key: Vec<u8>,
+        options_mask: api::WriteOptionsMask,
+        options: api::WriteOptions,
+    ) -> Result<Resource<api::BodyHandle>, types::Error> {
+        let key: CacheKey = get_key(key)?;
+        let cache = Arc::clone(self.session.cache());
+
+        let write_options = load_write_options(
+            options_mask & !api::WriteOptionsMask::REQUEST_HEADERS,
+            &options,
+        )?;
+        let request_headers = if options_mask.contains(api::WriteOptionsMask::REQUEST_HEADERS) {
+            let handle = match options.request_headers {
+                Some(handle) => handle,
+                None => return Err(types::Error::InvalidArgument),
+            };
+            let parts = self.session.request_parts(handle.into())?;
+            parts.headers.clone()
+        } else {
+            HeaderMap::default()
+        };
+
+        let handle = self.session.insert_body(Body::empty());
+        let read_body = self.session.begin_streaming(handle)?;
+        cache
+            .insert(&key, request_headers, write_options, read_body)
+            .await;
+        Ok(handle.into())
+    }
+
+    async fn replace(
+        &mut self,
+        key: Vec<u8>,
+        _options_mask: api::ReplaceOptionsMask,
+        _options: api::ReplaceOptions,
+    ) -> Result<Resource<api::CacheReplaceHandle>, types::Error> {
+        let _key: CacheKey = get_key(key)?;
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_age_ns(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_body(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+        _options_mask: api::GetBodyOptionsMask,
+        _options: api::GetBodyOptions,
+    ) -> Result<Option<Resource<http_body::BodyHandle>>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_hits(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+    ) -> Result<Option<u64>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_length(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+    ) -> Result<Option<u64>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_max_age_ns(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_stale_while_revalidate_ns(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_state(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+    ) -> Result<Option<api::LookupState>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_get_user_metadata(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+        _max_len: u64,
+    ) -> Result<Option<Vec<u8>>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn replace_insert(
+        &mut self,
+        _handle: Resource<api::CacheReplaceHandle>,
+        _options_mask: api::WriteOptionsMask,
+        _options: api::WriteOptions,
+    ) -> Result<Resource<api::BodyHandle>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn cache_busy_handle_wait(
+        &mut self,
+        handle: Resource<api::BusyHandle>,
+    ) -> Result<Resource<api::Handle>, types::Error> {
+        let handle = CacheBusyHandle::from(handle).into();
+        // Swap out for a distinct handle, so we don't hit a repeated `close`+`close_busy`:
+        let entry = self.session.cache_entry_mut(handle).await?;
+        let mut other_entry = entry.stub();
+        std::mem::swap(entry, &mut other_entry);
+        let task = PeekableTask::spawn(Box::pin(async move { Ok(other_entry) })).await;
+        let h: CacheHandle = self
+            .session
+            .insert_cache_op(PendingCacheTask::new(task))
+            .into();
+        Ok(h.into())
+    }
+
+    async fn close_busy(&mut self, handle: Resource<api::BusyHandle>) -> Result<(), types::Error> {
+        // Don't wait for the transaction to complete; drop the future to cancel.
+        let handle = CacheBusyHandle::from(handle).into();
+        let _ = self.session.take_cache_entry(handle)?;
+        Ok(())
+    }
+
+    async fn close(&mut self, handle: Resource<api::Handle>) -> Result<(), types::Error> {
+        let _ = self
+            .session
+            .take_cache_entry(handle.into())?
+            .task()
+            .recv()
+            .await?;
+        Ok(())
     }
 }

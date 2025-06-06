@@ -7,6 +7,7 @@ use {
     http::header::InvalidHeaderName,
 };
 
+#[derive(Debug)]
 pub enum TrappableError {
     Error(types::Error),
     Trap(anyhow::Error),

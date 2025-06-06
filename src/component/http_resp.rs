@@ -1,7 +1,7 @@
 use {
-    super::fastly::api::{http_resp, http_types, types},
+    super::fastly::api::{http_body, http_resp, http_types, types},
     super::{headers::write_values, types::TrappableError},
-    crate::{error::Error, linking::ComponentCtx, upstream},
+    crate::{component::component::Resource, error::Error, linking::ComponentCtx, upstream},
     cfg_if::cfg_if,
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
@@ -11,15 +11,15 @@ use {
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 #[async_trait::async_trait]
-impl http_resp::Host for ComponentCtx {
-    async fn new(&mut self) -> Result<http_types::ResponseHandle, types::Error> {
+impl http_resp::HostResponseHandle for ComponentCtx {
+    async fn new(&mut self) -> Result<Resource<http_resp::ResponseHandle>, types::Error> {
         let (parts, _) = Response::new(()).into_parts();
         Ok(self.session.insert_response_parts(parts).into())
     }
 
     async fn status_get(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
     ) -> Result<http_types::HttpStatus, types::Error> {
         let parts = self.session.response_parts(h.into())?;
         Ok(parts.status.as_u16())
@@ -27,7 +27,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn status_set(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         status: http_types::HttpStatus,
     ) -> Result<(), types::Error> {
         let resp = self.session.response_parts_mut(h.into())?;
@@ -38,7 +38,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn header_append(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
@@ -53,30 +53,9 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn send_downstream(
-        &mut self,
-        h: http_types::ResponseHandle,
-        b: http_types::BodyHandle,
-        streaming: bool,
-    ) -> Result<(), types::Error> {
-        let resp = {
-            // Take the response parts and body from the session, and use them to build a response.
-            // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
-            let resp_parts = self.session.take_response_parts(h.into())?;
-            let body = if streaming {
-                self.session.begin_streaming(b.into())?
-            } else {
-                self.session.take_body(b.into())?
-            };
-            Response::from_parts(resp_parts, body)
-        }; // Set the downstream response, and return.
-        self.session.send_downstream_response(resp)?;
-        Ok(())
-    }
-
     async fn header_names_get(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
@@ -102,7 +81,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn header_value_get(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         name: Vec<u8>,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
@@ -127,7 +106,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn header_values_get(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         name: Vec<u8>,
         max_len: u64,
         cursor: u32,
@@ -168,7 +147,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn header_values_set(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         name: Vec<u8>,
         values: Vec<u8>,
     ) -> Result<(), types::Error> {
@@ -202,7 +181,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn header_insert(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
@@ -220,7 +199,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn header_remove(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         name: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -238,7 +217,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn version_get(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
     ) -> Result<http_types::HttpVersion, types::Error> {
         let req = self.session.response_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
@@ -247,7 +226,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn version_set(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::ResponseHandle>,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
         let req = self.session.response_parts_mut(h.into())?;
@@ -255,16 +234,9 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn close(&mut self, h: http_types::ResponseHandle) -> Result<(), types::Error> {
-        // We don't do anything with the parts, but we do pass the error up if
-        // the handle given doesn't exist
-        self.session.take_response_parts(h.into())?;
-        Ok(())
-    }
-
     async fn framing_headers_mode_set(
         &mut self,
-        _h: http_types::ResponseHandle,
+        _h: Resource<http_resp::ResponseHandle>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
         match mode {
@@ -277,7 +249,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn http_keepalive_mode_set(
         &mut self,
-        _: http_types::ResponseHandle,
+        _: Resource<http_resp::ResponseHandle>,
         mode: http_resp::KeepaliveMode,
     ) -> Result<(), types::Error> {
         match mode {
@@ -290,7 +262,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn get_addr_dest_ip(
         &mut self,
-        resp_handle: http_types::ResponseHandle,
+        resp_handle: Resource<http_resp::ResponseHandle>,
     ) -> Result<Vec<u8>, types::Error> {
         let resp = self.session.response_parts(resp_handle.into())?;
         let md = resp
@@ -314,7 +286,7 @@ impl http_resp::Host for ComponentCtx {
 
     async fn get_addr_dest_port(
         &mut self,
-        resp_handle: http_types::ResponseHandle,
+        resp_handle: Resource<http_resp::ResponseHandle>,
     ) -> Result<u16, types::Error> {
         let resp = self.session.response_parts(resp_handle.into())?;
         let md = resp
@@ -323,5 +295,51 @@ impl http_resp::Host for ComponentCtx {
             .ok_or(Error::ValueAbsent)?;
         let port = md.remote_addr.port();
         Ok(port)
+    }
+
+    async fn drop(&mut self, _h: Resource<http_resp::ResponseHandle>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl http_resp::Host for ComponentCtx {
+    async fn send_downstream_streaming(
+        &mut self,
+        h: Resource<http_resp::ResponseHandle>,
+        b: Resource<http_body::BodyHandle>,
+    ) -> Result<(), types::Error> {
+        let resp = {
+            // Take the response parts and body from the session, and use them to build a response.
+            // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
+            let resp_parts = self.session.take_response_parts(h.into())?;
+            let body = self.session.begin_streaming(b.into())?;
+            Response::from_parts(resp_parts, body)
+        }; // Set the downstream response, and return.
+        self.session.send_downstream_response(resp)?;
+        Ok(())
+    }
+
+    async fn send_downstream(
+        &mut self,
+        h: Resource<http_resp::ResponseHandle>,
+        b: Resource<http_body::BodyHandle>,
+    ) -> Result<(), types::Error> {
+        let resp = {
+            // Take the response parts and body from the session, and use them to build a response.
+            // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
+            let resp_parts = self.session.take_response_parts(h.into())?;
+            let body = self.session.take_body(b.into())?;
+            Response::from_parts(resp_parts, body)
+        }; // Set the downstream response, and return.
+        self.session.send_downstream_response(resp)?;
+        Ok(())
+    }
+
+    async fn close(&mut self, h: Resource<http_resp::ResponseHandle>) -> Result<(), types::Error> {
+        // We don't do anything with the parts, but we do pass the error up if
+        // the handle given doesn't exist
+        self.session.take_response_parts(h.into())?;
+        Ok(())
     }
 }

@@ -145,3 +145,20 @@ macro_rules! make_string_result {
         $crate::make_vec!($ptr, $len)
     }};
 }
+
+#[macro_export]
+macro_rules! write_handle_result {
+    ($res:expr, $out:ident) => {
+        match $res {
+            Ok(val) => {
+                unsafe {
+                    *$out = val.take_handle();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    };
+}

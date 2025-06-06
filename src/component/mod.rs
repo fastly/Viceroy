@@ -7,6 +7,7 @@ component::bindgen!({
     with: {
         "fastly:api/uap/user-agent": uap::UserAgent,
         "fastly:api/kv-store/lookup-result": kv_store::LookupResult,
+        "fastly:api/http-req/dynamic-backend-config": http_req::BackendBuilder,
 
         "wasi:clocks": wasmtime_wasi::bindings::clocks,
         "wasi:random": wasmtime_wasi::bindings::random,
@@ -19,11 +20,14 @@ component::bindgen!({
     },
 
     trappable_imports: [
-        "header-values-get",
+        "[method]request-handle.header-values-get",
+        "[method]response-handle.header-values-get",
         "[method]lookup-result.body",
         "[method]lookup-result.metadata",
         "[method]lookup-result.generation"
     ],
+
+    tracing: true,
 });
 
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {
@@ -99,3 +103,5 @@ pub mod secret_store;
 pub mod shielding;
 pub mod types;
 pub mod uap;
+
+mod handles;

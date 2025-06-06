@@ -3,6 +3,10 @@
     (func $response_new
       (param i32)
       (result i32)))
+  (import "fastly_http_body" "new"
+    (func $response_new_body
+      (param i32)
+      (result i32)))
   (import "fastly_http_resp" "status_set"
     (func $response_set_status
       (param i32) (param i32)
@@ -19,6 +23,7 @@
   ;; we're going to fix a few memory locations as constants, just to avoid
   ;; some other messiness, even though it's bad software engineering.
   (global $response_handle_buffer i32 (i32.const 4))
+  (global $response_body_buffer i32 (i32.const 8))
 
   (func $main (export "_start")
     (i32.const 200)
@@ -38,6 +43,11 @@
       (call $response_new)
       (call $maybe_error_die)
 
+      ;; create the response body
+      (global.get $response_body_buffer)
+      (call $response_new_body)
+      (call $maybe_error_die)
+
       ;; set the status
       (global.get $response_handle_buffer)
       (i32.load)
@@ -48,7 +58,8 @@
       ;; send it to the client
       (global.get $response_handle_buffer)
       (i32.load)
-      (i32.const 0) ;; empty body
+      (global.get $response_body_buffer)
+      (i32.load)
       (i32.const 0) ;; not streaming
       (call $response_send)
       (call $maybe_error_die)

@@ -1,10 +1,11 @@
 use super::fastly::api::{acl, http_body, types};
+use crate::component::component::Resource;
 use crate::linking::ComponentCtx;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[async_trait::async_trait]
-impl acl::Host for ComponentCtx {
-    async fn open(&mut self, acl_name: String) -> Result<acl::AclHandle, types::Error> {
+impl acl::HostAclHandle for ComponentCtx {
+    async fn open(&mut self, acl_name: String) -> Result<Resource<acl::AclHandle>, types::Error> {
         let handle = self
             .session
             .acl_handle_by_name(&acl_name)
@@ -14,10 +15,10 @@ impl acl::Host for ComponentCtx {
 
     async fn lookup(
         &mut self,
-        acl_handle: acl::AclHandle,
+        acl_handle: Resource<acl::AclHandle>,
         ip_octets: Vec<u8>,
         ip_len: u64,
-    ) -> Result<(Option<http_body::BodyHandle>, acl::AclError), types::Error> {
+    ) -> Result<(Option<Resource<http_body::BodyHandle>>, acl::AclError), types::Error> {
         let acl = self
             .session
             .acl_by_handle(acl_handle.into())
@@ -43,4 +44,11 @@ impl acl::Host for ComponentCtx {
             None => Ok((None, acl::AclError::NoContent)),
         }
     }
+
+    async fn drop(&mut self, _acl_handle: Resource<acl::AclHandle>) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
+
+#[async_trait::async_trait]
+impl acl::Host for ComponentCtx {}

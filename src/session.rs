@@ -36,8 +36,8 @@ use {
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            self, AclHandle, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            KvInsertMode, KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle,
+            self, AclHandle, BodyHandle, ConfigStoreHandle, ContentEncodings, DictionaryHandle,
+            EndpointHandle, KvInsertMode, KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle,
             KvStoreListHandle, KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle,
             PendingKvListHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
             ResponseHandle, SecretHandle, SecretStoreHandle,
@@ -1371,5 +1371,25 @@ impl From<CacheBusyHandle> for CacheHandle {
     fn from(h: CacheBusyHandle) -> CacheHandle {
         let raw: u32 = h.into();
         CacheHandle::from(raw)
+    }
+}
+impl From<CacheHandle> for CacheBusyHandle {
+    fn from(h: CacheHandle) -> CacheBusyHandle {
+        let raw: u32 = h.into();
+        CacheBusyHandle::from(raw)
+    }
+}
+
+// DictionaryHandle and ConfigStoreHandle are equivalent; ConfigStoreHandle is just a "later" resolution.
+impl From<DictionaryHandle> for ConfigStoreHandle {
+    fn from(h: DictionaryHandle) -> ConfigStoreHandle {
+        let raw: u32 = h.into();
+        ConfigStoreHandle::from(raw)
+    }
+}
+impl From<ConfigStoreHandle> for DictionaryHandle {
+    fn from(h: ConfigStoreHandle) -> DictionaryHandle {
+        let raw: u32 = h.into();
+        DictionaryHandle::from(raw)
     }
 }

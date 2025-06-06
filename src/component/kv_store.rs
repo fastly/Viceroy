@@ -8,19 +8,23 @@ use {
         types::TrappableError,
     },
     crate::{
+        component::component::Resource,
         linking::ComponentCtx,
         object_store::{ObjectKey, ObjectStoreError},
         session::{
             PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
             PendingKvLookupTask,
         },
-        wiggle_abi::types::KvInsertMode,
+        wiggle_abi::types::{
+            BodyHandle, KvInsertMode, KvStoreDeleteHandle, KvStoreInsertHandle, KvStoreListHandle,
+            KvStoreLookupHandle,
+        },
     },
     wasmtime_wasi::WasiView,
 };
 
 pub struct LookupResult {
-    body: http_body::BodyHandle,
+    body: BodyHandle,
     metadata: Option<String>,
     generation: u64,
 }
@@ -29,14 +33,14 @@ pub struct LookupResult {
 impl kv_store::HostLookupResult for ComponentCtx {
     async fn body(
         &mut self,
-        rep: wasmtime::component::Resource<kv_store::LookupResult>,
-    ) -> wasmtime::Result<http_body::BodyHandle> {
-        Ok(self.table().get(&rep)?.body)
+        rep: Resource<kv_store::LookupResult>,
+    ) -> wasmtime::Result<Resource<http_body::BodyHandle>> {
+        Ok(self.table().get(&rep)?.body.into())
     }
 
     async fn metadata(
         &mut self,
-        rep: wasmtime::component::Resource<kv_store::LookupResult>,
+        rep: Resource<kv_store::LookupResult>,
         max_len: u64,
     ) -> Result<Option<String>, TrappableError> {
         let res = self.table().get(&rep)?;
@@ -51,25 +55,22 @@ impl kv_store::HostLookupResult for ComponentCtx {
         Ok(self.table().get_mut(&rep)?.metadata.take())
     }
 
-    async fn generation(
-        &mut self,
-        rep: wasmtime::component::Resource<kv_store::LookupResult>,
-    ) -> wasmtime::Result<u64> {
+    async fn generation(&mut self, rep: Resource<kv_store::LookupResult>) -> wasmtime::Result<u64> {
         Ok(self.table().get(&rep)?.generation)
     }
 
-    async fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<kv_store::LookupResult>,
-    ) -> wasmtime::Result<()> {
+    async fn drop(&mut self, rep: Resource<kv_store::LookupResult>) -> wasmtime::Result<()> {
         self.table().delete(rep)?;
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl kv_store::Host for ComponentCtx {
-    async fn open(&mut self, name: String) -> Result<Option<kv_store::Handle>, types::Error> {
+impl kv_store::HostHandle for ComponentCtx {
+    async fn open(
+        &mut self,
+        name: String,
+    ) -> Result<Option<Resource<kv_store::Handle>>, types::Error> {
         if self.session.kv_store().store_exists(&name)? {
             // todo (byoung), handle optional/none/error case
             let h = self.session.kv_store_handle(&name)?;
@@ -81,9 +82,9 @@ impl kv_store::Host for ComponentCtx {
 
     async fn lookup(
         &mut self,
-        store: kv_store::Handle,
+        store: Resource<kv_store::Handle>,
         key: Vec<u8>,
-    ) -> Result<kv_store::LookupHandle, types::Error> {
+    ) -> Result<Resource<kv_store::LookupHandle>, types::Error> {
         let store = self.session.get_kv_store_key(store.into()).unwrap();
         let key = String::from_utf8(key)?;
         // just create a future that's already ready
@@ -92,53 +93,18 @@ impl kv_store::Host for ComponentCtx {
         let lh = self
             .session
             .insert_pending_kv_lookup(PendingKvLookupTask::new(task));
+        let lh: KvStoreLookupHandle = lh.into();
         Ok(lh.into())
-    }
-
-    async fn lookup_wait(
-        &mut self,
-        handle: kv_store::LookupHandle,
-    ) -> Result<
-        (
-            Option<wasmtime::component::Resource<kv_store::LookupResult>>,
-            kv_store::KvStatus,
-        ),
-        types::Error,
-    > {
-        let resp = self
-            .session
-            .take_pending_kv_lookup(handle.into())?
-            .task()
-            .recv()
-            .await?;
-
-        match resp {
-            Ok(value) => {
-                let lr = kv_store::LookupResult {
-                    body: self.session.insert_body(value.body.into()).into(),
-                    metadata: match value.metadata_len {
-                        0 => None,
-                        _ => Some(value.metadata),
-                    },
-                    generation: value.generation,
-                };
-
-                let res = self.table().push(lr)?;
-
-                Ok((Some(res), kv_store::KvStatus::Ok))
-            }
-            Err(e) => Ok((None, e.into())),
-        }
     }
 
     async fn insert(
         &mut self,
-        store: kv_store::Handle,
+        store: Resource<kv_store::Handle>,
         key: Vec<u8>,
-        body_handle: kv_store::BodyHandle,
+        body_handle: Resource<kv_store::BodyHandle>,
         mask: kv_store::InsertConfigOptions,
         config: kv_store::InsertConfig,
-    ) -> Result<kv_store::InsertHandle, types::Error> {
+    ) -> Result<Resource<kv_store::InsertHandle>, types::Error> {
         let body = self
             .session
             .take_body(body_handle.into())?
@@ -190,28 +156,11 @@ impl kv_store::Host for ComponentCtx {
         Ok(handle.into())
     }
 
-    async fn insert_wait(
-        &mut self,
-        handle: kv_store::InsertHandle,
-    ) -> Result<kv_store::KvStatus, types::Error> {
-        let resp = self
-            .session
-            .take_pending_kv_insert(handle.into())?
-            .task()
-            .recv()
-            .await?;
-
-        match resp {
-            Ok(()) => Ok(kv_store::KvStatus::Ok),
-            Err(e) => Ok(e.into()),
-        }
-    }
-
     async fn delete(
         &mut self,
-        store: kv_store::Handle,
+        store: Resource<kv_store::Handle>,
         key: Vec<u8>,
-    ) -> Result<kv_store::DeleteHandle, types::Error> {
+    ) -> Result<Resource<kv_store::DeleteHandle>, types::Error> {
         let store = self.session.get_kv_store_key(store.into()).unwrap();
         let key = String::from_utf8(key)?;
         // just create a future that's already ready
@@ -220,32 +169,16 @@ impl kv_store::Host for ComponentCtx {
         let lh = self
             .session
             .insert_pending_kv_delete(PendingKvDeleteTask::new(task));
+        let lh: KvStoreDeleteHandle = lh.into();
         Ok(lh.into())
-    }
-
-    async fn delete_wait(
-        &mut self,
-        handle: kv_store::DeleteHandle,
-    ) -> Result<kv_store::KvStatus, types::Error> {
-        let resp = self
-            .session
-            .take_pending_kv_delete(handle.into())?
-            .task()
-            .recv()
-            .await?;
-
-        match resp {
-            Ok(()) => Ok(kv_store::KvStatus::Ok),
-            Err(e) => Ok(e.into()),
-        }
     }
 
     async fn list(
         &mut self,
-        store: kv_store::Handle,
+        store: Resource<kv_store::Handle>,
         mask: kv_store::ListConfigOptions,
         options: kv_store::ListConfig,
-    ) -> Result<kv_store::ListHandle, types::Error> {
+    ) -> Result<Resource<kv_store::ListHandle>, types::Error> {
         let store = self.session.get_kv_store_key(store.into()).unwrap();
 
         let cursor = if mask.contains(kv_store::ListConfigOptions::CURSOR) {
@@ -271,13 +204,89 @@ impl kv_store::Host for ComponentCtx {
         let handle = self
             .session
             .insert_pending_kv_list(PendingKvListTask::new(task));
+        let handle: KvStoreListHandle = handle.into();
         Ok(handle.into())
+    }
+
+    async fn drop(&mut self, _store: Resource<kv_store::Handle>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl kv_store::Host for ComponentCtx {
+    async fn lookup_wait(
+        &mut self,
+        handle: Resource<kv_store::LookupHandle>,
+    ) -> Result<(Option<Resource<kv_store::LookupResult>>, kv_store::KvStatus), types::Error> {
+        let handle: KvStoreLookupHandle = handle.into();
+        let resp = self
+            .session
+            .take_pending_kv_lookup(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(value) => {
+                let lr = kv_store::LookupResult {
+                    body: self.session.insert_body(value.body.into()).into(),
+                    metadata: match value.metadata_len {
+                        0 => None,
+                        _ => Some(value.metadata),
+                    },
+                    generation: value.generation,
+                };
+
+                let res = self.table().push(lr)?;
+
+                Ok((Some(res), kv_store::KvStatus::Ok))
+            }
+            Err(e) => Ok((None, e.into())),
+        }
+    }
+
+    async fn insert_wait(
+        &mut self,
+        handle: Resource<kv_store::InsertHandle>,
+    ) -> Result<kv_store::KvStatus, types::Error> {
+        let handle: KvStoreInsertHandle = handle.into();
+        let resp = self
+            .session
+            .take_pending_kv_insert(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(()) => Ok(kv_store::KvStatus::Ok),
+            Err(e) => Ok(e.into()),
+        }
+    }
+
+    async fn delete_wait(
+        &mut self,
+        handle: Resource<kv_store::DeleteHandle>,
+    ) -> Result<kv_store::KvStatus, types::Error> {
+        let handle: KvStoreDeleteHandle = handle.into();
+        let resp = self
+            .session
+            .take_pending_kv_delete(handle.into())?
+            .task()
+            .recv()
+            .await?;
+
+        match resp {
+            Ok(()) => Ok(kv_store::KvStatus::Ok),
+            Err(e) => Ok(e.into()),
+        }
     }
 
     async fn list_wait(
         &mut self,
-        handle: kv_store::ListHandle,
-    ) -> Result<(Option<kv_store::BodyHandle>, kv_store::KvStatus), types::Error> {
+        handle: Resource<kv_store::ListHandle>,
+    ) -> Result<(Option<Resource<kv_store::BodyHandle>>, kv_store::KvStatus), types::Error> {
+        let handle: KvStoreListHandle = handle.into();
         let resp = self
             .session
             .take_pending_kv_list(handle.into())?
@@ -292,5 +301,33 @@ impl kv_store::Host for ComponentCtx {
             )),
             Err(e) => Ok((None, e.into())),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl kv_store::HostInsertHandle for ComponentCtx {
+    async fn drop(&mut self, _store: Resource<kv_store::InsertHandle>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl kv_store::HostListHandle for ComponentCtx {
+    async fn drop(&mut self, _store: Resource<kv_store::ListHandle>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl kv_store::HostDeleteHandle for ComponentCtx {
+    async fn drop(&mut self, _store: Resource<kv_store::DeleteHandle>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl kv_store::HostLookupHandle for ComponentCtx {
+    async fn drop(&mut self, _store: Resource<kv_store::LookupHandle>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }

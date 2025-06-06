@@ -95,7 +95,10 @@ pub type KVStoreHandle = u32;
 pub type ObjectStoreHandle = u32;
 pub type PendingObjectStoreDeleteHandle = u32;
 pub type PendingObjectStoreInsertHandle = u32;
-pub type PendingObjectStoreListHandle = u32;
+pub type KVStoreLookupHandle = u32;
+pub type KVStoreInsertHandle = u32;
+pub type KVStoreDeleteHandle = u32;
+pub type KVStoreListHandle = u32;
 pub type PendingObjectStoreLookupHandle = u32;
 pub type PendingRequestHandle = u32;
 pub type RequestHandle = u32;
@@ -112,8 +115,8 @@ pub struct DynamicBackendConfig {
     pub connect_timeout_ms: u32,
     pub first_byte_timeout_ms: u32,
     pub between_bytes_timeout_ms: u32,
-    pub tls_min_version: u32,
-    pub tls_max_version: u32,
+    pub ssl_min_version: u32,
+    pub ssl_max_version: u32,
     pub cert_hostname: *const u8,
     pub cert_hostname_len: u32,
     pub ca_cert: *const u8,
@@ -140,8 +143,8 @@ impl Default for DynamicBackendConfig {
             connect_timeout_ms: 0,
             first_byte_timeout_ms: 0,
             between_bytes_timeout_ms: 0,
-            tls_min_version: 0,
-            tls_max_version: 0,
+            ssl_min_version: 0,
+            ssl_max_version: 0,
             cert_hostname: std::ptr::null(),
             cert_hostname_len: 0,
             ca_cert: std::ptr::null(),
@@ -394,7 +397,10 @@ pub mod fastly_http_body {
 
     #[export_name = "fastly_http_body#append"]
     pub fn append(dst_handle: BodyHandle, src_handle: BodyHandle) -> FastlyStatus {
-        convert_result(http_body::append(dst_handle, src_handle))
+        let dst_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(dst_handle) });
+        let src_handle = unsafe { http_body::BodyHandle::from_handle(src_handle) };
+        convert_result(http_body::append(&dst_handle, src_handle))
     }
 
     #[export_name = "fastly_http_body#new"]
@@ -402,7 +408,7 @@ pub mod fastly_http_body {
         match http_body::new() {
             Ok(handle) => {
                 unsafe {
-                    *handle_out = handle;
+                    *handle_out = handle.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -417,8 +423,10 @@ pub mod fastly_http_body {
         buf_len: usize,
         nread_out: *mut usize,
     ) -> FastlyStatus {
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
         alloc_result!(buf, buf_len, nread_out, {
-            http_body::read(body_handle, u32::try_from(buf_len).trapping_unwrap())
+            http_body::read(&body_handle, u32::try_from(buf_len).trapping_unwrap())
         })
     }
 
@@ -432,12 +440,14 @@ pub mod fastly_http_body {
         end: BodyWriteEnd,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
         let end = match end {
             BodyWriteEnd::Back => http_body::WriteEnd::Back,
             BodyWriteEnd::Front => http_body::WriteEnd::Front,
         };
         match http_body::write(
-            body_handle,
+            &body_handle,
             unsafe { slice::from_raw_parts(buf, buf_len) },
             end,
         ) {
@@ -455,11 +465,13 @@ pub mod fastly_http_body {
     /// Close a body, freeing its resources and causing any sends to finish.
     #[export_name = "fastly_http_body#close"]
     pub fn close(body_handle: BodyHandle) -> FastlyStatus {
+        let body_handle = unsafe { http_body::BodyHandle::from_handle(body_handle) };
         convert_result(http_body::close(body_handle))
     }
 
     #[export_name = "fastly_http_body#abandon"]
     pub fn abandon(body_handle: BodyHandle) -> FastlyStatus {
+        let body_handle = unsafe { http_body::BodyHandle::from_handle(body_handle) };
         convert_result(http_body::abandon(body_handle))
     }
 
@@ -473,7 +485,9 @@ pub mod fastly_http_body {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let value = unsafe { slice::from_raw_parts(value, value_len) };
-        convert_result(http_body::trailer_append(body_handle, name, value))
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
+        convert_result(http_body::trailer_append(&body_handle, name, value))
     }
 
     #[export_name = "fastly_http_body#trailer_names_get"]
@@ -485,12 +499,14 @@ pub mod fastly_http_body {
         ending_cursor: *mut i64,
         nwritten: *mut usize,
     ) -> FastlyStatus {
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
         with_buffer!(
             buf,
             buf_len,
             {
                 http_body::trailer_names_get(
-                    body_handle,
+                    &body_handle,
                     u64::try_from(buf_len).trapping_unwrap(),
                     cursor,
                 )
@@ -529,9 +545,11 @@ pub mod fastly_http_body {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
         alloc_result_opt!(value, value_max_len, nwritten, {
             http_body::trailer_value_get(
-                body_handle,
+                &body_handle,
                 name,
                 u64::try_from(value_max_len).trapping_unwrap(),
             )
@@ -550,12 +568,14 @@ pub mod fastly_http_body {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
         with_buffer!(
             buf,
             buf_len,
             {
                 http_body::trailer_values_get(
-                    body_handle,
+                    &body_handle,
                     name,
                     u64::try_from(buf_len).trapping_unwrap(),
                     cursor,
@@ -587,7 +607,9 @@ pub mod fastly_http_body {
 
     #[export_name = "fastly_http_body#known_length"]
     pub fn known_length(body_handle: BodyHandle, length_out: *mut u64) -> FastlyStatus {
-        match http_body::known_length(body_handle) {
+        let body_handle =
+            ManuallyDrop::new(unsafe { http_body::BodyHandle::from_handle(body_handle) });
+        match http_body::known_length(&body_handle) {
             Ok(len) => {
                 unsafe {
                     *length_out = len;
@@ -612,10 +634,10 @@ pub mod fastly_log {
         endpoint_handle_out: *mut u32,
     ) -> FastlyStatus {
         let name = crate::make_str!(name, name_len);
-        match fastly::api::log::endpoint_get(name) {
+        match fastly::api::log::Handle::endpoint_get(name) {
             Ok(res) => {
                 unsafe {
-                    *endpoint_handle_out = res;
+                    *endpoint_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -633,7 +655,9 @@ pub mod fastly_log {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         let msg = unsafe { slice::from_raw_parts(msg, msg_len) };
-        match fastly::api::log::write(endpoint_handle, msg) {
+        let endpoint_handle =
+            ManuallyDrop::new(unsafe { fastly::api::log::Handle::from_handle(endpoint_handle) });
+        match endpoint_handle.write(msg) {
             Ok(res) => {
                 unsafe {
                     *nwritten_out = usize::try_from(res).trapping_unwrap();
@@ -905,9 +929,9 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         use fastly::api::http_req::CacheOverrideTag;
         let tag = CacheOverrideTag::from(tag);
-        convert_result(fastly::api::http_req::cache_override_set(
-            req_handle, tag, ttl, swr,
-        ))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.cache_override_set(tag, ttl, swr, None))
     }
 
     #[export_name = "fastly_http_req#cache_override_v2_set"]
@@ -922,13 +946,9 @@ pub mod fastly_http_req {
         use fastly::api::http_req::CacheOverrideTag;
         let tag = CacheOverrideTag::from(tag);
         let sk = unsafe { slice::from_raw_parts(sk, sk_len) };
-        convert_result(fastly::api::http_req::cache_override_v2_set(
-            req_handle,
-            tag,
-            ttl,
-            swr,
-            (!sk.is_empty()).then_some(sk),
-        ))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.cache_override_set(tag, ttl, swr, (!sk.is_empty()).then_some(sk)))
     }
 
     #[export_name = "fastly_http_req#framing_headers_mode_set"]
@@ -936,6 +956,8 @@ pub mod fastly_http_req {
         req_handle: RequestHandle,
         mode: FramingHeadersMode,
     ) -> FastlyStatus {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         let mode = match mode {
             FramingHeadersMode::Automatic => fastly::api::http_types::FramingHeadersMode::Automatic,
             FramingHeadersMode::ManuallyFromHeaders => {
@@ -943,9 +965,7 @@ pub mod fastly_http_req {
             }
         };
 
-        convert_result(fastly::api::http_req::framing_headers_mode_set(
-            req_handle, mode,
-        ))
+        convert_result(req_handle.framing_headers_mode_set(mode))
     }
 
     #[export_name = "fastly_http_req#downstream_client_ip_addr"]
@@ -1135,9 +1155,9 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let value = unsafe { slice::from_raw_parts(value, value_len) };
-        convert_result(fastly::api::http_req::header_append(
-            req_handle, name, value,
-        ))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.header_append(name, value))
     }
 
     #[export_name = "fastly_http_req#header_insert"]
@@ -1150,9 +1170,9 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let value = unsafe { slice::from_raw_parts(value, value_len) };
-        convert_result(fastly::api::http_req::header_insert(
-            req_handle, name, value,
-        ))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.header_insert(name, value))
     }
 
     #[export_name = "fastly_http_req#original_header_names_get"]
@@ -1218,16 +1238,12 @@ pub mod fastly_http_req {
         ending_cursor: *mut i64,
         nwritten: *mut usize,
     ) -> FastlyStatus {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         with_buffer!(
             buf,
             buf_len,
-            {
-                fastly::api::http_req::header_names_get(
-                    req_handle,
-                    u64::try_from(buf_len).trapping_unwrap(),
-                    cursor,
-                )
-            },
+            { req_handle.header_names_get(u64::try_from(buf_len).trapping_unwrap(), cursor,) },
             |res| {
                 let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
@@ -1263,12 +1279,13 @@ pub mod fastly_http_req {
         ending_cursor: *mut i64,
         nwritten: *mut usize,
     ) -> FastlyStatus {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         with_buffer!(
             buf,
             buf_len,
             {
-                fastly::api::http_req::header_values_get(
-                    req_handle,
+                req_handle.header_values_get(
                     unsafe { slice::from_raw_parts(name, name_len) },
                     u64::try_from(buf_len).trapping_unwrap(),
                     cursor,
@@ -1306,11 +1323,14 @@ pub mod fastly_http_req {
         values: *const u8,
         values_len: usize,
     ) -> FastlyStatus {
-        convert_result(fastly::api::http_req::header_values_set(
-            req_handle,
-            unsafe { slice::from_raw_parts(name, name_len) },
-            unsafe { slice::from_raw_parts(values, values_len) },
-        ))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(
+            req_handle
+                .header_values_set(unsafe { slice::from_raw_parts(name, name_len) }, unsafe {
+                    slice::from_raw_parts(values, values_len)
+                }),
+        )
     }
 
     #[export_name = "fastly_http_req#header_value_get"]
@@ -1323,16 +1343,12 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         with_buffer!(
             value,
             value_max_len,
-            {
-                fastly::api::http_req::header_value_get(
-                    req_handle,
-                    name,
-                    u64::try_from(value_max_len).trapping_unwrap(),
-                )
-            },
+            { req_handle.header_value_get(name, u64::try_from(value_max_len).trapping_unwrap(),) },
             |res| {
                 let res =
                     handle_buffer_len!(res, nwritten).ok_or(FastlyStatus::INVALID_ARGUMENT)?;
@@ -1352,7 +1368,9 @@ pub mod fastly_http_req {
         name_len: usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        convert_result(fastly::api::http_req::header_remove(req_handle, name))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.header_remove(name))
     }
 
     #[export_name = "fastly_http_req#method_get"]
@@ -1362,11 +1380,10 @@ pub mod fastly_http_req {
         method_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         alloc_result!(method, method_max_len, nwritten, {
-            fastly::api::http_req::method_get(
-                req_handle,
-                u64::try_from(method_max_len).trapping_unwrap(),
-            )
+            req_handle.method_get(u64::try_from(method_max_len).trapping_unwrap())
         })
     }
 
@@ -1377,15 +1394,17 @@ pub mod fastly_http_req {
         method_len: usize,
     ) -> FastlyStatus {
         let method = unsafe { slice::from_raw_parts(method, method_len) };
-        convert_result(fastly::api::http_req::method_set(req_handle, method))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.method_set(method))
     }
 
     #[export_name = "fastly_http_req#new"]
     pub fn new(req_handle_out: *mut RequestHandle) -> FastlyStatus {
-        match fastly::api::http_req::new() {
+        match fastly::api::http_req::RequestHandle::new() {
             Ok(res) => {
                 unsafe {
-                    *req_handle_out = res;
+                    *req_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -1403,11 +1422,13 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        match fastly::api::http_req::send(req_handle, body_handle, backend) {
+        let body_handle = unsafe { fastly::api::http_body::BodyHandle::from_handle(body_handle) };
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
+        match http_req::send(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
-                    *resp_handle_out = resp_handle;
-                    *resp_body_handle_out = resp_body_handle;
+                    *resp_handle_out = resp_handle.take_handle();
+                    *resp_body_handle_out = resp_body_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1427,12 +1448,14 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        match fastly::api::http_req::send_v2(req_handle, body_handle, backend) {
+        let body_handle = unsafe { fastly::api::http_body::BodyHandle::from_handle(body_handle) };
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
+        match http_req::send_v2(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
                     *error_detail = http_req::SendErrorDetailTag::Ok.into();
-                    *resp_handle_out = resp_handle;
-                    *resp_body_handle_out = resp_body_handle;
+                    *resp_handle_out = resp_handle.take_handle();
+                    *resp_body_handle_out = resp_body_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1463,12 +1486,14 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        match fastly::api::http_req::send_v3(req_handle, body_handle, backend) {
+        let body_handle = unsafe { fastly::api::http_body::BodyHandle::from_handle(body_handle) };
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
+        match http_req::send_v3(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
                     *error_detail = http_req::SendErrorDetailTag::Ok.into();
-                    *resp_handle_out = resp_handle;
-                    *resp_body_handle_out = resp_body_handle;
+                    *resp_handle_out = resp_handle.take_handle();
+                    *resp_body_handle_out = resp_body_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1497,10 +1522,12 @@ pub mod fastly_http_req {
         pending_req_handle_out: *mut PendingRequestHandle,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
+        let body_handle = unsafe { fastly::api::http_body::BodyHandle::from_handle(body_handle) };
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
         match http_req::send_async(req_handle, body_handle, backend) {
             Ok(res) => {
                 unsafe {
-                    *pending_req_handle_out = res;
+                    *pending_req_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1519,10 +1546,21 @@ pub mod fastly_http_req {
         pending_req_handle_out: *mut PendingRequestHandle,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        match http_req::send_async_v2(req_handle, body_handle, backend, streaming == 1) {
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
+        let res = if streaming == 0 {
+            let body_handle =
+                unsafe { fastly::api::http_body::BodyHandle::from_handle(body_handle) };
+            http_req::send_async_v2(req_handle, body_handle, backend)
+        } else {
+            let body_handle = ManuallyDrop::new(unsafe {
+                fastly::api::http_body::BodyHandle::from_handle(body_handle)
+            });
+            http_req::send_async_v2_streaming(req_handle, &body_handle, backend)
+        };
+        match res {
             Ok(res) => {
                 unsafe {
-                    *pending_req_handle_out = res;
+                    *pending_req_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1540,10 +1578,14 @@ pub mod fastly_http_req {
         pending_req_handle_out: *mut PendingRequestHandle,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        match http_req::send_async_streaming(req_handle, body_handle, backend) {
+        let body_handle = ManuallyDrop::new(unsafe {
+            fastly::api::http_body::BodyHandle::from_handle(body_handle)
+        });
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
+        match http_req::send_async_streaming(req_handle, &body_handle, backend) {
             Ok(res) => {
                 unsafe {
-                    *pending_req_handle_out = res;
+                    *pending_req_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -1560,7 +1602,7 @@ pub mod fastly_http_req {
     #[export_name = "fastly_http_req#redirect_to_websocket_proxy"]
     pub fn redirect_to_websocket_proxy(backend: *const u8, backend_len: usize) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        convert_result(http_req::redirect_to_websocket_proxy(backend))
+        convert_result(http_req::redirect_to_websocket_proxy_deprecated(backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_websocket_proxy_v2"]
@@ -1570,13 +1612,14 @@ pub mod fastly_http_req {
         backend_len: usize,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        convert_result(http_req::redirect_to_websocket_proxy_v2(req, backend))
+        let req = ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req) });
+        convert_result(req.redirect_to_websocket_proxy(backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_grip_proxy"]
     pub fn redirect_to_grip_proxy(backend: *const u8, backend_len: usize) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        convert_result(http_req::redirect_to_grip_proxy(backend))
+        convert_result(http_req::redirect_to_grip_proxy_deprecated(backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_grip_proxy_v2"]
@@ -1586,7 +1629,8 @@ pub mod fastly_http_req {
         backend_len: usize,
     ) -> FastlyStatus {
         let backend = crate::make_str!(backend, backend_len);
-        convert_result(http_req::redirect_to_grip_proxy_v2(req, backend))
+        let req = ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req) });
+        convert_result(req.redirect_to_grip_proxy(backend))
     }
 
     #[export_name = "fastly_http_req#register_dynamic_backend"]
@@ -1606,42 +1650,64 @@ pub mod fastly_http_req {
         // NOTE: this is only really safe because we never mutate the vectors -- we only need
         // vectors to satisfy the interface produced by the DynamicBackendConfig record,
         // `register_dynamic_backend` will never mutate the vectors it's given.
-        macro_rules! make_string {
+        macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string!((*config).$ptr_field, (*config).$len_field) }
+                unsafe { crate::make_str!((*config).$ptr_field, (*config).$len_field) }
             };
         }
 
-        let host_override = make_string!(host_override, host_override_len);
-        let cert_hostname = make_string!(cert_hostname, cert_hostname_len);
-        let ca_cert = make_string!(ca_cert, ca_cert_len);
-        let ciphers = make_string!(ciphers, ciphers_len);
-        let sni_hostname = make_string!(sni_hostname, sni_hostname_len);
-        let client_cert = make_string!(client_certificate, client_certificate_len);
+        let host_override = make_str!(host_override, host_override_len);
+        let cert_hostname = make_str!(cert_hostname, cert_hostname_len);
+        let ca_cert = make_str!(ca_cert, ca_cert_len);
+        let ciphers = make_str!(ciphers, ciphers_len);
+        let sni_hostname = make_str!(sni_hostname, sni_hostname_len);
+        let client_cert = make_str!(client_certificate, client_certificate_len);
 
-        let config = http_req::DynamicBackendConfig {
-            host_override: ManuallyDrop::into_inner(host_override),
-            connect_timeout: unsafe { (*config).connect_timeout_ms },
-            first_byte_timeout: unsafe { (*config).first_byte_timeout_ms },
-            between_bytes_timeout: unsafe { (*config).between_bytes_timeout_ms },
-            tls_min_version: unsafe { (*config).tls_min_version }.try_into().ok(),
-            tls_max_version: unsafe { (*config).tls_max_version }.try_into().ok(),
-            cert_hostname: ManuallyDrop::into_inner(cert_hostname),
-            ca_cert: ManuallyDrop::into_inner(ca_cert),
-            ciphers: ManuallyDrop::into_inner(ciphers),
-            sni_hostname: ManuallyDrop::into_inner(sni_hostname),
-            client_cert: ManuallyDrop::into_inner(client_cert),
-            client_key: unsafe { (*config).client_key },
-            http_keepalive_time_ms: unsafe { (*config).http_keepalive_time_ms },
-            tcp_keepalive_enable: unsafe { (*config).tcp_keepalive_enable },
-            tcp_keepalive_interval_secs: unsafe { (*config).tcp_keepalive_interval_secs },
-            tcp_keepalive_probes: unsafe { (*config).tcp_keepalive_probes },
-            tcp_keepalive_time_secs: unsafe { (*config).tcp_keepalive_time_secs },
+        let client_key = unsafe { (*config).client_key };
+        let client_key = if client_key != 0 {
+            unsafe {
+                Some(
+                    crate::bindings::fastly::api::secret_store::SecretHandle::from_handle(
+                        (*config).client_key,
+                    ),
+                )
+            }
+        } else {
+            None
         };
 
-        let res = http_req::register_dynamic_backend(name_prefix, target, options, &config);
+        let tls_version_min = match unsafe { (*config).ssl_min_version }.try_into() {
+            Ok(tls_version_min) => tls_version_min,
+            Err(_) => return FastlyStatus::INVALID_ARGUMENT,
+        };
+        let tls_version_max = match unsafe { (*config).ssl_max_version }.try_into() {
+            Ok(tls_version_max) => tls_version_max,
+            Err(_) => return FastlyStatus::INVALID_ARGUMENT,
+        };
 
-        std::mem::forget(config);
+        let builder = http_req::DynamicBackendConfig::new(name_prefix, target);
+        builder.host_override(host_override);
+        builder.connect_timeout(unsafe { (*config).connect_timeout_ms });
+        builder.first_byte_timeout(unsafe { (*config).first_byte_timeout_ms });
+        builder.between_bytes_timeout(unsafe { (*config).between_bytes_timeout_ms });
+        builder.tls_min_version(tls_version_min);
+        builder.tls_max_version(tls_version_max);
+        builder.cert_hostname(cert_hostname);
+        builder.ca_cert(ca_cert);
+        builder.ciphers(ciphers);
+        builder.sni_hostname(sni_hostname);
+        builder.client_cert(client_cert);
+        if let Some(client_key) = client_key {
+            builder.client_key(&client_key);
+            core::mem::forget(client_key);
+        }
+        builder.http_keepalive_time_ms(unsafe { (*config).http_keepalive_time_ms });
+        builder.tcp_keepalive_enable(unsafe { (*config).tcp_keepalive_enable });
+        builder.tcp_keepalive_interval_secs(unsafe { (*config).tcp_keepalive_interval_secs });
+        builder.tcp_keepalive_probes(unsafe { (*config).tcp_keepalive_probes });
+        builder.tcp_keepalive_time_secs(unsafe { (*config).tcp_keepalive_time_secs });
+
+        let res = http_req::register_dynamic_backend(options, builder);
 
         convert_result(res)
     }
@@ -1653,20 +1719,26 @@ pub mod fastly_http_req {
         uri_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         alloc_result!(uri, uri_max_len, nwritten, {
-            fastly::api::http_req::uri_get(req_handle, u64::try_from(uri_max_len).trapping_unwrap())
+            req_handle.uri_get(u64::try_from(uri_max_len).trapping_unwrap())
         })
     }
 
     #[export_name = "fastly_http_req#uri_set"]
     pub fn uri_set(req_handle: RequestHandle, uri: *const u8, uri_len: usize) -> FastlyStatus {
         let uri = unsafe { slice::from_raw_parts(uri, uri_len) };
-        convert_result(http_req::uri_set(req_handle, uri))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.uri_set(uri))
     }
 
     #[export_name = "fastly_http_req#version_get"]
     pub fn version_get(req_handle: RequestHandle, version: *mut u32) -> FastlyStatus {
-        match fastly::api::http_req::version_get(req_handle) {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        match req_handle.version_get() {
             Ok(res) => {
                 unsafe {
                     *version = res.into();
@@ -1679,10 +1751,10 @@ pub mod fastly_http_req {
 
     #[export_name = "fastly_http_req#version_set"]
     pub fn version_set(req_handle: RequestHandle, version: u32) -> FastlyStatus {
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
         match http_types::HttpVersion::try_from(version) {
-            Ok(version) => convert_result(crate::bindings::fastly::api::http_req::version_set(
-                req_handle, version,
-            )),
+            Ok(version) => convert_result(req_handle.version_set(version)),
 
             Err(_) => FastlyStatus::INVALID_ARGUMENT,
         }
@@ -1694,12 +1766,15 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match http_req::pending_req_poll(pending_req_handle) {
+        let pending_req_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingRequestHandle::from_handle(pending_req_handle)
+        });
+        match http_req::pending_req_poll(&pending_req_handle) {
             Ok(res) => unsafe {
                 match res {
                     Some((resp_handle, resp_body_handle)) => {
-                        *resp_handle_out = resp_handle;
-                        *resp_body_handle_out = resp_body_handle;
+                        *resp_handle_out = resp_handle.take_handle();
+                        *resp_body_handle_out = resp_body_handle.take_handle();
                     }
 
                     None => {
@@ -1711,7 +1786,7 @@ pub mod fastly_http_req {
                 FastlyStatus::OK
             },
 
-            Err(e) => e.into(),
+            Err(e) => e.error.into(),
         }
     }
 
@@ -1723,14 +1798,17 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match http_req::pending_req_poll_v2(pending_req_handle) {
+        let pending_req_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingRequestHandle::from_handle(pending_req_handle)
+        });
+        match http_req::pending_req_poll(&pending_req_handle) {
             Ok(res) => unsafe {
                 *error_detail = http_req::SendErrorDetailTag::Ok.into();
                 match res {
                     Some((resp_handle, resp_body_handle)) => {
                         *is_done_out = 1;
-                        *resp_handle_out = resp_handle;
-                        *resp_body_handle_out = resp_body_handle;
+                        *resp_handle_out = resp_handle.take_handle();
+                        *resp_body_handle_out = resp_body_handle.take_handle();
                     }
 
                     None => {
@@ -1765,18 +1843,25 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let pending_req_handles =
-            unsafe { slice::from_raw_parts(pending_req_handles, pending_req_handles_len) };
-        match http_req::pending_req_select(pending_req_handles) {
-            Ok((idx, (resp_handle, resp_body_handle))) => {
-                unsafe {
+        unsafe {
+            let refs = slice::from_raw_parts(pending_req_handles, pending_req_handles_len);
+            match pending_req_select_wrapper(refs) {
+                Ok((idx, res)) => {
                     *done_index_out = i32::try_from(idx).trapping_unwrap();
-                    *resp_handle_out = resp_handle;
-                    *resp_body_handle_out = resp_body_handle;
+                    match res {
+                        Ok((resp_handle, resp_body_handle)) => {
+                            *resp_handle_out = resp_handle.take_handle();
+                            *resp_body_handle_out = resp_body_handle.take_handle();
+                        }
+                        Err(_) => {
+                            *resp_handle_out = INVALID_HANDLE;
+                            *resp_body_handle_out = INVALID_HANDLE;
+                        }
+                    }
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
+                Err(e) => e.into(),
             }
-            Err(e) => e.into(),
         }
     }
 
@@ -1789,37 +1874,31 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let pending_req_handles =
-            unsafe { slice::from_raw_parts(pending_req_handles, pending_req_handles_len) };
-        match http_req::pending_req_select_v2(pending_req_handles) {
-            Ok((idx, Ok((resp_handle, resp_body_handle)))) => {
-                unsafe {
+        unsafe {
+            let refs = slice::from_raw_parts(pending_req_handles, pending_req_handles_len);
+            match pending_req_select_wrapper(refs) {
+                Ok((idx, Ok((resp_handle, resp_body_handle)))) => {
                     *done_index_out = i32::try_from(idx).trapping_unwrap();
                     *error_detail = http_req::SendErrorDetailTag::Ok.into();
-                    *resp_handle_out = resp_handle;
-                    *resp_body_handle_out = resp_body_handle;
+                    *resp_handle_out = resp_handle.take_handle();
+                    *resp_body_handle_out = resp_body_handle.take_handle();
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
-            }
 
-            Ok((idx, Err(detail))) => {
-                unsafe {
+                Ok((idx, Err(detail))) => {
                     *done_index_out = i32::try_from(idx).trapping_unwrap();
                     *error_detail = detail.into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
+                    FastlyStatus::OK
                 }
 
-                FastlyStatus::OK
-            }
-
-            Err(err) => {
-                unsafe {
+                Err(err) => {
                     *error_detail = http_req::SendErrorDetailTag::Uninitialized.into();
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
+                    err.into()
                 }
-                err.into()
             }
         }
     }
@@ -1830,17 +1909,20 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match http_req::pending_req_wait(pending_req_handle) {
+        let pending_req_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingRequestHandle::from_handle(pending_req_handle)
+        });
+        match http_req::pending_req_wait(&pending_req_handle) {
             Ok((resp, body)) => {
                 unsafe {
-                    *resp_handle_out = resp;
-                    *resp_body_handle_out = body;
+                    *resp_handle_out = resp.take_handle();
+                    *resp_body_handle_out = body.take_handle();
                 }
 
                 FastlyStatus::OK
             }
 
-            Err(e) => e.into(),
+            Err(e) => e.error.into(),
         }
     }
 
@@ -1851,12 +1933,15 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match http_req::pending_req_wait_v2(pending_req_handle) {
+        let pending_req_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingRequestHandle::from_handle(pending_req_handle)
+        });
+        match http_req::pending_req_wait(&pending_req_handle) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
                     *error_detail = http_req::SendErrorDetailTag::Ok.into();
-                    *resp_handle_out = resp_handle;
-                    *resp_body_handle_out = resp_body_handle;
+                    *resp_handle_out = resp_handle.take_handle();
+                    *resp_body_handle_out = resp_body_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1890,6 +1975,7 @@ pub mod fastly_http_req {
 
     #[export_name = "fastly_http_req#close"]
     pub fn close(req_handle: RequestHandle) -> FastlyStatus {
+        let req_handle = unsafe { http_req::RequestHandle::from_handle(req_handle) };
         convert_result(http_req::close(req_handle))
     }
 
@@ -1898,10 +1984,9 @@ pub mod fastly_http_req {
         req_handle: RequestHandle,
         encodings: ContentEncodings,
     ) -> FastlyStatus {
-        convert_result(http_req::auto_decompress_response_set(
-            req_handle,
-            encodings.into(),
-        ))
+        let req_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(req_handle) });
+        convert_result(req_handle.auto_decompress_response_set(encodings.into()))
     }
 
     #[export_name = "fastly_http_req#inspect"]
@@ -1933,10 +2018,13 @@ pub mod fastly_http_req {
             workspace: ManuallyDrop::into_inner(workspace),
         };
 
+        let ds_body =
+            ManuallyDrop::new(unsafe { fastly::api::http_body::BodyHandle::from_handle(ds_body) });
+        let ds_req = ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(ds_req) });
+
         let res = alloc_result!(buf, buf_len, nwritten_out, {
-            fastly::api::http_req::inspect(
-                ds_req,
-                ds_body,
+            ds_req.inspect(
+                &ds_body,
                 info_mask,
                 &info,
                 u64::try_from(buf_len).trapping_unwrap(),
@@ -1955,7 +2043,9 @@ pub mod fastly_http_req {
         service_len: usize,
     ) -> FastlyStatus {
         let service = crate::make_str!(service, service_len);
-        convert_result(fastly::api::http_req::on_behalf_of(request_handle, service))
+        let request_handle =
+            ManuallyDrop::new(unsafe { http_req::RequestHandle::from_handle(request_handle) });
+        convert_result(request_handle.on_behalf_of(service))
     }
 }
 
@@ -1975,7 +2065,9 @@ pub mod fastly_http_resp {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let value = unsafe { slice::from_raw_parts(value, value_len) };
-        convert_result(http_resp::header_append(resp_handle, name, value))
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        convert_result(resp_handle.header_append(name, value))
     }
 
     #[export_name = "fastly_http_resp#header_insert"]
@@ -1988,7 +2080,9 @@ pub mod fastly_http_resp {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let value = unsafe { slice::from_raw_parts(value, value_len) };
-        convert_result(http_resp::header_insert(resp_handle, name, value))
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        convert_result(resp_handle.header_insert(name, value))
     }
 
     #[export_name = "fastly_http_resp#header_names_get"]
@@ -2000,16 +2094,12 @@ pub mod fastly_http_resp {
         ending_cursor: *mut i64,
         nwritten: *mut usize,
     ) -> FastlyStatus {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
         with_buffer!(
             buf,
             buf_len,
-            {
-                http_resp::header_names_get(
-                    resp_handle,
-                    u64::try_from(buf_len).trapping_unwrap(),
-                    cursor,
-                )
-            },
+            { resp_handle.header_names_get(u64::try_from(buf_len).trapping_unwrap(), cursor,) },
             |res| {
                 let (written, end) = match handle_buffer_len!(res, nwritten) {
                     Some((bytes, next)) => {
@@ -2044,16 +2134,12 @@ pub mod fastly_http_resp {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
         with_buffer!(
             value,
             value_max_len,
-            {
-                http_resp::header_value_get(
-                    resp_handle,
-                    name,
-                    u64::try_from(value_max_len).trapping_unwrap(),
-                )
-            },
+            { resp_handle.header_value_get(name, u64::try_from(value_max_len).trapping_unwrap(),) },
             |res| {
                 let res =
                     handle_buffer_len!(res, nwritten).ok_or(FastlyStatus::INVALID_ARGUMENT)?;
@@ -2078,12 +2164,13 @@ pub mod fastly_http_resp {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
         with_buffer!(
             buf,
             buf_len,
             {
-                http_resp::header_values_get(
-                    resp_handle,
+                resp_handle.header_values_get(
                     name,
                     u64::try_from(buf_len).trapping_unwrap(),
                     cursor,
@@ -2123,7 +2210,9 @@ pub mod fastly_http_resp {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let values = unsafe { slice::from_raw_parts(values, values_len) };
-        convert_result(http_resp::header_values_set(resp_handle, name, values))
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        convert_result(resp_handle.header_values_set(name, values))
     }
 
     #[export_name = "fastly_http_resp#header_remove"]
@@ -2133,15 +2222,17 @@ pub mod fastly_http_resp {
         name_len: usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
-        convert_result(http_resp::header_remove(resp_handle, name))
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        convert_result(resp_handle.header_remove(name))
     }
 
     #[export_name = "fastly_http_resp#new"]
     pub fn new(handle_out: *mut ResponseHandle) -> FastlyStatus {
-        match fastly::api::http_resp::new() {
+        match http_resp::ResponseHandle::new() {
             Ok(handle) => {
                 unsafe {
-                    *handle_out = handle;
+                    *handle_out = handle.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -2155,16 +2246,25 @@ pub mod fastly_http_resp {
         body_handle: BodyHandle,
         streaming: u32,
     ) -> FastlyStatus {
-        convert_result(fastly::api::http_resp::send_downstream(
-            resp_handle,
-            body_handle,
-            streaming != 0,
-        ))
+        let resp_handle = unsafe { http_resp::ResponseHandle::from_handle(resp_handle) };
+        let res = if streaming == 0 {
+            let body_handle =
+                unsafe { fastly::api::http_body::BodyHandle::from_handle(body_handle) };
+            http_resp::send_downstream(resp_handle, body_handle)
+        } else {
+            let body_handle = ManuallyDrop::new(unsafe {
+                fastly::api::http_body::BodyHandle::from_handle(body_handle)
+            });
+            http_resp::send_downstream_streaming(resp_handle, &body_handle)
+        };
+        convert_result(res)
     }
 
     #[export_name = "fastly_http_resp#status_get"]
     pub fn status_get(resp_handle: ResponseHandle, status: *mut u16) -> FastlyStatus {
-        match http_resp::status_get(resp_handle) {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        match resp_handle.status_get() {
             Ok(res) => {
                 unsafe {
                     *status = res;
@@ -2179,12 +2279,16 @@ pub mod fastly_http_resp {
 
     #[export_name = "fastly_http_resp#status_set"]
     pub fn status_set(resp_handle: ResponseHandle, status: u16) -> FastlyStatus {
-        convert_result(fastly::api::http_resp::status_set(resp_handle, status))
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        convert_result(resp_handle.status_set(status))
     }
 
     #[export_name = "fastly_http_resp#version_get"]
     pub fn version_get(resp_handle: ResponseHandle, version: *mut u32) -> FastlyStatus {
-        match fastly::api::http_resp::version_get(resp_handle) {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        match resp_handle.version_get() {
             Ok(res) => {
                 unsafe {
                     *version = res.into();
@@ -2197,11 +2301,10 @@ pub mod fastly_http_resp {
 
     #[export_name = "fastly_http_resp#version_set"]
     pub fn version_set(resp_handle: ResponseHandle, version: u32) -> FastlyStatus {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
         match crate::bindings::fastly::api::http_types::HttpVersion::try_from(version) {
-            Ok(version) => convert_result(crate::bindings::fastly::api::http_resp::version_set(
-                resp_handle,
-                version,
-            )),
+            Ok(version) => convert_result(resp_handle.version_set(version)),
 
             Err(_) => FastlyStatus::INVALID_ARGUMENT,
         }
@@ -2218,11 +2321,10 @@ pub mod fastly_http_resp {
                 fastly::api::http_types::FramingHeadersMode::ManuallyFromHeaders
             }
         };
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
 
-        convert_result(fastly::api::http_resp::framing_headers_mode_set(
-            resp_handle,
-            mode,
-        ))
+        convert_result(resp_handle.framing_headers_mode_set(mode))
     }
 
     #[doc(hidden)]
@@ -2235,15 +2337,15 @@ pub mod fastly_http_resp {
             HttpKeepaliveMode::Automatic => fastly::api::http_resp::KeepaliveMode::Automatic,
             HttpKeepaliveMode::NoKeepalive => fastly::api::http_resp::KeepaliveMode::NoKeepalive,
         };
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
 
-        convert_result(fastly::api::http_resp::http_keepalive_mode_set(
-            resp_handle,
-            mode,
-        ))
+        convert_result(resp_handle.http_keepalive_mode_set(mode))
     }
 
     #[export_name = "fastly_http_resp#close"]
     pub fn close(resp_handle: ResponseHandle) -> FastlyStatus {
+        let resp_handle = unsafe { http_resp::ResponseHandle::from_handle(resp_handle) };
         convert_result(fastly::api::http_resp::close(resp_handle))
     }
 
@@ -2253,14 +2355,18 @@ pub mod fastly_http_resp {
         addr_octets_out: *mut u8,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
         alloc_result!(addr_octets_out, 16, nwritten_out, {
-            fastly::api::http_resp::get_addr_dest_ip(resp_handle)
+            resp_handle.get_addr_dest_ip()
         })
     }
 
     #[export_name = "fastly_http_resp#get_addr_dest_port"]
     pub fn get_addr_dest_port(resp_handle: ResponseHandle, port_out: *mut u16) -> FastlyStatus {
-        match fastly::api::http_resp::get_addr_dest_port(resp_handle) {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::ResponseHandle::from_handle(resp_handle) });
+        match resp_handle.get_addr_dest_port() {
             Ok(port) => {
                 unsafe {
                     *port_out = port;
@@ -2283,10 +2389,10 @@ pub mod fastly_dictionary {
         dict_handle_out: *mut DictionaryHandle,
     ) -> FastlyStatus {
         let name = crate::make_str!(name, name_len);
-        match dictionary::open(name) {
+        match dictionary::Handle::open(name) {
             Ok(res) => {
                 unsafe {
-                    *dict_handle_out = res;
+                    *dict_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -2304,12 +2410,10 @@ pub mod fastly_dictionary {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let key = crate::make_str!(key, key_len);
+        let dict_handle =
+            ManuallyDrop::new(unsafe { dictionary::Handle::from_handle(dict_handle) });
         alloc_result_opt!(value, value_max_len, nwritten, {
-            dictionary::get(
-                dict_handle,
-                key,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
+            dict_handle.get(key, u64::try_from(value_max_len).trapping_unwrap())
         })
     }
 }
@@ -2488,7 +2592,7 @@ pub mod fastly_object_store {
         object_store_handle_out: *mut ObjectStoreHandle,
     ) -> FastlyStatus {
         let name = crate::make_str!(name_ptr, name_len);
-        match object_store::open(name) {
+        match object_store::Handle::open(name) {
             Ok(None) => {
                 unsafe {
                     *object_store_handle_out = INVALID_HANDLE;
@@ -2498,7 +2602,7 @@ pub mod fastly_object_store {
             }
             Ok(Some(res)) => {
                 unsafe {
-                    *object_store_handle_out = res;
+                    *object_store_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -2514,10 +2618,12 @@ pub mod fastly_object_store {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let key = crate::make_str!(key_ptr, key_len);
-        match object_store::lookup(object_store_handle, key) {
+        let object_store_handle =
+            ManuallyDrop::new(unsafe { object_store::Handle::from_handle(object_store_handle) });
+        match object_store_handle.lookup(key) {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res.unwrap_or(INVALID_HANDLE);
+                    *body_handle_out = res.map(|res| res.take_handle()).unwrap_or(INVALID_HANDLE);
                 }
                 FastlyStatus::OK
             }
@@ -2533,10 +2639,12 @@ pub mod fastly_object_store {
         pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
     ) -> FastlyStatus {
         let key = crate::make_str!(key_ptr, key_len);
-        match object_store::lookup_async(object_store_handle, key) {
+        let object_store_handle =
+            ManuallyDrop::new(unsafe { object_store::Handle::from_handle(object_store_handle) });
+        match object_store_handle.lookup_async(key) {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *pending_body_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -2549,10 +2657,12 @@ pub mod fastly_object_store {
         pending_body_handle: PendingObjectStoreLookupHandle,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
+        let pending_body_handle =
+            unsafe { object_store::PendingLookupHandle::from_handle(pending_body_handle) };
         match object_store::pending_lookup_wait(pending_body_handle) {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res.unwrap_or(INVALID_HANDLE);
+                    *body_handle_out = res.map(|res| res.take_handle()).unwrap_or(INVALID_HANDLE);
                 }
                 FastlyStatus::OK
             }
@@ -2568,7 +2678,12 @@ pub mod fastly_object_store {
         body_handle: BodyHandle,
     ) -> FastlyStatus {
         let key = crate::make_str!(key_ptr, key_len);
-        convert_result(object_store::insert(object_store_handle, key, body_handle))
+        let object_store_handle =
+            ManuallyDrop::new(unsafe { object_store::Handle::from_handle(object_store_handle) });
+        let body_handle = ManuallyDrop::new(unsafe {
+            crate::bindings::fastly::api::http_body::BodyHandle::from_handle(body_handle)
+        });
+        convert_result(object_store_handle.insert(key, &body_handle))
     }
 
     #[export_name = "fastly_object_store#insert_async"]
@@ -2580,10 +2695,15 @@ pub mod fastly_object_store {
         pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
         let key = crate::make_str!(key_ptr, key_len);
-        match object_store::insert_async(object_store_handle, key, body_handle) {
+        let object_store_handle =
+            ManuallyDrop::new(unsafe { object_store::Handle::from_handle(object_store_handle) });
+        let body_handle = ManuallyDrop::new(unsafe {
+            crate::bindings::fastly::api::http_body::BodyHandle::from_handle(body_handle)
+        });
+        match object_store_handle.insert_async(key, &body_handle) {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *pending_body_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -2595,6 +2715,8 @@ pub mod fastly_object_store {
     pub fn pending_insert_wait(
         pending_body_handle: PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
+        let pending_body_handle =
+            unsafe { object_store::PendingInsertHandle::from_handle(pending_body_handle) };
         convert_result(object_store::pending_insert_wait(pending_body_handle))
     }
 
@@ -2606,10 +2728,12 @@ pub mod fastly_object_store {
         pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
         let key = crate::make_str!(key_ptr, key_len);
-        match object_store::delete_async(object_store_handle, key) {
+        let object_store_handle =
+            ManuallyDrop::new(unsafe { object_store::Handle::from_handle(object_store_handle) });
+        match object_store_handle.delete_async(key) {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *pending_body_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -2621,6 +2745,8 @@ pub mod fastly_object_store {
     pub fn pending_delete_wait(
         pending_body_handle: PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
+        let pending_body_handle =
+            unsafe { object_store::PendingDeleteHandle::from_handle(pending_body_handle) };
         convert_result(object_store::pending_delete_wait(pending_body_handle))
     }
 }
@@ -2855,7 +2981,7 @@ pub mod fastly_kv_store {
         kv_store_handle_out: *mut KVStoreHandle,
     ) -> FastlyStatus {
         let name = crate::make_str!(name_ptr, name_len);
-        match kv_store::open(name) {
+        match kv_store::Handle::open(name) {
             Ok(None) => {
                 unsafe {
                     *kv_store_handle_out = INVALID_HANDLE;
@@ -2866,7 +2992,7 @@ pub mod fastly_kv_store {
 
             Ok(Some(res)) => {
                 unsafe {
-                    *kv_store_handle_out = res;
+                    *kv_store_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -2877,20 +3003,22 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#lookup"]
-    pub fn lookup_v2(
+    pub fn lookup(
         kv_store_handle: KVStoreHandle,
         key_ptr: *const u8,
         key_len: usize,
         //  NOTE: mask and config are ignored in the wit definition while they're empty
         _lookup_config_mask: LookupConfigOptions,
         _lookup_config: *const LookupConfig,
-        pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
+        body_handle_out: *mut KVStoreLookupHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::lookup(kv_store_handle, key) {
+        let kv_store_handle =
+            ManuallyDrop::new(unsafe { kv_store::Handle::from_handle(kv_store_handle) });
+        match kv_store_handle.lookup(key) {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *body_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -2900,8 +3028,8 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#lookup_wait"]
-    pub fn pending_lookup_wait_v2(
-        pending_handle: PendingObjectStoreLookupHandle,
+    pub fn lookup_wait(
+        lookup_handle: KVStoreLookupHandle,
         body_handle_out: *mut BodyHandle,
         metadata_out: *mut u8,
         metadata_len: usize,
@@ -2909,7 +3037,8 @@ pub mod fastly_kv_store {
         generation_out: *mut u32,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
-        let res = match kv_store::lookup_wait(pending_handle) {
+        let lookup_handle = unsafe { kv_store::LookupHandle::from_handle(lookup_handle) };
+        let res = match kv_store::lookup_wait(lookup_handle) {
             Ok((res, status)) => {
                 unsafe {
                     *kv_error_out = status.into();
@@ -2948,7 +3077,7 @@ pub mod fastly_kv_store {
         let body = res.body();
 
         unsafe {
-            *body_handle_out = body;
+            *body_handle_out = body.take_handle();
             // reproduce bugged behavior in old hostcall
             *generation_out = 0;
         }
@@ -2958,7 +3087,7 @@ pub mod fastly_kv_store {
 
     #[export_name = "fastly_kv_store#lookup_wait_v2"]
     pub fn lookup_wait_v2(
-        pending_handle: PendingObjectStoreLookupHandle,
+        lookup_handle: KVStoreLookupHandle,
         body_handle_out: *mut BodyHandle,
         metadata_out: *mut u8,
         metadata_len: usize,
@@ -2966,7 +3095,8 @@ pub mod fastly_kv_store {
         generation_out: *mut u64,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
-        let res = match kv_store::lookup_wait(pending_handle) {
+        let lookup_handle = unsafe { kv_store::LookupHandle::from_handle(lookup_handle) };
+        let res = match kv_store::lookup_wait(lookup_handle) {
             Ok((res, status)) => {
                 unsafe {
                     *kv_error_out = status.into();
@@ -3006,7 +3136,7 @@ pub mod fastly_kv_store {
         let generation = res.generation();
 
         unsafe {
-            *body_handle_out = body;
+            *body_handle_out = body.take_handle();
             *generation_out = generation;
         }
 
@@ -3014,16 +3144,21 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#insert"]
-    pub fn insert_v2(
+    pub fn insert(
         kv_store_handle: KVStoreHandle,
         key_ptr: *const u8,
         key_len: usize,
         body_handle: BodyHandle,
         insert_config_mask: InsertConfigOptions,
         insert_config: *const InsertConfig,
-        pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
+        body_handle_out: *mut KVStoreInsertHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
+        let kv_store_handle =
+            ManuallyDrop::new(unsafe { kv_store::Handle::from_handle(kv_store_handle) });
+        let body_handle = ManuallyDrop::new(unsafe {
+            crate::bindings::fastly::api::http_body::BodyHandle::from_handle(body_handle)
+        });
 
         let metadata = unsafe {
             crate::make_string!((*insert_config).metadata, (*insert_config).metadata_len)
@@ -3038,13 +3173,7 @@ pub mod fastly_kv_store {
             }
         };
 
-        let res = kv_store::insert(
-            kv_store_handle,
-            key,
-            body_handle,
-            insert_config_mask,
-            &insert_config,
-        );
+        let res = kv_store_handle.insert(key, &body_handle, insert_config_mask, &insert_config);
 
         // We don't own the memory in metadata, so forget the vector that the insert config holds.
         std::mem::forget(insert_config);
@@ -3052,7 +3181,7 @@ pub mod fastly_kv_store {
         match res {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *body_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -3063,11 +3192,12 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#insert_wait"]
-    pub fn pending_insert_wait_v2(
-        pending_body_handle: PendingObjectStoreInsertHandle,
+    pub fn insert_wait(
+        insert_handle: KVStoreInsertHandle,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
-        match kv_store::insert_wait(pending_body_handle) {
+        let insert_handle = unsafe { kv_store::InsertHandle::from_handle(insert_handle) };
+        match kv_store::insert_wait(insert_handle) {
             Ok(status) => {
                 unsafe {
                     *kv_error_out = status.into();
@@ -3087,7 +3217,7 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#delete"]
-    pub fn delete_v2(
+    pub fn delete(
         kv_store_handle: KVStoreHandle,
         key_ptr: *const u8,
         key_len: usize,
@@ -3095,13 +3225,15 @@ pub mod fastly_kv_store {
         // meaningful values.
         _delete_config_mask: DeleteConfigOptions,
         _delete_config: *const DeleteConfig,
-        pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
+        body_handle_out: *mut KVStoreDeleteHandle,
     ) -> FastlyStatus {
         let key = unsafe { slice::from_raw_parts(key_ptr, key_len) };
-        match kv_store::delete(kv_store_handle, key) {
+        let kv_store_handle =
+            ManuallyDrop::new(unsafe { kv_store::Handle::from_handle(kv_store_handle) });
+        match kv_store_handle.delete(key) {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *body_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -3112,11 +3244,12 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#delete_wait"]
-    pub fn pending_delete_wait_v2(
-        pending_body_handle: PendingObjectStoreDeleteHandle,
+    pub fn delete_wait(
+        delete_handle: KVStoreDeleteHandle,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
-        match kv_store::delete_wait(pending_body_handle) {
+        let delete_handle = unsafe { kv_store::DeleteHandle::from_handle(delete_handle) };
+        match kv_store::delete_wait(delete_handle) {
             Ok(status) => {
                 unsafe {
                     *kv_error_out = status.into();
@@ -3136,13 +3269,15 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#list"]
-    pub fn list_v2(
+    pub fn list(
         kv_store_handle: KVStoreHandle,
         list_config_mask: ListConfigOptions,
         list_config: *const ListConfig,
-        pending_body_handle_out: *mut PendingObjectStoreListHandle,
+        body_handle_out: *mut KVStoreListHandle,
     ) -> FastlyStatus {
         let mask = kv_store::ListConfigOptions::from(list_config_mask);
+        let kv_store_handle =
+            ManuallyDrop::new(unsafe { kv_store::Handle::from_handle(kv_store_handle) });
 
         let cursor = if mask.contains(kv_store::ListConfigOptions::CURSOR) {
             unsafe { crate::make_string!((*list_config).cursor, (*list_config).cursor_len) }
@@ -3167,14 +3302,14 @@ pub mod fastly_kv_store {
             }
         };
 
-        let res = kv_store::list(kv_store_handle, mask, &config);
+        let res = kv_store_handle.list(mask, &config);
 
         std::mem::forget(config);
 
         match res {
             Ok(res) => {
                 unsafe {
-                    *pending_body_handle_out = res;
+                    *body_handle_out = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -3185,16 +3320,17 @@ pub mod fastly_kv_store {
     }
 
     #[export_name = "fastly_kv_store#list_wait"]
-    pub fn pending_list_wait_v2(
-        pending_body_handle: PendingObjectStoreListHandle,
+    pub fn list_wait(
+        list_handle: KVStoreListHandle,
         body_handle_out: *mut BodyHandle,
         kv_error_out: *mut KvError,
     ) -> FastlyStatus {
-        match kv_store::list_wait(pending_body_handle) {
+        let list_handle = unsafe { kv_store::ListHandle::from_handle(list_handle) };
+        match kv_store::list_wait(list_handle) {
             Ok((res, status)) => {
                 unsafe {
                     *kv_error_out = status.into();
-                    *body_handle_out = res.unwrap_or(INVALID_HANDLE);
+                    *body_handle_out = res.map(|res| res.take_handle()).unwrap_or(INVALID_HANDLE);
                 }
 
                 FastlyStatus::OK
@@ -3224,10 +3360,10 @@ pub mod fastly_secret_store {
         secret_store_handle_out: *mut SecretStoreHandle,
     ) -> FastlyStatus {
         let secret_store_name = crate::make_str!(secret_store_name_ptr, secret_store_name_len);
-        match secret_store::open(secret_store_name) {
+        match secret_store::StoreHandle::open(secret_store_name) {
             Ok(res) => {
                 unsafe {
-                    *secret_store_handle_out = res;
+                    *secret_store_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -3243,10 +3379,13 @@ pub mod fastly_secret_store {
         secret_handle_out: *mut SecretHandle,
     ) -> FastlyStatus {
         let secret_name = crate::make_str!(secret_name_ptr, secret_name_len);
-        match secret_store::get(secret_store_handle, secret_name) {
+        let secret_store_handle = ManuallyDrop::new(unsafe {
+            secret_store::StoreHandle::from_handle(secret_store_handle)
+        });
+        match secret_store_handle.get(secret_name) {
             Ok(Some(res)) => {
                 unsafe {
-                    *secret_handle_out = res;
+                    *secret_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -3264,11 +3403,10 @@ pub mod fastly_secret_store {
         plaintext_max_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
+        let secret_handle =
+            ManuallyDrop::new(unsafe { secret_store::SecretHandle::from_handle(secret_handle) });
         alloc_result_opt!(plaintext_buf, plaintext_max_len, nwritten_out, {
-            secret_store::plaintext(
-                secret_handle,
-                u64::try_from(plaintext_max_len).trapping_unwrap(),
-            )
+            secret_handle.plaintext(u64::try_from(plaintext_max_len).trapping_unwrap())
         })
     }
 
@@ -3279,10 +3417,10 @@ pub mod fastly_secret_store {
         secret_handle_out: *mut SecretHandle,
     ) -> FastlyStatus {
         let plaintext = unsafe { slice::from_raw_parts(plaintext_buf, plaintext_len) };
-        match secret_store::from_bytes(plaintext) {
+        match secret_store::SecretHandle::from_bytes(plaintext) {
             Ok(res) => {
                 unsafe {
-                    *secret_handle_out = res;
+                    *secret_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -3649,10 +3787,10 @@ pub mod fastly_acl {
         acl_handle_out: *mut AclHandle,
     ) -> FastlyStatus {
         let acl_name = crate::make_str!(acl_name_ptr, acl_name_len);
-        match acl::open(acl_name) {
+        match acl::AclHandle::open(acl_name) {
             Ok(res) => {
                 unsafe {
-                    *acl_handle_out = res;
+                    *acl_handle_out = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -3662,17 +3800,18 @@ pub mod fastly_acl {
 
     #[export_name = "fastly_acl#lookup"]
     pub fn lookup(
-        acl_handle: acl::AclHandle,
+        acl_handle: AclHandle,
         ip_octets: *const u8,
         ip_len: usize,
         body_handle_out: *mut BodyHandle,
         acl_error_out: *mut acl::AclError,
     ) -> FastlyStatus {
         let ip = unsafe { slice::from_raw_parts(ip_octets, ip_len) };
-        match acl::lookup(acl_handle, ip, u64::try_from(ip_len).trapping_unwrap()) {
+        let acl_handle = ManuallyDrop::new(unsafe { acl::AclHandle::from_handle(acl_handle) });
+        match acl_handle.lookup(ip, u64::try_from(ip_len).trapping_unwrap()) {
             Ok((Some(body_handle), acl_error)) => {
                 unsafe {
-                    *body_handle_out = body_handle;
+                    *body_handle_out = body_handle.take_handle();
                     *acl_error_out = acl_error;
                 }
                 FastlyStatus::OK
@@ -3700,29 +3839,28 @@ pub mod fastly_async_io {
         timeout_ms: u32,
         done_index_out: *mut u32,
     ) -> FastlyStatus {
-        let async_item_handles =
-            unsafe { slice::from_raw_parts(async_item_handles, async_item_handles_len) };
-        match async_io::select(async_item_handles, timeout_ms) {
-            Ok(Some(res)) => {
-                unsafe {
+        unsafe {
+            let refs = slice::from_raw_parts(async_item_handles, async_item_handles_len);
+            match select_wrapper(refs, timeout_ms) {
+                Ok(Some(res)) => {
                     *done_index_out = res;
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
-            }
 
-            Ok(None) => {
-                unsafe {
+                Ok(None) => {
                     *done_index_out = u32::MAX;
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
+                Err(e) => e.into(),
             }
-            Err(e) => e.into(),
         }
     }
 
     #[export_name = "fastly_async_io#is_ready"]
     pub fn is_ready(async_item_handle: AsyncItemHandle, ready_out: *mut u32) -> FastlyStatus {
-        match async_io::is_ready(async_item_handle) {
+        let async_item_handle =
+            ManuallyDrop::new(unsafe { async_io::Handle::from_handle(async_item_handle) });
+        match async_item_handle.is_ready() {
             Ok(res) => {
                 unsafe {
                     *ready_out = u32::from(res);
@@ -4617,6 +4755,16 @@ mod fastly_image_optimizer {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let backend_name = crate::make_str!(origin_image_backend, origin_image_backend_len);
+        let body_handle = if body_handle == INVALID_HANDLE {
+            None
+        } else {
+            unsafe {
+                Some(crate::bindings::fastly::api::http_body::BodyHandle::from_handle(body_handle))
+            }
+        };
+        let req_handle = ManuallyDrop::new(unsafe {
+            crate::bindings::fastly::api::http_req::RequestHandle::from_handle(req_handle)
+        });
         let io_opts = image_optimizer::ImageOptimizerTransformConfigOptions::from(
             io_transform_config_options,
         );
@@ -4647,7 +4795,7 @@ mod fastly_image_optimizer {
 
         let error_detail = image_optimizer::ImageOptimizerErrorDetail::default();
         let res = image_optimizer::transform_image_optimizer_request(
-            req_handle,
+            &req_handle,
             body_handle,
             backend_name,
             io_opts,
@@ -4663,13 +4811,191 @@ mod fastly_image_optimizer {
         match res {
             Ok((resp, body)) => {
                 unsafe {
-                    *resp_handle_out = resp;
-                    *resp_body_handle_out = body;
+                    *resp_handle_out = resp.take_handle();
+                    *resp_body_handle_out = body.take_handle();
                     (*io_error_detail).tag = ImageOptimizerErrorTag::Ok;
                 }
                 FastlyStatus::OK
             }
             Err(e) => FastlyStatus::from(e),
+        }
+    }
+}
+
+/// Bindings for `http_req::pending_req_select`.
+///
+/// We can't use the bindings generated by the macro because they use an
+/// allocation to convert a `&[Resource]` to a `&[u32]`.
+unsafe fn pending_req_select_wrapper(
+    h: &[u32],
+) -> Result<
+    (
+        u32,
+        Result<
+            crate::bindings::fastly::api::http_resp::Response,
+            crate::bindings::fastly::api::http_req::SendErrorDetail,
+        >,
+    ),
+    crate::bindings::fastly::api::types::Error,
+> {
+    use crate::bindings::fastly::api::{async_io, http_req, http_resp};
+
+    #[repr(align(8))]
+    struct RetArea([::core::mem::MaybeUninit<u8>; 24]);
+    let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 24]);
+    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+    #[link(wasm_import_module = "fastly:api/http-req")]
+    extern "C" {
+        #[link_name = "pending-req-select"]
+        fn wit_import(_: *const u32, _: usize, _: *mut u8);
+    }
+    wit_import(h.as_ptr(), h.len(), ptr1);
+    let l2 = i32::from(*ptr1.add(0).cast::<u8>());
+    match l2 {
+        0 => {
+            let l3 = *ptr1.add(8).cast::<u32>();
+            let l4 = i32::from(*ptr1.add(12).cast::<u8>());
+            Ok((
+                l3,
+                match l4 {
+                    0 => {
+                        let e = {
+                            let l5 = *ptr1.add(16).cast::<u32>();
+                            let l6 = *ptr1.add(20).cast::<u32>();
+                            (
+                                http_resp::ResponseHandle::from_handle(l5),
+                                async_io::Handle::from_handle(l6),
+                            )
+                        };
+                        Ok(e)
+                    }
+                    1 => {
+                        let e = {
+                            let l7 = i32::from(*ptr1.add(16).cast::<u8>());
+                            let l8 = i32::from(*ptr1.add(17).cast::<u8>());
+                            let l9 = i32::from(*ptr1.add(18).cast::<u16>());
+                            let l10 = i32::from(*ptr1.add(20).cast::<u16>());
+                            let l11 = i32::from(*ptr1.add(22).cast::<u8>());
+                            http_req::SendErrorDetail {
+                                tag: http_req::SendErrorDetailTag::_lift(l7 as u8),
+                                mask: http_req::SendErrorDetailMask::empty()
+                                    | http_req::SendErrorDetailMask::from_bits_retain(
+                                        ((l8 as u8) << 0) as _,
+                                    ),
+                                dns_error_rcode: l9 as u16,
+                                dns_error_info_code: l10 as u16,
+                                tls_alert_id: l11 as u8,
+                            }
+                        };
+                        Err(e)
+                    }
+                    _ => {
+                        // Invalid enum discriminant.
+                        unreachable!()
+                    }
+                },
+            ))
+        }
+        1 => {
+            use crate::bindings::fastly::api::types::Error as V14;
+            Err(match i32::from(*ptr1.add(8).cast::<u8>()) {
+                0 => V14::UnknownError,
+                1 => V14::GenericError,
+                2 => V14::InvalidArgument,
+                3 => V14::BadHandle,
+                4 => {
+                    let e14 = {
+                        let l13 = *ptr1.add(16).cast::<i64>();
+                        l13 as u64
+                    };
+                    V14::BufferLen(e14)
+                }
+                5 => V14::Unsupported,
+                6 => V14::BadAlign,
+                7 => V14::HttpInvalid,
+                8 => V14::HttpUser,
+                9 => V14::HttpIncomplete,
+                10 => V14::OptionalNone,
+                11 => V14::HttpHeadTooLarge,
+                12 => V14::HttpInvalidStatus,
+                _n => V14::LimitExceeded,
+            })
+        }
+        _ => {
+            // Invalid enum discriminant.
+            unreachable!()
+        }
+    }
+}
+
+/// Bindings for `async_io::select`.
+///
+/// We can't use the bindings generated by the macro because they use an
+/// allocation to convert a `&[Resource]` to a `&[u32]`.
+fn select_wrapper(
+    hs: &[u32],
+    timeout_ms: u32,
+) -> Result<Option<u32>, crate::bindings::fastly::api::types::Error> {
+    unsafe {
+        #[repr(align(8))]
+        struct RetArea([::core::mem::MaybeUninit<u8>; 24]);
+        let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 24]);
+        let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+        #[link(wasm_import_module = "fastly:api/async-io")]
+        extern "C" {
+            #[link_name = "select"]
+            fn wit_import(_: *const u32, _: usize, _: u32, _: *mut u8);
+        }
+        wit_import(hs.as_ptr(), hs.len(), timeout_ms, ptr1);
+        match i32::from(*ptr1.add(0).cast::<u8>()) {
+            0 => {
+                let e = {
+                    let l3 = i32::from(*ptr1.add(8).cast::<u8>());
+                    match l3 {
+                        0 => None,
+                        1 => Some(*ptr1.add(12).cast::<u32>()),
+                        _ => {
+                            // Invalid enum discriminant.
+                            unreachable!()
+                        }
+                    }
+                };
+                Ok(e)
+            }
+            1 => {
+                let e = {
+                    let l5 = i32::from(*ptr1.add(8).cast::<u8>());
+                    use crate::bindings::fastly::api::types::Error as V7;
+                    let v7 = match l5 {
+                        0 => V7::UnknownError,
+                        1 => V7::GenericError,
+                        2 => V7::InvalidArgument,
+                        3 => V7::BadHandle,
+                        4 => {
+                            let e7 = {
+                                let l6 = *ptr1.add(16).cast::<i64>();
+                                l6 as u64
+                            };
+                            V7::BufferLen(e7)
+                        }
+                        5 => V7::Unsupported,
+                        6 => V7::BadAlign,
+                        7 => V7::HttpInvalid,
+                        8 => V7::HttpUser,
+                        9 => V7::HttpIncomplete,
+                        10 => V7::OptionalNone,
+                        11 => V7::HttpHeadTooLarge,
+                        12 => V7::HttpInvalidStatus,
+                        _n => V7::LimitExceeded,
+                    };
+                    v7
+                };
+                Err(e)
+            }
+            _ => {
+                // Invalid enum discriminant.
+                unreachable!()
+            }
         }
     }
 }

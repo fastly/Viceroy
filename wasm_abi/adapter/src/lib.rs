@@ -48,8 +48,8 @@ pub mod bindings {
 
     impl exports::fastly::api::reactor::Guest for ComponentAdapter {
         fn serve(
-            req: fastly::api::http_types::RequestHandle,
-            body: fastly::api::http_types::BodyHandle,
+            req: fastly::api::http_req::RequestHandle,
+            body: fastly::api::http_body::BodyHandle,
         ) -> Result<(), ()> {
             #[link(wasm_import_module = "__main_module__")]
             extern "C" {
@@ -57,9 +57,9 @@ pub mod bindings {
             }
 
             let res = crate::State::with::<crate::fastly::FastlyStatus>(|state| {
-                let old = state.request.replace(Some(req));
+                let old = state.request.replace(Some(req.take_handle()));
                 assert!(old.is_none());
-                let old = state.request_body.replace(Some(body));
+                let old = state.request_body.replace(Some(body.take_handle()));
                 assert!(old.is_none());
                 Ok(())
             });
@@ -1456,11 +1456,11 @@ pub(crate) struct State {
     /// Temporary data
     temporary_data: UnsafeCell<MaybeUninit<[u8; temporary_data_size()]>>,
 
-    /// The incoming request, if the entry-point was through the reactor.
-    pub(crate) request: Cell<Option<bindings::fastly::api::http_req::RequestHandle>>,
+    /// The incoming request `RequestHandle`, if the entry-point was through the reactor.
+    pub(crate) request: Cell<Option<u32>>,
 
-    /// The incoming request body, if the entry-point was through the reactor.
-    pub(crate) request_body: Cell<Option<bindings::fastly::api::http_body::BodyHandle>>,
+    /// The incoming request `BodyHandle` index, if the entry-point was through the reactor.
+    pub(crate) request_body: Cell<Option<u32>>,
 
     /// Another canary constant located at the end of the structure to catch
     /// memory corruption coming from the bottom.
