@@ -670,7 +670,7 @@ impl Session {
         obj: Vec<u8>,
         mode: Option<KvInsertMode>,
         generation: Option<u64>,
-        metadata: Option<Vec<u8>>,
+        metadata: Option<String>,
         ttl: Option<Duration>,
     ) -> Result<(), KvStoreError> {
         let mode = match mode {

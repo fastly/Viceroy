@@ -162,7 +162,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "miniz_oxide",
- "object 0.36.7",
+ "object",
  "rustc-demangle",
  "windows-targets",
 ]
@@ -214,10 +214,6 @@ name = "bumpalo"
 version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1628fb46dfa0b37568d12e5edd512553eccf6a22a78e8bde00bb4aed84d5bdbf"
-
-[[package]]
-name = "byte-array-literals"
-version = "0.0.0"
 
 [[package]]
 name = "byteorder"
@@ -1630,15 +1626,6 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8dd6c0cdf9429bce006e1362bfce61fa1bfd8c898a643ed8d2b471934701d3d"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "object"
 version = "0.36.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
@@ -1803,16 +1790,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy 0.8.24",
-]
-
-[[package]]
-name = "prettyplease"
-version = "0.2.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
-dependencies = [
- "proc-macro2",
- "syn",
 ]
 
 [[package]]
@@ -2838,18 +2815,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "viceroy-component-adapter"
-version = "0.0.0"
-dependencies = [
- "bitflags 2.9.0",
- "byte-array-literals",
- "object 0.33.0",
- "wasi 0.11.0+wasi-snapshot-preview1",
- "wasm-encoder 0.217.1",
- "wit-bindgen-rust-macro",
-]
-
-[[package]]
 name = "viceroy-lib"
 version = "0.13.1"
 dependencies = [
@@ -3096,7 +3061,7 @@ dependencies = [
  "log",
  "mach2",
  "memfd",
- "object 0.36.7",
+ "object",
  "once_cell",
  "paste",
  "postcard",
@@ -3194,7 +3159,7 @@ dependencies = [
  "cranelift-wasm",
  "gimli 0.29.0",
  "log",
- "object 0.36.7",
+ "object",
  "smallvec",
  "target-lexicon",
  "thiserror",
@@ -3216,7 +3181,7 @@ dependencies = [
  "gimli 0.29.0",
  "indexmap",
  "log",
- "object 0.36.7",
+ "object",
  "postcard",
  "rustc-demangle",
  "semver 1.0.26",
@@ -3251,7 +3216,7 @@ version = "25.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "106731c6ebe1d551362ee8c876d450bdc2d517988b20eb3653dc4837b1949437"
 dependencies = [
- "object 0.36.7",
+ "object",
  "once_cell",
  "rustix 0.38.44",
  "wasmtime-versioned-export-macros",
@@ -3356,7 +3321,7 @@ dependencies = [
  "anyhow",
  "cranelift-codegen",
  "gimli 0.29.0",
- "object 0.36.7",
+ "object",
  "target-lexicon",
  "wasmparser 0.217.1",
  "wasmtime-cranelift",
@@ -3766,54 +3731,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-core"
-version = "0.32.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc9cfd3f1b4e29e9a90fe04157764f24ae396cfb8530dae5753de140e73f9e56"
-dependencies = [
- "anyhow",
- "heck 0.5.0",
- "wit-parser",
-]
-
-[[package]]
 name = "wit-bindgen-rt"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f42320e61fe2cfd34354ecb597f86f413484a798ba44a8ca1165c58d42da6c1"
 dependencies = [
  "bitflags 2.9.0",
-]
-
-[[package]]
-name = "wit-bindgen-rust"
-version = "0.32.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf075ae0c89dc391f7d710d70c69bfd018c029c74a54f7ddfd0266dccc8ff0c5"
-dependencies = [
- "anyhow",
- "heck 0.5.0",
- "indexmap",
- "prettyplease",
- "syn",
- "wasm-metadata",
- "wit-bindgen-core",
- "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-rust-macro"
-version = "0.32.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2ab28d36e4d326bd43d483512348874d4fffa378d8dc1da6dd6521afe2ec4f6"
-dependencies = [
- "anyhow",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn",
- "wit-bindgen-core",
- "wit-bindgen-rust",
 ]
 
 [[package]]

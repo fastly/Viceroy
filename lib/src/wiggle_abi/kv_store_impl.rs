@@ -99,7 +99,7 @@ impl FastlyKvStore for Session {
                             });
                         }
                         memory.copy_from_slice(
-                            &value.metadata,
+                            &value.metadata.as_bytes(),
                             metadata_buf.as_array(meta_len_u32),
                         )?;
                     }
@@ -150,7 +150,7 @@ impl FastlyKvStore for Session {
                             });
                         }
                         memory.copy_from_slice(
-                            &value.metadata,
+                            value.metadata.as_bytes(),
                             metadata_buf.as_array(meta_len_u32),
                         )?;
                     }
@@ -210,7 +210,10 @@ impl FastlyKvStore for Session {
             KvInsertConfigOptions::METADATA,
             config.metadata,
             config.metadata_len,
-        )?;
+        )?
+        .map(String::from_utf8)
+        .transpose()
+        .map_err(|_| Error::InvalidArgument)?;
 
         let ttl = if insert_config_mask.contains(KvInsertConfigOptions::TIME_TO_LIVE_SEC) {
             Some(std::time::Duration::from_secs(

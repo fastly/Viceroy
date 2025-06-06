@@ -39,7 +39,7 @@ impl http_resp::Host for ComponentCtx {
     async fn header_append(
         &mut self,
         h: http_types::ResponseHandle,
-        name: String,
+        name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -47,7 +47,7 @@ impl http_resp::Host for ComponentCtx {
         }
 
         let headers = &mut self.session.response_parts_mut(h.into())?.headers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
         Ok(())
@@ -103,15 +103,16 @@ impl http_resp::Host for ComponentCtx {
     async fn header_value_get(
         &mut self,
         h: http_types::ResponseHandle,
-        name: String,
+        name: Vec<u8>,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
 
+        let name = core::str::from_utf8(&name)?;
         let headers = &self.session.response_parts(h.into())?.headers;
-        let value = if let Some(value) = headers.get(&name) {
+        let value = if let Some(value) = headers.get(name) {
             value
         } else {
             return Ok(None);
@@ -127,7 +128,7 @@ impl http_resp::Host for ComponentCtx {
     async fn header_values_get(
         &mut self,
         h: http_types::ResponseHandle,
-        name: String,
+        name: Vec<u8>,
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
@@ -137,14 +138,13 @@ impl http_resp::Host for ComponentCtx {
                 let _ = (h, name, max_len, cursor);
                 return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into());
             } else {
-                use std::str::FromStr;
                 if name.len() > MAX_HEADER_NAME_LEN {
                     return Err(Error::InvalidArgument.into());
                 }
 
                 let headers = &self.session.response_parts(h.into())?.headers;
 
-                let values = headers.get_all(HeaderName::from_str(&name)?);
+                let values = headers.get_all(HeaderName::from_bytes(&name)?);
 
                 let (buf, next) = write_values(
                     values.into_iter(),
@@ -169,7 +169,7 @@ impl http_resp::Host for ComponentCtx {
     async fn header_values_set(
         &mut self,
         h: http_types::ResponseHandle,
-        name: String,
+        name: Vec<u8>,
         values: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -178,7 +178,7 @@ impl http_resp::Host for ComponentCtx {
 
         let headers = &mut self.session.response_parts_mut(h.into())?.headers;
 
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let values = {
             // split slice along nul bytes
             let mut iter = values.split(|b| *b == 0);
@@ -203,7 +203,7 @@ impl http_resp::Host for ComponentCtx {
     async fn header_insert(
         &mut self,
         h: http_types::ResponseHandle,
-        name: String,
+        name: Vec<u8>,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -211,7 +211,7 @@ impl http_resp::Host for ComponentCtx {
         }
 
         let headers = &mut self.session.response_parts_mut(h.into())?.headers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
 
@@ -221,14 +221,14 @@ impl http_resp::Host for ComponentCtx {
     async fn header_remove(
         &mut self,
         h: http_types::ResponseHandle,
-        name: String,
+        name: Vec<u8>,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
             return Err(Error::InvalidArgument.into());
         }
 
         let headers = &mut self.session.response_parts_mut(h.into())?.headers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let name = HeaderName::from_bytes(&name)?;
         headers
             .remove(name)
             .ok_or(types::Error::from(types::Error::InvalidArgument))?;

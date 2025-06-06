@@ -4,6 +4,7 @@ VICEROY_CARGO=cargo
 .PHONY: format
 format:
 	$(VICEROY_CARGO) fmt
+	cd crates/adapter && $(VICEROY_CARGO) fmt
 
 .PHONY: format-check
 format-check:
@@ -77,8 +78,8 @@ package-check:
 # Regenerate the adapter, and move it into `lib/data`.
 .PHONY: adapter
 adapter:
-	cargo build --release \
+	cd crates/adapter && cargo build --release \
 		-p viceroy-component-adapter \
 		--target wasm32-unknown-unknown
-	cp target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
+	cp crates/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
 		lib/data/viceroy-component-adapter.wasm
