@@ -6,7 +6,7 @@ use bytes::Bytes;
 use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::{CacheKey, VaryRule, WriteOptions};
+use crate::cache::{CacheKey, SurrogateKeySet, VaryRule, WriteOptions};
 use crate::error::HandleError;
 use crate::session::{PeekableTask, PendingCacheTask, Session};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
@@ -42,6 +42,7 @@ fn load_write_options(
     } else {
         Duration::ZERO
     };
+
     options_mask &= !CacheWriteOptionsMask::INITIAL_AGE_NS;
 
     let stale_while_revalidate =
@@ -106,6 +107,17 @@ fn load_write_options(
     }
     options_mask &= !CacheWriteOptionsMask::EDGE_MAX_AGE_NS;
 
+    let surrogate_keys = if options_mask.contains(CacheWriteOptionsMask::SURROGATE_KEYS) {
+        let slice = options
+            .surrogate_keys_ptr
+            .as_array(options.surrogate_keys_len);
+        let surrogate_keys_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
+        surrogate_keys_bytes.try_into()?
+    } else {
+        SurrogateKeySet::default()
+    };
+    options_mask &= !CacheWriteOptionsMask::SURROGATE_KEYS;
+
     if !options_mask.is_empty() {
         return Err(Error::NotAvailable("unknown cache write option"));
     }
@@ -119,6 +131,7 @@ fn load_write_options(
         length,
         sensitive_data,
         edge_max_age,
+        surrogate_keys,
     })
 }
 

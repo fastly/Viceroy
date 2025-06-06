@@ -42,6 +42,9 @@ fn main() {
     run_test!(test_service_id);
 
     run_test!(test_stale_while_revalidate);
+    run_test!(test_keyed_purge);
+    run_test!(test_soft_purge);
+    run_test!(test_purge_variant);
 
     run_test!(test_racing_transactions);
     run_test!(test_implicit_cancel_of_fetch);
@@ -49,7 +52,6 @@ fn main() {
     run_test!(test_explicit_cancel);
     run_test!(test_collapse_across_vary);
 
-    run_test!(test_surrogate_keys_unsupported);
     run_test!(test_range_request_unsupported);
 
     eprintln!("Completed all tests for version {service}")
@@ -646,6 +648,130 @@ fn test_stale_while_revalidate() {
     assert_eq!(&body, "hello");
 }
 
+fn test_keyed_purge() {
+    fn write_key(surrogate_keys: impl IntoIterator<Item = &'static str>, value: &str) -> Bytes {
+        let key = new_key();
+        let mut writer = insert(key.clone(), Duration::from_secs(100))
+            .surrogate_keys(surrogate_keys)
+            .execute()
+            .unwrap();
+        writer.write_all(value.as_bytes()).unwrap();
+        writer.finish().unwrap();
+        key
+    }
+
+    let key1 = write_key(["keyA", "keyB"], "value1");
+    let key2 = write_key(["keyA"], "value2");
+    let key3 = write_key(["keyB"], "value3");
+    assert!(lookup(key1.clone()).execute().unwrap().is_some());
+    assert!(lookup(key2.clone()).execute().unwrap().is_some());
+    assert!(lookup(key3.clone()).execute().unwrap().is_some());
+
+    fastly::http::purge::purge_surrogate_key("keyB").unwrap();
+    assert!(lookup(key1).execute().unwrap().is_none());
+    assert!(lookup(key2).execute().unwrap().is_some());
+    assert!(lookup(key3).execute().unwrap().is_none());
+}
+
+fn test_soft_purge() {
+    fn write_key(surrogate_keys: impl IntoIterator<Item = &'static str>, value: &str) -> Bytes {
+        let key = new_key();
+        let mut writer = insert(key.clone(), Duration::from_secs(100))
+            .surrogate_keys(surrogate_keys)
+            .execute()
+            .unwrap();
+        writer.write_all(value.as_bytes()).unwrap();
+        writer.finish().unwrap();
+        key
+    }
+
+    let key1 = write_key(["keyA", "keyB"], "value1");
+    let key2 = write_key(["keyA"], "value2");
+    let key3 = write_key(["keyB"], "value3");
+
+    fastly::http::purge::soft_purge_surrogate_key("keyB").unwrap();
+    // Compute Platform will return stale data that has been soft-purged, if it's still within the
+    // TTL.
+    assert!(lookup(key1)
+        .execute()
+        .unwrap()
+        .expect("is found")
+        .is_stale());
+    assert!(lookup(key3)
+        .execute()
+        .unwrap()
+        .expect("is found")
+        .is_stale());
+    // key2 is untouched:
+    assert!(!lookup(key2)
+        .execute()
+        .unwrap()
+        .expect("is found")
+        .is_stale());
+}
+
+fn test_purge_variant() {
+    let header = HeaderName::from_static("test");
+    let key = new_key();
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(100))
+            .surrogate_keys(["keyA"])
+            .header(header.clone(), "value1")
+            .vary_by([&header])
+            .execute()
+            .unwrap();
+        writer.write_all(b"value1").unwrap();
+        writer.finish().unwrap();
+    }
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(100))
+            .surrogate_keys(["keyB"])
+            .header(header.clone(), "value2")
+            .vary_by([&header])
+            .execute()
+            .unwrap();
+        writer.write_all(b"value2").unwrap();
+        writer.finish().unwrap();
+    }
+
+    // Self-test: we can read these back before we purge...
+    for variant in ["value1", "value2"] {
+        assert_eq!(
+            lookup(key.clone())
+                .header(header.clone(), variant)
+                .execute()
+                .unwrap()
+                .unwrap()
+                .to_stream()
+                .unwrap()
+                .into_string(),
+            variant
+        );
+    }
+
+    fastly::http::purge::purge_surrogate_key("keyA").unwrap();
+
+    // keyA was purged:
+    assert!(lookup(key.clone())
+        .header(header.clone(), "value1")
+        .execute()
+        .unwrap()
+        .is_none());
+
+    // keyB is fine:
+    assert_eq!(
+        lookup(key.clone())
+            .header(header.clone(), "value2")
+            .execute()
+            .unwrap()
+            .unwrap()
+            .to_stream()
+            .unwrap()
+            .into_string(),
+        "value2"
+    );
+}
+
 fn test_racing_transactions() {
     let key = new_key();
 
@@ -766,16 +892,6 @@ fn test_collapse_across_vary() {
     // because according to the most recent vary rule they are distinct.
     assert!(!txn2.pending().unwrap());
     assert!(!txn1.pending().unwrap());
-}
-
-fn test_surrogate_keys_unsupported() {
-    if !insert(new_key(), Duration::from_secs(100))
-        .surrogate_keys(["hello"])
-        .execute()
-        .is_err()
-    {
-        panic!("surrogate keys are not yet supported in Viceroy");
-    }
 }
 
 fn test_range_request_unsupported() {

@@ -4,7 +4,7 @@ use crate::cache::{variance::VaryRule, Error};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
@@ -13,7 +13,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{variance::Variant, WriteOptions};
+use super::{variance::Variant, SurrogateKeySet, WriteOptions};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -40,11 +40,11 @@ pub struct ObjectMeta {
     user_metadata: Bytes,
 
     length: Option<u64>,
-    // TODO: cceckman-at-fastly: for future work!
-    /*
-    never_cache: bool, // Aka "hit for pass"
-    surrogate_keys: HashSet<String>,
-    */
+    surrogate_keys: SurrogateKeySet,
+
+    // Soft-purge bit: atomic so we don't have to wrap the whole thing in a lock.
+    // This can only transition false -> true.
+    soft_purge: AtomicBool,
 }
 
 impl ObjectMeta {
@@ -61,7 +61,7 @@ impl ObjectMeta {
 
     /// Return true if the entry is fresh at the current time.
     pub fn is_fresh(&self) -> bool {
-        self.age() < self.max_age
+        !self.soft_purge.load(std::sync::atomic::Ordering::SeqCst) && (self.age() < self.max_age)
     }
 
     /// Return true if the entry is usable even if stale.
@@ -104,6 +104,7 @@ impl ObjectMeta {
             sensitive_data: _,
             // Similarly, edge_max_age has no effect and cannot be read.
             edge_max_age: _,
+            surrogate_keys,
             ..
         } = value;
         ObjectMeta {
@@ -115,6 +116,8 @@ impl ObjectMeta {
             vary_rule,
             user_metadata,
             length,
+            surrogate_keys,
+            soft_purge: AtomicBool::new(false),
         }
     }
 }
@@ -376,6 +379,68 @@ impl CacheKeyObjects {
                 .present = Some(object);
         });
     }
+
+    /// Purge all variants associated with the given key.
+    ///
+    /// Returns the number of variants purged.
+    pub fn purge(&self, key: &super::SurrogateKey, soft_purge: bool) -> usize {
+        // This _shouldn't_ ever need a send- since we're only removing things, and only those
+        // which don't have obligations.
+        // But, we do it anyway, if we actually modified things.
+        let mut count = 0;
+        self.0.send_if_modified(|cache_key_objects| {
+            cache_key_objects.objects = cache_key_objects
+                .objects
+                .drain()
+                .filter_map(|(variant, value)| {
+                    let Some(present) = value.present.as_ref() else {
+                        // We may be considering an entry which is obligated, but not yet written.
+                        // In this case, we don't know its surrogate keys, so we leave it in the
+                        // set.
+                        return Some((variant, value));
+                    };
+
+                    if !present.get_meta().surrogate_keys.0.contains(key) {
+                        // Doesn't have this surrogate key; keep it.
+                        return Some((variant, value));
+                    }
+
+                    // Purge or soft purge. Either way:
+                    count += 1;
+
+                    if soft_purge {
+                        present
+                            .meta
+                            .soft_purge
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        Some((variant, value))
+                    } else if value.obligated {
+                        // This value has an outstanding obligation.
+                        // We don't want to clobber that, otherwise the obligee will be Confused;
+                        // So, keep the CacheValue but remove the "present".
+                        Some((
+                            variant,
+                            CacheValue {
+                                present: None,
+                                obligated: true,
+                            },
+                        ))
+                    } else {
+                        // By failing to insert the CacheValue again, we purge the whole key.
+                        // There's nothing to preserve.
+                        None
+                    }
+                })
+                .collect();
+
+            // Notifications matter (only) to tasks waiting on an obligation,
+            // if the obligation was fulfilled or abandoned.
+            // We neither fulfilled nor abandoned any obligations, so we don't need to send
+            // an unnecessary notification.
+            false
+        });
+        count
+    }
 }
 
 #[derive(Debug, Default)]
@@ -473,8 +538,6 @@ impl Drop for Obligation {
 /// The data stored in cache for a metadata-complete entry.
 #[derive(Debug)]
 pub(crate) struct CacheData {
-    // TODO: cceckman-at-fastly
-    // - surrogate keys
     meta: ObjectMeta,
     body: CollectingBody,
 }
