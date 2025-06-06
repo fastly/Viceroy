@@ -690,17 +690,24 @@ fn test_soft_purge() {
     let key3 = write_key(["keyB"], "value3");
 
     fastly::http::purge::soft_purge_surrogate_key("keyB").unwrap();
-    // Allow either of two behaviors:
-    // - Does not return stale results
-    // - Returns stale results, but marks them stale
-    if let Some(found) = lookup(key1).execute().unwrap() {
-        assert!(found.is_stale());
-    }
-    if let Some(found) = lookup(key3).execute().unwrap() {
-        assert!(found.is_stale());
-    }
+    // Compute Platform will return stale data that has been soft-purged, if it's still within the
+    // TTL.
+    assert!(lookup(key1)
+        .execute()
+        .unwrap()
+        .expect("is found")
+        .is_stale());
+    assert!(lookup(key3)
+        .execute()
+        .unwrap()
+        .expect("is found")
+        .is_stale());
     // key2 is untouched:
-    assert!(!lookup(key2).execute().unwrap().unwrap().is_stale());
+    assert!(!lookup(key2)
+        .execute()
+        .unwrap()
+        .expect("is found")
+        .is_stale());
 }
 
 fn test_purge_variant() {
