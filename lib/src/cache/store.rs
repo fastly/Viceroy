@@ -398,9 +398,6 @@ impl CacheKeyObjects {
                     // set.
                     new_objects.insert(variant, value);
                     continue;
-                    // Note that this means we also don't have to do anything fancy with
-                    // ensuring the uniqueness of the obligation- we can't get in a situation
-                    // where the CacheData was purged from under an obligation.
                 };
 
                 if !present.get_meta().surrogate_keys.0.contains(key) {
@@ -411,20 +408,36 @@ impl CacheKeyObjects {
 
                 // Purge or soft purge. Either way:
                 count += 1;
+
                 if soft_purge {
                     present
                         .meta
                         .soft_purge
                         .store(true, std::sync::atomic::Ordering::SeqCst);
                     new_objects.insert(variant, value);
+                } else if value.obligated {
+                    // This value has an outstanding obligation.
+                    // We don't want to clobber that, otherwise the obligee will be Confused;
+                    // So, keep the CacheValue but remove the "present".
+                    new_objects.insert(
+                        variant,
+                        CacheValue {
+                            present: None,
+                            obligated: true,
+                        },
+                    );
+                } else {
+                    // By failing to insert the CacheValue again, we purge the whole key.
+                    // There's nothing to preserve.
                 }
             }
-            // Otherwise, it's purged - we don't re-add it to the HashMap.
-            // Filter it out.
-
             cache_key_objects.objects = new_objects;
-            // Modified if any entries were dropped:
-            count != 0
+
+            // Notifications matter (only) to tasks waiting on an obligation,
+            // if the obligation was fulfilled or abandoned.
+            // We neither fulfilled nor abandoned any obligations, so we don't need to send
+            // an unnecessary notification.
+            false
         });
         count
     }
