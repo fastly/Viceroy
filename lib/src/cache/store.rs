@@ -389,49 +389,49 @@ impl CacheKeyObjects {
         // But, we do it anyway, if we actually modified things.
         let mut count = 0;
         self.0.send_if_modified(|cache_key_objects| {
-            let mut new_objects = HashMap::with_capacity(cache_key_objects.objects.len());
+            cache_key_objects.objects = cache_key_objects
+                .objects
+                .drain()
+                .filter_map(|(variant, value)| {
+                    let Some(present) = value.present.as_ref() else {
+                        // We may be considering an entry which is obligated, but not yet written.
+                        // In this case, we don't know its surrogate keys, so we leave it in the
+                        // set.
+                        return Some((variant, value));
+                    };
 
-            for (variant, value) in cache_key_objects.objects.drain() {
-                let Some(present) = value.present.as_ref() else {
-                    // We may be considering an entry which is obligated, but not yet written.
-                    // In this case, we don't know its surrogate keys, so we leave it in the
-                    // set.
-                    new_objects.insert(variant, value);
-                    continue;
-                };
+                    if !present.get_meta().surrogate_keys.0.contains(key) {
+                        // Doesn't have this surrogate key; keep it.
+                        return Some((variant, value));
+                    }
 
-                if !present.get_meta().surrogate_keys.0.contains(key) {
-                    // Doesn't have this surrogate key; keep it.
-                    new_objects.insert(variant, value);
-                    continue;
-                }
+                    // Purge or soft purge. Either way:
+                    count += 1;
 
-                // Purge or soft purge. Either way:
-                count += 1;
-
-                if soft_purge {
-                    present
-                        .meta
-                        .soft_purge
-                        .store(true, std::sync::atomic::Ordering::SeqCst);
-                    new_objects.insert(variant, value);
-                } else if value.obligated {
-                    // This value has an outstanding obligation.
-                    // We don't want to clobber that, otherwise the obligee will be Confused;
-                    // So, keep the CacheValue but remove the "present".
-                    new_objects.insert(
-                        variant,
-                        CacheValue {
-                            present: None,
-                            obligated: true,
-                        },
-                    );
-                } else {
-                    // By failing to insert the CacheValue again, we purge the whole key.
-                    // There's nothing to preserve.
-                }
-            }
-            cache_key_objects.objects = new_objects;
+                    if soft_purge {
+                        present
+                            .meta
+                            .soft_purge
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        Some((variant, value))
+                    } else if value.obligated {
+                        // This value has an outstanding obligation.
+                        // We don't want to clobber that, otherwise the obligee will be Confused;
+                        // So, keep the CacheValue but remove the "present".
+                        Some((
+                            variant,
+                            CacheValue {
+                                present: None,
+                                obligated: true,
+                            },
+                        ))
+                    } else {
+                        // By failing to insert the CacheValue again, we purge the whole key.
+                        // There's nothing to preserve.
+                        None
+                    }
+                })
+                .collect();
 
             // Notifications matter (only) to tasks waiting on an obligation,
             // if the obligation was fulfilled or abandoned.
