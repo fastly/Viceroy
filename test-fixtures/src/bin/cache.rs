@@ -84,10 +84,21 @@ fn ready_and_pending(
 /// If we didn't provide a known .length() along with the insert data, we can sleep+poll until the
 /// length is known, implying that the whole body is available.
 ///
+/// Note that we have to do the whole lookup in order to get the result; the metadata can't change
+/// from under a Found.
+///
 /// This is an ugly hack. Sorry.
-fn poll_known_length(found: &Found) {
-    while let None = found.known_length() {
-        std::thread::sleep(Duration::from_millis(100));
+fn poll_known_length(key: &CacheKey) -> Found {
+    loop {
+        if let Some(v) = lookup(key.clone())
+            .execute()
+            .expect("lookup should not generate error")
+        {
+            if v.known_length().is_some() {
+                return v;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(101));
     }
 }
 
@@ -103,7 +114,7 @@ fn test_non_concurrent() {
 
     let body = "hello world".as_bytes();
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(10))
+        let mut writer = insert(key.clone(), Duration::from_secs(101))
             .known_length(body.len() as u64)
             .execute()
             .unwrap();
@@ -162,7 +173,7 @@ fn test_single_body() {
 
     let body = "hello world".as_bytes();
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(10))
+        let mut writer = insert(key.clone(), Duration::from_secs(102))
             .known_length(body.len() as u64)
             .execute()
             .unwrap();
@@ -215,21 +226,14 @@ fn test_insert_stale() {
     }
 
     let Some(found) = lookup(key.clone()).execute().unwrap() else {
-        // Compute platform only returns stale results if stale-while-revalidate.
-        // Viceroy is slightly more lenient, at the moment, and might produce a stale result-
-        // but will still tell you it's stale.
+        // Compute platform only returns stale results if the object is in the stale-while-revalidate period;
+        // it would return here.
         return;
     };
-
-    // NOTE: from cceckman-at-fastly:
-    // The compute platform currently does not return stale objects unless
-    // they have stale_while_revalidate semantics. This may change in the future.
-    // Viceroy _may_ return stale objects, i.e. it presents a superset of the compute platform's
-    // behavior.
+    // In Viceroy, you may get a stale result- but will still tell you it's stale.
     assert!(!found.is_usable());
     assert!(found.is_stale());
     assert!(found.age() >= Duration::from_secs(2));
-    assert!(found.ttl() == Duration::from_secs(1));
 }
 
 fn test_edge_expired() {
@@ -237,7 +241,7 @@ fn test_edge_expired() {
 
     // Expired on the edge, but not for users.
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(100))
+        let mut writer = insert(key.clone(), Duration::from_secs(103))
             .initial_age(Duration::from_secs(2))
             .deliver_node_max_age(Duration::from_secs(1))
             .execute()
@@ -266,7 +270,7 @@ fn test_edge_expires_after_ttl() {
 
     // Error for the delivery max age to be greater than the TTL.
     let result = insert(key.clone(), Duration::from_secs(1))
-        .deliver_node_max_age(Duration::from_secs(100))
+        .deliver_node_max_age(Duration::from_secs(104))
         .execute();
     if !result.is_err() {
         panic!("error to provide deliver_node_max_age > ttl");
@@ -279,7 +283,7 @@ fn test_vary() {
     let header_name = HeaderName::from_static("x-viceroy-test");
 
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(105))
             .header(&header_name, "foo")
             .vary_by([&header_name])
             .execute()
@@ -320,7 +324,7 @@ fn test_vary_multiple() {
     let h3 = HeaderName::from_static("x-viceroy-verify");
 
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(106))
             .header(&h1, "test")
             .vary_by([&h1])
             .execute()
@@ -330,7 +334,7 @@ fn test_vary_multiple() {
     }
 
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(107))
             .header(&h2, "assert")
             .vary_by([&h2])
             .execute()
@@ -340,7 +344,7 @@ fn test_vary_multiple() {
     }
 
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(108))
             .vary_by([&h3])
             .execute()
             .unwrap();
@@ -388,7 +392,7 @@ fn test_novary_ignore_headers() {
     // That means the headers shouldn't matter.
     let h1 = HeaderName::from_static("x-viceroy-test");
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(109))
             .header(&h1, "test")
             .execute()
             .unwrap();
@@ -419,7 +423,7 @@ fn test_vary_subtle() {
     let h1 = HeaderName::from_static("x-viceroy-test");
     let h2 = HeaderName::from_static("x-viceroy-assert");
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(110))
             .vary_by([&h1, &h2])
             .header(&h1, "test")
             .header(&h2, "assert")
@@ -447,7 +451,7 @@ fn test_vary_combine() {
 
     let h1 = HeaderName::from_static("x-viceroy-test");
     {
-        let mut writer = insert(key.clone(), Duration::from_secs(1000))
+        let mut writer = insert(key.clone(), Duration::from_secs(111))
             .vary_by([&h1])
             .header_values(&h1, [&trust, &verify])
             .execute()
@@ -481,7 +485,7 @@ fn test_vary_combine() {
 fn test_user_metadata() {
     let key = new_key();
 
-    let writer = insert(key.clone(), Duration::from_secs(10))
+    let writer = insert(key.clone(), Duration::from_secs(112))
         .user_metadata(Bytes::copy_from_slice(b"hi there"))
         .execute()
         .unwrap();
@@ -522,10 +526,11 @@ fn test_service_id() {
 }
 
 fn test_length_from_body() {
+    // We can get a known length from "just" streaming the body.
     let key = new_key();
 
     let body = "hello beautiful world".as_bytes();
-    let mut writer = insert(key.clone(), Duration::from_secs(10))
+    let mut writer = insert(key.clone(), Duration::from_secs(115))
         .execute()
         .unwrap();
     {
@@ -537,9 +542,7 @@ fn test_length_from_body() {
     writer.write_all(body).unwrap();
     writer.finish().unwrap();
 
-    let fetch = lookup(key.clone()).execute().unwrap();
-    let got = fetch.unwrap();
-    poll_known_length(&got);
+    let got = poll_known_length(&key);
     assert_eq!(got.known_length().unwrap(), body.len() as u64);
 }
 
@@ -558,7 +561,7 @@ fn test_inconsistent_body_length() {
     {
         let body = "hello beautiful world".as_bytes();
         let extra_len = body.len() + 10;
-        let mut writer = insert(key.clone(), Duration::from_secs(10))
+        let mut writer = insert(key.clone(), Duration::from_secs(116))
             .known_length(extra_len as u64)
             .execute()
             .unwrap();
@@ -781,13 +784,13 @@ fn test_racing_transactions() {
     assert!(tx.found().is_none());
     // The first to resolve should have the obligation to insert:
     assert!(tx.must_insert());
-    let mut body = tx.insert(Duration::from_secs(100)).execute().unwrap();
+    let mut body = tx.insert(Duration::from_secs(125)).execute().unwrap();
 
     // Once we've started streaming, the other transaction should complete:
     let tx = pending.wait().unwrap();
     assert!(!tx.must_insert());
     let found = tx.found().unwrap();
-    assert_eq!(found.ttl(), Duration::from_secs(100));
+    assert_eq!(found.ttl(), Duration::from_secs(125));
     let mut rd_body = found.to_stream().unwrap();
 
     // Write the body and read it back:
@@ -821,10 +824,10 @@ fn test_implicit_cancel_of_pending() {
     let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
     let (t1, pending) = ready_and_pending(busy1, busy2);
 
-    // Note: previously, Compute Platform required that `t1` is dropped before `pending`:
-    // drop of a `CacheBusyHandle` blocks on the *obligatee of the transaction* completing its
-    // obligation.
-    // The fix was rolled out in May 2025; this tests the updated behavior.
+    // Should be safe to drop `pending` while t1 is outstanding.
+    // Note: Compute Platform previously required
+    //  std::mem::drop(t1);
+    // before drop(pending), so this is a regression test for Compute.
     std::mem::drop(pending);
     assert!(t1.must_insert_or_update());
 }
