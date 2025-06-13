@@ -54,7 +54,6 @@ impl CollectingBody {
     ///
     /// Writes to the StreamingBody are collected, and propagated to all readers of this
     /// CollectingBody.
-    // TODO: Expected length?
     pub fn new(from: Body, length: Option<u64>) -> CollectingBody {
         let (tx, rx) = watch::channel(CollectingBodyInner::default());
         let body = CollectingBody { inner: rx };
