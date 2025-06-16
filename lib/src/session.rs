@@ -1023,8 +1023,6 @@ impl Session {
             .await
             .as_mut()
             .map_err(|e| {
-                // TODO: cceckman-at-fastly: Can we pull the error type out of PeekableTask?
-                // I don't think the cache-lookup path can generate errors.
                 tracing::error!("in completion of cache lookup: {e}");
                 HandleError::InvalidCacheHandle(handle)
             })
@@ -1045,8 +1043,6 @@ impl Session {
             .await
             .as_ref()
             .map_err(|e| {
-                // TODO: cceckman-at-fastly: Can we pull the error type out of PeekableTask?
-                // I don't think the cache-lookup path can generate errors.
                 tracing::error!("in completion of cache lookup: {e}");
                 HandleError::InvalidCacheHandle(handle)
             })

@@ -212,8 +212,6 @@ impl CollectingBody {
 /// The state of a CollectingBody, within the pubsub (watch) channel.
 #[derive(Debug)]
 enum CollectingBodyInner {
-    // TODO: cceckman-at-fastly: consider SmallVec, optimizing for the "there is a single chunk"
-    // case
     Streaming(Vec<Bytes>),
     Complete {
         body: Vec<Bytes>,

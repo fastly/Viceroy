@@ -2,7 +2,7 @@ use {
     super::fastly::api::{cache as api, http_types, types},
     crate::{
         body::Body,
-        cache::{self, CacheKey, VaryRule, WriteOptions},
+        cache::{self, CacheKey, SurrogateKeySet, VaryRule, WriteOptions},
         error::{Error, HandleError},
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask, Session},
@@ -95,6 +95,13 @@ fn load_write_options(
     }
     options_mask &= !api::WriteOptionsMask::EDGE_MAX_AGE_NS;
 
+    let surrogate_keys = if options_mask.contains(api::WriteOptionsMask::SURROGATE_KEYS) {
+        options.surrogate_keys.as_bytes().try_into()?
+    } else {
+        SurrogateKeySet::default()
+    };
+    options_mask &= !api::WriteOptionsMask::SURROGATE_KEYS;
+
     if options_mask != api::WriteOptionsMask::empty() {
         return Err(Error::NotAvailable("unknown cache write option"));
     }
@@ -107,6 +114,7 @@ fn load_write_options(
         user_metadata,
         length,
         sensitive_data,
+        surrogate_keys,
         edge_max_age,
     })
 }
