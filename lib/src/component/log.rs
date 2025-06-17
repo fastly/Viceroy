@@ -28,9 +28,8 @@ impl log::Host for ComponentCtx {
         Ok(self.session.log_endpoint_handle(name).into())
     }
 
-    async fn write(&mut self, h: log::Handle, msg: String) -> Result<u32, types::Error> {
+    async fn write(&mut self, h: log::Handle, msg: Vec<u8>) -> Result<u32, types::Error> {
         let endpoint = self.session.log_endpoint(h.into())?;
-        let msg = msg.as_bytes();
         endpoint.write_entry(&msg)?;
         Ok(u32::try_from(msg.len()).unwrap())
     }
