@@ -11,7 +11,7 @@ viceroy_test!(env_vars_are_set_from_env_section, |is_component| {
             language = "rust"
             [env]
             LOG_LEVEL = "INFO"
-            # FASTLY_OMITTED = "SORRY"      # keys starting with FASTLY return an error. TODO: test this fact?
+            # FASTLY_OMITTED = "SORRY"      # keys starting with FASTLY return an error.
         "#;
 
     let resp = Test::using_fixture("env-vars.wasm")

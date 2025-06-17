@@ -629,9 +629,6 @@ pub enum DeviceDetectionConfigError {
 /// Errors that may occur while validating environment variables.
 #[derive(Debug, thiserror::Error)]
 pub enum EnvironmentVariablesConfigError {
-    #[error("'env' was not provided as a TOML table")]
-    InvalidEnvType,
-
     #[error("environment variable key was invalid")]
     InvalidEnvironmentVariableKey,
 
