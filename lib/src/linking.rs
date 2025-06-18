@@ -131,7 +131,8 @@ impl ComponentCtx {
         guest_profiler: Option<GuestProfiler>,
         extra_init: impl FnOnce(&mut WasiCtxBuilder),
     ) -> Result<Store<Self>, anyhow::Error> {
-        let mut builder = make_wasi_ctx(ctx, &session);
+        let mut session = session;
+        let mut builder = make_wasi_ctx(ctx, &mut session);
 
         extra_init(&mut builder);
 
@@ -223,7 +224,8 @@ pub(crate) fn create_store(
     guest_profiler: Option<GuestProfiler>,
     extra_init: impl FnOnce(&mut WasiCtxBuilder),
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
-    let mut builder = make_wasi_ctx(ctx, &session);
+    let mut session = session;
+    let mut builder = make_wasi_ctx(ctx, &mut session);
 
     extra_init(&mut builder);
 
@@ -263,12 +265,16 @@ pub(crate) fn create_store(
 }
 
 /// Constructs a `WasiCtxBuilder` for _each_ incoming request.
-fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> WasiCtxBuilder {
+fn make_wasi_ctx(ctx: &ExecuteCtx, session: &mut Session) -> WasiCtxBuilder {
     let mut wasi_ctx = WasiCtxBuilder::new();
 
-    // Viceroy provides the same `FASTLY_*` environment variables that the production
-    // Compute platform provides:
+    // Populate custom environment variables.
+    for (key, value) in session.environment_variables().0.iter() {
+        wasi_ctx.env(key, value);
+    }
 
+    // Viceroy sets the same `FASTLY_*` environment variables that the production
+    // Compute platform provides:
     wasi_ctx
         // These variables are stubbed out for compatibility
         .env("FASTLY_CACHE_GENERATION", "0")

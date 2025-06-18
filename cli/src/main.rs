@@ -324,8 +324,9 @@ async fn create_execution_context(
         let acls = config.acls();
         let backends = config.backends();
         let device_detection = config.device_detection();
-        let geolocation = config.geolocation();
         let dictionaries = config.dictionaries();
+        let environment_variables = config.environment_variables();
+        let geolocation = config.geolocation();
         let object_stores = config.object_stores();
         let secret_stores = config.secret_stores();
         let backend_names = itertools::join(backends.keys(), ", ");
@@ -336,6 +337,7 @@ async fn create_execution_context(
             .with_device_detection(device_detection.clone())
             .with_geolocation(geolocation.clone())
             .with_dictionaries(dictionaries.clone())
+            .with_environment_variables(environment_variables.clone())
             .with_object_stores(object_stores.clone())
             .with_secret_stores(secret_stores.clone())
             .with_config_path(config_path.into());

@@ -391,6 +391,13 @@ pub enum FastlyConfigError {
     },
 
     #[error("invalid configuration for '{name}': {err}")]
+    InvalidEnvironmentVariableDefinition {
+        name: String,
+        #[source]
+        err: EnvironmentVariablesConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
     InvalidObjectStoreDefinition {
         name: String,
         #[source]
@@ -617,6 +624,16 @@ pub enum DeviceDetectionConfigError {
 
     #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
     DeviceDetectionItemValueWrongFormat { key: String },
+}
+
+/// Errors that may occur while validating environment variables.
+#[derive(Debug, thiserror::Error)]
+pub enum EnvironmentVariablesConfigError {
+    #[error("environment variable key was invalid")]
+    InvalidEnvironmentVariableKey,
+
+    #[error("environment variable value was not a string")]
+    InvalidEnvironmentVariableValueType,
 }
 
 /// Errors that may occur while validating geolocation configurations.

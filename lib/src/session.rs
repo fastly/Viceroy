@@ -26,7 +26,10 @@ use {
     crate::{
         acl::{Acl, Acls},
         body::Body,
-        config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
+        config::{
+            Backend, Backends, DeviceDetection, Dictionaries, EnvironmentVariables, Geolocation,
+            LoadedDictionary,
+        },
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
@@ -115,6 +118,10 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     device_detection: Arc<DeviceDetection>,
+    /// The Environment Variables configured for this execution.
+    ///
+    /// Populated prior to guest execution, can be modified by the program.
+    environment_variables: Arc<EnvironmentVariables>,
     /// The NGWAF verdict to return when using the `inspect` hostcall.
     ngwaf_verdict: String,
     /// The Geolocations configured for this execution.
@@ -183,6 +190,7 @@ impl Session {
         acls: Arc<Acls>,
         backends: Arc<Backends>,
         device_detection: Arc<DeviceDetection>,
+        environment_variables: Arc<EnvironmentVariables>,
         geolocation: Arc<Geolocation>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
@@ -220,6 +228,7 @@ impl Session {
             acl_handles: PrimaryMap::new(),
             backends,
             device_detection,
+            environment_variables,
             geolocation,
             ngwaf_verdict: NGWAF_ALLOW_VERDICT.to_string(),
             dynamic_backends: Backends::default(),
@@ -700,6 +709,12 @@ impl Session {
     /// Access the dictionary map.
     pub fn dictionaries(&self) -> &Arc<Dictionaries> {
         &self.dictionaries
+    }
+
+    // ----- Environment Variables API -----
+
+    pub fn environment_variables(&self) -> &Arc<EnvironmentVariables> {
+        &self.environment_variables
     }
 
     // ----- Geolocation API -----
