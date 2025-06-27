@@ -550,6 +550,9 @@ pub(crate) struct CacheData {
 /// As a Future, this eventually evaluates to the selected portion of the body.
 pub struct GetBodyBuilder<'a> {
     cache_data: &'a CacheData,
+    from: Option<u64>,
+    to: Option<u64>,
+    always_use_requested_range: bool,
 }
 
 impl Future for GetBodyBuilder<'_> {
@@ -559,7 +562,59 @@ impl Future for GetBodyBuilder<'_> {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        let fut = async { self.cache_data.body.read() };
+        // Yes, we reconstruct this future on every poll.
+        // That's fine, as it doesn't have any state that goes across .await boundary.
+        let fut = async {
+            let known_or_expected_length =
+                || self.cache_data.length().or(self.cache_data.body.length());
+
+            // There's two early-return cases:
+            // "ignore requested range when length is unknown", the old default:
+            let ignore_requested_range =
+                !self.always_use_requested_range && known_or_expected_length().is_none();
+            // And, no requested range provided:
+            let no_range_provided = self.from.is_none() && self.to.is_none();
+            // In each of these cases, we return the body immediately,
+            // without waiting for any body to exist.
+            if ignore_requested_range || no_range_provided {
+                return self.cache_data.body.read();
+            }
+
+            // At least one of (start, end) is provided.
+
+            let (start, end) = if let (None, Some(end)) = (self.from, self.to) {
+                // We need to convert from "from the end" to "from the start".
+                // To do that, we need a known length.
+                if self.cache_data.length().is_none() {
+                    // We don't have an expected length; we have to wait for the end of input.
+                    self.cache_data.body.known_length().await?;
+                }
+
+                // Now we should definitely have a known/expected length; we already escaped on write error.
+                let length = known_or_expected_length().expect("unknown length after waiting");
+                // TODO: Test this on Compute; what happens?
+                if end > length {
+                    // Asked for more bytes than are available.
+                    return Err(crate::cache::Error::InvalidArgument("to").into());
+                }
+                // Can convert to a (start, ...) sequence:
+                (Some(length - end), None)
+            } else {
+                (self.from, self.to)
+            };
+
+            let start = start.unwrap_or(0);
+
+            // Wait until we have the "start" byte.
+            // To read byte #N, there have to be at least N+1 bytes in the body.
+            self.cache_data.body.wait_length(start + 1).await?;
+
+            // Convert from inclusive bounds (GetBodyBuilder) to exclusive (read_range),
+            // and provide the body.
+            self.cache_data
+                .body
+                .read_range(start, end.map(|end| end + 1))
+        };
         let pinned = std::pin::pin!(fut);
         pinned.poll(cx)
     }
@@ -568,7 +623,12 @@ impl Future for GetBodyBuilder<'_> {
 impl CacheData {
     /// Get a Body to read the cached object with.
     pub(crate) fn get_body(&self) -> GetBodyBuilder {
-        GetBodyBuilder { cache_data: self }
+        GetBodyBuilder {
+            cache_data: self,
+            from: None,
+            to: None,
+            always_use_requested_range: false,
+        }
     }
 
     /// Access to object's metadata
