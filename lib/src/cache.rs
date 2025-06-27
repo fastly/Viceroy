@@ -180,9 +180,9 @@ impl CacheEntry {
 
     /// Freshen the existing cache item according to the new write options,
     /// without changing the body.
-    pub fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
+    pub async fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
         let go_get = self.take_go_get().ok_or(Error::NotRevalidatable)?;
-        match go_get.update(options) {
+        match go_get.update(options).await {
             Ok(()) => Ok(()),
             Err((go_get, err)) => {
                 // On failure, preserve the obligation.
@@ -209,8 +209,8 @@ pub struct Found {
 
 impl Found {
     /// Access the body of the cached object.
-    pub fn body(&self) -> Result<Body, crate::Error> {
-        self.data.as_ref().get_body()
+    pub async fn body(&self) -> Result<Body, crate::Error> {
+        self.data.as_ref().get_body().await
     }
 
     /// Access the metadata of the cached object.
@@ -558,7 +558,7 @@ mod tests {
 
                 let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
-                let got = found.body().unwrap().read_into_vec().await.unwrap();
+                let got = found.body().await.unwrap().read_into_vec().await.unwrap();
                 assert_eq!(got, value);
             });
         }
@@ -700,6 +700,7 @@ mod tests {
             stale_while_revalidate: Duration::from_secs(10),
             ..WriteOptions::default()
         })
+        .await
         .unwrap();
 
         // After this, should get the new response:
@@ -726,7 +727,7 @@ mod tests {
             stale_while_revalidate: Duration::from_secs(10),
             ..WriteOptions::default()
         };
-        txn1.update(opts.clone()).unwrap_err();
+        txn1.update(opts.clone()).await.unwrap_err();
 
         // But we should still be able to insert.
         txn1.insert(opts.clone(), Body::empty()).unwrap();
