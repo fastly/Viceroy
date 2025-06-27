@@ -52,8 +52,6 @@ fn main() {
     run_test!(test_explicit_cancel);
     run_test!(test_collapse_across_vary);
 
-    run_test!(test_range_request_unsupported);
-
     eprintln!("Completed all tests for version {service}")
 }
 
@@ -631,12 +629,6 @@ fn test_stale_while_revalidate() {
         );
     }
 
-    // One of these should get the obligation:
-    eprintln!("1 must_insert_or_update: {}", txn1.must_insert_or_update());
-    eprintln!("2 must_insert_or_update: {}", txn2.must_insert_or_update());
-    eprintln!("1 must_insert: {}", txn1.must_insert());
-    eprintln!("2 must_insert: {}", txn2.must_insert());
-
     // Update without modifying the body:
     txn1.update(Duration::from_secs(100))
         .user_metadata(Bytes::from_static(b"version 2"))
@@ -775,6 +767,327 @@ fn test_purge_variant() {
     );
 }
 
+fn test_nonconcurrent_range() {
+    // When we do a full body, then a range request, we get only the ranged bits.
+    let key = new_key();
+
+    {
+        let fetch = lookup(key.clone())
+            .execute()
+            .expect("failed initial lookup");
+        assert!(fetch.is_none());
+    }
+
+    let body = "hello beautiful world".as_bytes();
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(117))
+            .execute()
+            .unwrap();
+        writer.write_all(body).unwrap();
+        writer.finish().unwrap();
+    }
+    {
+        let got = poll_known_length(&key);
+        let got = got
+            .to_stream_from_range(Some(6), Some(14))
+            .unwrap()
+            .into_bytes();
+        assert_eq!(&got, b"beautiful");
+    }
+
+    {
+        let got = lookup(key.clone()).execute().unwrap().unwrap();
+        let got = got
+            .to_stream_from_range(Some(6), None)
+            .unwrap()
+            .into_bytes();
+        assert_eq!(&got, b"beautiful world");
+    }
+
+    // to_stream_from_range(None, Some(x)) gets the _last_ (x) bytes
+    {
+        let got = lookup(key.clone()).execute().unwrap().unwrap();
+        let got = got
+            .to_stream_from_range(None, Some(4))
+            .unwrap()
+            .into_bytes();
+        assert_eq!(std::str::from_utf8(&got).unwrap(), "orld");
+    }
+}
+
+fn test_concurrent_range() {
+    // When we stream a body, we get different results based on whether we provided a known length.
+    let key_unknown_length = new_key();
+    let key_known_length = new_key();
+
+    let body = "hello beautiful world".as_bytes();
+    let mut writer_unknown_length = insert(key_unknown_length.clone(), Duration::from_secs(118))
+        .execute()
+        .unwrap();
+    let mut writer_known_length = insert(key_known_length.clone(), Duration::from_secs(119))
+        .known_length(body.len() as u64)
+        .execute()
+        .unwrap();
+
+    let read_unknown_length = lookup(key_unknown_length).execute().unwrap().unwrap();
+    let read_known_length = lookup(key_known_length).execute().unwrap().unwrap();
+
+    // These capture the state when no body has been streamed at all, so the behavior should be
+    // deterministic.
+    let body_unknown_length = read_unknown_length
+        .to_stream_from_range(Some(6), Some(14))
+        .unwrap();
+    let body_known_length = read_known_length
+        .to_stream_from_range(Some(6), Some(14))
+        .unwrap();
+
+    writer_unknown_length.write(body).unwrap();
+    writer_unknown_length.finish().unwrap();
+    writer_known_length.write(body).unwrap();
+    writer_known_length.finish().unwrap();
+
+    let body_unknown_length = body_unknown_length.into_bytes();
+    let body_known_length = body_known_length.into_bytes();
+
+    assert_eq!(&body_unknown_length, body);
+    assert_eq!(&body_known_length, b"beautiful");
+}
+
+fn test_concurrent_range_fixed() {
+    // Test the "always use requested range" behavior.
+    let key_unknown_length = new_key();
+
+    let body = "hello beautiful world";
+    let mut writer_unknown_length = insert(key_unknown_length.clone(), Duration::from_secs(120))
+        .execute()
+        .unwrap();
+
+    // The to_stream_from_range() call below will block until the first byte of the range is available.
+    // Make it available.
+    writer_unknown_length.write(&body.as_bytes()[0..7]).unwrap();
+    writer_unknown_length.flush().unwrap();
+
+    // Then ask for a streaming body, with just part of the range.
+    let read_unknown_length = lookup(key_unknown_length)
+        .always_use_requested_range()
+        .execute()
+        .unwrap()
+        .unwrap();
+    let body_unknown_length = read_unknown_length
+        .to_stream_from_range(Some(6), Some(14))
+        .unwrap();
+
+    // Finish writing:
+    writer_unknown_length.write(&body.as_bytes()[7..]).unwrap();
+    writer_unknown_length.finish().unwrap();
+
+    let body_unknown_length = body_unknown_length.into_string();
+
+    assert_eq!(&body_unknown_length, &body[6..=14]);
+}
+
+fn test_concurrent_range_known_length_fixed() {
+    // When we stream a body, we get different results based on whether we provided a known length.
+    let key_known_length = new_key();
+
+    let body = "hello beautiful world".as_bytes();
+    let mut writer_known_length = insert(key_known_length.clone(), Duration::from_secs(121))
+        .known_length(body.len() as u64)
+        .execute()
+        .unwrap();
+
+    let read_known_length = lookup(key_known_length)
+        .always_use_requested_range()
+        .execute()
+        .unwrap()
+        .unwrap();
+
+    let body_known_length = read_known_length
+        .to_stream_from_range(Some(6), Some(14))
+        .unwrap();
+
+    writer_known_length.write(body).unwrap();
+    writer_known_length.finish().unwrap();
+
+    let body_known_length = body_known_length.into_bytes();
+
+    assert_eq!(&body_known_length, b"beautiful");
+}
+
+fn test_transaction_range_fixed() {
+    let key = new_key();
+
+    let body = "hello beautiful world";
+    let tx1 = Transaction::lookup(key.clone())
+        .always_use_requested_range()
+        .execute()
+        .unwrap();
+    let mut writer = tx1.insert(Duration::from_secs(122)).execute().unwrap();
+    writer.write(&body.as_bytes()[..7]).unwrap();
+    writer.flush().unwrap();
+
+    // Next transaction should be ready immediately, because the write has started.
+    let tx2 = Transaction::lookup(key.clone())
+        .always_use_requested_range()
+        .execute_async()
+        .unwrap()
+        .wait()
+        .unwrap();
+    let found = tx2.found().expect("write has started, should be ready");
+    let body2 = found.to_stream_from_range(Some(6), Some(14)).unwrap();
+
+    // Finish the write:
+    writer.write(&body.as_bytes()[7..]).unwrap();
+    writer.finish().unwrap();
+
+    let got = body2.into_string();
+    assert_eq!(&got, &body[6..=14]);
+}
+
+fn test_replace_range_fixed() {
+    let key = new_key();
+
+    let body = "hello beautiful world";
+    let mut writer = insert(key.clone(), Duration::from_secs(123))
+        .execute()
+        .unwrap();
+    writer.write(&body.as_bytes()[..7]).unwrap();
+    writer.flush().unwrap();
+
+    // Yes, we're going to be silly and start a replacement while we're still writing.
+    // Why? We're testing reading a streaming body from Replace, which might be a thing that
+    // happens.
+    let replace = replace(key.clone())
+        .always_use_requested_range()
+        .begin()
+        .unwrap();
+    let found = replace.existing_object().unwrap();
+    let body2 = found.to_stream_from_range(Some(6), Some(14)).unwrap();
+
+    writer.write(&body.as_bytes()[7..]).unwrap();
+    writer.finish().unwrap();
+
+    let got = body2.into_string();
+    assert_eq!(&got, &body[6..=14]);
+}
+
+fn test_stream_back_fixed() {
+    // Test the "always use requested range" behavior.
+    let key = new_key();
+
+    let body = "hello beautiful world";
+
+    let tx = Transaction::lookup(key.clone())
+        .always_use_requested_range()
+        .execute()
+        .unwrap();
+    assert!(tx.found().is_none());
+    assert!(tx.must_insert_or_update());
+
+    let (mut writer, found) = tx
+        .insert(Duration::from_secs(124))
+        .execute_and_stream_back()
+        .unwrap();
+
+    // The to_stream_from_range() call below will block until the first byte of the range is available.
+    // Make it available.
+    writer.write(&body.as_bytes()[0..7]).unwrap();
+    writer.flush().unwrap();
+
+    // Then ask for a streaming body, with just part of the range.
+    let got = found.to_stream_from_range(Some(6), Some(14)).unwrap();
+
+    // Finish writing:
+    writer.write(&body.as_bytes()[7..]).unwrap();
+    writer.finish().unwrap();
+
+    let got = got.into_string();
+
+    assert_eq!(&got, &body[6..=14]);
+}
+
+fn test_known_length_invalid_range() {
+    let key = new_key();
+
+    let body = "hello beautiful world".as_bytes();
+    let mut writer = insert(key.clone(), Duration::from_secs(10))
+        .known_length(body.len() as u64)
+        .execute()
+        .unwrap();
+    writer.write(body).unwrap();
+    writer.flush().unwrap();
+
+    let read = lookup(key)
+        .always_use_requested_range()
+        .execute()
+        .unwrap()
+        .unwrap();
+
+    let after_end = (body.len() + 1) as u64;
+
+    let _got = read.to_stream_from_range(Some(6), Some(4)).unwrap_err();
+
+    let got = read
+        .to_stream_from_range(Some(after_end), None)
+        .unwrap()
+        .into_bytes();
+    assert_eq!(got.len(), body.len());
+
+    let got = read
+        .to_stream_from_range(Some(4), Some(after_end))
+        .unwrap()
+        .into_bytes();
+    assert_eq!(&got, body);
+
+    //// Not a valid range: "0 bytes from the end" is just the end.
+    let got = read
+        .to_stream_from_range(None, Some(0))
+        .unwrap()
+        .into_bytes();
+    assert_eq!(&got, body);
+}
+
+fn test_unknown_length_invalid_range() {
+    let key = new_key();
+
+    let body = "hello beautiful world".as_bytes();
+    let mut writer = insert(key.clone(), Duration::from_secs(10))
+        .execute()
+        .unwrap();
+    writer.write(body).unwrap();
+    writer.flush().unwrap();
+
+    let read = lookup(key)
+        .always_use_requested_range()
+        .execute()
+        .unwrap()
+        .unwrap();
+
+    let after_end = (body.len() + 1) as u64;
+
+    let got = read.to_stream_from_range(Some(6), Some(4)).unwrap_err();
+    assert!(matches!(got, CacheError::Other(_)));
+
+    // TODO: This will block until "finish", so we can't do anything with it here.
+    //let got = read
+    //    .to_stream_from_range(Some(after_end), None)
+    //    .unwrap()
+    //    .into_bytes();
+    //assert_eq!(got.len(), body.len());
+
+    // We also only know about this after "finish", so the body should be ready immediately:
+    let mut got = read.to_stream_from_range(Some(4), Some(after_end)).unwrap();
+    let mut available = [0u8];
+    // We should be able to read one byte...
+    got.read_exact(&mut available).unwrap();
+    // Finish the write to force an error:
+    writer.finish().unwrap();
+
+    // Can't read past the end:
+    let mut v = Vec::new();
+    got.read_to_end(&mut v).unwrap_err();
+}
+
 fn test_racing_transactions() {
     let key = new_key();
 
@@ -895,27 +1208,4 @@ fn test_collapse_across_vary() {
     // because according to the most recent vary rule they are distinct.
     assert!(!txn2.pending().unwrap());
     assert!(!txn1.pending().unwrap());
-}
-
-fn test_range_request_unsupported() {
-    let key = new_key();
-
-    let body = "abc123def".as_bytes();
-    {
-        let mut writer = insert(key.clone(), Duration::from_secs(10))
-            .known_length(body.len() as u64)
-            .execute()
-            .unwrap();
-        writer.write_all(body).unwrap();
-        writer.finish().unwrap();
-    }
-
-    let fetch = lookup(key.clone()).execute().unwrap();
-    let Some(got) = fetch else {
-        panic!("did not fetch from cache")
-    };
-    let got = got.to_stream_from_range(Some(3), Some(5));
-    if !got.is_err() {
-        panic!("range requests are not yet supported in Viceroy");
-    }
 }
