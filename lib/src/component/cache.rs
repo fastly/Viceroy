@@ -3,7 +3,7 @@ use {
     crate::{
         body::Body,
         cache::{self, CacheKey, SurrogateKeySet, VaryRule, WriteOptions},
-        error::{Error, HandleError},
+        error::Error,
         linking::ComponentCtx,
         session::{PeekableTask, PendingCacheTask, Session},
         wiggle_abi::types::CacheHandle,
@@ -414,6 +414,7 @@ impl api::Host for ComponentCtx {
         let (body, cache_handle) = self
             .transaction_insert_and_stream_back(handle, options_mask, options)
             .await?;
+        // Ignore the "stream back" handle
         let _ = self.session.take_cache_entry(cache_handle.into())?;
         Ok(body)
     }
@@ -430,22 +431,22 @@ impl api::Host for ComponentCtx {
         }
         let options = load_write_options(options_mask, &options)?;
 
-        let entry = self.session.cache_entry_mut(handle.into()).await?;
-        // The path here is:
-        // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
-        // CacheError::InvalidOperation
-        let obligation =
-            entry
-                .take_go_get()
-                .ok_or(Error::HandleError(HandleError::InvalidCacheHandle(
-                    handle.into(),
-                )))?;
-
+        // Optimistically start a body, so we don't have to reborrow &mut self.session
         let body_handle = self.session.insert_body(Body::empty());
         let read_body = self.session.begin_streaming(body_handle)?;
 
-        obligation.insert(options, read_body);
-        Ok((body_handle.into(), handle))
+        let e = self
+            .session
+            .cache_entry_mut(handle.into())
+            .await?
+            .insert(options, read_body)?;
+        // Return a new handle for the read end.
+        let handle: CacheHandle = self
+            .session
+            .insert_cache_op(PendingCacheTask::new(PeekableTask::complete(e)))
+            .into();
+
+        Ok((body_handle.into(), handle.into()))
     }
 
     async fn transaction_update(
@@ -470,7 +471,7 @@ impl api::Host for ComponentCtx {
 
     async fn transaction_cancel(&mut self, handle: api::Handle) -> Result<(), types::Error> {
         let entry = self.session.cache_entry_mut(handle.into()).await?;
-        if let Some(_) = entry.take_go_get() {
+        if entry.cancel() {
             Ok(())
         } else {
             Err(Error::CacheError(cache::Error::CannotWrite).into())

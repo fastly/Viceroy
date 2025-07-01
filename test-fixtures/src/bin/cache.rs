@@ -52,6 +52,8 @@ fn main() {
     run_test!(test_explicit_cancel);
     run_test!(test_collapse_across_vary);
 
+    run_test!(test_stream_back);
+
     run_test!(test_range_request_unsupported);
 
     eprintln!("Completed all tests for version {service}")
@@ -895,6 +897,27 @@ fn test_collapse_across_vary() {
     // because according to the most recent vary rule they are distinct.
     assert!(!txn2.pending().unwrap());
     assert!(!txn1.pending().unwrap());
+}
+
+fn test_stream_back() {
+    let key = new_key();
+
+    let body = "hello beautiful world";
+
+    let tx = Transaction::lookup(key.clone()).execute().unwrap();
+    assert!(tx.found().is_none());
+    assert!(tx.must_insert_or_update());
+
+    let (mut writer, found) = tx
+        .insert(Duration::from_secs(126))
+        .execute_and_stream_back()
+        .unwrap();
+
+    writer.write_all(body.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    let got = found.to_stream().unwrap().into_string();
+    assert_eq!(&got, &body);
 }
 
 fn test_range_request_unsupported() {

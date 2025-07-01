@@ -7,7 +7,6 @@ use http::HeaderMap;
 
 use crate::body::Body;
 use crate::cache::{CacheKey, SurrogateKeySet, VaryRule, WriteOptions};
-use crate::error::HandleError;
 use crate::session::{PeekableTask, PendingCacheTask, Session};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
@@ -378,6 +377,7 @@ impl FastlyCache for Session {
         let (body, cache_handle) = self
             .transaction_insert_and_stream_back(memory, handle, options_mask, options)
             .await?;
+        // Ignore the "stream back" handle
         let _ = self.take_cache_entry(cache_handle)?;
         Ok(body)
     }
@@ -396,19 +396,19 @@ impl FastlyCache for Session {
         }
         let options = load_write_options(memory, options_mask, &guest_options)?;
 
-        let entry = self.cache_entry_mut(handle).await?;
-        // The path here is:
-        // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
-        // CacheError::InvalidOperation
-        let obligation = entry
-            .take_go_get()
-            .ok_or(Error::HandleError(HandleError::InvalidCacheHandle(handle)))?;
-
+        // Optimistically start a body, so we don't have to reborrow &mut self
         let body_handle = self.insert_body(Body::empty());
         let read_body = self.begin_streaming(body_handle)?;
 
-        obligation.insert(options, read_body);
-        Ok((body_handle, handle))
+        let e = self
+            .cache_entry_mut(handle)
+            .await?
+            .insert(options, read_body)?;
+
+        // Return a new handle for the read end.
+        let handle = self.insert_cache_op(PendingCacheTask::new(PeekableTask::complete(e)));
+
+        Ok((body_handle, handle.into()))
     }
 
     async fn transaction_update(
@@ -430,6 +430,7 @@ impl FastlyCache for Session {
         // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
         // CacheError::InvalidOperation
         entry.update(options)?;
+
         Ok(())
     }
 
@@ -439,7 +440,7 @@ impl FastlyCache for Session {
         handle: types::CacheHandle,
     ) -> Result<(), Error> {
         let entry = self.cache_entry_mut(handle.into()).await?;
-        if let Some(_) = entry.take_go_get() {
+        if entry.cancel() {
             Ok(())
         } else {
             Err(Error::CacheError(crate::cache::Error::CannotWrite).into())
