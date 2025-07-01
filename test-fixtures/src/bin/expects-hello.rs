@@ -1,5 +1,5 @@
 use fastly::Request;
-use http::{HeaderName, StatusCode, Version};
+use http::{HeaderName, StatusCode};
 
 fn main() {
     let mut resp = Request::get("https://fastly.com/")

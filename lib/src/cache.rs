@@ -166,22 +166,33 @@ impl CacheEntry {
         self.go_get.as_ref()
     }
 
-    /// Extract the write obligation, if present.
-    pub fn take_go_get(&mut self) -> Option<Obligation> {
-        self.go_get.take()
+    /// Ignore the obligation to fetch, if present.
+    /// Returns true if it actually canceled an obligation.
+    pub fn cancel(&mut self) -> bool {
+        self.go_get.take().is_some()
     }
 
     /// Insert the provided body into the cache.
-    pub fn insert(&mut self, options: WriteOptions, body: Body) -> Result<(), crate::Error> {
-        let go_get = self.take_go_get().ok_or(Error::NotRevalidatable)?;
-        go_get.insert(options, body);
-        Ok(())
+    ///
+    /// Returns a CacheEntry where the new item is Found.
+    pub fn insert(
+        &mut self,
+        options: WriteOptions,
+        body: Body,
+    ) -> Result<CacheEntry, crate::Error> {
+        let go_get = self.go_get.take().ok_or(Error::NotRevalidatable)?;
+        let found = go_get.insert(options, body);
+        Ok(CacheEntry {
+            key: self.key.clone(),
+            found: Some(found),
+            go_get: None,
+        })
     }
 
     /// Freshen the existing cache item according to the new write options,
     /// without changing the body.
     pub fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
-        let go_get = self.take_go_get().ok_or(Error::NotRevalidatable)?;
+        let go_get = self.go_get.take().ok_or(Error::NotRevalidatable)?;
         match go_get.update(options) {
             Ok(()) => Ok(()),
             Err((go_get, err)) => {
@@ -205,6 +216,15 @@ pub struct Found {
     /// We mirror the BodyHandle here when we create it; we can later check whether the handle is
     /// still valid, to find an outstanding read.
     pub last_body_handle: Option<BodyHandle>,
+}
+
+impl From<Arc<CacheData>> for Found {
+    fn from(data: Arc<CacheData>) -> Self {
+        Found {
+            data,
+            last_body_handle: None,
+        }
+    }
 }
 
 impl Found {

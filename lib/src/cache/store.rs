@@ -13,7 +13,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{variance::Variant, SurrogateKeySet, WriteOptions};
+use super::{variance::Variant, Found, SurrogateKeySet, WriteOptions};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -336,14 +336,24 @@ impl CacheKeyObjects {
     /// transaction (so there's only one wakeup). Note the clear_obligation variant may differ from
     /// the variant inserted: we place the obligation marker based on the _existing_ Vary rules,
     /// but we insert based on the Vary rule received in the response.
+    ///
+    /// Returns the CacheData of the updated entry.
     pub fn insert(
         &self,
         request_headers: HeaderMap,
         options: WriteOptions,
         body: Body,
         clear_obligation: Option<Variant>,
-    ) {
+    ) -> Arc<CacheData> {
         let meta = ObjectMeta::new(options, request_headers);
+        let vary_rule = meta.vary_rule().clone();
+
+        let variant = meta.variant();
+        let body = CollectingBody::new(body, meta.length);
+        let object = Arc::new(CacheData { body, meta });
+
+        // We return the updated object as well
+        let result = Arc::clone(&object);
 
         self.0.send_modify(|cache_key_objects| {
             if let Some(clear_obligation) = clear_obligation {
@@ -357,20 +367,16 @@ impl CacheKeyObjects {
                 .vary_rules
                 .iter()
                 .enumerate()
-                .find(|&(_, rule)| rule == &meta.vary_rule)
+                .find(|&(_, rule)| rule == &vary_rule)
             {
                 cache_key_objects
                     .vary_rules
                     .remove(i)
                     .expect("index of a found item must be a valid index")
             } else {
-                meta.vary_rule.clone()
+                vary_rule
             };
             cache_key_objects.vary_rules.push_front(vary_rule);
-
-            let variant = meta.variant();
-            let body = CollectingBody::new(body, meta.length);
-            let object = Arc::new(CacheData { body, meta });
 
             cache_key_objects
                 .objects
@@ -378,6 +384,8 @@ impl CacheKeyObjects {
                 .or_default()
                 .present = Some(object);
         });
+
+        result
     }
 
     /// Purge all variants associated with the given key.
@@ -484,14 +492,18 @@ pub struct Obligation {
 
 impl Obligation {
     /// Fulfill the obligation by providing a new entire entry.
-    pub fn insert(mut self, options: WriteOptions, body: Body) {
+    ///
+    /// Returns a Found for the entry inserted.
+    pub fn insert(mut self, options: WriteOptions, body: Body) -> Found {
         let request_headers = std::mem::take(&mut self.request_headers);
         let variant = std::mem::take(&mut self.variant);
-        self.object
+        let data = self
+            .object
             .insert(request_headers, options, body, Some(variant));
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
         self.completed = true;
+        data.into()
     }
 
     /// Fulfill the obligation by freshening the existing entry.
@@ -505,7 +517,8 @@ impl Obligation {
         };
         let request_headers = std::mem::take(&mut self.request_headers);
         let variant = std::mem::take(&mut self.variant);
-        self.object
+        let _ = self
+            .object
             .insert(request_headers, options, body, Some(variant));
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
@@ -604,7 +617,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_obligaton_when_stale() {
+    async fn obligaton_when_stale() {
         let objects = Arc::new(CacheKeyObjects::default());
         let body: Body = "hello".as_bytes().into();
 
@@ -761,5 +774,25 @@ mod tests {
         let (Some(_), None) = ko.transaction_get(&empty_headers, false).await else {
             panic!("unexpected value")
         };
+    }
+
+    #[tokio::test]
+    async fn returns_written_object() {
+        let objects = Arc::new(CacheKeyObjects::default());
+        let body: Body = "hello".as_bytes().into();
+
+        let e = objects.insert(
+            HeaderMap::default(),
+            WriteOptions::new(Duration::ZERO),
+            body,
+            None,
+        );
+
+        let body = e.get_body().expect("can read completed body");
+        let s = body
+            .read_into_string()
+            .await
+            .expect("can collect completed body");
+        assert_eq!(&s, "hello");
     }
 }
