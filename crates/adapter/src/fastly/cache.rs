@@ -20,6 +20,8 @@ bitflags::bitflags! {
     pub struct CacheLookupOptionsMask: u32 {
         const _RESERVED = 1 << 0;
         const REQUEST_HEADERS = 1 << 1;
+        const SERVICE_ID = 1 << 2;
+        const ALWAYS_USE_REQUESTED_RANGE = 1 << 3;
     }
 }
 
@@ -113,6 +115,15 @@ mod cache {
                 Self::REQUEST_HEADERS,
                 value.contains(CacheLookupOptionsMask::REQUEST_HEADERS),
             );
+            flags.set(
+                Self::SERVICE_ID,
+                value.contains(CacheLookupOptionsMask::SERVICE_ID),
+            );
+            flags.set(
+                Self::ALWAYS_USE_REQUESTED_RANGE,
+                value.contains(CacheLookupOptionsMask::ALWAYS_USE_REQUESTED_RANGE),
+            );
+
             flags
         }
     }
@@ -121,6 +132,9 @@ mod cache {
         fn from(value: CacheLookupOptions) -> Self {
             Self {
                 request_headers: value.request_headers,
+                // service_id is not supported in Viceroy.
+                // We ignore the value, but pass through the flag, so Viceroy can still raise an
+                // error when it's used-but-unsupported.
             }
         }
     }

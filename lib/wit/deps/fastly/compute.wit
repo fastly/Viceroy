@@ -1036,6 +1036,8 @@ interface cache {
 
   flags lookup-options-mask {
     request-headers,
+    service-id,
+    always-use-requested-range,
   }
 
   /// Extensible options for cache lookup operations; currently used for both `lookup` and `transaction_lookup`.
