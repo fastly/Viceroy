@@ -324,7 +324,7 @@ impl api::Host for ComponentCtx {
         // clean up the copying task.
         // We have to do this to allow `found`'s lifetime to end before self.session.body, which
         // has to re-borrow self.self.session.
-        let body = found.body()?;
+        let body = found.body().await?;
 
         if let Some(prev_handle) = found.last_body_handle {
             // Check if they're still reading the previous handle.
@@ -465,7 +465,7 @@ impl api::Host for ComponentCtx {
         // The path here is:
         // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
         // CacheError::InvalidOperation
-        entry.update(options)?;
+        entry.update(options).await?;
         Ok(())
     }
 
