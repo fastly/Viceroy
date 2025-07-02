@@ -50,7 +50,7 @@ impl CollectingBody {
         }
     }
 
-    /// Wait until the length is known or an error is produced.
+    /// Wait until the length is known (or the writer hangs up without finishing).
     pub async fn known_length(&self) -> Result<u64, error::Error> {
         let mut recv = self.inner.clone();
         let state = recv
@@ -73,7 +73,7 @@ impl CollectingBody {
     }
 
     /// Wait until at least this many bytes have been written, or the body is complete.
-    /// Returns Ok() if the body has at least `want` bytes.
+    /// Returns Ok() if the body has at least `want` bytes, Err() otherwise.
     pub async fn wait_length(&self, want: u64) -> Result<(), error::Error> {
         let mut recv = self.inner.clone();
         let state = recv
@@ -233,9 +233,11 @@ impl CollectingBody {
                     cursor = chunk_end;
 
                     if end.is_some_and(|end| chunk_start >= end) {
-                        // We have sent all the bytes we need to.
-                        let _ = tx.finish();
-                        return;
+                        // We have sent all the bytes we need to; don't process more chunks on this
+                        // pass.
+                        // But we don't immediately return, as there are still (in the future)
+                        // trailers to process.
+                        break;
                     }
 
                     // We need to send either the whole chunk, or a portion of it.
@@ -285,8 +287,6 @@ impl CollectingBody {
                 }
 
                 // Now that we've processed the current state, wait for a change.
-                //
-
                 if upstream.changed().await.is_err() {
                     return;
                     // If there's an error, the Channel is closed.
