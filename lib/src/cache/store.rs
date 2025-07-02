@@ -4,6 +4,7 @@ use crate::cache::{variance::VaryRule, Error};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
+    future::Future,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
@@ -507,11 +508,14 @@ impl Obligation {
     }
 
     /// Fulfill the obligation by freshening the existing entry.
-    pub(super) fn update(mut self, options: WriteOptions) -> Result<(), (Self, crate::Error)> {
+    pub(super) async fn update(
+        mut self,
+        options: WriteOptions,
+    ) -> Result<(), (Self, crate::Error)> {
         let Some(present) = &self.present else {
             return Err((self, Error::NotRevalidatable.into()));
         };
-        let body = match present.get_body() {
+        let body = match present.get_body().await {
             Ok(body) => body,
             Err(e) => return Err((self, e)),
         };
@@ -555,10 +559,29 @@ pub(crate) struct CacheData {
     body: CollectingBody,
 }
 
+/// A holder for the get_body options.
+/// As a Future, this eventually evaluates to the selected portion of the body.
+pub struct GetBodyBuilder<'a> {
+    cache_data: &'a CacheData,
+}
+
+impl Future for GetBodyBuilder<'_> {
+    type Output = Result<Body, crate::Error>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let fut = async { self.cache_data.body.read() };
+        let pinned = std::pin::pin!(fut);
+        pinned.poll(cx)
+    }
+}
+
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn get_body(&self) -> Result<Body, crate::Error> {
-        self.body.read()
+    pub(crate) fn get_body(&self) -> GetBodyBuilder {
+        GetBodyBuilder { cache_data: self }
     }
 
     /// Access to object's metadata
@@ -667,7 +690,7 @@ mod tests {
         assert!(found2.is_none());
         assert!(obligation2.is_some());
 
-        // Anotehr transaction on the same headers should pick up the same result:
+        // Another transaction on the same headers should pick up the same result:
         let busy1 = objects.transaction_get(&h1, true);
         let busy2 = objects.transaction_get(&h2, true);
         obligation2.unwrap().insert(
@@ -687,13 +710,25 @@ mod tests {
             make_body("object 1"),
         );
         if let (Some(found), None) = busy1.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .get_body()
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 1");
         } else {
             panic!("expected to block on object 1")
         }
         if let (Some(found), None) = busy2.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .get_body()
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 2");
         } else {
             panic!("expected to block on object 2")
@@ -788,7 +823,7 @@ mod tests {
             None,
         );
 
-        let body = e.get_body().expect("can read completed body");
+        let body = e.get_body().await.expect("can read completed body");
         let s = body
             .read_into_string()
             .await
