@@ -515,7 +515,7 @@ impl Obligation {
         let Some(present) = &self.present else {
             return Err((self, Error::NotRevalidatable.into()));
         };
-        let body = match present.get_body().await {
+        let body = match present.body().build().await {
             Ok(body) => body,
             Err(e) => return Err((self, e)),
         };
@@ -560,28 +560,111 @@ pub(crate) struct CacheData {
 }
 
 /// A holder for the get_body options.
-/// As a Future, this eventually evaluates to the selected portion of the body.
 pub struct GetBodyBuilder<'a> {
     cache_data: &'a CacheData,
+    from: Option<u64>,
+    to: Option<u64>,
+    always_use_requested_range: bool,
 }
 
-impl Future for GetBodyBuilder<'_> {
-    type Output = Result<Body, crate::Error>;
+impl GetBodyBuilder<'_> {
+    /// Add range bounds to the body.
+    ///
+    /// If "from" is provided, "to" indicates an offset from the start of the cached item.
+    /// If "to" is provided but not "from", "to" indicates an offset from the end of the cached
+    /// item.
+    pub fn with_range(self, from: Option<u64>, to: Option<u64>) -> Self {
+        Self { from, to, ..self }
+    }
 
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let fut = async { self.cache_data.body.read() };
-        let pinned = std::pin::pin!(fut);
-        pinned.poll(cx)
+    pub fn with_always_use_requested_range(self, always_use_requested_range: bool) -> Self {
+        Self {
+            always_use_requested_range,
+            ..self
+        }
+    }
+}
+
+impl<'a> GetBodyBuilder<'a> {
+    /// Access the body of this cached item.
+    ///
+    /// In some cases (streaming), the Future may not become ready until the first byte of output is available.
+    pub fn build(self) -> impl Future<Output = Result<Body, crate::Error>> + use<'a> {
+        async move {
+            // Early "return whole body" cases:
+            // "ignore requested range when length is unknown", the old default:
+            let ignore_requested_range =
+                !self.always_use_requested_range && self.cache_data.length().is_none();
+            // No requested range provided:
+            let no_range_provided = self.from.is_none() && self.to.is_none();
+            // Known length and invalid range:
+            let valid_range = match (self.cache_data.length(), self.from, self.to) {
+                (None, _, _) => true,
+                (Some(length), None, Some(to)) if !(1..=length).contains(&to) => false,
+                (Some(length), Some(from), _) if !(0..length).contains(&from) => false,
+                (Some(length), Some(from), Some(to)) if !(from..length).contains(&to) => false,
+                _ => true,
+            };
+
+            // In each of these cases, we return the body immediately,
+            // without waiting for any body to exist.
+            if ignore_requested_range || no_range_provided || !valid_range {
+                return self.cache_data.body.read();
+            }
+
+            // At least one of (start, end) is provided.
+
+            let (start, end) = if let (None, Some(end)) = (self.from, self.to) {
+                // We need to convert from "from the end" to "from the start".
+                // To do that, we need a known or expected length.
+                if self.cache_data.length().is_none() {
+                    // We don't have an expected length; we have to wait for the end of input.
+                    self.cache_data.body.known_length().await?;
+                }
+
+                let length = self
+                    .cache_data
+                    .length()
+                    .expect("unknown length after waiting");
+                if end > length {
+                    // Asked for more bytes than are available.
+                    // In the case of an invalid range, Compute returns the entire body
+                    // (as in HTTP).
+                    return self.cache_data.body.read();
+                }
+                // Convert to a (start, ...) sequence:
+                (Some(length - end), None)
+            } else {
+                (self.from, self.to)
+            };
+
+            let start = start.unwrap_or(0);
+
+            // If the length is not known up-front,
+            // wait for the first byte to exist before returning a body.
+            // Yes, this only applies when the length is unknown.
+            if self.cache_data.length().is_none() {
+                self.cache_data.body.wait_length(start + 1).await?;
+            }
+
+            // Convert from inclusive bounds (GetBodyBuilder) to exclusive (read_range),
+            // and provide the body.
+            self.cache_data
+                .body
+                .read_range(start, end.map(|end| end + 1))
+        }
     }
 }
 
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn get_body(&self) -> GetBodyBuilder {
-        GetBodyBuilder { cache_data: self }
+    pub(crate) fn body(&self) -> GetBodyBuilder {
+        GetBodyBuilder {
+            cache_data: self,
+            from: None,
+            to: None,
+            always_use_requested_range: false,
+        }
     }
 
     /// Access to object's metadata
@@ -589,7 +672,7 @@ impl CacheData {
         &self.meta
     }
 
-    /// Return the length of this object, if known.
+    /// Return the length of this object, if the final or expected length is known.
     pub fn length(&self) -> Option<u64> {
         self.body.length().or_else(|| self.meta.length)
     }
@@ -711,7 +794,8 @@ mod tests {
         );
         if let (Some(found), None) = busy1.await {
             let s = found
-                .get_body()
+                .body()
+                .build()
                 .await
                 .unwrap()
                 .read_into_string()
@@ -723,7 +807,8 @@ mod tests {
         }
         if let (Some(found), None) = busy2.await {
             let s = found
-                .get_body()
+                .body()
+                .build()
                 .await
                 .unwrap()
                 .read_into_string()
@@ -823,7 +908,7 @@ mod tests {
             None,
         );
 
-        let body = e.get_body().await.expect("can read completed body");
+        let body = e.body().build().await.expect("can read completed body");
         let s = body
             .read_into_string()
             .await
