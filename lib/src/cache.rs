@@ -264,11 +264,6 @@ impl From<Arc<CacheData>> for Found {
 }
 
 impl Found {
-    /// Access the body of the cached object.
-    pub async fn body(&self) -> Result<Body, crate::Error> {
-        self.get_body().build().await
-    }
-
     fn get_body(&self) -> GetBodyBuilder {
         self.data.as_ref().body()
     }
@@ -617,7 +612,7 @@ mod tests {
 
                 let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
-                let got = found.body().await.unwrap().read_into_vec().await.unwrap();
+                let got = found.get_body().build().await.unwrap().read_into_vec().await.unwrap();
                 assert_eq!(got, value);
             });
         }
