@@ -16,7 +16,7 @@ use http::{HeaderMap, HeaderValue};
 mod store;
 mod variance;
 
-use store::{CacheData, CacheKeyObjects, ObjectMeta, Obligation};
+use store::{CacheData, CacheKeyObjects, GetBodyBuilder, ObjectMeta, Obligation};
 pub use variance::VaryRule;
 
 #[derive(Debug, thiserror::Error)]
@@ -135,15 +135,36 @@ pub struct CacheEntry {
     key: CacheKey,
     found: Option<Found>,
     go_get: Option<Obligation>,
+
+    /// Respect the range in body() even when the body length is not yet known.
+    ///
+    /// When a cached item is Found, the length of the cached item may or may not be known:
+    /// if no expected length was provided and the body is still streaming, the length is unknown.
+    ///
+    /// When always_use_requested_range is false, and the length is unknown,
+    /// body() returns the full body regardless of the requested range.
+    /// When always_use_requested_range is true, and the length is unknown,
+    /// body() blocks until the start of the range is available.
+    always_use_requested_range: bool,
 }
 
 impl CacheEntry {
+    /// Set the always_use_requested_range flag.
+    /// This applies to all subsequent lookups from this CacheEntry or future entries derived from it.
+    pub fn with_always_use_requested_range(self, always_use_requested_range: bool) -> Self {
+        Self {
+            always_use_requested_range,
+            ..self
+        }
+    }
+
     /// Return a stub entry to hold in CacheBusy.
     pub fn stub(&self) -> CacheEntry {
         Self {
             key: self.key.clone(),
             found: None,
             go_get: None,
+            always_use_requested_range: false,
         }
     }
 
@@ -172,6 +193,20 @@ impl CacheEntry {
         self.go_get.take().is_some()
     }
 
+    /// Access the body of the cached item, if available.
+    pub async fn body(&self, from: Option<u64>, to: Option<u64>) -> Result<Body, crate::Error> {
+        let found = self
+            .found
+            .as_ref()
+            .ok_or(crate::Error::CacheError(Error::Missing))?;
+        found
+            .get_body()
+            .with_range(from, to)
+            .with_always_use_requested_range(self.always_use_requested_range)
+            .build()
+            .await
+    }
+
     /// Insert the provided body into the cache.
     ///
     /// Returns a CacheEntry where the new item is Found.
@@ -186,14 +221,15 @@ impl CacheEntry {
             key: self.key.clone(),
             found: Some(found),
             go_get: None,
+            always_use_requested_range: self.always_use_requested_range,
         })
     }
 
     /// Freshen the existing cache item according to the new write options,
     /// without changing the body.
-    pub fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
+    pub async fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
         let go_get = self.go_get.take().ok_or(Error::NotRevalidatable)?;
-        match go_get.update(options) {
+        match go_get.update(options).await {
             Ok(()) => Ok(()),
             Err((go_get, err)) => {
                 // On failure, preserve the obligation.
@@ -228,9 +264,8 @@ impl From<Arc<CacheData>> for Found {
 }
 
 impl Found {
-    /// Access the body of the cached object.
-    pub fn body(&self) -> Result<Body, crate::Error> {
-        self.data.as_ref().get_body()
+    fn get_body(&self) -> GetBodyBuilder {
+        self.data.as_ref().body()
     }
 
     /// Access the metadata of the cached object.
@@ -283,6 +318,7 @@ impl Cache {
             key: key.clone(),
             found,
             go_get: None,
+            always_use_requested_range: false,
         }
     }
 
@@ -301,11 +337,9 @@ impl Cache {
             .await;
         CacheEntry {
             key: key.clone(),
-            found: found.map(|data| Found {
-                data,
-                last_body_handle: None,
-            }),
+            found: found.map(|v| v.into()),
             go_get: obligation,
+            always_use_requested_range: false,
         }
     }
 
@@ -578,7 +612,7 @@ mod tests {
 
                 let nonempty = cache.lookup(&key, &HeaderMap::default()).await;
                 let found = nonempty.found().expect("should have found inserted key");
-                let got = found.body().unwrap().read_into_vec().await.unwrap();
+                let got = found.get_body().build().await.unwrap().read_into_vec().await.unwrap();
                 assert_eq!(got, value);
             });
         }
@@ -720,6 +754,7 @@ mod tests {
             stale_while_revalidate: Duration::from_secs(10),
             ..WriteOptions::default()
         })
+        .await
         .unwrap();
 
         // After this, should get the new response:
@@ -746,7 +781,7 @@ mod tests {
             stale_while_revalidate: Duration::from_secs(10),
             ..WriteOptions::default()
         };
-        txn1.update(opts.clone()).unwrap_err();
+        txn1.update(opts.clone()).await.unwrap_err();
 
         // But we should still be able to insert.
         txn1.insert(opts.clone(), Body::empty()).unwrap();

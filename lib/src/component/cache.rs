@@ -119,11 +119,16 @@ fn load_write_options(
     })
 }
 
+struct LookupOptions {
+    headers: HeaderMap,
+    always_use_requested_range: bool,
+}
+
 fn load_lookup_options(
     session: &Session,
     options_mask: api::LookupOptionsMask,
     options: api::LookupOptions,
-) -> Result<HeaderMap, Error> {
+) -> Result<LookupOptions, Error> {
     let headers = if options_mask.contains(api::LookupOptionsMask::REQUEST_HEADERS) {
         let handle = options.request_headers;
         let parts = session.request_parts(handle.into())?;
@@ -133,10 +138,17 @@ fn load_lookup_options(
     };
     let options_mask = options_mask & !api::LookupOptionsMask::REQUEST_HEADERS;
 
+    let always_use_requested_range =
+        options_mask.contains(api::LookupOptionsMask::ALWAYS_USE_REQUESTED_RANGE);
+    let options_mask = options_mask & !api::LookupOptionsMask::ALWAYS_USE_REQUESTED_RANGE;
+
     if options_mask != api::LookupOptionsMask::empty() {
         return Err(Error::NotAvailable("unknown cache lookup option"));
     }
-    Ok(headers)
+    Ok(LookupOptions {
+        headers,
+        always_use_requested_range,
+    })
 }
 
 #[async_trait::async_trait]
@@ -147,14 +159,20 @@ impl api::Host for ComponentCtx {
         options_mask: api::LookupOptionsMask,
         options: api::LookupOptions,
     ) -> Result<api::Handle, types::Error> {
-        let headers = load_lookup_options(&self.session, options_mask, options)?;
+        let LookupOptions {
+            headers,
+            always_use_requested_range,
+        } = load_lookup_options(&self.session, options_mask, options)?;
 
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
 
-        let task = PeekableTask::spawn(Box::pin(
-            async move { Ok(cache.lookup(&key, &headers).await) },
-        ))
+        let task = PeekableTask::spawn(Box::pin(async move {
+            Ok(cache
+                .lookup(&key, &headers)
+                .await
+                .with_always_use_requested_range(always_use_requested_range))
+        }))
         .await;
         let task = PendingCacheTask::new(task);
         let handle: CacheHandle = self.session.insert_cache_op(task).into();
@@ -298,33 +316,44 @@ impl api::Host for ComponentCtx {
     async fn get_body(
         &mut self,
         handle: api::Handle,
-        options_mask: api::GetBodyOptionsMask,
-        _options: api::GetBodyOptions,
+        mut options_mask: api::GetBodyOptionsMask,
+        options: api::GetBodyOptions,
     ) -> Result<http_types::BodyHandle, types::Error> {
+        let from = if options_mask.contains(api::GetBodyOptionsMask::FROM) {
+            Some(options.from)
+        } else {
+            None
+        };
+        options_mask &= !api::GetBodyOptionsMask::FROM;
+        let to = if options_mask.contains(api::GetBodyOptionsMask::TO) {
+            Some(options.to)
+        } else {
+            None
+        };
+        options_mask &= !api::GetBodyOptionsMask::TO;
+
         if options_mask != api::GetBodyOptionsMask::empty() {
             return Err(Error::NotAvailable("unknown cache get_body option").into());
         }
 
         // We wind up re-borrowing `found` and `self.session` several times here, to avoid
-        // borrowing the both of them at once. Ultimately it is possible that inserting a body
-        // would change the address of Found, by re-shuffling the AsyncItems table; once again,
-        // borrowck wins the day.
+        // borrowing the both of them at once.
+        // (It possible that inserting a body would change the address of Found, by re-shuffling
+        // the AsyncItems table; we have to live by borrowck's rules.)
         //
         // We have an exclusive borrow &mut self.session for the lifetime of this call,
         // so even though we're re-borrowing/repeating lookups, we know we won't run into TOCTOU.
 
-        let found = self
-            .session
-            .cache_entry(handle.into())
-            .await?
-            .found()
-            .ok_or_else(|| Error::CacheError(cache::Error::Missing))?;
+        let entry = self.session.cache_entry(handle.into()).await?;
 
         // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
         // clean up the copying task.
         // We have to do this to allow `found`'s lifetime to end before self.session.body, which
         // has to re-borrow self.self.session.
-        let body = found.body()?;
+        let body = entry.body(from, to).await?;
+        let found = entry
+            .found()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
 
         if let Some(prev_handle) = found.last_body_handle {
             // Check if they're still reading the previous handle.
@@ -364,13 +393,19 @@ impl api::Host for ComponentCtx {
         options_mask: api::LookupOptionsMask,
         options: api::LookupOptions,
     ) -> Result<api::BusyHandle, types::Error> {
-        let headers = load_lookup_options(&self.session, options_mask, options)?;
+        let LookupOptions {
+            headers,
+            always_use_requested_range,
+        } = load_lookup_options(&self.session, options_mask, options)?;
 
         let key: CacheKey = get_key(key)?;
         let cache = Arc::clone(self.session.cache());
 
         // Look up once, joining the transaction only if obligated:
-        let e = cache.transaction_lookup(&key, &headers, false).await;
+        let e = cache
+            .transaction_lookup(&key, &headers, false)
+            .await
+            .with_always_use_requested_range(always_use_requested_range);
         let ready = e.found().is_some() || e.go_get().is_some();
         // If we already got _something_, we can provide an already-complete PeekableTask.
         // Otherwise we need to spawn it and let it block in the background.
@@ -378,7 +413,10 @@ impl api::Host for ComponentCtx {
             PeekableTask::complete(e)
         } else {
             PeekableTask::spawn(Box::pin(async move {
-                Ok(cache.transaction_lookup(&key, &headers, true).await)
+                Ok(cache
+                    .transaction_lookup(&key, &headers, true)
+                    .await
+                    .with_always_use_requested_range(always_use_requested_range))
             }))
             .await
         };
@@ -465,7 +503,7 @@ impl api::Host for ComponentCtx {
         // The path here is:
         // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
         // CacheError::InvalidOperation
-        entry.update(options)?;
+        entry.update(options).await?;
         Ok(())
     }
 

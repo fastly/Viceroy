@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0008d74790fb20a629ca4cc6f2c016c4a944c17d3059ee654ef4a48595b1fd0f # shrinks to body = Channel(Receiver { chan: Rx { inner: Chan { tx: Tx { block_tail: 0x760140044890, tail_position: 3 }, semaphore: Semaphore { semaphore: Semaphore { permits: 0 }, bound: 2 }, rx_waker: AtomicWaker, tx_count: 0, rx_fields: "..." } } })
+cc c1b60ad59f679fb3a4fc4bc96c50acedfc321467a9c0792f66321938054c0cad # shrinks to (body, chunk_lengths) = (b"\xe8\xfdiT3\x1dyr", [0])

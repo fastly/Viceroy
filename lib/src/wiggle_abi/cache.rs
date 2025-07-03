@@ -134,12 +134,17 @@ fn load_write_options(
     })
 }
 
+struct LookupOptions {
+    headers: HeaderMap,
+    always_use_requested_range: bool,
+}
+
 fn load_lookup_options(
     session: &Session,
     memory: &wiggle::GuestMemory<'_>,
     mut options_mask: types::CacheLookupOptionsMask,
     options: wiggle::GuestPtr<types::CacheLookupOptions>,
-) -> Result<HeaderMap, Error> {
+) -> Result<LookupOptions, Error> {
     let options = memory.read(options)?;
     let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
         let handle = options.request_headers;
@@ -158,11 +163,18 @@ fn load_lookup_options(
         });
     }
 
+    let always_use_requested_range =
+        options_mask.contains(types::CacheLookupOptionsMask::ALWAYS_USE_REQUESTED_RANGE);
+    options_mask &= !types::CacheLookupOptionsMask::ALWAYS_USE_REQUESTED_RANGE;
+
     if !options_mask.is_empty() {
         return Err(Error::NotAvailable("unknown cache lookup option"));
     }
 
-    Ok(headers)
+    Ok(LookupOptions {
+        headers,
+        always_use_requested_range,
+    })
 }
 
 #[allow(unused_variables)]
@@ -175,13 +187,19 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let headers = load_lookup_options(self, memory, options_mask, options)?;
+        let LookupOptions {
+            headers,
+            always_use_requested_range,
+        } = load_lookup_options(&self, memory, options_mask, options)?;
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
-        let task = PeekableTask::spawn(Box::pin(
-            async move { Ok(cache.lookup(&key, &headers).await) },
-        ))
+        let task = PeekableTask::spawn(Box::pin(async move {
+            Ok(cache
+                .lookup(&key, &headers)
+                .await
+                .with_always_use_requested_range(always_use_requested_range))
+        }))
         .await;
         let task = PendingCacheTask::new(task);
         let handle = self.insert_cache_op(task);
@@ -330,12 +348,18 @@ impl FastlyCache for Session {
         options_mask: types::CacheLookupOptionsMask,
         options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheBusyHandle, Error> {
-        let headers = load_lookup_options(self, memory, options_mask, options)?;
+        let LookupOptions {
+            headers,
+            always_use_requested_range,
+        } = load_lookup_options(&self, memory, options_mask, options)?;
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
         // Look up once, joining the transaction only if obligated:
-        let e = cache.transaction_lookup(&key, &headers, false).await;
+        let e = cache
+            .transaction_lookup(&key, &headers, false)
+            .await
+            .with_always_use_requested_range(always_use_requested_range);
         let ready = e.found().is_some() || e.go_get().is_some();
         // If we already got _something_, we can provide an already-complete PeekableTask.
         // Otherwise we need to spawn it and let it block in the background.
@@ -343,7 +367,10 @@ impl FastlyCache for Session {
             PeekableTask::complete(e)
         } else {
             PeekableTask::spawn(Box::pin(async move {
-                Ok(cache.transaction_lookup(&key, &headers, true).await)
+                Ok(cache
+                    .transaction_lookup(&key, &headers, true)
+                    .await
+                    .with_always_use_requested_range(always_use_requested_range))
             }))
             .await
         };
@@ -429,7 +456,7 @@ impl FastlyCache for Session {
         // The path here is:
         // InvalidCacheHandle -> FastlyStatus::BADF -> (ABI boundary) ->
         // CacheError::InvalidOperation
-        entry.update(options)?;
+        entry.update(options).await?;
 
         Ok(())
     }
@@ -529,31 +556,45 @@ impl FastlyCache for Session {
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
-        options_mask: types::CacheGetBodyOptionsMask,
+        mut options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
+        let from = if options_mask.contains(types::CacheGetBodyOptionsMask::FROM) {
+            Some(options.from)
+        } else {
+            None
+        };
+        options_mask &= !types::CacheGetBodyOptionsMask::FROM;
+        let to = if options_mask.contains(types::CacheGetBodyOptionsMask::TO) {
+            Some(options.to)
+        } else {
+            None
+        };
+        options_mask &= !types::CacheGetBodyOptionsMask::TO;
+
         if !options_mask.is_empty() {
             return Err(Error::NotAvailable("unknown cache get_body option").into());
         }
 
         // We wind up re-borrowing `found` and `self.session` several times here, to avoid
-        // borrowing the both of them at once. Ultimately it is possible that inserting a body
-        // would change the address of Found, by re-shuffling the AsyncItems table; once again,
-        // borrowck wins the day.
+        // borrowing the both of them at once.
+        // (It possible that inserting a body would change the address of Found, by re-shuffling
+        // the AsyncItems table; we have to live by borrowck's rules.)
         //
         // We have an exclusive borrow &mut self.session for the lifetime of this call,
         // so even though we're re-borrowing/repeating lookups, we know we won't run into TOCTOU.
 
-        let found = self
-            .cache_entry(handle.into())
-            .await?
-            .found()
-            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        let entry = self.cache_entry(handle.into()).await?;
+
         // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
         // clean up the copying task.
         // We have to do this to allow `found`'s lifetime to end before self.session.body, which
         // has to re-borrow self.self.session.
-        let body = found.body()?;
+        let body = entry.body(from, to).await?;
+
+        let found = entry
+            .found()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
 
         if let Some(prev_handle) = found.last_body_handle {
             // Check if they're still reading the previous handle.
