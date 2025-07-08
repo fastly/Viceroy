@@ -10,6 +10,7 @@ use {
     crate::{
         config::Backend,
         error::Error,
+        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
         session::{AsyncItem, PeekableTask, Session, ViceroyRequestMetadata},
         upstream,
         wiggle_abi::{
@@ -217,7 +218,17 @@ impl FastlyHttpReq for Session {
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
+        let backend_name = memory
+            .as_str(backend_name)?
+            .ok_or(Error::SharedMemory)?
+            .to_string();
+        let redirect_info = PushpinRedirectInfo {
+            backend_name,
+            request_info: None,
+        };
+
+        self.redirect_downstream_to_pushpin(redirect_info)?;
+        Ok(())
     }
 
     fn redirect_to_websocket_proxy_v2(
@@ -231,11 +242,22 @@ impl FastlyHttpReq for Session {
 
     fn redirect_to_grip_proxy_v2(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _req_handle: RequestHandle,
-        _backend: GuestPtr<str>,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        backend_name: GuestPtr<str>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy"))
+        let backend_name = memory
+            .as_str(backend_name)?
+            .ok_or(Error::SharedMemory)?
+            .to_string();
+        let req = self.request_parts(req_handle)?;
+        let redirect_info = PushpinRedirectInfo {
+            backend_name,
+            request_info: Some(PushpinRedirectRequestInfo::from_parts(req)),
+        };
+
+        self.redirect_downstream_to_pushpin(redirect_info)?;
+        Ok(())
     }
 
     fn downstream_tls_protocol(

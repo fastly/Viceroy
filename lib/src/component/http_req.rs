@@ -9,6 +9,7 @@ use {
         config::{Backend, ClientCertInfo},
         error::Error,
         linking::ComponentCtx,
+        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
         secret_store::SecretLookup,
         session::{AsyncItem, AsyncItemHandle, PeekableTask, ViceroyRequestMetadata},
         upstream,
@@ -645,16 +646,29 @@ impl http_req::Host for ComponentCtx {
         Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
     }
 
-    async fn redirect_to_grip_proxy(&mut self, _backend: String) -> Result<(), types::Error> {
-        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy").into())
+    async fn redirect_to_grip_proxy(&mut self, backend_name: String) -> Result<(), types::Error> {
+        let redirect_info = PushpinRedirectInfo {
+            backend_name,
+            request_info: None,
+        };
+
+        self.session.redirect_downstream_to_pushpin(redirect_info)?;
+        Ok(())
     }
 
     async fn redirect_to_grip_proxy_v2(
         &mut self,
-        _handle: http_req::RequestHandle,
-        _backend: String,
+        req_handle: http_req::RequestHandle,
+        backend_name: String,
     ) -> Result<(), types::Error> {
-        Err(Error::NotAvailable("Redirect to Fanout/GRIP proxy").into())
+        let req = self.session.request_parts(req_handle.into())?;
+        let redirect_info = PushpinRedirectInfo {
+            backend_name,
+            request_info: Some(PushpinRedirectRequestInfo::from_parts(req)),
+        };
+
+        self.session.redirect_downstream_to_pushpin(redirect_info)?;
+        Ok(())
     }
 
     async fn framing_headers_mode_set(
