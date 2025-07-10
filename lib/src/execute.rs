@@ -41,7 +41,8 @@ use {
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
-    tokio::sync::oneshot,
+    tokio::sync::oneshot::{self, Sender},
+    tokio::sync::Mutex as AsyncMutex,
     tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
@@ -52,6 +53,7 @@ use {
 
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
+const NEXT_REQ_PENDING_MAX: usize = 5;
 const REGION_NONE: &[u8] = b"none";
 
 enum Instance {
@@ -118,6 +120,8 @@ pub struct ExecuteCtx {
     shielding_sites: ShieldingSites,
     /// The cache for this service.
     cache: Arc<Cache>,
+    /// Senders waiting for new requests for reusable sessions.
+    pending_reuse: Arc<AsyncMutex<Vec<Sender<DownstreamRequest>>>>,
     epoch_increment_thread: Option<JoinHandle<()>>,
     // `Arc` so that it can be tracked both by this context and `epoch_increment_thread`.
     epoch_increment_stop: Arc<AtomicBool>,
@@ -253,6 +257,7 @@ impl ExecuteCtx {
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
             cache: Arc::new(Cache::default()),
+            pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };
 
         Ok(ExecuteCtxBuilder { inner })
@@ -374,7 +379,7 @@ impl ExecuteCtx {
             compliance_region: Vec::from(REGION_NONE),
         };
 
-        let res = self.spawn_guest(req, metadata).await;
+        let res = self.reuse_or_spawn_guest(req, metadata).await;
 
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
@@ -382,6 +387,21 @@ impl ExecuteCtx {
         info!("response status: {:?}", res.0.status());
 
         Ok(res)
+    }
+
+    /// Spawn a new guest to process a request whose processing was never attempted by
+    /// a reused session.
+    pub(crate) async fn retry_request(self: Arc<Self>, mut downstream: DownstreamRequest) {
+        if downstream.sender.is_closed() {
+            return;
+        }
+
+        tokio::task::spawn(async move {
+            let (sender, receiver) = oneshot::channel();
+            let original = std::mem::replace(&mut downstream.sender, sender);
+            let (resp, _) = self.spawn_guest(downstream, receiver).await;
+            let _ = original.send(resp);
+        });
     }
 
     pub async fn handle_request_with_runtime_error(
@@ -405,18 +425,41 @@ impl ExecuteCtx {
         Ok(resp)
     }
 
-    async fn spawn_guest(
+    async fn reuse_or_spawn_guest(
         self: Arc<Self>,
         req: Request<Body>,
         metadata: DownstreamMetadata,
     ) -> (Response<Body>, Option<anyhow::Error>) {
         let (sender, receiver) = oneshot::channel();
-        let downstream = DownstreamRequest {
+        let mut downstream = DownstreamRequest {
             req,
             sender,
             metadata,
         };
 
+        let mut reusable = self.pending_reuse.lock().await;
+
+        while let Some(pending) = reusable.pop() {
+            match pending.send(downstream) {
+                Ok(()) => {
+                    // Drop lock and wait for the guest to process our request.
+                    drop(reusable);
+                    return (receiver.await.unwrap_or_default(), None);
+                }
+                Err(ds) => downstream = ds,
+            }
+        }
+
+        drop(reusable);
+
+        self.spawn_guest(downstream, receiver).await
+    }
+
+    async fn spawn_guest(
+        self: Arc<Self>,
+        downstream: DownstreamRequest,
+        receiver: oneshot::Receiver<Response<Body>>,
+    ) -> (Response<Body>, Option<anyhow::Error>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
@@ -695,6 +738,21 @@ impl ExecuteCtx {
 
     pub fn shielding_sites(&self) -> &ShieldingSites {
         &self.shielding_sites
+    }
+
+    pub async fn register_pending_downstream(
+        &self,
+    ) -> Option<oneshot::Receiver<DownstreamRequest>> {
+        let mut pending = self.pending_reuse.lock().await;
+
+        if pending.len() > NEXT_REQ_PENDING_MAX {
+            return None;
+        }
+
+        let (tx, rx) = oneshot::channel();
+        pending.push(tx);
+
+        Some(rx)
     }
 }
 
