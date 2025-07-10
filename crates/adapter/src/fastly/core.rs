@@ -675,8 +675,8 @@ pub mod fastly_http_downstream {
         pub reserved: u64,
     }
 
-    #[export_name = "fastly_http_downstream#next_req"]
-    pub fn next_req(
+    #[export_name = "fastly_http_downstream#next_request"]
+    pub fn next_request(
         options_mask: NextRequestOptionsMask,
         options: *const NextRequestOptions,
         handle_out: *mut RequestPromiseHandle,
@@ -686,7 +686,7 @@ pub mod fastly_http_downstream {
             reserved: unsafe { (*options).reserved },
         };
 
-        match http_downstream::next_req(options_mask, options) {
+        match http_downstream::next_request(options_mask, options) {
             Ok(res) => {
                 unsafe {
                     *handle_out = res;
@@ -704,13 +704,13 @@ pub mod fastly_http_downstream {
         }
     }
 
-    #[export_name = "fastly_http_downstream#next_req_wait"]
-    pub fn next_req_wait(
+    #[export_name = "fastly_http_downstream#next_request_wait"]
+    pub fn next_request_wait(
         handle: RequestPromiseHandle,
         req_handle_out: *mut RequestHandle,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        match http_downstream::next_req_wait(handle) {
+        match http_downstream::next_request_wait(handle) {
             Ok(res) => {
                 unsafe {
                     *req_handle_out = res.0;
@@ -730,9 +730,9 @@ pub mod fastly_http_downstream {
         }
     }
 
-    #[export_name = "fastly_http_downstream#next_req_abandon"]
-    pub fn next_req_abandon(handle: RequestPromiseHandle) -> FastlyStatus {
-        let res = http_downstream::next_req_abandon(handle);
+    #[export_name = "fastly_http_downstream#next_request_abandon"]
+    pub fn next_request_abandon(handle: RequestPromiseHandle) -> FastlyStatus {
+        let res = http_downstream::next_request_abandon(handle);
         convert_result(res)
     }
 }

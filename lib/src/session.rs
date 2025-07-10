@@ -1239,7 +1239,7 @@ impl Session {
         let item = self.take_pending_downstream_req(handle, false)?;
 
         // Check for an unprocessed request:
-        let unhandled = item.try_recv();
+        let unhandled = item.into_request();
 
         // And then spawn a new session for it:
         if let Some(ds_req) = unhandled {

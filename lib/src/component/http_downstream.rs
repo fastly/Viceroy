@@ -4,7 +4,7 @@ use crate::session::AsyncItemHandle;
 
 #[async_trait::async_trait]
 impl http_downstream::Host for ComponentCtx {
-    async fn next_req(
+    async fn next_request(
         &mut self,
         _options_mask: http_downstream::NextRequestOptionsMask,
         _options: http_downstream::NextRequestOptions,
@@ -14,7 +14,7 @@ impl http_downstream::Host for ComponentCtx {
         Ok(handle.as_u32().into())
     }
 
-    async fn next_req_abandon(
+    async fn next_request_abandon(
         &mut self,
         handle: http_types::RequestPromiseHandle,
     ) -> Result<(), types::Error> {
@@ -23,7 +23,7 @@ impl http_downstream::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn next_req_wait(
+    async fn next_request_wait(
         &mut self,
         handle: http_types::RequestPromiseHandle,
     ) -> Result<(http_types::RequestHandle, http_types::BodyHandle), types::Error> {

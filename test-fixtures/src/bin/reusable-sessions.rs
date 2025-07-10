@@ -23,22 +23,22 @@ bitflags::bitflags! {
 
 #[link(wasm_import_module = "fastly_http_downstream")]
 extern "C" {
-    #[link_name = "next_req"]
-    pub fn next_req(
+    #[link_name = "next_request"]
+    pub fn next_request(
         options_mask: NextRequestOptionsMask,
         options: *const NextRequestOptions,
         handle_out: *mut RequestPromiseHandle,
     ) -> FastlyStatus;
 
-    #[link_name = "next_req_wait"]
-    pub fn next_req_wait(
+    #[link_name = "next_request_wait"]
+    pub fn next_request_wait(
         handle: RequestPromiseHandle,
         req_handle_out: *mut fastly_sys::RequestHandle,
         body_handle_out: *mut fastly_sys::BodyHandle,
     ) -> FastlyStatus;
 
-    #[link_name = "next_req_abandon"]
-    pub fn next_req_abandon(
+    #[link_name = "next_request_abandon"]
+    pub fn next_request_abandon(
         handle: RequestPromiseHandle,
     ) -> FastlyStatus;
 }
@@ -57,7 +57,7 @@ fn main() {
 
         let mut pending = INVALID_REQUEST_HANDLE;
         let status = unsafe {
-            next_req(mask, &opts, &mut pending)
+            next_request(mask, &opts, &mut pending)
         };
 
         if status != FastlyStatus::OK {
@@ -74,7 +74,7 @@ fn main() {
         let mut bh = INVALID_REQUEST_HANDLE;
 
         'inner: loop {
-            let status = unsafe { next_req_wait(pending, &mut rh, &mut bh) };
+            let status = unsafe { next_request_wait(pending, &mut rh, &mut bh) };
 
             match status {
                 FastlyStatus::OK => break 'inner,

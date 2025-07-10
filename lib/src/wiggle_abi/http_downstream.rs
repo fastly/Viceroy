@@ -9,7 +9,7 @@ use wiggle::GuestMemory;
 
 #[wiggle::async_trait]
 impl FastlyHttpDownstream for Session {
-    async fn next_req(
+    async fn next_request(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         _options_mask: NextRequestOptionsMask,
@@ -19,7 +19,7 @@ impl FastlyHttpDownstream for Session {
         Ok(handle.as_u32().into())
     }
 
-    async fn next_req_abandon(
+    async fn next_request_abandon(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         handle: RequestPromiseHandle,
@@ -29,7 +29,7 @@ impl FastlyHttpDownstream for Session {
         Ok(())
     }
 
-    async fn next_req_wait(
+    async fn next_request_wait(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         handle: RequestPromiseHandle,

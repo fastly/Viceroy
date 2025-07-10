@@ -78,7 +78,11 @@ impl PendingDownstreamReqTask {
         }
     }
 
-    pub fn try_recv(self) -> Option<DownstreamRequest> {
+    /// If possible, attempt to immediately convert this task into a request.
+    ///
+    /// The channel will be closed for sending when this returns, so that the
+    /// sender side cannot accidentally send messages which will never be received.
+    pub fn into_request(self) -> Option<DownstreamRequest> {
         match self {
             Self::Waiting(mut rx, _) => {
                 rx.close();
@@ -88,6 +92,10 @@ impl PendingDownstreamReqTask {
         }
     }
 
+    /// Receive a downstream request.
+    ///
+    /// This will block until the sender side of the channel is either dropped
+    /// or sends us a value.
     pub async fn recv(self) -> Result<DownstreamRequest, Error> {
         match self {
             Self::Waiting(rx, _) => rx.await.map_err(|_| Error::NoDownstreamReqsAvailable),
@@ -95,6 +103,16 @@ impl PendingDownstreamReqTask {
         }
     }
 
+    /// Drive this task to completion.
+    ///
+    /// If we have passed the deadline for the task, we try to recover any request
+    /// in the channel. If there is none, then the timed out task will resolve to
+    /// [Error::NoDownstreamReqsAvailable].
+    ///
+    /// ## Cancel Safety
+    ///
+    /// Note that this method is used with [FutureExt::now_or_never] in [AsyncItem::is_ready], and
+    /// should therefore be kept cancel safe.
     pub async fn await_ready(&mut self) {
         if let Self::Waiting(rx, deadline) = self {
             let v = if Instant::now() > *deadline {

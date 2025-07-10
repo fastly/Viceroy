@@ -230,16 +230,16 @@ interface http-downstream {
     reserved: u64,
   }
 
-  next-req: func(
+  next-request: func(
     options-mask: next-request-options-mask,
     options: next-request-options,
   ) -> result<request-promise-handle, error>;
 
-  next-req-wait: func(
+  next-request-wait: func(
     h: request-promise-handle,
   ) -> result<request, error>;
 
-  next-req-abandon: func(
+  next-request-abandon: func(
     h: request-promise-handle,
   ) -> result<_, error>;
 }
