@@ -131,7 +131,6 @@ fn load_lookup_options(
     Ok(headers)
 }
 
-#[async_trait::async_trait]
 impl api::Host for ComponentCtx {
     async fn lookup(
         &mut self,

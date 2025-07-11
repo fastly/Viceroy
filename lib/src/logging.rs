@@ -2,6 +2,7 @@ use std::{
     io::{self, Write},
     sync::{Arc, Mutex},
 };
+use wasmtime_wasi::p2::{OutputStream, Pollable, StdoutStream, StreamError, StreamResult};
 
 /// A named logging endpoint.
 #[derive(Clone)]
@@ -69,8 +70,8 @@ impl Write for LogEndpoint {
     }
 }
 
-impl wasmtime_wasi::StdoutStream for LogEndpoint {
-    fn stream(&self) -> Box<dyn wasmtime_wasi::HostOutputStream> {
+impl StdoutStream for LogEndpoint {
+    fn stream(&self) -> Box<dyn OutputStream> {
         Box::new(self.clone())
     }
 
@@ -80,22 +81,22 @@ impl wasmtime_wasi::StdoutStream for LogEndpoint {
 }
 
 #[wiggle::async_trait]
-impl wasmtime_wasi::Subscribe for LogEndpoint {
+impl Pollable for LogEndpoint {
     async fn ready(&mut self) {}
 }
 
-impl wasmtime_wasi::HostOutputStream for LogEndpoint {
-    fn write(&mut self, bytes: bytes::Bytes) -> wasmtime_wasi::StreamResult<()> {
+impl wasmtime_wasi::p2::OutputStream for LogEndpoint {
+    fn write(&mut self, bytes: bytes::Bytes) -> StreamResult<()> {
         self.write_entry(&bytes)
-            .map_err(|e| wasmtime_wasi::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+            .map_err(|e| StreamError::LastOperationFailed(anyhow::anyhow!(e)))
     }
 
-    fn flush(&mut self) -> wasmtime_wasi::StreamResult<()> {
+    fn flush(&mut self) -> StreamResult<()> {
         <Self as Write>::flush(self)
-            .map_err(|e| wasmtime_wasi::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+            .map_err(|e| StreamError::LastOperationFailed(anyhow::anyhow!(e)))
     }
 
-    fn check_write(&mut self) -> wasmtime_wasi::StreamResult<usize> {
+    fn check_write(&mut self) -> StreamResult<usize> {
         Ok(1024 * 1024)
     }
 }

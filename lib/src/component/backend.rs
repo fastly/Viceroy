@@ -3,7 +3,6 @@ use {
     crate::{error::Error, linking::ComponentCtx},
 };
 
-#[async_trait::async_trait]
 impl backend::Host for ComponentCtx {
     async fn exists(&mut self, backend: String) -> Result<bool, types::Error> {
         Ok(self.session.backend(&backend).is_some())

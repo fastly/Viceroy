@@ -11,7 +11,6 @@ use {
 /// if given header names longer than this value.
 pub const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
-#[async_trait::async_trait]
 impl http_body::Host for ComponentCtx {
     async fn new(&mut self) -> Result<http_types::BodyHandle, types::Error> {
         Ok(self.session.insert_body(Body::empty()).into())

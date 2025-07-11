@@ -8,7 +8,6 @@ use {
     },
 };
 
-#[async_trait::async_trait]
 impl object_store::Host for ComponentCtx {
     async fn open(&mut self, name: String) -> Result<Option<object_store::Handle>, types::Error> {
         if self.session.kv_store().store_exists(&name)? {

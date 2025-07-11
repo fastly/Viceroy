@@ -3,7 +3,6 @@ use {
     crate::linking::ComponentCtx,
 };
 
-#[async_trait::async_trait]
 impl config_store::Host for ComponentCtx {
     async fn open(&mut self, name: String) -> Result<config_store::Handle, types::Error> {
         let handle = self.session.dictionary_handle(name.as_str())?;

@@ -10,7 +10,6 @@ use {
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
-#[async_trait::async_trait]
 impl http_resp::Host for ComponentCtx {
     async fn new(&mut self) -> Result<http_types::ResponseHandle, types::Error> {
         let (parts, _) = Response::new(()).into_parts();

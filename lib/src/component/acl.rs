@@ -2,7 +2,6 @@ use super::fastly::api::{acl, http_body, types};
 use crate::linking::ComponentCtx;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-#[async_trait::async_trait]
 impl acl::Host for ComponentCtx {
     async fn open(&mut self, acl_name: String) -> Result<acl::AclHandle, types::Error> {
         let handle = self

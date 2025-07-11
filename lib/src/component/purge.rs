@@ -3,7 +3,6 @@ use {
     crate::{error::Error, linking::ComponentCtx},
 };
 
-#[async_trait::async_trait]
 impl purge::Host for ComponentCtx {
     async fn purge_surrogate_key(
         &mut self,

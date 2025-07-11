@@ -1,17 +1,19 @@
-use {crate::linking::ComponentCtx, wasmtime::component};
+use crate::linking::ComponentCtx;
+use wasmtime::component::{self, HasData};
 
 component::bindgen!({
     path: "wit",
     world: "fastly:api/compute",
     async: true,
+    tracing: true,
     with: {
         "fastly:api/uap/user-agent": uap::UserAgent,
         "fastly:api/kv-store/lookup-result": kv_store::LookupResult,
 
-        "wasi:clocks": wasmtime_wasi::bindings::clocks,
-        "wasi:random": wasmtime_wasi::bindings::random,
-        "wasi:io": wasmtime_wasi::bindings::io,
-        "wasi:cli": wasmtime_wasi::bindings::cli,
+        // "wasi:clocks": p2bindings::clocks,
+        // "wasi:random": p2bindings::random,
+        // "wasi:io": p2bindings::io,
+        // "wasi:cli": p2bindings::cli,
     },
 
     trappable_error_type: {
@@ -26,49 +28,58 @@ component::bindgen!({
     ],
 });
 
+impl HasData for ComponentCtx {
+    type Data<'a> = &'a mut ComponentCtx;
+}
+
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {
-    fn wrap(ctx: &mut ComponentCtx) -> wasmtime_wasi::WasiImpl<&mut ComponentCtx> {
-        wasmtime_wasi::WasiImpl(ctx)
+    macro_rules! add_to_linker {
+        ($mod:path) => {{
+            use $mod::{add_to_linker};
+            add_to_linker::<_, ComponentCtx>(linker, |ctx| ctx)
+        }}
     }
 
-    wasmtime_wasi::bindings::clocks::wall_clock::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::clocks::monotonic_clock::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::random::random::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::filesystem::types::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::filesystem::preopens::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::io::error::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::cli::environment::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::cli::exit::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::cli::stdin::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::cli::stdout::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::cli::stderr::add_to_linker_get_host(linker, wrap)?;
+    // TODO: revisit this...
+    wasmtime_wasi::p2::add_to_linker_async(linker)?;
+    // p2bindings::clocks::wall_clock::add_to_linker::<_, ComponentCtx>(linker, g)?;
+    // p2bindings::clocks::monotonic_clock::add_to_linker(linker, wrap)?;
+    // p2bindings::random::random::add_to_linker(linker, wrap)?;
+    // p2bindings::filesystem::types::add_to_linker(linker, wrap)?;
+    // p2bindings::filesystem::preopens::add_to_linker(linker, wrap)?;
+    // p2bindings::io::error::add_to_linker(linker, wrap)?;
+    // p2bindings::io::streams::add_to_linker(linker, wrap)?;
+    // p2bindings::io::poll::add_to_linker(linker, wrap)?;
+    // p2bindings::cli::environment::add_to_linker(linker, wrap)?;
+    // p2bindings::cli::exit::add_to_linker(linker, wrap)?;
+    // p2bindings::cli::stdin::add_to_linker(linker, wrap)?;
+    // p2bindings::cli::stdout::add_to_linker(linker, wrap)?;
+    // p2bindings::cli::stderr::add_to_linker(linker, wrap)?;
 
-    fastly::api::acl::add_to_linker(linker, |x| x)?;
-    fastly::api::async_io::add_to_linker(linker, |x| x)?;
-    fastly::api::backend::add_to_linker(linker, |x| x)?;
-    fastly::api::cache::add_to_linker(linker, |x| x)?;
-    fastly::api::compute_runtime::add_to_linker(linker, |x| x)?;
-    fastly::api::config_store::add_to_linker(linker, |x| x)?;
-    fastly::api::device_detection::add_to_linker(linker, |x| x)?;
-    fastly::api::dictionary::add_to_linker(linker, |x| x)?;
-    fastly::api::erl::add_to_linker(linker, |x| x)?;
-    fastly::api::geo::add_to_linker(linker, |x| x)?;
-    fastly::api::http_body::add_to_linker(linker, |x| x)?;
-    fastly::api::http_cache::add_to_linker(linker, |x| x)?;
-    fastly::api::http_req::add_to_linker(linker, |x| x)?;
-    fastly::api::http_resp::add_to_linker(linker, |x| x)?;
-    fastly::api::http_types::add_to_linker(linker, |x| x)?;
-    fastly::api::image_optimizer::add_to_linker(linker, |x| x)?;
-    fastly::api::kv_store::add_to_linker(linker, |x| x)?;
-    fastly::api::log::add_to_linker(linker, |x| x)?;
-    fastly::api::object_store::add_to_linker(linker, |x| x)?;
-    fastly::api::purge::add_to_linker(linker, |x| x)?;
-    fastly::api::secret_store::add_to_linker(linker, |x| x)?;
-    fastly::api::shielding::add_to_linker(linker, |x| x)?;
-    fastly::api::types::add_to_linker(linker, |x| x)?;
-    fastly::api::uap::add_to_linker(linker, |x| x)?;
+    add_to_linker!(fastly::api::acl)?;
+    add_to_linker!(fastly::api::async_io)?;
+    add_to_linker!(fastly::api::backend)?;
+    add_to_linker!(fastly::api::cache)?;
+    add_to_linker!(fastly::api::compute_runtime)?;
+    add_to_linker!(fastly::api::config_store)?;
+    add_to_linker!(fastly::api::device_detection)?;
+    add_to_linker!(fastly::api::dictionary)?;
+    add_to_linker!(fastly::api::erl)?;
+    add_to_linker!(fastly::api::geo)?;
+    add_to_linker!(fastly::api::http_body)?;
+    add_to_linker!(fastly::api::http_cache)?;
+    add_to_linker!(fastly::api::http_req)?;
+    add_to_linker!(fastly::api::http_resp)?;
+    add_to_linker!(fastly::api::http_types)?;
+    add_to_linker!(fastly::api::image_optimizer)?;
+    add_to_linker!(fastly::api::kv_store)?;
+    add_to_linker!(fastly::api::log)?;
+    add_to_linker!(fastly::api::object_store)?;
+    add_to_linker!(fastly::api::purge)?;
+    add_to_linker!(fastly::api::secret_store)?;
+    add_to_linker!(fastly::api::shielding)?;
+    add_to_linker!(fastly::api::types)?;
+    add_to_linker!(fastly::api::uap)?;
 
     Ok(())
 }

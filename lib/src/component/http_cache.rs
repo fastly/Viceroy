@@ -2,7 +2,6 @@ use super::fastly::api::{http_cache, types};
 use crate::component::component::Resource;
 use crate::linking::ComponentCtx;
 
-#[async_trait::async_trait]
 impl http_cache::HostSuggestedCacheOptions for ComponentCtx {
     async fn max_age_ns(
         &mut self,
@@ -62,7 +61,6 @@ impl http_cache::HostSuggestedCacheOptions for ComponentCtx {
     }
 }
 
-#[async_trait::async_trait]
 impl http_cache::Host for ComponentCtx {
     async fn is_request_cacheable(
         &mut self,

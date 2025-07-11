@@ -4,7 +4,6 @@ use {
     std::net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
-#[async_trait::async_trait]
 impl geo::Host for ComponentCtx {
     async fn lookup(&mut self, octets: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
         let ip_addr: IpAddr = match octets.len() {

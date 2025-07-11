@@ -16,7 +16,6 @@ fn is_reserved_endpoint(name: &[u8]) -> bool {
     RESERVED_ENDPOINT_RE.is_match(name)
 }
 
-#[async_trait::async_trait]
 impl log::Host for ComponentCtx {
     async fn endpoint_get(&mut self, name: String) -> Result<log::Handle, types::Error> {
         let name = name.as_bytes();

@@ -3,7 +3,6 @@ use {
     crate::linking::ComponentCtx,
 };
 
-#[async_trait::async_trait]
 impl device_detection::Host for ComponentCtx {
     async fn lookup(
         &mut self,

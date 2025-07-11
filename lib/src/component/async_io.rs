@@ -5,7 +5,6 @@ use {
     std::time::Duration,
 };
 
-#[async_trait::async_trait]
 impl async_io::Host for ComponentCtx {
     async fn select(
         &mut self,

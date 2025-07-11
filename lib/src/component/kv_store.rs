@@ -16,7 +16,7 @@ use {
         },
         wiggle_abi::types::KvInsertMode,
     },
-    wasmtime_wasi::WasiView,
+    wasmtime_wasi::p2::IoView,
 };
 
 pub struct LookupResult {
@@ -25,7 +25,6 @@ pub struct LookupResult {
     generation: u64,
 }
 
-#[async_trait::async_trait]
 impl kv_store::HostLookupResult for ComponentCtx {
     async fn body(
         &mut self,
@@ -67,7 +66,6 @@ impl kv_store::HostLookupResult for ComponentCtx {
     }
 }
 
-#[async_trait::async_trait]
 impl kv_store::Host for ComponentCtx {
     async fn open(&mut self, name: String) -> Result<Option<kv_store::Handle>, types::Error> {
         if self.session.kv_store().store_exists(&name)? {

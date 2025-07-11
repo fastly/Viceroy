@@ -7,7 +7,7 @@ use {
     },
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
-    wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
+    wasmtime_wasi::{preview1::WasiP1Ctx, p2::IoView, p2::WasiCtxBuilder, p2::WasiCtx, p2::WasiView},
     wasmtime_wasi_nn::witx::WasiNnCtx,
 };
 
@@ -63,9 +63,9 @@ impl wasmtime::ResourceLimiter for Limiter {
 
     fn table_growing(
         &mut self,
-        current: u32,
-        desired: u32,
-        maximum: Option<u32>,
+        current: usize,
+        desired: usize,
+        maximum: Option<usize>,
     ) -> anyhow::Result<bool> {
         self.internal.table_growing(current, desired, maximum)
     }
@@ -94,14 +94,14 @@ impl wasmtime::ResourceLimiter for Limiter {
 #[allow(unused)]
 pub struct ComponentCtx {
     table: wasmtime_wasi::ResourceTable,
-    wasi: wasmtime_wasi::WasiCtx,
+    wasi: WasiCtx,
     pub(crate) session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
     limiter: Limiter,
 }
 
 impl ComponentCtx {
-    pub fn wasi(&mut self) -> &mut wasmtime_wasi::WasiCtx {
+    pub fn wasi(&mut self) -> &mut WasiCtx {
         &mut self.wasi
     }
 
@@ -168,12 +168,15 @@ impl ComponentCtx {
     }
 }
 
-impl wasmtime_wasi::WasiView for ComponentCtx {
+impl WasiView for ComponentCtx {
+    fn ctx(&mut self) -> &mut WasiCtx {
+        &mut self.wasi
+    }
+}
+
+impl IoView for ComponentCtx {
     fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
         &mut self.table
-    }
-    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
-        &mut self.wasi
     }
 }
 

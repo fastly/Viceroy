@@ -50,7 +50,6 @@ use {
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
-#[async_trait::async_trait]
 impl http_req::Host for ComponentCtx {
     async fn method_get(
         &mut self,
@@ -467,11 +466,10 @@ impl http_req::Host for ComponentCtx {
         streaming: bool,
     ) -> Result<http_types::PendingRequestHandle, types::Error> {
         if streaming {
-            self.send_async_streaming(h, b, backend_name)
+            self.send_async_streaming(h, b, backend_name).await
         } else {
-            self.send_async(h, b, backend_name)
+            self.send_async(h, b, backend_name).await
         }
-        .await
     }
 
     async fn send_async_streaming(

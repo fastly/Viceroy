@@ -6,7 +6,6 @@ use {
     },
 };
 
-#[async_trait::async_trait]
 impl secret_store::Host for ComponentCtx {
     async fn open(&mut self, name: String) -> Result<secret_store::StoreHandle, types::Error> {
         let handle = self

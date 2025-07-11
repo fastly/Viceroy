@@ -205,7 +205,9 @@ impl ExecuteCtx {
                 UnknownImportBehavior::LinkError => (),
                 UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
                 UnknownImportBehavior::ZeroOrNull => {
-                    linker.define_unknown_imports_as_default_values(&module)?
+                    // TODO: define_unknown_imports_as_default_values requires a store which
+                    // we don't have at this point; continue to trap
+                    linker.define_unknown_imports_as_traps(&module)?;
                 }
             }
 
