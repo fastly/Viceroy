@@ -11,7 +11,7 @@ use {
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
             UnknownImportBehavior,
         },
-        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest},
+        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest, DownstreamResponse},
         error::ExecutionError,
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
@@ -360,6 +360,17 @@ impl ExecuteCtx {
         &self.tls_config
     }
 
+    async fn maybe_receive_response(
+        receiver: oneshot::Receiver<DownstreamResponse>,
+    ) -> Option<(Response<Body>, Option<anyhow::Error>)> {
+        if let Ok(resp) = receiver.await {
+            return match resp {
+                DownstreamResponse::Http(resp) => Some((resp, None)),
+            };
+        }
+        None
+    }
+
     /// Asynchronously handle a request.
     ///
     /// This method fully instantiates the wasm module housed within the `ExecuteCtx`,
@@ -430,7 +441,7 @@ impl ExecuteCtx {
             let original = std::mem::replace(&mut downstream.sender, sender);
             let (resp, err) = self.spawn_guest(downstream, receiver).await;
             let resp = guest_result_to_response(resp, err);
-            let _ = original.send(resp);
+            let _ = original.send(DownstreamResponse::Http(resp));
         });
     }
 
@@ -466,7 +477,11 @@ impl ExecuteCtx {
                 Ok(()) => {
                     // Drop lock and wait for the guest to process our request.
                     drop(reusable);
-                    return (receiver.await.unwrap_or_default(), None);
+
+                    if let Some(response) = Self::maybe_receive_response(receiver).await {
+                        return response;
+                    }
+                    return (Response::default(), None);
                 }
                 Err(nr) => next_req = nr,
             }
@@ -483,7 +498,7 @@ impl ExecuteCtx {
     async fn spawn_guest(
         self: Arc<Self>,
         downstream: DownstreamRequest,
-        receiver: oneshot::Receiver<Response<Body>>,
+        receiver: oneshot::Receiver<DownstreamResponse>,
     ) -> (Response<Body>, Option<anyhow::Error>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
@@ -496,8 +511,8 @@ impl ExecuteCtx {
                 .instrument(info_span!("request", id = req_id)),
         ));
 
-        if let Ok(resp) = receiver.await {
-            return (resp, None);
+        if let Some(response) = Self::maybe_receive_response(receiver).await {
+            return response;
         }
 
         match guest_handle

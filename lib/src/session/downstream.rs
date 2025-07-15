@@ -1,7 +1,9 @@
 //! Downstream response.
 
 use {
-    crate::{body::Body, error::Error, headers::filter_outgoing_headers},
+    crate::{
+        body::Body, downstream::DownstreamResponse, error::Error, headers::filter_outgoing_headers,
+    },
     hyper::http::response::Response,
     std::mem,
     tokio::sync::oneshot::Sender,
@@ -18,7 +20,7 @@ pub enum DownstreamResponseState {
     /// No channel to send the response has been opened yet.
     Closed,
     /// A channel has been opened, but no response has been sent yet.
-    Pending(Sender<Response<Body>>),
+    Pending(Sender<DownstreamResponse>),
     /// A response has already been sent downstream.
     Sent,
 }
@@ -28,7 +30,7 @@ impl DownstreamResponseState {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     /// [sender]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Sender.html
-    pub fn new(sender: Sender<Response<Body>>) -> Self {
+    pub fn new(sender: Sender<DownstreamResponse>) -> Self {
         DownstreamResponseState::Pending(sender)
     }
 
@@ -54,7 +56,7 @@ impl DownstreamResponseState {
         match mem::replace(self, Sent) {
             Closed => panic!("downstream response channel was closed"),
             Pending(sender) => sender
-                .send(response)
+                .send(DownstreamResponse::Http(response))
                 .map_err(|_| ())
                 .expect("response receiver is open"),
             Sent => return Err(Error::DownstreamRespSending),
