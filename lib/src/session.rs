@@ -22,7 +22,7 @@ use crate::object_store::KvStoreError;
 use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle};
 
 use {
-    self::downstream::DownstreamResponse,
+    self::downstream::DownstreamResponseState,
     crate::{
         acl::Acl,
         body::Body,
@@ -72,7 +72,7 @@ pub struct Session {
     /// A channel for sending a [`Response`][resp] downstream to the client.
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
-    downstream_resp: DownstreamResponse,
+    downstream_resp: DownstreamResponseState,
     /// A handle map for items that provide blocking operations. These items are grouped together
     /// in order to support generic async operations that work across different object types.
     async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
@@ -143,7 +143,7 @@ impl Session {
             async_items,
             req_parts,
             resp_parts: PrimaryMap::new(),
-            downstream_resp: DownstreamResponse::new(downstream.sender),
+            downstream_resp: DownstreamResponseState::new(downstream.sender),
             capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
