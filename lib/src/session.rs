@@ -22,7 +22,7 @@ use crate::object_store::KvStoreError;
 use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle};
 
 use {
-    self::downstream::DownstreamResponse,
+    self::downstream::DownstreamResponseState,
     crate::{
         acl::Acl,
         body::Body,
@@ -73,7 +73,7 @@ pub struct Session {
     /// A channel for sending a [`Response`][resp] downstream to the client.
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
-    downstream_resp: DownstreamResponse,
+    downstream_resp: DownstreamResponseState,
     /// Handle for receiving a new downstream request.
     downstream_pending_handle: Option<AsyncItemHandle>,
     /// A handle map for items that provide blocking operations. These items are grouped together
@@ -151,7 +151,7 @@ impl Session {
             async_items,
             req_parts,
             resp_parts: PrimaryMap::new(),
-            downstream_resp: DownstreamResponse::new(downstream.sender),
+            downstream_resp: DownstreamResponseState::new(downstream.sender),
             capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
@@ -1280,7 +1280,7 @@ impl Session {
             metadata: Some(downstream.metadata),
         });
 
-        self.downstream_resp = DownstreamResponse::new(downstream.sender);
+        self.downstream_resp = DownstreamResponseState::new(downstream.sender);
         self.downstream_req_handle = req_handle;
         self.downstream_req_body_handle = body_handle.into();
 
