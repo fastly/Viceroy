@@ -6,6 +6,7 @@ use {
         downstream::DownstreamResponse,
         error::Error,
         headers::filter_outgoing_headers,
+        pushpin::PushpinRedirectInfo,
     },
     hyper::http::response::Response,
     std::mem,
@@ -24,6 +25,8 @@ pub enum DownstreamResponseState {
     Closed,
     /// A channel has been opened, but no response has been sent yet.
     Pending(Sender<DownstreamResponse>),
+    /// The guest has initiated a proxy to Pushpin; the response will come from there.
+    RedirectingToPushpin,
     /// A response has already been sent downstream.
     Sent,
 }
@@ -47,7 +50,7 @@ impl DownstreamResponseState {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
-        use DownstreamResponseState::{Closed, Pending, Sent};
+        use DownstreamResponseState::{Closed, Pending, Sent, RedirectingToPushpin};
 
         filter_outgoing_headers(response.headers_mut());
 
@@ -58,7 +61,26 @@ impl DownstreamResponseState {
                 .send(DownstreamResponse::Http(response))
                 .map_err(|_| ())
                 .expect("response receiver is open"),
-            Sent => return Err(Error::DownstreamRespSending),
+            Sent | RedirectingToPushpin => return Err(Error::DownstreamRespSending),
+        }
+
+        Ok(())
+    }
+    
+    pub fn redirect_to_pushpin(
+        &mut self,
+        redirect_info: PushpinRedirectInfo,
+    ) -> Result<(), Error> {
+        use DownstreamResponseState::{Closed, Pending, Sent, RedirectingToPushpin};
+
+        // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
+        match mem::replace(self, RedirectingToPushpin) {
+            Closed => panic!("downstream response channel was closed"),
+            Pending(sender) => sender
+                .send(DownstreamResponse::RedirectToPushpin(redirect_info))
+                .map_err(|_| ())
+                .expect("response receiver is open"),
+            Sent | RedirectingToPushpin => return Err(Error::DownstreamRespSending),
         }
 
         Ok(())
