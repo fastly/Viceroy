@@ -11,7 +11,7 @@ use {
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
             UnknownImportBehavior,
         },
-        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest},
+        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest, DownstreamResponse},
         error::ExecutionError,
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
@@ -429,7 +429,11 @@ impl ExecuteCtx {
         ));
 
         if let Ok(resp) = receiver.await {
-            return (resp, None);
+            return match resp {
+                DownstreamResponse::Http(resp) => {
+                    (resp, None)
+                }
+            }
         }
 
         match guest_handle
