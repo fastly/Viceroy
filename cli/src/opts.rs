@@ -102,6 +102,10 @@ pub struct SharedArgs {
     /// (microseconds), and "ns" (nanoseconds).
     #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
     profile: Option<Profile>,
+    /// Port running local Pushpin proxy. If not provided, Pushpin functionality
+    /// is disabled.
+    #[arg(long = "local-pushpin-proxy-port")]
+    local_pushpin_proxy_port: Option<u16>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -181,6 +185,11 @@ impl SharedArgs {
             Some(Profile::Native(s)) => s,
             _ => ProfilingStrategy::None,
         }
+    }
+
+    /// Port running local Pushpin proxy.
+    pub fn local_pushpin_proxy_port(&self) -> Option<u16> {
+        self.local_pushpin_proxy_port
     }
 
     /// Configuration for guest profiling if enabled
