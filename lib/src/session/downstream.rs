@@ -14,7 +14,7 @@ use {
 ///
 /// [send]: struct.Session.html#method.send_downstream_response
 /// [set]: struct.Session.html#method.set_downstream_response_sender
-pub(super) enum DownstreamResponse {
+pub enum DownstreamResponseState {
     /// No channel to send the response has been opened yet.
     Closed,
     /// A channel has been opened, but no response has been sent yet.
@@ -23,13 +23,13 @@ pub(super) enum DownstreamResponse {
     Sent,
 }
 
-impl DownstreamResponse {
+impl DownstreamResponseState {
     /// Open a channel to send a [`Response`][resp] downstream, given a [`oneshot::Sender`][sender].
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     /// [sender]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Sender.html
     pub fn new(sender: Sender<Response<Body>>) -> Self {
-        DownstreamResponse::Pending(sender)
+        DownstreamResponseState::Pending(sender)
     }
 
     pub fn is_unsent(&self) -> bool {
@@ -46,7 +46,7 @@ impl DownstreamResponse {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
-        use DownstreamResponse::{Closed, Pending, Sent};
+        use DownstreamResponseState::{Closed, Pending, Sent};
 
         filter_outgoing_headers(response.headers_mut());
 
@@ -65,6 +65,6 @@ impl DownstreamResponse {
 
     /// Close the `DownstreamResponse`, potentially without sending any response.
     pub fn close(&mut self) {
-        *self = DownstreamResponse::Closed;
+        *self = DownstreamResponseState::Closed;
     }
 }
