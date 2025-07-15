@@ -31,6 +31,7 @@ mod execute;
 mod headers;
 mod linking;
 mod object_store;
+mod pushpin;
 mod secret_store;
 mod service;
 mod shielding_site;

@@ -31,6 +31,7 @@ use {
         error::{Error, HandleError},
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
+        pushpin::PushpinRedirectInfo,
         secret_store::{SecretLookup, SecretStores},
         shielding_site::ShieldingSites,
         streaming_body::StreamingBody,
@@ -257,6 +258,29 @@ impl Session {
     /// [receiver]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Receiver.html
     pub fn send_downstream_response(&mut self, resp: Response<Body>) -> Result<(), Error> {
         self.downstream_resp.send(resp)
+    }
+
+    /// Redirect the downstream request to Pushpin.
+    ///
+    /// Yield an error if a response has already been sent.
+    ///
+    /// # Panics
+    ///
+    /// This method must only be called once, *after* a channel has been opened with
+    /// [`Session::set_downstream_response_sender`][set], and *before* the associated
+    /// [oneshot::Receiver][receiver] has been dropped.
+    ///
+    /// This method will panic if:
+    ///   * the downstream response channel was never opened
+    ///   * the associated receiver was dropped prematurely
+    ///
+    /// [set]: struct.Session.html#method.set_downstream_response_sender
+    /// [receiver]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Receiver.html
+    pub fn redirect_downstream_to_pushpin(
+        &mut self,
+        redirect_info: PushpinRedirectInfo,
+    ) -> Result<(), Error> {
+        self.downstream_resp.redirect_to_pushpin(redirect_info)
     }
 
     /// Close the downstream response sender, potentially without sending any response.

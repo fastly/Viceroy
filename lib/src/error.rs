@@ -1,8 +1,10 @@
 //! Error types.
 
+use crate::{pushpin::PushpinRedirectInfo, wiggle_abi::types::FastlyStatus};
 use std::error::Error as StdError;
 use std::io;
-use {crate::wiggle_abi::types::FastlyStatus, url::Url, wiggle::GuestError};
+use url::Url;
+use wiggle::GuestError;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -800,4 +802,15 @@ pub enum DownstreamRequestError {
 
     #[error("Request URL is invalid")]
     InvalidUrl,
+}
+
+/// An enum representing outcomes where the guest does not produce a standard
+/// HTTP response, but instead signals for a different action.
+#[derive(Debug, thiserror::Error)]
+pub enum NonHttpResponse {
+    #[error("graceful Pushpin redirect")]
+    PushpinRedirect(PushpinRedirectInfo),
+    // In the future, e.g.
+    // #[error("websocket upgrade requested")]
+    // WebSocketUpgrade(WebSocketUpgradeInfo),
 }
