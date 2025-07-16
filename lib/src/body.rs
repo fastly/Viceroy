@@ -504,7 +504,7 @@ mod tests {
             }),
         ) {
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            return rt.block_on(test_gzip_body(body, chunk_lengths));
+            rt.block_on(test_gzip_body(body, chunk_lengths))?
         }
 
     }
@@ -519,7 +519,7 @@ mod tests {
             }),
         ) {
             let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            return rt.block_on(test_chunked_body(body, chunk_lengths));
+            rt.block_on(test_chunked_body(body, chunk_lengths))?
         }
 
     }
