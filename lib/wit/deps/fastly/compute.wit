@@ -223,11 +223,11 @@ interface http-downstream {
   use http-types.{request, request-promise-handle, request-handle};
 
   flags next-request-options-mask {
-    reserved,
+    timeout,
   }
 
   record next-request-options {
-    reserved: u64,
+    timeout-ms: u64,
   }
 
   next-request: func(

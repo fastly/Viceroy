@@ -596,7 +596,7 @@
     ;;; Indicate to the host that we will accept a new request from a client in the future.
     (@interface func (export "next_request")
         (param $options_mask $next_request_options_mask)
-        (param $options $next_request_options)
+        (param $options (@witx pointer $next_request_options))
         (result $err (expected $request_promise_handle (error $fastly_status)))
     )
 

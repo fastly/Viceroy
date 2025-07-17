@@ -654,6 +654,7 @@ pub mod fastly_http_downstream {
         #[repr(transparent)]
         pub struct NextRequestOptionsMask: u32 {
             const RESERVED = 1 << 0;
+            const TIMEOUT = 1 << 1;
         }
     }
 
@@ -663,8 +664,8 @@ pub mod fastly_http_downstream {
         fn from(options: NextRequestOptionsMask) -> Self {
             let mut flags = Self::empty();
             flags.set(
-                Self::RESERVED,
-                options.contains(NextRequestOptionsMask::RESERVED),
+                Self::TIMEOUT,
+                options.contains(NextRequestOptionsMask::TIMEOUT),
             );
             flags
         }
@@ -672,7 +673,7 @@ pub mod fastly_http_downstream {
 
     #[repr(C)]
     pub struct NextRequestOptions {
-        pub reserved: u64,
+        pub timeout_ms: u64,
     }
 
     #[export_name = "fastly_http_downstream#next_request"]
@@ -683,7 +684,7 @@ pub mod fastly_http_downstream {
     ) -> FastlyStatus {
         let options_mask = http_downstream::NextRequestOptionsMask::from(options_mask);
         let options = http_downstream::NextRequestOptions {
-            reserved: unsafe { (*options).reserved },
+            timeout_ms: unsafe { (*options).timeout_ms },
         };
 
         match http_downstream::next_request(options_mask, options) {

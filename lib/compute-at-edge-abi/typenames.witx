@@ -552,10 +552,11 @@
 (typename $next_request_options_mask
     (flags (@witx repr u32)
         $reserved
+        $timeout
     ))
 
 (typename $next_request_options
     (record
-        ;; Reserved for future use.
-        (field $reserved u64)
+        ;; A maximum amount of time to wait for a downstream request to appear, in milliseconds.
+        (field $timeout_ms u64)
     ))

@@ -1161,7 +1161,16 @@ impl Session {
         self.ctx.shielding_sites()
     }
 
-    pub async fn register_pending_downstream_req(&mut self) -> Result<AsyncItemHandle, Error> {
+    pub async fn register_pending_downstream_req(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<AsyncItemHandle, Error> {
+        if self.downstream_pending_handle.is_some() {
+            return Err(Error::LimitExceeded {
+                msg: "Too many pending downstream request handles have been created",
+            });
+        }
+
         let rx = if self.next_req_accepted < NEXT_REQ_ACCEPT_MAX {
             self.ctx.register_pending_downstream().await
         } else {
@@ -1174,8 +1183,12 @@ impl Session {
             self.next_req_accepted += 1;
         }
 
-        let task = PendingDownstreamReqTask::new(rx, NEXT_REQ_TIMEOUT);
-        self.insert_pending_downstream_req(task)
+        let timeout = timeout.unwrap_or(NEXT_REQ_TIMEOUT).min(NEXT_REQ_TIMEOUT);
+        let task = PendingDownstreamReqTask::new(rx, timeout);
+        let handle = self.async_items.push(Some(AsyncItem::from(task)));
+        self.downstream_pending_handle = Some(handle);
+
+        Ok(handle)
     }
 
     pub fn take_pending_downstream_req(
@@ -1206,6 +1219,12 @@ impl Session {
         &mut self,
         handle: AsyncItemHandle,
     ) -> Result<(RequestHandle, BodyHandle), Error> {
+        if self.downstream_resp.is_unsent() {
+            return Err(Error::Unsupported {
+                msg: "cannot accept requests w/o handling the outstanding one",
+            });
+        }
+
         let item = self.take_pending_downstream_req(handle, true)?;
         let downstream = item.recv().await?;
 
@@ -1221,51 +1240,14 @@ impl Session {
         Ok((req_handle, body_handle.into()))
     }
 
-    pub fn insert_pending_downstream_req(
-        &mut self,
-        task: PendingDownstreamReqTask,
-    ) -> Result<AsyncItemHandle, Error> {
-        if self.downstream_pending_handle.is_some() {
-            return Err(Error::InvalidArgument);
-        }
-
-        let handle = self.async_items.push(Some(AsyncItem::from(task)));
-        self.downstream_pending_handle = Some(handle);
-
-        Ok(handle)
-    }
-
     pub fn abandon_pending_downstream_req(&mut self, handle: AsyncItemHandle) -> Result<(), Error> {
-        let item = self.take_pending_downstream_req(handle, false)?;
-
-        // Check for an unprocessed request:
-        let unhandled = item.into_request();
-
-        // And then spawn a new session for it:
-        if let Some(ds_req) = unhandled {
-            self.retry_pending_downstream_req(ds_req);
-        }
+        let _ = self.take_pending_downstream_req(handle, false)?;
 
         Ok(())
     }
 
-    pub fn retry_pending_downstream_req(&mut self, req: DownstreamRequest) {
-        let ctx = self.ctx().clone();
-        tokio::spawn(ctx.retry_request(req));
-    }
-
     pub fn ctx(&self) -> &Arc<ExecuteCtx> {
         &self.ctx
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        let ds = self.downstream_pending_handle.take();
-
-        if let Some(downstream) = ds {
-            let _ = self.abandon_pending_downstream_req(downstream);
-        }
     }
 }
 

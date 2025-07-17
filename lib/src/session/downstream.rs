@@ -32,6 +32,10 @@ impl DownstreamResponse {
         DownstreamResponse::Pending(sender)
     }
 
+    pub fn is_unsent(&self) -> bool {
+        matches!(self, Self::Pending(_))
+    }
+
     /// Send a [`Response`][resp] downstream.
     ///
     /// Yield an error if a response has already been sent.

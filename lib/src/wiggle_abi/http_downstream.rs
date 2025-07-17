@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::error::Error;
 use crate::session::{AsyncItemHandle, Session};
 use crate::wiggle_abi::fastly_http_downstream::FastlyHttpDownstream;
@@ -5,17 +7,21 @@ use crate::wiggle_abi::types::{
     BodyHandle, NextRequestOptions, NextRequestOptionsMask, RequestHandle, RequestPromiseHandle,
 };
 
-use wiggle::GuestMemory;
+use wiggle::{GuestMemory, GuestPtr};
 
 #[wiggle::async_trait]
 impl FastlyHttpDownstream for Session {
     async fn next_request(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _options_mask: NextRequestOptionsMask,
-        _options: &NextRequestOptions,
+        memory: &mut GuestMemory<'_>,
+        options_mask: NextRequestOptionsMask,
+        options: GuestPtr<NextRequestOptions>,
     ) -> Result<RequestPromiseHandle, Error> {
-        let handle = self.register_pending_downstream_req().await?;
+        let options = memory.read(options)?;
+        let timeout = options_mask
+            .contains(NextRequestOptionsMask::TIMEOUT)
+            .then(|| Duration::from_millis(options.timeout_ms));
+        let handle = self.register_pending_downstream_req(timeout).await?;
         Ok(handle.as_u32().into())
     }
 

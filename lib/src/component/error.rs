@@ -229,6 +229,7 @@ impl From<error::Error> for types::Error {
             Error::CacheError(e) => e.into(),
             Error::NoDownstreamReqsAvailable => types::Error::OptionalNone,
             Error::Again => types::Error::Again,
+            Error::LimitExceeded { .. } => types::Error::LimitExceeded,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)

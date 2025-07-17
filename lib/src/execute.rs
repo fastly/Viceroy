@@ -29,7 +29,7 @@ use {
     pin_project::pin_project,
     std::{
         collections::HashSet,
-        fs,
+        fmt, fs,
         io::Write,
         net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
@@ -80,6 +80,33 @@ pub struct GuestProfileConfig {
     pub sample_period: Duration,
 }
 
+pub struct NextRequest(Option<(DownstreamRequest, Arc<ExecuteCtx>)>);
+
+impl NextRequest {
+    pub fn into_request(mut self) -> Option<DownstreamRequest> {
+        self.0.take().map(|(r, _)| r)
+    }
+}
+
+impl fmt::Debug for NextRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let debug = self.0.as_ref().map(|(r, _)| r);
+        f.debug_tuple("NextRequest")
+            .field(&debug)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for NextRequest {
+    fn drop(&mut self) {
+        let Some((req, ctx)) = self.0.take() else {
+            return;
+        };
+
+        tokio::spawn(ctx.retry_request(req));
+    }
+}
+
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
 ///
 /// This is all of the state needed to instantiate a module, in order to respond to an HTTP
@@ -121,7 +148,7 @@ pub struct ExecuteCtx {
     /// The cache for this service.
     cache: Arc<Cache>,
     /// Senders waiting for new requests for reusable sessions.
-    pending_reuse: Arc<AsyncMutex<Vec<Sender<DownstreamRequest>>>>,
+    pending_reuse: Arc<AsyncMutex<Vec<Sender<NextRequest>>>>,
     epoch_increment_thread: Option<JoinHandle<()>>,
     // `Arc` so that it can be tracked both by this context and `epoch_increment_thread`.
     epoch_increment_stop: Arc<AtomicBool>,
@@ -431,27 +458,31 @@ impl ExecuteCtx {
         metadata: DownstreamMetadata,
     ) -> (Response<Body>, Option<anyhow::Error>) {
         let (sender, receiver) = oneshot::channel();
-        let mut downstream = DownstreamRequest {
+        let downstream = DownstreamRequest {
             req,
             sender,
             metadata,
         };
 
+        let mut next_req = NextRequest(Some((downstream, self.clone())));
         let mut reusable = self.pending_reuse.lock().await;
 
         while let Some(pending) = reusable.pop() {
-            match pending.send(downstream) {
+            match pending.send(next_req) {
                 Ok(()) => {
                     // Drop lock and wait for the guest to process our request.
                     drop(reusable);
                     return (receiver.await.unwrap_or_default(), None);
                 }
-                Err(ds) => downstream = ds,
+                Err(nr) => next_req = nr,
             }
         }
 
         drop(reusable);
 
+        let downstream = next_req
+            .into_request()
+            .expect("request should still be unprocessed");
         self.spawn_guest(downstream, receiver).await
     }
 
@@ -740,9 +771,7 @@ impl ExecuteCtx {
         &self.shielding_sites
     }
 
-    pub async fn register_pending_downstream(
-        &self,
-    ) -> Option<oneshot::Receiver<DownstreamRequest>> {
+    pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
         let mut pending = self.pending_reuse.lock().await;
 
         if pending.len() > NEXT_REQ_PENDING_MAX {

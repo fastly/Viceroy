@@ -70,6 +70,9 @@ pub enum Error {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
 
+    #[error("Limit exceeded: {msg}")]
+    LimitExceeded { msg: &'static str },
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 
@@ -195,6 +198,7 @@ impl Error {
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
+            Error::LimitExceeded { .. } => FastlyStatus::Limitexceeded,
             Error::CacheError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch

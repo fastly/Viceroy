@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::component::fastly::api::{http_downstream, http_types, types};
 use crate::linking::ComponentCtx;
 use crate::session::AsyncItemHandle;
@@ -6,10 +8,16 @@ use crate::session::AsyncItemHandle;
 impl http_downstream::Host for ComponentCtx {
     async fn next_request(
         &mut self,
-        _options_mask: http_downstream::NextRequestOptionsMask,
-        _options: http_downstream::NextRequestOptions,
+        options_mask: http_downstream::NextRequestOptionsMask,
+        options: http_downstream::NextRequestOptions,
     ) -> Result<http_types::RequestPromiseHandle, types::Error> {
-        let handle = self.session.register_pending_downstream_req().await?;
+        let timeout = options_mask
+            .contains(http_downstream::NextRequestOptionsMask::TIMEOUT)
+            .then(|| Duration::from_millis(options.timeout_ms));
+        let handle = self
+            .session
+            .register_pending_downstream_req(timeout)
+            .await?;
 
         Ok(handle.as_u32().into())
     }

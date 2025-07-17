@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::cache::CacheEntry;
 use crate::downstream::DownstreamRequest;
+use crate::execute::NextRequest;
 use crate::object_store::{KvStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
@@ -62,13 +63,13 @@ impl PendingKvListTask {
 /// any pending requests that are sent to us without dropping them.
 #[derive(Debug)]
 pub enum PendingDownstreamReqTask {
-    Complete(Result<DownstreamRequest, Error>),
-    Waiting(oneshot::Receiver<DownstreamRequest>, Instant),
+    Complete(Result<NextRequest, Error>),
+    Waiting(oneshot::Receiver<NextRequest>, Instant),
 }
 
 impl PendingDownstreamReqTask {
     pub fn new(
-        rx: Option<oneshot::Receiver<DownstreamRequest>>,
+        rx: Option<oneshot::Receiver<NextRequest>>,
         timeout: Duration,
     ) -> PendingDownstreamReqTask {
         if let Some(rx) = rx {
@@ -78,29 +79,17 @@ impl PendingDownstreamReqTask {
         }
     }
 
-    /// If possible, attempt to immediately convert this task into a request.
-    ///
-    /// The channel will be closed for sending when this returns, so that the
-    /// sender side cannot accidentally send messages which will never be received.
-    pub fn into_request(self) -> Option<DownstreamRequest> {
-        match self {
-            Self::Waiting(mut rx, _) => {
-                rx.close();
-                rx.try_recv().ok()
-            }
-            Self::Complete(res) => res.ok(),
-        }
-    }
-
     /// Receive a downstream request.
     ///
     /// This will block until the sender side of the channel is either dropped
     /// or sends us a value.
     pub async fn recv(self) -> Result<DownstreamRequest, Error> {
-        match self {
-            Self::Waiting(rx, _) => rx.await.map_err(|_| Error::NoDownstreamReqsAvailable),
-            Self::Complete(res) => res,
-        }
+        let next = match self {
+            Self::Waiting(rx, _) => rx.await.map_err(|_| Error::NoDownstreamReqsAvailable)?,
+            Self::Complete(res) => res?,
+        };
+
+        next.into_request().ok_or(Error::NoDownstreamReqsAvailable)
     }
 
     /// Drive this task to completion.
@@ -119,7 +108,10 @@ impl PendingDownstreamReqTask {
                 rx.close();
                 rx.try_recv().ok()
             } else {
-                rx.await.ok()
+                tokio::time::timeout_at((*deadline).into(), rx)
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
             };
 
             let res = v.ok_or(Error::NoDownstreamReqsAvailable);
