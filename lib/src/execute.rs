@@ -103,7 +103,7 @@ impl Drop for NextRequest {
             return;
         };
 
-        tokio::spawn(ctx.retry_request(req));
+        ctx.retry_request(req);
     }
 }
 
@@ -418,7 +418,7 @@ impl ExecuteCtx {
 
     /// Spawn a new guest to process a request whose processing was never attempted by
     /// a reused session.
-    pub(crate) async fn retry_request(self: Arc<Self>, mut downstream: DownstreamRequest) {
+    pub(crate) fn retry_request(self: Arc<Self>, mut downstream: DownstreamRequest) {
         if downstream.sender.is_closed() {
             return;
         }
