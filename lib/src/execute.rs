@@ -29,7 +29,7 @@ use {
     pin_project::pin_project,
     std::{
         collections::HashSet,
-        fs,
+        fmt, fs,
         io::Write,
         net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
@@ -41,7 +41,8 @@ use {
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
-    tokio::sync::oneshot,
+    tokio::sync::oneshot::{self, Sender},
+    tokio::sync::Mutex as AsyncMutex,
     tracing::{event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
@@ -52,6 +53,7 @@ use {
 
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
+const NEXT_REQ_PENDING_MAX: usize = 5;
 const REGION_NONE: &[u8] = b"none";
 
 enum Instance {
@@ -76,6 +78,33 @@ pub struct GuestProfileConfig {
     pub path: PathBuf,
     /// Period at which the guest should be profiled.
     pub sample_period: Duration,
+}
+
+pub struct NextRequest(Option<(DownstreamRequest, Arc<ExecuteCtx>)>);
+
+impl NextRequest {
+    pub fn into_request(mut self) -> Option<DownstreamRequest> {
+        self.0.take().map(|(r, _)| r)
+    }
+}
+
+impl fmt::Debug for NextRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let debug = self.0.as_ref().map(|(r, _)| r);
+        f.debug_tuple("NextRequest")
+            .field(&debug)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for NextRequest {
+    fn drop(&mut self) {
+        let Some((req, ctx)) = self.0.take() else {
+            return;
+        };
+
+        ctx.retry_request(req);
+    }
 }
 
 /// Execution context used by a [`ViceroyService`](struct.ViceroyService.html).
@@ -118,6 +147,8 @@ pub struct ExecuteCtx {
     shielding_sites: ShieldingSites,
     /// The cache for this service.
     cache: Arc<Cache>,
+    /// Senders waiting for new requests for reusable sessions.
+    pending_reuse: Arc<AsyncMutex<Vec<Sender<NextRequest>>>>,
     epoch_increment_thread: Option<JoinHandle<()>>,
     // `Arc` so that it can be tracked both by this context and `epoch_increment_thread`.
     epoch_increment_stop: Arc<AtomicBool>,
@@ -253,6 +284,7 @@ impl ExecuteCtx {
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
             cache: Arc::new(Cache::default()),
+            pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };
 
         Ok(ExecuteCtxBuilder { inner })
@@ -374,7 +406,7 @@ impl ExecuteCtx {
             compliance_region: Vec::from(REGION_NONE),
         };
 
-        let res = self.spawn_guest(req, metadata).await;
+        let res = self.reuse_or_spawn_guest(req, metadata).await;
 
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
@@ -384,6 +416,22 @@ impl ExecuteCtx {
         Ok(res)
     }
 
+    /// Spawn a new guest to process a request whose processing was never attempted by
+    /// a reused session.
+    pub(crate) fn retry_request(self: Arc<Self>, mut downstream: DownstreamRequest) {
+        if downstream.sender.is_closed() {
+            return;
+        }
+
+        tokio::task::spawn(async move {
+            let (sender, receiver) = oneshot::channel();
+            let original = std::mem::replace(&mut downstream.sender, sender);
+            let (resp, err) = self.spawn_guest(downstream, receiver).await;
+            let resp = guest_result_to_response(resp, err);
+            let _ = original.send(resp);
+        });
+    }
+
     pub async fn handle_request_with_runtime_error(
         self: Arc<Self>,
         incoming_req: Request<hyper::Body>,
@@ -391,21 +439,12 @@ impl ExecuteCtx {
         remote: SocketAddr,
     ) -> Result<Response<Body>, Error> {
         let result = self.handle_request(incoming_req, local, remote).await?;
-        let resp = match result.1 {
-            None => result.0,
-            Some(err) => {
-                let body = err.root_cause().to_string();
-                Response::builder()
-                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from(body.as_bytes()))
-                    .unwrap()
-            }
-        };
+        let resp = guest_result_to_response(result.0, result.1);
 
         Ok(resp)
     }
 
-    async fn spawn_guest(
+    async fn reuse_or_spawn_guest(
         self: Arc<Self>,
         req: Request<Body>,
         metadata: DownstreamMetadata,
@@ -417,6 +456,33 @@ impl ExecuteCtx {
             metadata,
         };
 
+        let mut next_req = NextRequest(Some((downstream, self.clone())));
+        let mut reusable = self.pending_reuse.lock().await;
+
+        while let Some(pending) = reusable.pop() {
+            match pending.send(next_req) {
+                Ok(()) => {
+                    // Drop lock and wait for the guest to process our request.
+                    drop(reusable);
+                    return (receiver.await.unwrap_or_default(), None);
+                }
+                Err(nr) => next_req = nr,
+            }
+        }
+
+        drop(reusable);
+
+        let downstream = next_req
+            .into_request()
+            .expect("request should still be unprocessed");
+        self.spawn_guest(downstream, receiver).await
+    }
+
+    async fn spawn_guest(
+        self: Arc<Self>,
+        downstream: DownstreamRequest,
+        receiver: oneshot::Receiver<Response<Body>>,
+    ) -> (Response<Body>, Option<anyhow::Error>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
@@ -696,6 +762,19 @@ impl ExecuteCtx {
     pub fn shielding_sites(&self) -> &ShieldingSites {
         &self.shielding_sites
     }
+
+    pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
+        let mut pending = self.pending_reuse.lock().await;
+
+        if pending.len() > NEXT_REQ_PENDING_MAX {
+            return None;
+        }
+
+        let (tx, rx) = oneshot::channel();
+        pending.push(tx);
+
+        Some(rx)
+    }
 }
 
 pub struct ExecuteCtxBuilder {
@@ -800,6 +879,18 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
                 path.display()
             );
         }
+    }
+}
+
+fn guest_result_to_response(resp: Response<Body>, err: Option<anyhow::Error>) -> Response<Body> {
+    if let Some(err) = err {
+        let body = err.root_cause().to_string();
+        Response::builder()
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(body.as_bytes()))
+            .unwrap()
+    } else {
+        resp
     }
 }
 

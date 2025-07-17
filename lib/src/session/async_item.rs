@@ -1,4 +1,8 @@
+use std::time::{Duration, Instant};
+
 use crate::cache::CacheEntry;
+use crate::downstream::DownstreamRequest;
+use crate::execute::NextRequest;
 use crate::object_store::{KvStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
@@ -51,6 +55,71 @@ impl PendingKvListTask {
     }
 }
 
+/// This is very similar to a [PeekableTask] task, but is intentionally
+/// set up so that it has no spawned tokio tasks separating us from the
+/// [oneshot::Sender] and detecting when it's dropped.
+///
+/// The `try_recv()` method can be used to make sure that we safely recover
+/// any pending requests that are sent to us without dropping them.
+#[derive(Debug)]
+pub enum PendingDownstreamReqTask {
+    Complete(Result<NextRequest, Error>),
+    Waiting(oneshot::Receiver<NextRequest>, Instant),
+}
+
+impl PendingDownstreamReqTask {
+    pub fn new(
+        rx: Option<oneshot::Receiver<NextRequest>>,
+        timeout: Duration,
+    ) -> PendingDownstreamReqTask {
+        if let Some(rx) = rx {
+            PendingDownstreamReqTask::Waiting(rx, Instant::now() + timeout)
+        } else {
+            PendingDownstreamReqTask::Complete(Err(Error::NoDownstreamReqsAvailable))
+        }
+    }
+
+    /// Receive a downstream request.
+    ///
+    /// This will block until the sender side of the channel is either dropped
+    /// or sends us a value.
+    pub async fn recv(self) -> Result<DownstreamRequest, Error> {
+        let next = match self {
+            Self::Waiting(rx, _) => rx.await.map_err(|_| Error::NoDownstreamReqsAvailable)?,
+            Self::Complete(res) => res?,
+        };
+
+        next.into_request().ok_or(Error::NoDownstreamReqsAvailable)
+    }
+
+    /// Drive this task to completion.
+    ///
+    /// If we have passed the deadline for the task, we try to recover any request
+    /// in the channel. If there is none, then the timed out task will resolve to
+    /// [Error::NoDownstreamReqsAvailable].
+    ///
+    /// ## Cancel Safety
+    ///
+    /// Note that this method is used with [FutureExt::now_or_never] in [AsyncItem::is_ready], and
+    /// should therefore be kept cancel safe.
+    pub async fn await_ready(&mut self) {
+        if let Self::Waiting(rx, deadline) = self {
+            let v = if Instant::now() > *deadline {
+                rx.close();
+                rx.try_recv().ok()
+            } else {
+                tokio::time::timeout_at((*deadline).into(), rx)
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+            };
+
+            let res = v.ok_or(Error::NoDownstreamReqsAvailable);
+            *self = Self::Complete(res);
+        }
+    }
+}
+
 /// An async item, waiting for a cache lookup to complete.
 #[derive(Debug)]
 pub struct PendingCacheTask(PeekableTask<CacheEntry>);
@@ -80,6 +149,7 @@ pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
     PendingReq(PeekableTask<Response<Body>>),
+    PendingDownstream(PendingDownstreamReqTask),
     PendingKvLookup(PendingKvLookupTask),
     PendingKvInsert(PendingKvInsertTask),
     PendingKvDelete(PendingKvDeleteTask),
@@ -244,6 +314,7 @@ impl AsyncItem {
             Self::StreamingBody(body) => body.await_ready().await,
             Self::Body(body) => body.await_ready().await,
             Self::PendingReq(req) => req.await_ready().await,
+            Self::PendingDownstream(req) => req.await_ready().await,
             Self::PendingKvLookup(req) => req.0.await_ready().await,
             Self::PendingKvInsert(req) => req.0.await_ready().await,
             Self::PendingKvDelete(req) => req.0.await_ready().await,
@@ -290,6 +361,12 @@ impl From<PendingKvListTask> for AsyncItem {
 impl From<PendingCacheTask> for AsyncItem {
     fn from(task: PendingCacheTask) -> Self {
         Self::PendingCache(task)
+    }
+}
+
+impl From<PendingDownstreamReqTask> for AsyncItem {
+    fn from(task: PendingDownstreamReqTask) -> Self {
+        Self::PendingDownstream(task)
     }
 }
 

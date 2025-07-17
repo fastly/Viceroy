@@ -70,6 +70,9 @@ pub enum Error {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
 
+    #[error("Limit exceeded: {msg}")]
+    LimitExceeded { msg: &'static str },
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 
@@ -151,6 +154,9 @@ pub enum Error {
 
     #[error("cache error: {0}")]
     CacheError(crate::cache::Error),
+
+    #[error("no downstream requests are available")]
+    NoDownstreamReqsAvailable,
 }
 
 impl Error {
@@ -182,6 +188,7 @@ impl Error {
                 FastlyStatus::Httpincomplete
             }
             Error::HyperError(_) => FastlyStatus::Error,
+            Error::NoDownstreamReqsAvailable => FastlyStatus::None,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
@@ -191,6 +198,7 @@ impl Error {
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
+            Error::LimitExceeded { .. } => FastlyStatus::Limitexceeded,
             Error::CacheError(e) => e.into(),
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
@@ -265,8 +273,12 @@ pub enum HandleError {
     InvalidEndpointHandle(crate::wiggle_abi::types::EndpointHandle),
 
     /// A request handle was not valid.
-    #[error("Invalid pending request handle: {0}")]
+    #[error("Invalid pending request promise handle: {0}")]
     InvalidPendingRequestHandle(crate::wiggle_abi::types::PendingRequestHandle),
+
+    /// A request handle was not valid.
+    #[error("Invalid pending downstream request handle: {0}")]
+    InvalidPendingDownstreamHandle(crate::wiggle_abi::types::AsyncItemHandle),
 
     /// A lookup handle was not valid.
     #[error("Invalid pending KV lookup handle: {0}")]
