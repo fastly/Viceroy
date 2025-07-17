@@ -426,7 +426,8 @@ impl ExecuteCtx {
         tokio::task::spawn(async move {
             let (sender, receiver) = oneshot::channel();
             let original = std::mem::replace(&mut downstream.sender, sender);
-            let (resp, _) = self.spawn_guest(downstream, receiver).await;
+            let (resp, err) = self.spawn_guest(downstream, receiver).await;
+            let resp = guest_result_to_response(resp, err);
             let _ = original.send(resp);
         });
     }
@@ -438,16 +439,7 @@ impl ExecuteCtx {
         remote: SocketAddr,
     ) -> Result<Response<Body>, Error> {
         let result = self.handle_request(incoming_req, local, remote).await?;
-        let resp = match result.1 {
-            None => result.0,
-            Some(err) => {
-                let body = err.root_cause().to_string();
-                Response::builder()
-                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from(body.as_bytes()))
-                    .unwrap()
-            }
-        };
+        let resp = guest_result_to_response(result.0, result.1);
 
         Ok(resp)
     }
@@ -887,6 +879,18 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
                 path.display()
             );
         }
+    }
+}
+
+fn guest_result_to_response(resp: Response<Body>, err: Option<anyhow::Error>) -> Response<Body> {
+    if let Some(err) = err {
+        let body = err.root_cause().to_string();
+        Response::builder()
+            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(body.as_bytes()))
+            .unwrap()
+    } else {
+        resp
     }
 }
 

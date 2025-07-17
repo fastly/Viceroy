@@ -273,7 +273,7 @@ pub enum HandleError {
     InvalidEndpointHandle(crate::wiggle_abi::types::EndpointHandle),
 
     /// A request handle was not valid.
-    #[error("Invalid pending request handle: {0}")]
+    #[error("Invalid pending request promise handle: {0}")]
     InvalidPendingRequestHandle(crate::wiggle_abi::types::PendingRequestHandle),
 
     /// A request handle was not valid.
