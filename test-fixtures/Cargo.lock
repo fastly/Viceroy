@@ -145,9 +145,9 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "fastly"
-version = "0.11.2"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52427cf825d145acbb8c30198df4df0d9ac34b3b727d006a42c648393bb5f73b"
+checksum = "9506877e1713a00a6a676191c29cc449aa60129da123d81245b203a4f6734dd3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -162,6 +162,7 @@ dependencies = [
  "mime",
  "serde",
  "serde_json",
+ "serde_repr",
  "serde_urlencoded",
  "sha2 0.9.9",
  "smallvec",
@@ -172,9 +173,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-macros"
-version = "0.11.2"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62dbd089072fd0c81a60cc280fa791d47f1d638bef920f4249c90bc8f1c17ea9"
+checksum = "3331e33178c193355093de80c370b3d65ed7a61631a38ad32bf84bedec6ca9e8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -183,9 +184,9 @@ dependencies = [
 
 [[package]]
 name = "fastly-shared"
-version = "0.11.2"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7472f43d72061834542e2f5dc11d3d2918fe7d06248c31decd893a614408d7c"
+checksum = "80cbb4ef1d9c7f4321179814dd51b39f2a91f0993a7303396bb34581ae4f5daa"
 dependencies = [
  "bitflags 1.3.2",
  "http",
@@ -193,12 +194,14 @@ dependencies = [
 
 [[package]]
 name = "fastly-sys"
-version = "0.11.2"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b602c2dbe901ddf49e2c1a2fda9e335a15cda8d3bf442183f048bc4de25810e"
+checksum = "583231411fcb7ba818ca7126b2e97038efc04d29950902b3cd11b33741303d80"
 dependencies = [
  "bitflags 1.3.2",
  "fastly-shared",
+ "wasi",
+ "wit-bindgen-rt 0.42.1",
 ]
 
 [[package]]
@@ -551,6 +554,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_repr"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175ee3e80ae9982737ca543e96133087cbd9a485eecc3bc4de9c1a37b47ea59c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -766,7 +780,7 @@ version = "0.14.2+wasi-0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9683f9a5a998d873c0d21fcbe3c083009670149a8fab228644b8bd36b2c48cb3"
 dependencies = [
- "wit-bindgen-rt",
+ "wit-bindgen-rt 0.39.0",
 ]
 
 [[package]]
@@ -774,6 +788,15 @@ name = "wit-bindgen-rt"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f42320e61fe2cfd34354ecb597f86f413484a798ba44a8ca1165c58d42da6c1"
+dependencies = [
+ "bitflags 2.9.0",
+]
+
+[[package]]
+name = "wit-bindgen-rt"
+version = "0.42.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "051105bab12bc78e161f8dfb3596e772dd6a01ebf9c4840988e00347e744966a"
 dependencies = [
  "bitflags 2.9.0",
 ]

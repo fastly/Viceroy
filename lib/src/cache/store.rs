@@ -4,6 +4,7 @@ use crate::cache::{variance::VaryRule, Error};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
+    future::Future,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
@@ -13,7 +14,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{variance::Variant, SurrogateKeySet, WriteOptions};
+use super::{variance::Variant, Found, SurrogateKeySet, WriteOptions};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -336,14 +337,24 @@ impl CacheKeyObjects {
     /// transaction (so there's only one wakeup). Note the clear_obligation variant may differ from
     /// the variant inserted: we place the obligation marker based on the _existing_ Vary rules,
     /// but we insert based on the Vary rule received in the response.
+    ///
+    /// Returns the CacheData of the updated entry.
     pub fn insert(
         &self,
         request_headers: HeaderMap,
         options: WriteOptions,
         body: Body,
         clear_obligation: Option<Variant>,
-    ) {
+    ) -> Arc<CacheData> {
         let meta = ObjectMeta::new(options, request_headers);
+        let vary_rule = meta.vary_rule().clone();
+
+        let variant = meta.variant();
+        let body = CollectingBody::new(body, meta.length);
+        let object = Arc::new(CacheData { body, meta });
+
+        // We return the updated object as well
+        let result = Arc::clone(&object);
 
         self.0.send_modify(|cache_key_objects| {
             if let Some(clear_obligation) = clear_obligation {
@@ -357,20 +368,16 @@ impl CacheKeyObjects {
                 .vary_rules
                 .iter()
                 .enumerate()
-                .find(|&(_, rule)| rule == &meta.vary_rule)
+                .find(|&(_, rule)| rule == &vary_rule)
             {
                 cache_key_objects
                     .vary_rules
                     .remove(i)
                     .expect("index of a found item must be a valid index")
             } else {
-                meta.vary_rule.clone()
+                vary_rule
             };
             cache_key_objects.vary_rules.push_front(vary_rule);
-
-            let variant = meta.variant();
-            let body = CollectingBody::new(body, meta.length);
-            let object = Arc::new(CacheData { body, meta });
 
             cache_key_objects
                 .objects
@@ -378,6 +385,8 @@ impl CacheKeyObjects {
                 .or_default()
                 .present = Some(object);
         });
+
+        result
     }
 
     /// Purge all variants associated with the given key.
@@ -484,28 +493,36 @@ pub struct Obligation {
 
 impl Obligation {
     /// Fulfill the obligation by providing a new entire entry.
-    pub fn insert(mut self, options: WriteOptions, body: Body) {
+    ///
+    /// Returns a Found for the entry inserted.
+    pub fn insert(mut self, options: WriteOptions, body: Body) -> Found {
         let request_headers = std::mem::take(&mut self.request_headers);
         let variant = std::mem::take(&mut self.variant);
-        self.object
+        let data = self
+            .object
             .insert(request_headers, options, body, Some(variant));
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
         self.completed = true;
+        data.into()
     }
 
     /// Fulfill the obligation by freshening the existing entry.
-    pub(super) fn update(mut self, options: WriteOptions) -> Result<(), (Self, crate::Error)> {
+    pub(super) async fn update(
+        mut self,
+        options: WriteOptions,
+    ) -> Result<(), (Self, crate::Error)> {
         let Some(present) = &self.present else {
             return Err((self, Error::NotRevalidatable.into()));
         };
-        let body = match present.get_body() {
+        let body = match present.body().build().await {
             Ok(body) => body,
             Err(e) => return Err((self, e)),
         };
         let request_headers = std::mem::take(&mut self.request_headers);
         let variant = std::mem::take(&mut self.variant);
-        self.object
+        let _ = self
+            .object
             .insert(request_headers, options, body, Some(variant));
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
@@ -542,10 +559,112 @@ pub(crate) struct CacheData {
     body: CollectingBody,
 }
 
+/// A holder for the get_body options.
+pub struct GetBodyBuilder<'a> {
+    cache_data: &'a CacheData,
+    from: Option<u64>,
+    to: Option<u64>,
+    always_use_requested_range: bool,
+}
+
+impl GetBodyBuilder<'_> {
+    /// Add range bounds to the body.
+    ///
+    /// If "from" is provided, "to" indicates an offset from the start of the cached item.
+    /// If "to" is provided but not "from", "to" indicates an offset from the end of the cached
+    /// item.
+    pub fn with_range(self, from: Option<u64>, to: Option<u64>) -> Self {
+        Self { from, to, ..self }
+    }
+
+    pub fn with_always_use_requested_range(self, always_use_requested_range: bool) -> Self {
+        Self {
+            always_use_requested_range,
+            ..self
+        }
+    }
+}
+
+impl<'a> GetBodyBuilder<'a> {
+    /// Access the body of this cached item.
+    ///
+    /// In some cases (streaming), the Future may not become ready until the first byte of output is available.
+    pub fn build(self) -> impl Future<Output = Result<Body, crate::Error>> + use<'a> {
+        async move {
+            // Early "return whole body" cases:
+            // "ignore requested range when length is unknown", the old default:
+            let ignore_requested_range =
+                !self.always_use_requested_range && self.cache_data.length().is_none();
+            // No requested range provided:
+            let no_range_provided = self.from.is_none() && self.to.is_none();
+            // Known length and invalid range:
+            let valid_range = match (self.cache_data.length(), self.from, self.to) {
+                (None, _, _) => true,
+                (Some(length), None, Some(to)) if !(1..=length).contains(&to) => false,
+                (Some(length), Some(from), _) if !(0..length).contains(&from) => false,
+                (Some(length), Some(from), Some(to)) if !(from..length).contains(&to) => false,
+                _ => true,
+            };
+
+            // In each of these cases, we return the body immediately,
+            // without waiting for any body to exist.
+            if ignore_requested_range || no_range_provided || !valid_range {
+                return self.cache_data.body.read();
+            }
+
+            // At least one of (start, end) is provided.
+
+            let (start, end) = if let (None, Some(end)) = (self.from, self.to) {
+                // We need to convert from "from the end" to "from the start".
+                // To do that, we need a known or expected length.
+                if self.cache_data.length().is_none() {
+                    // We don't have an expected length; we have to wait for the end of input.
+                    self.cache_data.body.known_length().await?;
+                }
+
+                let length = self
+                    .cache_data
+                    .length()
+                    .expect("unknown length after waiting");
+                if end > length {
+                    // Asked for more bytes than are available.
+                    // In the case of an invalid range, Compute returns the entire body
+                    // (as in HTTP).
+                    return self.cache_data.body.read();
+                }
+                // Convert to a (start, ...) sequence:
+                (Some(length - end), None)
+            } else {
+                (self.from, self.to)
+            };
+
+            let start = start.unwrap_or(0);
+
+            // If the length is not known up-front,
+            // wait for the first byte to exist before returning a body.
+            // Yes, this only applies when the length is unknown.
+            if self.cache_data.length().is_none() {
+                self.cache_data.body.wait_length(start + 1).await?;
+            }
+
+            // Convert from inclusive bounds (GetBodyBuilder) to exclusive (read_range),
+            // and provide the body.
+            self.cache_data
+                .body
+                .read_range(start, end.map(|end| end + 1))
+        }
+    }
+}
+
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn get_body(&self) -> Result<Body, crate::Error> {
-        self.body.read()
+    pub(crate) fn body(&self) -> GetBodyBuilder {
+        GetBodyBuilder {
+            cache_data: self,
+            from: None,
+            to: None,
+            always_use_requested_range: false,
+        }
     }
 
     /// Access to object's metadata
@@ -553,7 +672,7 @@ impl CacheData {
         &self.meta
     }
 
-    /// Return the length of this object, if known.
+    /// Return the length of this object, if the final or expected length is known.
     pub fn length(&self) -> Option<u64> {
         self.body.length().or_else(|| self.meta.length)
     }
@@ -604,7 +723,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_obligaton_when_stale() {
+    async fn obligaton_when_stale() {
         let objects = Arc::new(CacheKeyObjects::default());
         let body: Body = "hello".as_bytes().into();
 
@@ -654,7 +773,7 @@ mod tests {
         assert!(found2.is_none());
         assert!(obligation2.is_some());
 
-        // Anotehr transaction on the same headers should pick up the same result:
+        // Another transaction on the same headers should pick up the same result:
         let busy1 = objects.transaction_get(&h1, true);
         let busy2 = objects.transaction_get(&h2, true);
         obligation2.unwrap().insert(
@@ -674,13 +793,27 @@ mod tests {
             make_body("object 1"),
         );
         if let (Some(found), None) = busy1.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .body()
+                .build()
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 1");
         } else {
             panic!("expected to block on object 1")
         }
         if let (Some(found), None) = busy2.await {
-            let s = found.get_body().unwrap().read_into_string().await.unwrap();
+            let s = found
+                .body()
+                .build()
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap();
             assert_eq!(&s, "object 2");
         } else {
             panic!("expected to block on object 2")
@@ -761,5 +894,25 @@ mod tests {
         let (Some(_), None) = ko.transaction_get(&empty_headers, false).await else {
             panic!("unexpected value")
         };
+    }
+
+    #[tokio::test]
+    async fn returns_written_object() {
+        let objects = Arc::new(CacheKeyObjects::default());
+        let body: Body = "hello".as_bytes().into();
+
+        let e = objects.insert(
+            HeaderMap::default(),
+            WriteOptions::new(Duration::ZERO),
+            body,
+            None,
+        );
+
+        let body = e.body().build().await.expect("can read completed body");
+        let s = body
+            .read_into_string()
+            .await
+            .expect("can collect completed body");
+        assert_eq!(&s, "hello");
     }
 }
