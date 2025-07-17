@@ -24,6 +24,7 @@
         $reserved
         $request_headers
         $service_id
+        $always_use_requested_range
     )
 )
 
@@ -43,6 +44,7 @@
         $request_headers
         $replace_strategy
         $service_id
+        $always_use_requested_range
     )
 )
 
