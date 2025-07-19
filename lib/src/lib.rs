@@ -23,6 +23,7 @@ pub mod session;
 
 mod acl;
 mod async_io;
+mod body_tee;
 mod collecting_body;
 pub mod component;
 mod downstream;
@@ -30,6 +31,7 @@ mod execute;
 mod headers;
 mod linking;
 mod object_store;
+mod pushpin;
 mod secret_store;
 mod service;
 mod shielding_site;
