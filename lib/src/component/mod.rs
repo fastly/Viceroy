@@ -56,6 +56,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::erl::add_to_linker(linker, |x| x)?;
     fastly::api::geo::add_to_linker(linker, |x| x)?;
     fastly::api::http_body::add_to_linker(linker, |x| x)?;
+    fastly::api::http_downstream::add_to_linker(linker, |x| x)?;
     fastly::api::http_req::add_to_linker(linker, |x| x)?;
     fastly::api::http_resp::add_to_linker(linker, |x| x)?;
     fastly::api::http_types::add_to_linker(linker, |x| x)?;
@@ -85,6 +86,7 @@ pub mod error;
 pub mod geo;
 pub mod headers;
 pub mod http_body;
+pub mod http_downstream;
 pub mod http_req;
 pub mod http_resp;
 pub mod http_types;

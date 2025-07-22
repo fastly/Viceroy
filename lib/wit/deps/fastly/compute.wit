@@ -49,7 +49,9 @@ interface types {
     ///
     /// This is returned when an attempt to allocate a resource has exceeded the maximum number of
     /// resources permitted. For example, creating too many response handles.
-    limit-exceeded
+    limit-exceeded,
+    /// An asynchronous operation is not yet ready, and should be checked again for completion later.
+    again,
   }
 
   type secret-handle = u32;
@@ -66,6 +68,7 @@ interface http-types {
   type response-handle = u32;
   type request = tuple<request-handle, body-handle>;
   type response = tuple<response-handle, body-handle>;
+  type request-promise-handle = u32;
 
   enum http-version {
     http09,
@@ -213,15 +216,44 @@ interface log {
 }
 
 /*
+ * Fastly HTTP downstream requests and metadata.
+ */
+interface http-downstream {
+  use types.{error};
+  use http-types.{request, request-promise-handle, request-handle};
+
+  flags next-request-options-mask {
+    timeout,
+  }
+
+  record next-request-options {
+    timeout-ms: u64,
+  }
+
+  next-request: func(
+    options-mask: next-request-options-mask,
+    options: next-request-options,
+  ) -> result<request-promise-handle, error>;
+
+  next-request-wait: func(
+    h: request-promise-handle,
+  ) -> result<request, error>;
+
+  next-request-abandon: func(
+    h: request-promise-handle,
+  ) -> result<_, error>;
+}
+
+/*
  * Fastly HTTP Req
  */
 interface http-req {
 
   use types.{error};
   use http-types.{
-    body-handle, request-handle, http-version, response, pending-request-handle,
+    body-handle, request-handle, http-version, request, response, pending-request-handle,
     content-encodings, framing-headers-mode, backend-config-options,
-    dynamic-backend-config
+    dynamic-backend-config,
   };
 
   flags cache-override-tag {
@@ -1441,38 +1473,40 @@ interface compute-runtime {
 }
 
 world compute {
-    import wasi:clocks/wall-clock@0.2.0;
-    import wasi:clocks/monotonic-clock@0.2.0;
-    import wasi:io/error@0.2.0;
-    import wasi:io/streams@0.2.0;
-    import wasi:random/random@0.2.0;
-    import wasi:cli/environment@0.2.0;
-    import wasi:cli/exit@0.2.0;
-    import wasi:cli/stdout@0.2.0;
-    import wasi:cli/stderr@0.2.0;
-    import wasi:cli/stdin@0.2.0;
+  import wasi:clocks/wall-clock@0.2.0;
+  import wasi:clocks/monotonic-clock@0.2.0;
+  import wasi:io/error@0.2.0;
+  import wasi:io/streams@0.2.0;
+  import wasi:random/random@0.2.0;
+  import wasi:cli/environment@0.2.0;
+  import wasi:cli/exit@0.2.0;
+  import wasi:cli/stdout@0.2.0;
+  import wasi:cli/stderr@0.2.0;
+  import wasi:cli/stdin@0.2.0;
 
-    import acl;
-    import async-io;
-    import backend;
-    import cache;
-    import compute-runtime;
-    import dictionary;
-    import geo;
-    import device-detection;
-    import erl;
-    import http-body;
-    import http-req;
-    import http-resp;
-    import image-optimizer;
-    import log;
-    import kv-store;
-    import object-store;
-    import purge;
-    import secret-store;
-    import shielding;
-    import config-store;
-    import uap;
+  // public interfaces
+  import acl;
+  import async-io;
+  import backend;
+  import cache;
+  import compute-runtime;
+  import dictionary;
+  import geo;
+  import device-detection;
+  import erl;
+  import http-body;
+  import http-downstream;
+  import http-req;
+  import http-resp;
+  import image-optimizer;
+  import log;
+  import kv-store;
+  import object-store;
+  import purge;
+  import secret-store;
+  import shielding;
+  import config-store;
+  import uap;
 
-    export reactor;
+  export reactor;
 }
