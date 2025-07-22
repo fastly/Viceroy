@@ -55,6 +55,18 @@ interface types {
   }
 
   type secret-handle = u32;
+
+  /// IPv4 addresses.
+  type ipv4-address = tuple<u8, u8, u8, u8>;
+
+  /// IPv6 addresses.
+  type ipv6-address = tuple<u16, u16, u16, u16, u16, u16, u16, u16>;
+
+  /// IPv4 or IPv6 addresses.
+  variant ip-address {
+    ipv4(ipv4-address),
+    ipv6(ipv6-address),
+  }
 }
 
 interface http-types {
@@ -219,8 +231,45 @@ interface log {
  * Fastly HTTP downstream requests and metadata.
  */
 interface http-downstream {
-  use types.{error};
+  use types.{error, ip-address};
   use http-types.{request, request-promise-handle, request-handle};
+
+  /// TLS client certificate verified result from downstream.
+  enum client-cert-verify-result {
+    /// Success value.
+    ///
+    /// This indicates that client certificate verified successfully.
+    ok,
+    /// bad certificate error.
+    ///
+    /// This error means the certificate is corrupt
+    /// (for example, when the certificate signatures do not verify correctly).
+    bad-certificate,
+    /// certificate revoked error.
+    ///
+    /// This error means the client certificate is revoked by its signer.
+    certificate-revoked,
+    /// certificate expired error.
+    ///
+    /// This error means the client certificate has expired or is not currently valid.
+    certificate-expired,
+    /// unknown CA error.
+    ///
+    /// This error means the valid certificate chain or partial chain was received,
+    /// but the certificate was not accepted because the CA certificate could not be
+    /// located or could not be matched with a known trust anchor.
+    unknown-ca,
+    /// certificate missing error.
+    ///
+    /// This error means the client does not provide a certificate
+    /// during the handshake..
+    certificate-missing,
+    /// certificate unknown error.
+    ///
+    /// This error means the client certificate was received, but some other (unspecified)
+    /// issue arose in processing the certificate, rendering it unacceptable.
+    certificate-unknown,
+  }
 
   flags next-request-options-mask {
     timeout,
@@ -242,6 +291,85 @@ interface http-downstream {
   next-request-abandon: func(
     h: request-promise-handle,
   ) -> result<_, error>;
+
+  downstream-original-header-names: func(
+    h: request-handle,
+    max-len: u64,
+    cursor: u32,
+  ) -> result<tuple<list<u8>, option<u32>>, error>;
+
+  downstream-original-header-count: func(
+    h: request-handle
+  ) -> result<u32, error>;
+
+  downstream-client-ip-addr: func(
+    h: request-handle
+  ) -> option<ip-address>;
+
+  downstream-server-ip-addr: func(
+    h: request-handle
+  ) -> option<ip-address>;
+
+  downstream-client-h2-fingerprint: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-client-request-id: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-client-oh-fingerprint: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-client-ddos-detected: func(
+    h: request-handle
+  ) -> result<u32, error>;
+
+  downstream-tls-cipher-openssl-name: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-tls-protocol: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-tls-client-hello: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-tls-raw-client-certificate: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-tls-client-cert-verify-result: func(
+    h: request-handle
+  ) -> result<client-cert-verify-result, error>;
+
+  downstream-tls-ja3-md5: func(
+    h: request-handle
+  ) -> result<list<u8>, error>;
+
+  downstream-tls-ja4: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  downstream-compliance-region: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<list<u8>, error>;
+
+  fastly-key-is-valid: func(
+    h: request-handle,
+  ) -> result<bool, error>;
 }
 
 /*
@@ -249,7 +377,8 @@ interface http-downstream {
  */
 interface http-req {
 
-  use types.{error};
+  use types.{error, ip-address};
+  use http-downstream.{client-cert-verify-result};
   use http-types.{
     body-handle, request-handle, http-version, request, response, pending-request-handle,
     content-encodings, framing-headers-mode, backend-config-options,
@@ -262,16 +391,6 @@ interface http-req {
     ttl,
     stale-while-revalidate,
     pci,
-  }
-
-  enum client-cert-verify-result {
-    ok,
-    bad-certificate,
-    certificate-revoked,
-    certificate-expired,
-    unknown-ca,
-    certificate-missing,
-    certificate-unknown,
   }
 
   enum send-error-detail-tag {
@@ -348,21 +467,23 @@ interface http-req {
     sk: option<string>
   ) -> result<_, error>;
 
-  downstream-client-ip-addr: func() -> result<list<u8>, error>;
+  /// Returns the IP address of the client making the HTTP request, if known.
+  downstream-client-ip-addr: func() -> option<ip-address>;
 
-  downstream-server-ip-addr: func() -> result<list<u8>, error>;
+  /// Returns the IP address on which this server received the HTTP request, if known.
+  downstream-server-ip-addr: func() -> option<ip-address>;
 
   downstream-client-h2-fingerprint: func(max-len: u64) -> result<list<u8>, error>;
 
-  downstream-client-request-id: func(max-len: u64) -> result<string, error>;
+  downstream-client-request-id: func(max-len: u64) -> result<list<u8>, error>;
 
   downstream-client-oh-fingerprint: func(max-len: u64) -> result<list<u8>, error>;
 
   downstream-client-ddos-detected: func() -> result<u32, error>;
 
-  downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<string, error>;
+  downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<list<u8>, error>;
 
-  downstream-tls-protocol: func(max-len: u64) -> result<string, error>;
+  downstream-tls-protocol: func(max-len: u64) -> result<list<u8>, error>;
 
   downstream-tls-client-hello: func(max-len: u64) -> result<list<u8>, error>;
 
@@ -384,10 +505,20 @@ interface http-req {
     cursor: u32,
   ) -> result<option<tuple<list<u8>, option<u32>>>, error>;
 
-  original-header-names-get: func(
+  /// Returns the client request's header names exactly as they were originally received.
+  ///
+  /// This includes both the original header name characters' cases, as well as the original order
+  /// of the received headers.
+  ///
+  /// The first `cursor` names are skipped. The remaining names are encoded successively with
+  /// a NUL byte after each into a list of bytes at most `max-len` long. If any of the remaining
+  /// names don't fit, the returned `option<u32>` is the index of the first name that didn't fit,
+  /// or `none` if all the remaining names fit. If `max-len` is too small to fit any name,
+  /// an `error::buffer-len` error is returned, providing a recommended buffer size.
+  get-original-header-names: func(
     max-len: u64,
     cursor: u32,
-  ) -> result<option<tuple<list<u8>, option<u32>>>, error>;
+  ) -> result<tuple<list<u8>, option<u32>>, error>;
 
   original-header-count: func() -> result<u32, error>;
 

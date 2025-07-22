@@ -53,24 +53,23 @@ const NEXT_REQ_ACCEPT_MAX: usize = 5;
 const NEXT_REQ_TIMEOUT: Duration = Duration::from_secs(10);
 const NGWAF_ALLOW_VERDICT: &str = "allow";
 
+pub struct RequestParts {
+    parts: Option<request::Parts>,
+    metadata: Option<DownstreamMetadata>,
+}
+
 /// Data specific to an individual request, including any host-side
 /// allocations on behalf of the guest processing the request.
 pub struct Session {
+    session_id: u64,
     /// The amount of time we've spent on this session in microseconds.
     pub active_cpu_time_us: Arc<AtomicU64>,
-    downstream_metadata: DownstreamMetadata,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
     downstream_req_handle: RequestHandle,
     /// Handle for the downstream request body. NB the backing body data can be mutated
     /// or even removed from the relevant map.
     downstream_req_body_handle: BodyHandle,
-    /// A copy of the [`Parts`][parts] for the downstream request.
-    ///
-    /// This copy is populated prior to guest execution, and never mutated.
-    ///
-    /// [parts]: https://docs.rs/http/latest/http/request/struct.Parts.html
-    downstream_req_original_headers: HeaderMap,
     /// A channel for sending a [`Response`][resp] downstream to the client.
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
@@ -86,7 +85,7 @@ pub struct Session {
     ///
     /// [parts]: https://docs.rs/http/latest/http/request/struct.Parts.html
     /// [req]: https://docs.rs/http/latest/http/request/struct.Request.html
-    req_parts: PrimaryMap<RequestHandle, Option<request::Parts>>,
+    req_parts: PrimaryMap<RequestHandle, RequestParts>,
     /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Response`][resp]s.
     ///
     /// [parts]: https://docs.rs/http/latest/http/response/struct.Parts.html
@@ -133,19 +132,21 @@ impl Session {
         ctx: Arc<ExecuteCtx>,
     ) -> Session {
         let (parts, body) = downstream.req.into_parts();
-        let downstream_req_original_headers = parts.headers.clone();
 
         let mut async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>> = PrimaryMap::new();
         let mut req_parts = PrimaryMap::new();
 
-        let downstream_req_handle = req_parts.push(Some(parts));
+        let session_id = downstream.metadata.req_id;
+        let downstream_req_handle = req_parts.push(RequestParts {
+            parts: Some(parts),
+            metadata: Some(downstream.metadata),
+        });
         let downstream_req_body_handle = async_items.push(Some(AsyncItem::Body(body))).into();
 
         Session {
-            downstream_metadata: downstream.metadata,
+            session_id,
             downstream_req_handle,
             downstream_req_body_handle,
-            downstream_req_original_headers,
             active_cpu_time_us,
             async_items,
             req_parts,
@@ -171,18 +172,49 @@ impl Session {
     // ----- Downstream Request API -----
 
     /// Retrieve the downstream client IP address associated with this session.
-    pub fn downstream_client_ip(&self) -> IpAddr {
-        self.downstream_metadata.client_addr.ip()
+    pub fn downstream_metadata(
+        &self,
+        handle: RequestHandle,
+    ) -> Result<Option<&DownstreamMetadata>, HandleError> {
+        self.req_parts
+            .get(handle)
+            .ok_or(HandleError::InvalidRequestHandle(handle))
+            .map(|r| r.metadata.as_ref())
+    }
+
+    /// Retrieve the downstream client IP address associated with this session.
+    pub fn downstream_client_ip(
+        &self,
+        handle: RequestHandle,
+    ) -> Result<Option<IpAddr>, HandleError> {
+        Ok(self
+            .downstream_metadata(handle)?
+            .map(|md| md.client_addr.ip()))
     }
 
     /// Retrieve the IP address the downstream client connected to for this session.
-    pub fn downstream_server_ip(&self) -> IpAddr {
-        self.downstream_metadata.server_addr.ip()
+    pub fn downstream_server_ip(
+        &self,
+        handle: RequestHandle,
+    ) -> Result<Option<IpAddr>, HandleError> {
+        Ok(self
+            .downstream_metadata(handle)?
+            .map(|md| md.server_addr.ip()))
     }
 
-    /// Retrieve the compliance region that received the request for this session.
-    pub fn downstream_compliance_region(&self) -> &[u8] {
-        self.downstream_metadata.compliance_region.as_slice()
+    /// Retrieve the compliance region that received the request for the given handle.
+    pub fn downstream_compliance_region(
+        &self,
+        handle: RequestHandle,
+    ) -> Result<Option<&[u8]>, HandleError> {
+        Ok(self
+            .downstream_metadata(handle)?
+            .map(|md| md.compliance_region.as_slice()))
+    }
+
+    /// Retrieve the request ID for the given request.
+    pub fn downstream_request_id(&self, handle: RequestHandle) -> Result<Option<u64>, HandleError> {
+        Ok(self.downstream_metadata(handle)?.map(|md| md.req_id))
     }
 
     /// Retrieve the handle corresponding to the downstream request.
@@ -196,8 +228,13 @@ impl Session {
     }
 
     /// Access the header map that was copied from the original downstream request.
-    pub fn downstream_original_headers(&self) -> &HeaderMap {
-        &self.downstream_req_original_headers
+    pub fn downstream_original_headers(
+        &self,
+        handle: RequestHandle,
+    ) -> Result<Option<&HeaderMap>, HandleError> {
+        Ok(self
+            .downstream_metadata(handle)?
+            .map(|md| &md.original_headers))
     }
 
     // ----- Downstream Response API -----
@@ -374,7 +411,10 @@ impl Session {
     /// [parts]: https://docs.rs/http/latest/http/request/struct.Parts.html
     /// [req]: https://docs.rs/http/latest/http/request/struct.Request.html
     pub fn insert_request_parts(&mut self, parts: request::Parts) -> RequestHandle {
-        self.req_parts.push(Some(parts))
+        self.req_parts.push(RequestParts {
+            parts: Some(parts),
+            metadata: None,
+        })
     }
 
     /// Get a reference to the [`Parts`][parts] of a [`Request`][req], given its
@@ -390,7 +430,7 @@ impl Session {
     pub fn request_parts(&self, handle: RequestHandle) -> Result<&request::Parts, HandleError> {
         self.req_parts
             .get(handle)
-            .and_then(Option::as_ref)
+            .and_then(|r| r.parts.as_ref())
             .ok_or(HandleError::InvalidRequestHandle(handle))
     }
 
@@ -410,7 +450,7 @@ impl Session {
     ) -> Result<&mut request::Parts, HandleError> {
         self.req_parts
             .get_mut(handle)
-            .and_then(Option::as_mut)
+            .and_then(|r| r.parts.as_mut())
             .ok_or(HandleError::InvalidRequestHandle(handle))
     }
 
@@ -430,7 +470,7 @@ impl Session {
     ) -> Result<request::Parts, HandleError> {
         self.req_parts
             .get_mut(handle)
-            .and_then(Option::take)
+            .and_then(|r| r.parts.take())
             .ok_or(HandleError::InvalidRequestHandle(handle))
     }
 
@@ -1115,8 +1155,8 @@ impl Session {
     }
 
     /// Returns the unique identifier for the request this session is processing.
-    pub fn req_id(&self) -> u64 {
-        self.downstream_metadata.req_id
+    pub fn session_id(&self) -> u64 {
+        self.session_id
     }
 
     /// Access the path to the configuration file for this invocation.
@@ -1229,11 +1269,13 @@ impl Session {
         let downstream = item.recv().await?;
 
         let (parts, body) = downstream.req.into_parts();
-        let req_handle = self.req_parts.push(Some(parts));
         let body_handle = self.async_items.push(Some(AsyncItem::Body(body)));
+        let req_handle = self.req_parts.push(RequestParts {
+            parts: Some(parts),
+            metadata: Some(downstream.metadata),
+        });
 
         self.downstream_resp = DownstreamResponse::new(downstream.sender);
-        self.downstream_metadata = downstream.metadata;
         self.downstream_req_handle = req_handle;
         self.downstream_req_body_handle = body_handle.into();
 

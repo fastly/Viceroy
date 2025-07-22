@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use crate::body::Body;
 use crate::error::DownstreamRequestError;
-use http::Request;
+use http::{HeaderMap, Request};
 use hyper::Uri;
 use tokio::sync::oneshot::Sender;
 
@@ -20,6 +20,9 @@ pub struct DownstreamMetadata {
     /// For now this is just always `"none"`, but we place the field in the session
     /// to make it easier to implement custom configuration values later on.
     pub compliance_region: Vec<u8>,
+    /// The originally received headers in this request, before the
+    /// guest potentially modified them.
+    pub original_headers: HeaderMap,
 }
 
 #[derive(Debug)]
