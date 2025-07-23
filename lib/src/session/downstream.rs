@@ -1,7 +1,10 @@
 //! Downstream response.
 
 use {
-    crate::{body::Body, error::Error, headers::filter_outgoing_headers},
+    crate::{
+        body::Body, downstream::DownstreamResponse, error::Error, headers::filter_outgoing_headers,
+        pushpin::PushpinRedirectInfo,
+    },
     hyper::http::response::Response,
     std::mem,
     tokio::sync::oneshot::Sender,
@@ -14,22 +17,24 @@ use {
 ///
 /// [send]: struct.Session.html#method.send_downstream_response
 /// [set]: struct.Session.html#method.set_downstream_response_sender
-pub(super) enum DownstreamResponse {
+pub enum DownstreamResponseState {
     /// No channel to send the response has been opened yet.
     Closed,
     /// A channel has been opened, but no response has been sent yet.
-    Pending(Sender<Response<Body>>),
+    Pending(Sender<DownstreamResponse>),
+    /// The guest has initiated a proxy to Pushpin; the response will come from there.
+    RedirectingToPushpin,
     /// A response has already been sent downstream.
     Sent,
 }
 
-impl DownstreamResponse {
+impl DownstreamResponseState {
     /// Open a channel to send a [`Response`][resp] downstream, given a [`oneshot::Sender`][sender].
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     /// [sender]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Sender.html
-    pub fn new(sender: Sender<Response<Body>>) -> Self {
-        DownstreamResponse::Pending(sender)
+    pub fn new(sender: Sender<DownstreamResponse>) -> Self {
+        DownstreamResponseState::Pending(sender)
     }
 
     pub fn is_unsent(&self) -> bool {
@@ -46,7 +51,7 @@ impl DownstreamResponse {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
-        use DownstreamResponse::{Closed, Pending, Sent};
+        use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
 
         filter_outgoing_headers(response.headers_mut());
 
@@ -54,10 +59,26 @@ impl DownstreamResponse {
         match mem::replace(self, Sent) {
             Closed => panic!("downstream response channel was closed"),
             Pending(sender) => sender
-                .send(response)
+                .send(DownstreamResponse::Http(response))
                 .map_err(|_| ())
                 .expect("response receiver is open"),
-            Sent => return Err(Error::DownstreamRespSending),
+            Sent | RedirectingToPushpin => return Err(Error::DownstreamRespSending),
+        }
+
+        Ok(())
+    }
+
+    pub fn redirect_to_pushpin(&mut self, redirect_info: PushpinRedirectInfo) -> Result<(), Error> {
+        use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
+
+        // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
+        match mem::replace(self, RedirectingToPushpin) {
+            Closed => panic!("downstream response channel was closed"),
+            Pending(sender) => sender
+                .send(DownstreamResponse::RedirectToPushpin(redirect_info))
+                .map_err(|_| ())
+                .expect("response receiver is open"),
+            Sent | RedirectingToPushpin => return Err(Error::DownstreamRespSending),
         }
 
         Ok(())
@@ -65,6 +86,6 @@ impl DownstreamResponse {
 
     /// Close the `DownstreamResponse`, potentially without sending any response.
     pub fn close(&mut self) {
-        *self = DownstreamResponse::Closed;
+        *self = DownstreamResponseState::Closed;
     }
 }
