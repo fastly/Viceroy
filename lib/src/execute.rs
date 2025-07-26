@@ -393,6 +393,7 @@ impl ExecuteCtx {
         local: SocketAddr,
         remote: SocketAddr,
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
+        let original_headers = incoming_req.headers().clone();
         let req = prepare_request(incoming_req)?;
 
         let req_id = self
@@ -404,6 +405,7 @@ impl ExecuteCtx {
             server_addr: local,
             client_addr: remote,
             compliance_region: Vec::from(REGION_NONE),
+            original_headers,
         };
 
         let res = self.reuse_or_spawn_guest(req, metadata).await;
@@ -677,6 +679,7 @@ impl ExecuteCtx {
             server_addr: (Ipv4Addr::LOCALHOST, 80).into(),
             client_addr: (Ipv4Addr::LOCALHOST, 0).into(),
             compliance_region: Vec::from(REGION_NONE),
+            original_headers: Default::default(),
         };
         let (sender, receiver) = oneshot::channel();
         let downstream = DownstreamRequest {

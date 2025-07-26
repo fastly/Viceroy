@@ -648,6 +648,7 @@ pub mod fastly_http_body {
 pub mod fastly_http_downstream {
     use super::*;
     use crate::bindings::fastly::api::http_downstream;
+    use crate::fastly::encode_ip_address;
 
     bitflags::bitflags! {
         #[derive(Default, Clone, Debug, PartialEq, Eq)]
@@ -736,6 +737,293 @@ pub mod fastly_http_downstream {
         let res = http_downstream::next_request_abandon(handle);
         convert_result(res)
     }
+
+    #[export_name = "fastly_http_downstream#downstream_original_header_names"]
+    pub fn downstream_original_header_names(
+        req_handle: RequestHandle,
+        buf: *mut u8,
+        buf_len: usize,
+        cursor: u32,
+        ending_cursor: *mut i64,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        with_buffer!(
+            buf,
+            buf_len,
+            {
+                http_downstream::downstream_original_header_names(
+                    req_handle,
+                    u64::try_from(buf_len).trapping_unwrap(),
+                    cursor,
+                )
+            },
+            |res| {
+                let (bytes, next) = handle_buffer_len!(res, nwritten);
+                let written = bytes.len();
+                let end = match next {
+                    Some(next) => i64::from(next),
+                    None => -1,
+                };
+
+                std::mem::forget(bytes);
+
+                unsafe {
+                    *nwritten = written;
+                    *ending_cursor = end;
+                }
+            }
+        )
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_original_header_count"]
+    pub fn downstream_original_header_count(
+        req_handle: RequestHandle,
+        count_out: *mut u32,
+    ) -> FastlyStatus {
+        match http_downstream::downstream_original_header_count(req_handle) {
+            Ok(count) => {
+                unsafe {
+                    *count_out = count;
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_client_ip_addr"]
+    pub fn downstream_client_ip_addr(
+        req_handle: RequestHandle,
+        addr_octets_out: *mut u8,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        match http_downstream::downstream_client_ip_addr(req_handle) {
+            Some(ip_addr) => unsafe { *nwritten_out = encode_ip_address(ip_addr, addr_octets_out) },
+            None => unsafe {
+                // This is how the witx host implementation would report when
+                // the IP address is unknown.
+                *nwritten_out = 0;
+            },
+        }
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_server_ip_addr"]
+    pub fn downstream_server_ip_addr(
+        req_handle: RequestHandle,
+        addr_octets_out: *mut u8,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        match http_downstream::downstream_server_ip_addr(req_handle) {
+            Some(ip_addr) => unsafe { *nwritten_out = encode_ip_address(ip_addr, addr_octets_out) },
+            None => unsafe {
+                // This is how the witx host implementation would report when
+                // the IP address is unknown.
+                *nwritten_out = 0;
+            },
+        }
+        FastlyStatus::OK
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_client_h2_fingerprint"]
+    pub fn downstream_client_h2_fingerprint(
+        req_handle: RequestHandle,
+        h2fp_out: *mut u8,
+        h2fp_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(h2fp_out, h2fp_max_len, nwritten, {
+            http_downstream::downstream_client_h2_fingerprint(
+                req_handle,
+                u64::try_from(h2fp_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_client_request_id"]
+    pub fn downstream_client_request_id(
+        req_handle: RequestHandle,
+        reqid_out: *mut u8,
+        reqid_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(reqid_out, reqid_max_len, nwritten, {
+            http_downstream::downstream_client_request_id(
+                req_handle,
+                u64::try_from(reqid_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_client_oh_fingerprint"]
+    pub fn downstream_client_oh_fingerprint(
+        req_handle: RequestHandle,
+        ohfp_out: *mut u8,
+        ohfp_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(ohfp_out, ohfp_max_len, nwritten, {
+            http_downstream::downstream_client_oh_fingerprint(
+                req_handle,
+                u64::try_from(ohfp_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_client_ddos_detected"]
+    pub fn downstream_client_ddos_detected(
+        req_handle: RequestHandle,
+        ddos_detected_out: *mut u32,
+    ) -> FastlyStatus {
+        match http_downstream::downstream_client_ddos_detected(req_handle) {
+            Ok(res) => {
+                unsafe {
+                    *ddos_detected_out = res.into();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_cipher_openssl_name"]
+    pub fn downstream_tls_cipher_openssl_name(
+        req_handle: RequestHandle,
+        cipher_out: *mut u8,
+        cipher_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(cipher_out, cipher_max_len, nwritten, {
+            http_downstream::downstream_tls_cipher_openssl_name(
+                req_handle,
+                u64::try_from(cipher_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_protocol"]
+    pub fn downstream_tls_protocol(
+        req_handle: RequestHandle,
+        protocol_out: *mut u8,
+        protocol_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(protocol_out, protocol_max_len, nwritten, {
+            http_downstream::downstream_tls_protocol(
+                req_handle,
+                u64::try_from(protocol_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_client_hello"]
+    pub fn downstream_tls_client_hello(
+        req_handle: RequestHandle,
+        client_hello_out: *mut u8,
+        client_hello_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(client_hello_out, client_hello_max_len, nwritten, {
+            http_downstream::downstream_tls_client_hello(
+                req_handle,
+                u64::try_from(client_hello_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_ja3_md5"]
+    pub fn downstream_tls_ja3_md5(
+        req_handle: RequestHandle,
+        ja3_md5_out: *mut u8,
+        nwritten_out: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(ja3_md5_out, 16, nwritten_out, {
+            http_downstream::downstream_tls_ja3_md5(req_handle)
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_ja4"]
+    pub fn downstream_tls_ja4(
+        req_handle: RequestHandle,
+        ja4_out: *mut u8,
+        ja4_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(ja4_out, ja4_max_len, nwritten, {
+            http_downstream::downstream_tls_ja4(
+                req_handle,
+                u64::try_from(ja4_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_compliance_region"]
+    pub fn downstream_compliance_region(
+        req_handle: RequestHandle,
+        region_out: *mut u8,
+        region_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(region_out, region_max_len, nwritten, {
+            http_downstream::downstream_compliance_region(
+                req_handle,
+                u64::try_from(region_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_raw_client_certificate"]
+    pub fn downstream_tls_raw_client_certificate(
+        req_handle: RequestHandle,
+        client_certificate_out: *mut u8,
+        client_certificate_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result!(
+            client_certificate_out,
+            client_certificate_max_len,
+            nwritten,
+            {
+                http_downstream::downstream_tls_raw_client_certificate(
+                    req_handle,
+                    u64::try_from(client_certificate_max_len).trapping_unwrap(),
+                )
+            }
+        )
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_tls_client_cert_verify_result"]
+    pub fn downstream_tls_client_cert_verify_result(
+        req_handle: RequestHandle,
+        verify_result_out: *mut u32,
+    ) -> FastlyStatus {
+        match http_downstream::downstream_tls_client_cert_verify_result(req_handle) {
+            Ok(res) => {
+                unsafe {
+                    *verify_result_out = res.into();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#fastly_key_is_valid"]
+    pub fn fastly_key_is_valid(req_handle: RequestHandle, is_valid_out: *mut u32) -> FastlyStatus {
+        match http_downstream::fastly_key_is_valid(req_handle) {
+            Ok(res) => {
+                unsafe {
+                    *is_valid_out = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
 }
 
 pub mod fastly_log {
@@ -793,6 +1081,7 @@ pub mod fastly_http_req {
             self,
             api::{http_req, http_types},
         },
+        fastly::encode_ip_address,
         TrappingUnwrap,
     };
 
@@ -1092,9 +1381,15 @@ pub mod fastly_http_req {
         addr_octets_out: *mut u8,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(addr_octets_out, 16, nwritten_out, {
-            fastly::api::http_req::downstream_client_ip_addr()
-        })
+        match fastly::api::http_req::downstream_client_ip_addr() {
+            Some(ip_addr) => unsafe { *nwritten_out = encode_ip_address(ip_addr, addr_octets_out) },
+            None => unsafe {
+                // This is how the witx host implementation would report when
+                // the IP address is unknown.
+                *nwritten_out = 0;
+            },
+        }
+        FastlyStatus::OK
     }
 
     #[export_name = "fastly_http_req#downstream_server_ip_addr"]
@@ -1102,9 +1397,15 @@ pub mod fastly_http_req {
         addr_octets_out: *mut u8,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(addr_octets_out, 16, nwritten_out, {
-            fastly::api::http_req::downstream_server_ip_addr()
-        })
+        match fastly::api::http_req::downstream_server_ip_addr() {
+            Some(ip_addr) => unsafe { *nwritten_out = encode_ip_address(ip_addr, addr_octets_out) },
+            None => unsafe {
+                // This is how the witx host implementation would report when
+                // the IP address is unknown.
+                *nwritten_out = 0;
+            },
+        }
+        FastlyStatus::OK
     }
 
     #[export_name = "fastly_http_req#downstream_client_h2_fingerprint"]
@@ -1144,6 +1445,21 @@ pub mod fastly_http_req {
                 u64::try_from(ohfp_max_len).trapping_unwrap(),
             )
         })
+    }
+
+    #[export_name = "fastly_http_req#downstream_client_ddos_detected"]
+    pub fn downstream_client_ddos_detected(ddos_detected_out: *mut u32) -> FastlyStatus {
+        match fastly::api::http_req::downstream_client_ddos_detected() {
+            Ok(res) => {
+                unsafe {
+                    *ddos_detected_out = res.into();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
     }
 
     #[export_name = "fastly_http_req#downstream_tls_cipher_openssl_name"]
@@ -1291,26 +1607,20 @@ pub mod fastly_http_req {
             buf,
             buf_len,
             {
-                fastly::api::http_req::original_header_names_get(
+                fastly::api::http_req::get_original_header_names(
                     u64::try_from(buf_len).trapping_unwrap(),
                     cursor,
                 )
             },
             |res| {
-                let (written, end) = match handle_buffer_len!(res, nwritten) {
-                    Some((bytes, next)) => {
-                        let written = bytes.len();
-                        let end = match next {
-                            Some(next) => i64::from(next),
-                            None => -1,
-                        };
-
-                        std::mem::forget(bytes);
-
-                        (written, end)
-                    }
-                    None => (0, -1),
+                let (bytes, next) = handle_buffer_len!(res, nwritten);
+                let written = bytes.len();
+                let end = match next {
+                    Some(next) => i64::from(next),
+                    None => -1,
                 };
+
+                std::mem::forget(bytes);
 
                 unsafe {
                     *nwritten = written;

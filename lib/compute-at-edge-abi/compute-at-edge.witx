@@ -168,18 +168,21 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_client_ip_addr
     (@interface func (export "downstream_client_ip_addr")
         ;; must be a 16-byte array
         (param $addr_octets_out (@witx pointer (@witx char8)))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_server_ip_addr
     (@interface func (export "downstream_server_ip_addr")
         ;; must be a 16-byte array
         (param $addr_octets_out (@witx pointer (@witx char8)))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_client_h2_fingerprint
     (@interface func (export "downstream_client_h2_fingerprint")
         (param $h2fp_out (@witx pointer (@witx char8)))
         (param $h2fp_max_len (@witx usize))
@@ -187,6 +190,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_client_request_id
     (@interface func (export "downstream_client_request_id")
         (param $reqid_out (@witx pointer (@witx char8)))
         (param $reqid_max_len (@witx usize))
@@ -194,6 +198,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_client_oh_fingerprint
     (@interface func (export "downstream_client_oh_fingerprint")
         (param $ohfp_out (@witx pointer (@witx char8)))
         (param $ohfp_max_len (@witx usize))
@@ -201,10 +206,12 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_client_ddos_detected
     (@interface func (export "downstream_client_ddos_detected")
         (result $err (expected $ddos_detected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_cipher_openssl_name
     (@interface func (export "downstream_tls_cipher_openssl_name")
         (param $cipher_out (@witx pointer (@witx char8)))
         (param $cipher_max_len (@witx usize))
@@ -212,6 +219,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_protocol
     (@interface func (export "downstream_tls_protocol")
         (param $protocol_out (@witx pointer (@witx char8)))
         (param $protocol_max_len (@witx usize))
@@ -219,6 +227,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_client_hello
     (@interface func (export "downstream_tls_client_hello")
         (param $chello_out (@witx pointer (@witx char8)))
         (param $chello_max_len (@witx usize))
@@ -226,6 +235,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_raw_client_certificate
     (@interface func (export "downstream_tls_raw_client_certificate")
         (param $raw_client_cert_out (@witx pointer (@witx char8)))
         (param $raw_client_cert_max_len (@witx usize))
@@ -233,16 +243,19 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_client_cert_verify_result
     (@interface func (export "downstream_tls_client_cert_verify_result")
         (result $err (expected $client_cert_verify_result (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_ja3_md5
     (@interface func (export "downstream_tls_ja3_md5")
         ;; must be a 16-byte array
         (param $cja3_md5_out (@witx pointer (@witx char8)))
         (result $err (expected $num_bytes (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_tls_ja4
     (@interface func (export "downstream_tls_ja4")
          (param $ja4_out (@witx pointer (@witx char8)))
          (param $ja4_max_len (@witx usize))
@@ -250,6 +263,7 @@
          (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_compliance_region
     (@interface func (export "downstream_compliance_region")
          (param $region_out (@witx pointer (@witx char8)))
          (param $region_max_len (@witx usize))
@@ -271,6 +285,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_original_header_names
     (@interface func (export "original_header_names_get")
         (param $buf (@witx pointer (@witx char8)))
         (param $buf_len (@witx usize))
@@ -280,6 +295,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use fastly_http_downstream::downstream_original_header_count
     (@interface func (export "original_header_count")
         (result $err (expected $header_count (error $fastly_status)))
     )
@@ -510,6 +526,8 @@
                 (error $fastly_status)))
     )
 
+    ;;; DEPRECATED: use fastly_http_downstream::fastly_key_is_valid
+    ;;;
     ;;; Returns whether or not the original client request arrived with a
     ;;; Fastly-Key belonging to a user with the rights to purge content on this
     ;;; service.
@@ -612,6 +630,129 @@
     (@interface func (export "next_request_abandon")
         (param $handle $request_promise_handle)
         (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_original_header_names")
+        (param $req $request_handle)
+        (param $buf (@witx pointer (@witx char8)))
+        (param $buf_len (@witx usize))
+        (param $cursor $multi_value_cursor)
+        (param $ending_cursor_out (@witx pointer $multi_value_cursor_result))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_original_header_count")
+        (param $req $request_handle)
+        (result $err (expected $header_count (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_ip_addr")
+        (param $req $request_handle)
+        ;; must be a 16-byte array
+        (param $addr_octets_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_server_ip_addr")
+        (param $req $request_handle)
+        ;; must be a 16-byte array
+        (param $addr_octets_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_h2_fingerprint")
+        (param $req $request_handle)
+        (param $h2fp_out (@witx pointer (@witx char8)))
+        (param $h2fp_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_request_id")
+        (param $req $request_handle)
+        (param $reqid_out (@witx pointer (@witx char8)))
+        (param $reqid_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_oh_fingerprint")
+        (param $req $request_handle)
+        (param $ohfp_out (@witx pointer (@witx char8)))
+        (param $ohfp_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_client_ddos_detected")
+        (param $req $request_handle)
+        (result $err (expected $ddos_detected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_cipher_openssl_name")
+        (param $req $request_handle)
+        (param $cipher_out (@witx pointer (@witx char8)))
+        (param $cipher_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_protocol")
+        (param $req $request_handle)
+        (param $protocol_out (@witx pointer (@witx char8)))
+        (param $protocol_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_client_hello")
+        (param $req $request_handle)
+        (param $chello_out (@witx pointer (@witx char8)))
+        (param $chello_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_raw_client_certificate")
+        (param $req $request_handle)
+        (param $raw_client_cert_out (@witx pointer (@witx char8)))
+        (param $raw_client_cert_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_client_cert_verify_result")
+        (param $req $request_handle)
+        (result $err (expected $client_cert_verify_result (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_ja3_md5")
+        (param $req $request_handle)
+        ;; must be a 16-byte array
+        (param $cja3_md5_out (@witx pointer (@witx char8)))
+        (result $err (expected $num_bytes (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_tls_ja4")
+        (param $req $request_handle)
+        (param $ja4_out (@witx pointer (@witx char8)))
+        (param $ja4_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_compliance_region")
+        (param $req $request_handle)
+        (param $region_out (@witx pointer (@witx char8)))
+        (param $region_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "fastly_key_is_valid")
+        (param $req $request_handle)
+        (result $err (expected $is_valid (error $fastly_status)))
     )
 )
 

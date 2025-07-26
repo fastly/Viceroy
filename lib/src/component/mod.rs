@@ -19,6 +19,8 @@ component::bindgen!({
     },
 
     trappable_imports: [
+        "downstream-client-ip-addr",
+        "downstream-server-ip-addr",
         "header-values-get",
         "[method]lookup-result.body",
         "[method]lookup-result.metadata",

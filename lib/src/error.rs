@@ -73,6 +73,9 @@ pub enum Error {
     #[error("Limit exceeded: {msg}")]
     LimitExceeded { msg: &'static str },
 
+    #[error("Missing downstream metadata for request")]
+    MissingDownstreamMetadata,
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 
@@ -215,6 +218,7 @@ impl Error {
             | Error::InvalidMethod(_)
             | Error::InvalidUri(_)
             | Error::IoError(_)
+            | Error::MissingDownstreamMetadata
             | Error::Other(_)
             | Error::ProfilingStrategy
             | Error::StreamingChunkSend

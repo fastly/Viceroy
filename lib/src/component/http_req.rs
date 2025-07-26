@@ -1,5 +1,6 @@
 use {
     super::{
+        fastly::api::http_downstream::Host as HttpDownstream,
         fastly::api::{http_req, http_types, types},
         headers::write_values,
         types::TrappableError,
@@ -9,7 +10,7 @@ use {
         error::Error,
         linking::ComponentCtx,
         secret_store::SecretLookup,
-        session::{AsyncItem, AsyncItemHandle, PeekableTask, Session, ViceroyRequestMetadata},
+        session::{AsyncItem, AsyncItemHandle, PeekableTask, ViceroyRequestMetadata},
         upstream,
         wiggle_abi::SecretStoreError,
     },
@@ -19,7 +20,6 @@ use {
         request::Request,
         Method, Uri,
     },
-    std::net::IpAddr,
     std::str::FromStr,
 };
 
@@ -49,6 +49,12 @@ use {
 // populate the send-error-detail.
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
+
+impl ComponentCtx {
+    fn ds_req(&self) -> u32 {
+        self.session.downstream_request().into()
+    }
+}
 
 #[async_trait::async_trait]
 impl http_req::Host for ComponentCtx {
@@ -108,73 +114,55 @@ impl http_req::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn downstream_client_ip_addr(&mut self) -> Result<Vec<u8>, types::Error> {
-        match self.session.downstream_client_ip() {
-            IpAddr::V4(addr) => {
-                let octets = addr.octets();
-                debug_assert_eq!(octets.len(), 4);
-                Ok(Vec::from(octets))
-            }
-            IpAddr::V6(addr) => {
-                let octets = addr.octets();
-                debug_assert_eq!(octets.len(), 16);
-                Ok(Vec::from(octets))
-            }
-        }
+    async fn downstream_client_ip_addr(&mut self) -> wasmtime::Result<Option<types::IpAddress>> {
+        let h = self.ds_req();
+        HttpDownstream::downstream_client_ip_addr(self, h).await
     }
 
-    async fn downstream_server_ip_addr(&mut self) -> Result<Vec<u8>, types::Error> {
-        match self.session.downstream_server_ip() {
-            IpAddr::V4(addr) => {
-                let octets = addr.octets();
-                debug_assert_eq!(octets.len(), 4);
-                Ok(Vec::from(octets))
-            }
-            IpAddr::V6(addr) => {
-                let octets = addr.octets();
-                debug_assert_eq!(octets.len(), 16);
-                Ok(Vec::from(octets))
-            }
-        }
+    async fn downstream_server_ip_addr(&mut self) -> wasmtime::Result<Option<types::IpAddress>> {
+        let h = self.ds_req();
+        HttpDownstream::downstream_server_ip_addr(self, h).await
     }
 
     async fn downstream_client_ddos_detected(&mut self) -> Result<u32, types::Error> {
-        Ok(0)
+        let h = self.ds_req();
+        HttpDownstream::downstream_client_ddos_detected(self, h).await
     }
 
     async fn downstream_tls_cipher_openssl_name(
         &mut self,
-        _max_len: u64,
-    ) -> Result<String, types::Error> {
-        Err(Error::NotAvailable("Client TLS data").into())
-    }
-
-    async fn downstream_tls_protocol(&mut self, _max_len: u64) -> Result<String, types::Error> {
-        Err(Error::NotAvailable("Client TLS data").into())
-    }
-
-    async fn downstream_tls_client_hello(
-        &mut self,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS data").into())
+        let h = self.ds_req();
+        HttpDownstream::downstream_tls_cipher_openssl_name(self, h, max_len).await
+    }
+
+    async fn downstream_tls_protocol(&mut self, max_len: u64) -> Result<Vec<u8>, types::Error> {
+        let h = self.ds_req();
+        HttpDownstream::downstream_tls_protocol(self, h, max_len).await
+    }
+
+    async fn downstream_tls_client_hello(&mut self, max_len: u64) -> Result<Vec<u8>, types::Error> {
+        let h = self.ds_req();
+        HttpDownstream::downstream_tls_client_hello(self, h, max_len).await
     }
 
     async fn downstream_tls_raw_client_certificate(
         &mut self,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS data").into())
+        let h = self.ds_req();
+        HttpDownstream::downstream_tls_raw_client_certificate(self, h, max_len).await
     }
 
     async fn downstream_tls_client_cert_verify_result(
         &mut self,
     ) -> Result<http_req::ClientCertVerifyResult, types::Error> {
-        Err(Error::NotAvailable("Client TLS data").into())
+        HttpDownstream::downstream_tls_client_cert_verify_result(self, self.ds_req()).await
     }
 
     async fn downstream_tls_ja3_md5(&mut self) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS JA3 hash").into())
+        HttpDownstream::downstream_tls_ja3_md5(self, self.ds_req()).await
     }
 
     async fn new(&mut self) -> Result<http_types::RequestHandle, types::Error> {
@@ -599,7 +587,7 @@ impl http_req::Host for ComponentCtx {
     }
 
     async fn fastly_key_is_valid(&mut self) -> Result<bool, types::Error> {
-        Err(Error::NotAvailable("FASTLY_KEY is valid").into())
+        HttpDownstream::fastly_key_is_valid(self, self.ds_req()).await
     }
 
     async fn close(&mut self, h: http_types::RequestHandle) -> Result<(), types::Error> {
@@ -820,80 +808,49 @@ impl http_req::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn downstream_client_h2_fingerprint(
+    async fn downstream_client_request_id(
         &mut self,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client H2 fingerprint").into())
+        HttpDownstream::downstream_client_request_id(self, self.ds_req(), max_len).await
     }
 
-    async fn downstream_client_request_id(&mut self, max_len: u64) -> Result<String, types::Error> {
-        let result = format!("{:032x}", self.session.req_id());
-
-        if result.len() > usize::try_from(max_len).unwrap() {
-            return Err(types::Error::BufferLen(
-                u64::try_from(result.len()).unwrap(),
-            ));
-        }
-
-        Ok(result)
+    async fn downstream_client_h2_fingerprint(
+        &mut self,
+        max_len: u64,
+    ) -> Result<Vec<u8>, types::Error> {
+        HttpDownstream::downstream_client_h2_fingerprint(self, self.ds_req(), max_len).await
     }
 
     async fn downstream_client_oh_fingerprint(
         &mut self,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client original header fingerprint").into())
+        HttpDownstream::downstream_client_oh_fingerprint(self, self.ds_req(), max_len).await
     }
 
-    async fn downstream_tls_ja4(&mut self, _max_len: u64) -> Result<Vec<u8>, types::Error> {
-        Err(Error::NotAvailable("Client TLS JA4 hash").into())
+    async fn downstream_tls_ja4(&mut self, max_len: u64) -> Result<Vec<u8>, types::Error> {
+        HttpDownstream::downstream_tls_ja4(self, self.ds_req(), max_len).await
     }
 
     async fn downstream_compliance_region(
         &mut self,
         region_max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        let region = Session::downstream_compliance_region(&self.session);
-        let region_len = region.len();
-
-        match u64::try_from(region_len) {
-            Ok(region_len) if region_len <= region_max_len => Ok(region.into()),
-            too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
-        }
+        HttpDownstream::downstream_compliance_region(self, self.ds_req(), region_max_len).await
     }
 
-    async fn original_header_names_get(
+    async fn get_original_header_names(
         &mut self,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        let headers = self.session.downstream_original_headers();
-        let (buf, next) = write_values(
-            headers.keys(),
-            b'\0',
-            usize::try_from(max_len).unwrap(),
-            cursor,
-        )
-        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
-
-        // At this point we know that the buffer being empty will also mean that there are no
-        // remaining entries to read.
-        if buf.is_empty() {
-            debug_assert!(next.is_none());
-            Ok(None)
-        } else {
-            Ok(Some((buf, next)))
-        }
+    ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
+        HttpDownstream::downstream_original_header_names(self, self.ds_req(), max_len, cursor).await
     }
 
     async fn original_header_count(&mut self) -> Result<u32, types::Error> {
-        Ok(self
-            .session
-            .downstream_original_headers()
-            .len()
-            .try_into()
-            .expect("More than u32::MAX headers"))
+        let h = self.ds_req();
+        HttpDownstream::downstream_original_header_count(self, h).await
     }
 
     async fn inspect(
