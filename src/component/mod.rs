@@ -30,6 +30,13 @@ component::bindgen!({
     tracing: true,
 });
 
+#[async_trait::async_trait]
+impl proxy::recorder::record::Host for ComponentCtx {
+    async fn record(&mut self, method: String, input: Vec<String>, output: String) {
+        println!("{method}: args: {input:?} ret: {output}");
+    }
+}
+
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {
     fn wrap(ctx: &mut ComponentCtx) -> wasmtime_wasi::WasiImpl<&mut ComponentCtx> {
         wasmtime_wasi::WasiImpl(ctx)
@@ -74,6 +81,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     fastly::api::types::add_to_linker(linker, |x| x)?;
     fastly::api::uap::add_to_linker(linker, |x| x)?;
 
+    proxy::recorder::record::add_to_linker(linker, |x| x)?;
     Ok(())
 }
 
