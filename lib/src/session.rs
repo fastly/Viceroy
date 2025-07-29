@@ -171,7 +171,7 @@ impl Session {
 
     // ----- Downstream Request API -----
 
-    /// Retrieve the downstream client IP address associated with this session.
+    /// Retrieve the downstream metadata address associated with a request handle.
     pub fn downstream_metadata(
         &self,
         handle: RequestHandle,
@@ -182,7 +182,7 @@ impl Session {
             .map(|r| r.metadata.as_ref())
     }
 
-    /// Retrieve the downstream client IP address associated with this session.
+    /// Retrieve the downstream client IP address associated with a request handle.
     pub fn downstream_client_ip(
         &self,
         handle: RequestHandle,
@@ -192,7 +192,7 @@ impl Session {
             .map(|md| md.client_addr.ip()))
     }
 
-    /// Retrieve the IP address the downstream client connected to for this session.
+    /// Retrieve the IP address the downstream client connected to a request handle.
     pub fn downstream_server_ip(
         &self,
         handle: RequestHandle,
@@ -212,12 +212,12 @@ impl Session {
             .map(|md| md.compliance_region.as_slice()))
     }
 
-    /// Retrieve the request ID for the given request.
+    /// Retrieve the request ID for the given request handle.
     pub fn downstream_request_id(&self, handle: RequestHandle) -> Result<Option<u64>, HandleError> {
         Ok(self.downstream_metadata(handle)?.map(|md| md.req_id))
     }
 
-    /// Retrieve the handle corresponding to the downstream request.
+    /// Retrieve the handle corresponding to the most recent downstream request.
     pub fn downstream_request(&self) -> RequestHandle {
         self.downstream_req_handle
     }
@@ -1154,7 +1154,12 @@ impl Session {
         self.async_items[handle] = Some(item);
     }
 
-    /// Returns the unique identifier for the request this session is processing.
+    /// Returns the unique identifier for the current session.
+    ///
+    /// While this corresponds to the request ID for the initial request that spawned
+    /// the session, subsequent downstream requests received by the session will have
+    /// their own unique identifier. Care should be taken to not conflate the two, and
+    /// to use [Session::downstream_request_id] whenever a request needs to be identified.
     pub fn session_id(&self) -> u64 {
         self.session_id
     }
