@@ -317,6 +317,7 @@ impl FastlyHttpDownstream for Session {
 }
 
 impl Session {
+    /// Stub for metadata that Viceroy does not support. Validates the handle normally, but always returns Error::ValueAbsent rather than a meaningful value.
     pub fn absent_metadata_value<T>(&self, handle: RequestHandle) -> Result<T, Error> {
         let _ = self
             .downstream_metadata(handle)?
