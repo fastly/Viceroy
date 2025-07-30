@@ -246,16 +246,8 @@ impl Session {
     ///
     /// # Panics
     ///
-    /// This method must only be called once, *after* a channel has been opened with
-    /// [`Session::set_downstream_response_sender`][set], and *before* the associated
-    /// [oneshot::Receiver][receiver] has been dropped.
-    ///
-    /// This method will panic if:
-    ///   * the downstream response channel was never opened
-    ///   * the associated receiver was dropped prematurely
-    ///
-    /// [set]: struct.Session.html#method.set_downstream_response_sender
-    /// [receiver]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Receiver.html
+    /// This method must only be called once per downstream request, after which attempting
+    /// to send another response will trigger a panic.
     pub fn send_downstream_response(&mut self, resp: Response<Body>) -> Result<(), Error> {
         self.downstream_resp.send(resp)
     }
@@ -266,16 +258,8 @@ impl Session {
     ///
     /// # Panics
     ///
-    /// This method must only be called once, *after* a channel has been opened with
-    /// [`Session::set_downstream_response_sender`][set], and *before* the associated
-    /// [oneshot::Receiver][receiver] has been dropped.
-    ///
-    /// This method will panic if:
-    ///   * the downstream response channel was never opened
-    ///   * the associated receiver was dropped prematurely
-    ///
-    /// [set]: struct.Session.html#method.set_downstream_response_sender
-    /// [receiver]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Receiver.html
+    /// This method must only be called once per downstream request, after which attempting
+    /// to send another response will trigger a panic.
     pub fn redirect_downstream_to_pushpin(
         &mut self,
         redirect_info: PushpinRedirectInfo,

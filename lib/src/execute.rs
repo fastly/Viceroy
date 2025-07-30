@@ -369,16 +369,13 @@ impl ExecuteCtx {
     async fn maybe_receive_response(
         receiver: oneshot::Receiver<DownstreamResponse>,
     ) -> Option<(Response<Body>, Option<anyhow::Error>)> {
-        if let Ok(resp) = receiver.await {
-            return match resp {
-                DownstreamResponse::Http(resp) => Some((resp, None)),
-                DownstreamResponse::RedirectToPushpin(info) => Some((
-                    Response::new(Body::empty()),
-                    Some(NonHttpResponse::PushpinRedirect(info).into()),
-                )),
-            };
+        match receiver.await.ok()? {
+            DownstreamResponse::Http(resp) => Some((resp, None)),
+            DownstreamResponse::RedirectToPushpin(info) => Some((
+                Response::new(Body::empty()),
+                Some(NonHttpResponse::PushpinRedirect(info).into()),
+            )),
         }
-        None
     }
 
     /// Asynchronously handle a request.
@@ -416,7 +413,7 @@ impl ExecuteCtx {
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
         let orig_req_on_upgrade = hyper::upgrade::on(&mut incoming_req);
         let (incoming_req_parts, incoming_req_body) = incoming_req.into_parts();
-        let local_pushpin_proxy_port = self.local_pushpin_proxy_port.clone();
+        let local_pushpin_proxy_port = self.local_pushpin_proxy_port;
 
         let (body_for_wasm, orig_body_tee) = tee(incoming_req_body).await;
         let orig_request_info_for_pushpin =

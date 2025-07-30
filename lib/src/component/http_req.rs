@@ -661,10 +661,19 @@ impl http_req::Host for ComponentCtx {
         req_handle: http_req::RequestHandle,
         backend_name: String,
     ) -> Result<(), types::Error> {
-        let req = self.session.request_parts(req_handle.into())?;
+        let request_info = match self.session.request_parts(req_handle.into()) {
+            Ok(req) => Some(PushpinRedirectRequestInfo::from_parts(req)),
+            Err(_) => {
+                // This function can legitimately be called with an invalid request handle;
+                // this may happen when the guest uses a legacy API for pushpin redirection.
+                // The legacy behavior is equivalent to simply using None.
+                None
+            }
+        };
+
         let redirect_info = PushpinRedirectInfo {
             backend_name,
-            request_info: Some(PushpinRedirectRequestInfo::from_parts(req)),
+            request_info,
         };
 
         self.session.redirect_downstream_to_pushpin(redirect_info)?;
