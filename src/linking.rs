@@ -30,7 +30,7 @@ impl Limiter {
             memory_allocated: 0,
             internal: StoreLimitsBuilder::new()
                 .instances(max_instances)
-                .memories(2)
+                .memories(3)
                 .memory_size(128 * 1024 * 1024)
                 .table_elements(98765)
                 .tables(max_tables)
