@@ -13,6 +13,7 @@ use {
         session::{AsyncItem, PeekableTask, Session, ViceroyRequestMetadata},
         upstream,
         wiggle_abi::{
+            fastly_http_downstream::FastlyHttpDownstream,
             fastly_http_req::FastlyHttpReq,
             headers::HttpHeaders,
             types::{
@@ -26,7 +27,6 @@ use {
     fastly_shared::{INVALID_BODY_HANDLE, INVALID_REQUEST_HANDLE, INVALID_RESPONSE_HANDLE},
     http::{HeaderValue, Method, Uri},
     hyper::http::request::Request,
-    std::net::IpAddr,
     wiggle::{GuestMemory, GuestPtr},
 };
 
@@ -92,22 +92,12 @@ impl FastlyHttpReq for Session {
         // Must be a 16-byte array:
         addr_octets_ptr: GuestPtr<u8>,
     ) -> Result<u32, Error> {
-        match self.downstream_server_ip() {
-            IpAddr::V4(addr) => {
-                let octets = addr.octets();
-                let octets_bytes = octets.len() as u32;
-                debug_assert_eq!(octets_bytes, 4);
-                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
-                Ok(octets_bytes)
-            }
-            IpAddr::V6(addr) => {
-                let octets = addr.octets();
-                let octets_bytes = octets.len() as u32;
-                debug_assert_eq!(octets_bytes, 16);
-                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
-                Ok(octets_bytes)
-            }
-        }
+        FastlyHttpDownstream::downstream_server_ip_addr(
+            self,
+            memory,
+            self.downstream_request(),
+            addr_octets_ptr,
+        )
     }
 
     fn downstream_client_ip_addr(
@@ -116,25 +106,14 @@ impl FastlyHttpReq for Session {
         // Must be a 16-byte array:
         addr_octets_ptr: GuestPtr<u8>,
     ) -> Result<u32, Error> {
-        match self.downstream_client_ip() {
-            IpAddr::V4(addr) => {
-                let octets = addr.octets();
-                let octets_bytes = octets.len() as u32;
-                debug_assert_eq!(octets_bytes, 4);
-                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
-                Ok(octets_bytes)
-            }
-            IpAddr::V6(addr) => {
-                let octets = addr.octets();
-                let octets_bytes = octets.len() as u32;
-                debug_assert_eq!(octets_bytes, 16);
-                memory.copy_from_slice(&octets, addr_octets_ptr.as_array(octets_bytes))?;
-                Ok(octets_bytes)
-            }
-        }
+        FastlyHttpDownstream::downstream_client_ip_addr(
+            self,
+            memory,
+            self.downstream_request(),
+            addr_octets_ptr,
+        )
     }
 
-    #[allow(unused_variables)] // FIXME JDC 2023-06-18: Remove this directive once implemented.
     fn downstream_client_h2_fingerprint(
         &mut self,
         memory: &mut GuestMemory<'_>,
@@ -142,7 +121,14 @@ impl FastlyHttpReq for Session {
         h2fp_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client H2 fingerprint"))
+        FastlyHttpDownstream::downstream_client_h2_fingerprint(
+            self,
+            memory,
+            self.downstream_request(),
+            h2fp_out,
+            h2fp_max_len,
+            nwritten_out,
+        )
     }
 
     fn downstream_client_request_id(
@@ -152,52 +138,59 @@ impl FastlyHttpReq for Session {
         reqid_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let reqid_bytes = format!("{:032x}", self.req_id()).into_bytes();
-
-        if reqid_bytes.len() > reqid_max_len as usize {
-            // Write out the number of bytes necessary to fit the value, or zero on overflow to
-            // signal an error condition.
-            memory.write(nwritten_out, reqid_bytes.len().try_into().unwrap_or(0))?;
-            return Err(Error::BufferLengthError {
-                buf: "reqid_out",
-                len: "reqid_max_len",
-            });
-        }
-
-        let reqid_len =
-            u32::try_from(reqid_bytes.len()).expect("smaller u32::MAX means it must fit");
-
-        memory.copy_from_slice(&reqid_bytes, reqid_out.as_array(reqid_len))?;
-        memory.write(nwritten_out, reqid_len)?;
-        Ok(())
+        FastlyHttpDownstream::downstream_client_request_id(
+            self,
+            memory,
+            self.downstream_request(),
+            reqid_out,
+            reqid_max_len,
+            nwritten_out,
+        )
     }
 
     fn downstream_client_oh_fingerprint(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _ohfp_out: GuestPtr<u8>,
-        _ohfp_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        memory: &mut GuestMemory<'_>,
+        ohfp_out: GuestPtr<u8>,
+        ohfp_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client original header fingerprint"))
+        FastlyHttpDownstream::downstream_client_oh_fingerprint(
+            self,
+            memory,
+            self.downstream_request(),
+            ohfp_out,
+            ohfp_max_len,
+            nwritten_out,
+        )
     }
 
     fn downstream_client_ddos_detected(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
     ) -> Result<u32, Error> {
-        Ok(0)
+        FastlyHttpDownstream::downstream_client_ddos_detected(
+            self,
+            memory,
+            self.downstream_request(),
+        )
     }
 
     fn downstream_tls_cipher_openssl_name(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _cipher_out: GuestPtr<u8>,
-        _cipher_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        memory: &mut GuestMemory<'_>,
+        cipher_out: GuestPtr<u8>,
+        cipher_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
-        Err(Error::ValueAbsent)
+        FastlyHttpDownstream::downstream_client_oh_fingerprint(
+            self,
+            memory,
+            self.downstream_request(),
+            cipher_out,
+            cipher_max_len,
+            nwritten_out,
+        )
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-05-03: Remove this directive once implemented.
@@ -247,16 +240,21 @@ impl FastlyHttpReq for Session {
 
     fn downstream_tls_protocol(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _protocol_out: GuestPtr<u8>,
-        _protocol_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        memory: &mut GuestMemory<'_>,
+        protocol_out: GuestPtr<u8>,
+        protocol_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
-        Err(Error::ValueAbsent)
+        FastlyHttpDownstream::downstream_tls_protocol(
+            self,
+            memory,
+            self.downstream_request(),
+            protocol_out,
+            protocol_max_len,
+            nwritten_out,
+        )
     }
 
-    #[allow(unused_variables)] // FIXME KTM 2020-06-25: Remove this directive once implemented.
     fn downstream_tls_client_hello(
         &mut self,
         memory: &mut GuestMemory<'_>,
@@ -264,47 +262,72 @@ impl FastlyHttpReq for Session {
         chello_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
-        Err(Error::ValueAbsent)
+        FastlyHttpDownstream::downstream_tls_client_hello(
+            self,
+            memory,
+            self.downstream_request(),
+            chello_out,
+            chello_max_len,
+            nwritten_out,
+        )
     }
 
     fn downstream_tls_raw_client_certificate(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _tokio_rustlsraw_client_cert_out: GuestPtr<u8>,
-        _raw_client_cert_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        memory: &mut GuestMemory<'_>,
+        cert_out: GuestPtr<u8>,
+        cert_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
-        Err(Error::ValueAbsent)
+        FastlyHttpDownstream::downstream_tls_raw_client_certificate(
+            self,
+            memory,
+            self.downstream_request(),
+            cert_out,
+            cert_max_len,
+            nwritten_out,
+        )
     }
 
     fn downstream_tls_client_cert_verify_result(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
     ) -> Result<ClientCertVerifyResult, Error> {
-        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
-        Err(Error::ValueAbsent)
+        FastlyHttpDownstream::downstream_tls_client_cert_verify_result(
+            self,
+            memory,
+            self.downstream_request(),
+        )
     }
 
     fn downstream_tls_ja3_md5(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _ja3_md5_out: GuestPtr<u8>,
+        memory: &mut GuestMemory<'_>,
+        ja3_md5_out: GuestPtr<u8>,
     ) -> Result<u32, Error> {
-        // FIXME JDC 2023-09-27: For now, we don't support incoming TLS connections, this function currently only implements the solution for non-tls connections.
-        Err(Error::ValueAbsent)
+        FastlyHttpDownstream::downstream_tls_ja3_md5(
+            self,
+            memory,
+            self.downstream_request(),
+            ja3_md5_out,
+        )
     }
 
-    #[allow(unused_variables)] // FIXME UFSM 2024-02-19: Remove this directive once implemented.
     fn downstream_tls_ja4(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
         ja4_out: GuestPtr<u8>,
         ja4_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Client TLS JA4 hash"))
+        FastlyHttpDownstream::downstream_tls_ja4(
+            self,
+            memory,
+            self.downstream_request(),
+            ja4_out,
+            ja4_max_len,
+            nwritten_out,
+        )
     }
 
     fn downstream_compliance_region(
@@ -315,25 +338,14 @@ impl FastlyHttpReq for Session {
         region_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let region = Session::downstream_compliance_region(self);
-        let region_len = region.len();
-
-        match u32::try_from(region_len) {
-            Ok(region_len) if region_len <= region_max_len => {
-                memory.copy_from_slice(region, region_out.as_array(region_max_len))?;
-                memory.write(nwritten_out, region_len.try_into().unwrap_or(0))?;
-
-                Ok(())
-            }
-            too_large => {
-                memory.write(nwritten_out, too_large.unwrap_or(0))?;
-
-                Err(Error::BufferLengthError {
-                    buf: "region_out",
-                    len: "region_max_len",
-                })
-            }
-        }
+        FastlyHttpDownstream::downstream_compliance_region(
+            self,
+            memory,
+            self.downstream_request(),
+            region_out,
+            region_max_len,
+            nwritten_out,
+        )
     }
 
     fn framing_headers_mode_set(
@@ -562,20 +574,24 @@ impl FastlyHttpReq for Session {
         ending_cursor_out: GuestPtr<MultiValueCursorResult>,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let headers = self.downstream_original_headers();
-        multi_value_result!(
+        FastlyHttpDownstream::downstream_original_header_names(
+            self,
             memory,
-            headers.names_get(memory, buf, buf_len, cursor, nwritten_out),
-            ending_cursor_out
+            self.downstream_request(),
+            buf,
+            buf_len,
+            cursor,
+            ending_cursor_out,
+            nwritten_out,
         )
     }
 
-    fn original_header_count(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
-        let headers = self.downstream_original_headers();
-        Ok(headers
-            .len()
-            .try_into()
-            .expect("More than u32::MAX headers"))
+    fn original_header_count(&mut self, memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        FastlyHttpDownstream::downstream_original_header_count(
+            self,
+            memory,
+            self.downstream_request(),
+        )
     }
 
     fn header_value_get(
@@ -1001,8 +1017,8 @@ impl FastlyHttpReq for Session {
         self.pending_req_select(memory, pending_req_handles).await
     }
 
-    fn fastly_key_is_valid(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
-        Err(Error::NotAvailable("FASTLY_KEY is valid"))
+    fn fastly_key_is_valid(&mut self, memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        FastlyHttpDownstream::fastly_key_is_valid(self, memory, self.downstream_request())
     }
 
     fn close(

@@ -53,3 +53,12 @@ impl From<error::Error> for TrappableError {
         }
     }
 }
+
+impl From<std::net::IpAddr> for types::IpAddress {
+    fn from(addr: std::net::IpAddr) -> Self {
+        match addr {
+            std::net::IpAddr::V4(addr) => types::IpAddress::Ipv4(addr.octets().into()),
+            std::net::IpAddr::V6(addr) => types::IpAddress::Ipv6(addr.segments().into()),
+        }
+    }
+}
