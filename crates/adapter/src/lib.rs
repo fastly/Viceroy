@@ -9,7 +9,7 @@ use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
 use core::ffi::c_void;
 use core::mem::{self, align_of, forget, size_of, MaybeUninit};
 use core::ops::{Deref, DerefMut};
-use core::ptr::{self, null_mut};
+use core::ptr::null_mut;
 use core::slice;
 use poll::Pollable;
 use wasi::*;
@@ -24,8 +24,10 @@ pub mod fastly;
 mod descriptors;
 
 use crate::descriptors::{Descriptor, Descriptors, StreamType};
-
 pub mod bindings {
+    use crate::set_state_ptr;
+    use core::ptr;
+
     wit_bindgen_rust_macro::generate!({
         path: "../../lib/wit",
         world: "compute",
@@ -56,23 +58,35 @@ pub mod bindings {
                 fn _start();
             }
 
-            let res = crate::State::with::<crate::fastly::FastlyStatus>(|state| {
-                let old = state.request.replace(Some(req));
-                assert!(old.is_none());
-                let old = state.request_body.replace(Some(body));
-                assert!(old.is_none());
-                Ok(())
-            });
+            let mut state = crate::State::new();
+            unsafe {
+                set_state_ptr(ptr::from_mut(&mut state));
+            }
+            // NEXT: √ Figure out who's doing the initting of State. Choose a spot, likely a State method, and have new() and reset_adapter_state() call that, or something. Make it a sorta-singleton again: when you create one, it should put a ptr to itself in state_ptr.
+            // NEXT: I just decided to do ahead and have duplication between init() and new() for now. I'll write to state_ptr here, as doing it in a State method is a bit too much spooky action at a distance; I don't want somebody else instantiating a State and then being surprised. We might be ready to run this through the compiler and start chasing complaints.
+
+            // Could just stack-allocate a State here, perhaps!
+            // Then change get_state_ptr() to, instead of reading a wasm global, return the value of a Rust global, in which we should stick a ptr to our stack-dwelling State.
+            // Also put the secondary stack the adapter allocates on the main stack as an array of bytes or whatever. Stick a ptr to it in a global.
+
+            // Stick the incoming request into the State. Assert there wasn't
+            // anything interesting there before.
+            let old = state.request.replace(Some(req));
+            assert!(old.is_none());
+            let old = state.request_body.replace(Some(body));
+            assert!(old.is_none());
 
             unsafe {
                 _start();
             }
 
-            if res == crate::fastly::FastlyStatus::OK {
-                Ok(())
-            } else {
-                Err(())
+            unsafe {
+                // The original code didn't reset this, at least not here, but I
+                // feel we should, at least somewhere.
+                set_state_ptr(ptr::null_mut());
             }
+
+            Ok(())
         }
     }
 
@@ -1560,52 +1574,40 @@ impl State {
         }
     }
 
+    /// Returns the global pointer to the adapter state. This should have been
+    /// allocated and initted on the top-level stack frame of the adapter.
+    /// Panics if not.
     fn ptr() -> &'static State {
         unsafe {
-            let mut ptr = get_state_ptr();
-            if ptr.is_null() {
-                ptr = State::new();
-                set_state_ptr(ptr);
-            }
+            let ptr = get_state_ptr();
+            assert!(!ptr.is_null());
             &*ptr
         }
     }
 
     #[cold]
-    fn new() -> *mut State {
-        #[link(wasm_import_module = "__main_module__")]
-        extern "C" {
-            fn cabi_realloc(
-                old_ptr: *mut u8,
-                old_len: usize,
-                align: usize,
-                new_len: usize,
-            ) -> *mut u8;
-        }
-
+    fn new() -> State {
         assert!(matches!(
             unsafe { get_allocation_state() },
             AllocationState::StackAllocated
         ));
 
+        // TODO: I don't think this state and the StateAllocated state are
+        // necessary anymore, as State no longer has its singleton-ness enforced
+        // via painstaking checks; it's a singleton just by dint of existing on
+        // the frame of serve(), which has only one invocation at a time.
         unsafe { set_allocation_state(AllocationState::StateAllocating) };
-
-        let ret = unsafe {
-            cabi_realloc(
-                ptr::null_mut(),
-                0,
-                mem::align_of::<UnsafeCell<State>>(),
-                mem::size_of::<UnsafeCell<State>>(),
-            ) as *mut State
-        };
-
         unsafe { set_allocation_state(AllocationState::StateAllocated) };
 
-        unsafe {
-            Self::init(ret);
+        State {
+            magic1: MAGIC,
+            magic2: MAGIC,
+            import_alloc: Cell::new(ImportAlloc::None),
+            descriptors: RefCell::new(None),
+            temporary_data: UnsafeCell::new(MaybeUninit::uninit()),
+            request: Cell::new(None),
+            request_body: Cell::new(None),
         }
-
-        ret
     }
 
     #[cold]
