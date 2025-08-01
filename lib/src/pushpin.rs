@@ -105,10 +105,7 @@ pub async fn proxy_through_pushpin(
             original_request_info.method.as_str(),
         )
     };
-    let mut req = Request::builder()
-        .method(method)
-        .uri(&format!("/{backend_name}{path_and_query}"))
-        .header("Host", pushpin_addr.to_string());
+    let mut req = Request::builder().method(method).uri(path_and_query);
 
     if let Some(redirect_request_info) = redirect_request_info {
         // move the original headers defined in `PROTECTED_REQ_HEADERS` to the top of the req.headers
@@ -134,6 +131,8 @@ pub async fn proxy_through_pushpin(
             req = req.header(name, value);
         }
     }
+    req = req.header("host", pushpin_addr.to_string());
+    req = req.header("pushpin-route", backend_name.to_string());
 
     let req = match req.body(original_request_body) {
         Ok(req) => req,
