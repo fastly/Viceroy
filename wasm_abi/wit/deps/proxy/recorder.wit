@@ -1,0 +1,13 @@
+package proxy:recorder@0.1.0;
+
+interface %record {
+  %record: func(method: string, args: list<string>, ret: string);
+}
+
+interface replay {
+  replay: func(method: string, args: list<string>, ret: string);
+}
+
+world host {
+  import %record;
+}

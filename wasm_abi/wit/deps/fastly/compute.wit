@@ -1951,6 +1951,8 @@ interface compute-runtime {
 }
 
 world compute {
+  import proxy:recorder/%record@0.1.0;
+
   import wasi:clocks/wall-clock@0.2.0;
   import wasi:clocks/monotonic-clock@0.2.0;
   import wasi:io/error@0.2.0;
@@ -1987,6 +1989,11 @@ world compute {
   // experimental interfaces
   import http-cache;
   import shielding;
+
+  export async-io;
+  export http-body;
+  export http-resp;
+  export http-req;
 
   export reactor;
 }
