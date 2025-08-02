@@ -1990,5 +1990,10 @@ world compute {
   import http-cache;
   import shielding;
 
+  export async-io;
+  export http-body;
+  export http-resp;
+  export http-req;
+
   export reactor;
 }

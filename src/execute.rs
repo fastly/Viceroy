@@ -495,9 +495,11 @@ impl ExecuteCtx {
                     .await
                     .map_err(ExecutionError::Instantiation)?;
 
+                let req = compute.fastly_api_http_req().request_handle().call_new(&mut store).await.unwrap().unwrap();
+
                 let result = compute
                     .fastly_api_reactor()
-                    .call_serve(&mut store, req.into(), body.into())
+                    .call_serve(&mut store, req, body.into())
                     .await;
 
                 let outcome = match result {
