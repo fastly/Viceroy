@@ -38,7 +38,7 @@ impl http_downstream::Host for ComponentCtx {
         handle: http_types::RequestPromiseHandle,
     ) -> Result<(http_types::RequestHandle, http_types::BodyHandle), types::Error> {
         let handle = AsyncItemHandle::from_u32(handle.into());
-        let (req, body) = self.session.resolve_pending_downstream_req(handle).await?;
+        let (req, body) = self.session.await_downstream_req(handle).await?;
 
         Ok((req.into(), body.into()))
     }

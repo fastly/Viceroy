@@ -44,7 +44,7 @@ impl FastlyHttpDownstream for Session {
         handle: RequestPromiseHandle,
     ) -> Result<(RequestHandle, BodyHandle), Error> {
         let handle = AsyncItemHandle::from_u32(handle.into());
-        let (req, body) = self.resolve_pending_downstream_req(handle).await?;
+        let (req, body) = self.await_downstream_req(handle).await?;
         Ok((req, body))
     }
 

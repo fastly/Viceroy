@@ -83,13 +83,14 @@ impl PendingDownstreamReqTask {
     ///
     /// This will block until the sender side of the channel is either dropped
     /// or sends us a value.
-    pub async fn recv(self) -> Result<DownstreamRequest, Error> {
-        let next = match self {
-            Self::Waiting(rx, _) => rx.await.map_err(|_| Error::NoDownstreamReqsAvailable)?,
-            Self::Complete(res) => res?,
+    pub async fn recv(mut self) -> Result<DownstreamRequest, Error> {
+        self.await_ready().await;
+
+        let Self::Complete(res) = self else {
+            return Err(Error::NoDownstreamReqsAvailable);
         };
 
-        next.into_request().ok_or(Error::NoDownstreamReqsAvailable)
+        res?.into_request().ok_or(Error::NoDownstreamReqsAvailable)
     }
 
     /// Drive this task to completion.
@@ -305,6 +306,20 @@ impl AsyncItem {
     pub fn into_pending_req(self) -> Option<PeekableTask<Response<Body>>> {
         match self {
             Self::PendingReq(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_downstream_req_mut(&mut self) -> Option<&mut PendingDownstreamReqTask> {
+        match self {
+            Self::PendingDownstream(req) => Some(req),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_downstream_req(self) -> Option<PendingDownstreamReqTask> {
+        match self {
+            Self::PendingDownstream(req) => Some(req),
             _ => None,
         }
     }

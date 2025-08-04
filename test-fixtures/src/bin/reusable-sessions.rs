@@ -43,6 +43,15 @@ extern "C" {
     ) -> FastlyStatus;
 }
 
+fn is_ready(handle: u32) -> bool {
+    let mut ready_out: u32 = 0;
+    unsafe {
+        let status = fastly_sys::fastly_async_io::is_ready(handle, &mut ready_out);
+        assert_eq!(status, FastlyStatus::OK);
+    }
+    ready_out == 1
+}
+
 fn main() {
     let mut counter = 0;
     let mut req = Request::from_client();
@@ -73,15 +82,16 @@ fn main() {
         let mut rh = INVALID_REQUEST_HANDLE;
         let mut bh = INVALID_REQUEST_HANDLE;
 
-        'inner: loop {
-            let status = unsafe { next_request_wait(pending, &mut rh, &mut bh) };
+        while !is_ready(pending) {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
 
-            match status {
-                FastlyStatus::OK => break 'inner,
-                FastlyStatus::AGAIN => continue 'inner,
-                FastlyStatus::NONE => break 'outer,
-                _ => panic!("unexpected result: {status:?}"),
-            }
+        let status = unsafe { next_request_wait(pending, &mut rh, &mut bh) };
+
+        match status {
+            FastlyStatus::OK => {},
+            FastlyStatus::NONE => break 'outer,
+            _ => panic!("unexpected result: {status:?}"),
         }
 
         let bh = unsafe { BodyHandle::from_u32(bh) };
