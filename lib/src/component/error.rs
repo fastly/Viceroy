@@ -228,11 +228,11 @@ impl From<error::Error> for types::Error {
             Error::SecretStoreError(e) => e.into(),
             Error::CacheError(e) => e.into(),
             Error::NoDownstreamReqsAvailable => types::Error::OptionalNone,
-            Error::Again => types::Error::Again,
             Error::ValueAbsent => types::Error::OptionalNone,
             Error::LimitExceeded { .. } => types::Error::LimitExceeded,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch
+            | Error::Again
             | Error::BackendUrl(_)
             | Error::BadCerts(_)
             | Error::DownstreamRequestError(_)

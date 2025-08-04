@@ -36,7 +36,6 @@ impl From<crate::bindings::fastly::api::types::Error> for FastlyStatus {
             Error::HttpHeadTooLarge => 11,
             Error::HttpInvalidStatus => 12,
             Error::LimitExceeded => 13,
-            Error::Again => 14,
         })
     }
 }

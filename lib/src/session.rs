@@ -1239,28 +1239,32 @@ impl Session {
     pub fn take_pending_downstream_req(
         &mut self,
         handle: AsyncItemHandle,
-        require_ready: bool,
-    ) -> Result<PendingDownstreamReqTask, Error> {
-        let mut item = self.take_async_item(handle)?;
-        let ready = item.is_ready();
+    ) -> Result<PendingDownstreamReqTask, HandleError> {
+        let task = self
+            .async_items
+            .get_mut(handle)
+            .and_then(|maybe_item| {
+                if maybe_item
+                    .as_mut()
+                    .and_then(AsyncItem::as_pending_downstream_req_mut)
+                    .is_some()
+                {
+                    maybe_item
+                        .take()
+                        .and_then(AsyncItem::into_pending_downstream_req)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| HandleError::InvalidPendingDownstreamHandle(handle.into()))?;
 
-        match (item, (ready, require_ready)) {
-            (AsyncItem::PendingDownstream(pending), (true, _) | (false, false)) => {
-                self.downstream_pending_handle = None;
-                Ok(pending)
-            }
-            (item @ AsyncItem::PendingDownstream(_), (false, true)) => {
-                self.reinsert_async_handle(handle, item);
-                Err(Error::Again)
-            }
-            (item, _) => {
-                self.reinsert_async_handle(handle, item);
-                Err(HandleError::InvalidPendingDownstreamHandle(handle.into()).into())
-            }
-        }
+        self.downstream_pending_handle = None;
+
+        Ok(task)
     }
 
-    pub async fn resolve_pending_downstream_req(
+    /// Wait for a [PendingDownstreamReqTask] to finish, then fetch its request and body handles.
+    pub async fn await_downstream_req(
         &mut self,
         handle: AsyncItemHandle,
     ) -> Result<(RequestHandle, BodyHandle), Error> {
@@ -1270,7 +1274,7 @@ impl Session {
             });
         }
 
-        let item = self.take_pending_downstream_req(handle, true)?;
+        let item = self.take_pending_downstream_req(handle)?;
         let downstream = item.recv().await?;
 
         let (parts, body) = downstream.req.into_parts();
@@ -1287,10 +1291,11 @@ impl Session {
         Ok((req_handle, body_handle.into()))
     }
 
-    pub fn abandon_pending_downstream_req(&mut self, handle: AsyncItemHandle) -> Result<(), Error> {
-        let _ = self.take_pending_downstream_req(handle, false)?;
-
-        Ok(())
+    pub fn abandon_pending_downstream_req(
+        &mut self,
+        handle: AsyncItemHandle,
+    ) -> Result<(), HandleError> {
+        self.take_pending_downstream_req(handle).map(|_| ())
     }
 
     pub fn ctx(&self) -> &Arc<ExecuteCtx> {
