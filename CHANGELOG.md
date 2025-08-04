@@ -1,5 +1,26 @@
 ## Unreleased
 
+- Add support for integrating with a local Pushpin instance ([#497](https://github.com/fastly/Viceroy/pull/497))
+
+  Viceroy can be invoked with `--local-pushpin-proxy-port=<port>` to cause
+  requests that invoke the `fastly_http_req.redirect_to_grip_proxy` and `_v2`
+  hostcalls to be proxied through a local Pushpin instance running on the
+  specified port. This enables developers to locally test Fanout (real-time
+  messaging) features like HTTP streaming or WebSockets-over-HTTP.
+
+  Requests forwarded this way will be replayed:
+   - Method, headers, path, and query of the forwarded request will be based on
+     the request whose handle is passed to `redirect_to_grip_proxy_v2` (or from
+     the downstream request if `redirect_to_grip_proxy` was called).
+   - The request header `pushpin-route` will be added, its value set to the backend name.
+   - Request body of the forwarded request will contain the full body of the
+     downstream request.
+
+  This mechanism expects Pushpin to be configured with `accept_pushpin_route`
+  to be set to `true` and for its routes to be set up properly. This is
+  configured automatically if Viceroy is called through the Fastly CLI's
+  `fastly compute serve` command.
+
 ## 0.13.0
 
 - Add support for shielding primitives in Viceroy ([#455](https://github.com/fastly/Viceroy/pull/455)
