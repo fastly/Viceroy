@@ -5,16 +5,18 @@ use {
         acl::Acls,
         adapt,
         body::Body,
+        body_tee::tee,
         cache::Cache,
         component as compute,
         config::{
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
             UnknownImportBehavior,
         },
-        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest},
-        error::ExecutionError,
+        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest, DownstreamResponse},
+        error::{ExecutionError, NonHttpResponse},
         linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
+        pushpin::{proxy_through_pushpin, PushpinRedirectRequestInfo},
         secret_store::SecretStores,
         session::Session,
         shielding_site::ShieldingSites,
@@ -25,6 +27,7 @@ use {
         task::{Context, Poll},
         Future,
     },
+    http::StatusCode,
     hyper::{Request, Response},
     pin_project::pin_project,
     std::{
@@ -43,7 +46,7 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tokio::sync::Mutex as AsyncMutex,
-    tracing::{event, info, info_span, warn, Instrument, Level},
+    tracing::{error, event, info, info_span, warn, Instrument, Level},
     wasmtime::{
         component::{self, Component},
         Engine, GuestProfiler, InstancePre, Linker, Module, ProfilingStrategy,
@@ -137,6 +140,8 @@ pub struct ExecuteCtx {
     log_stdout: bool,
     /// Whether to treat stderr as a logging endpoint
     log_stderr: bool,
+    /// The local Pushpin proxy port
+    local_pushpin_proxy_port: Option<u16>,
     /// The ID to assign the next incoming request
     next_req_id: Arc<AtomicU64>,
     /// The ObjectStore associated with this instance of Viceroy
@@ -276,6 +281,7 @@ impl ExecuteCtx {
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
+            local_pushpin_proxy_port: None,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
             secret_stores: SecretStores::new(),
@@ -360,6 +366,18 @@ impl ExecuteCtx {
         &self.tls_config
     }
 
+    async fn maybe_receive_response(
+        receiver: oneshot::Receiver<DownstreamResponse>,
+    ) -> Option<(Response<Body>, Option<anyhow::Error>)> {
+        match receiver.await.ok()? {
+            DownstreamResponse::Http(resp) => Some((resp, None)),
+            DownstreamResponse::RedirectToPushpin(info) => Some((
+                Response::new(Body::empty()),
+                Some(NonHttpResponse::PushpinRedirect(info).into()),
+            )),
+        }
+    }
+
     /// Asynchronously handle a request.
     ///
     /// This method fully instantiates the wasm module housed within the `ExecuteCtx`,
@@ -389,12 +407,20 @@ impl ExecuteCtx {
     /// ```
     pub async fn handle_request(
         self: Arc<Self>,
-        incoming_req: Request<hyper::Body>,
+        mut incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
     ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
-        let original_headers = incoming_req.headers().clone();
-        let req = prepare_request(incoming_req)?;
+        let orig_req_on_upgrade = hyper::upgrade::on(&mut incoming_req);
+        let (incoming_req_parts, incoming_req_body) = incoming_req.into_parts();
+        let local_pushpin_proxy_port = self.local_pushpin_proxy_port;
+
+        let (body_for_wasm, orig_body_tee) = tee(incoming_req_body).await;
+        let orig_request_info_for_pushpin =
+            PushpinRedirectRequestInfo::from_parts(&incoming_req_parts);
+
+        let original_headers = incoming_req_parts.headers.clone();
+        let req = prepare_request(Request::from_parts(incoming_req_parts, body_for_wasm))?;
 
         let req_id = self
             .next_req_id
@@ -408,14 +434,54 @@ impl ExecuteCtx {
             original_headers,
         };
 
-        let res = self.reuse_or_spawn_guest(req, metadata).await;
+        let (resp, mut err) = self.reuse_or_spawn_guest(req, metadata).await;
 
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
 
-        info!("response status: {:?}", res.0.status());
+        info!("response status: {:?}", resp.status());
 
-        Ok(res)
+        if let Some(e) = err {
+            match e.downcast::<NonHttpResponse>() {
+                Ok(NonHttpResponse::PushpinRedirect(redirect_info)) => {
+                    let backend_name = redirect_info.backend_name;
+                    let redirect_request_info = redirect_info.request_info;
+                    info!("Pushpin redirect signaled to backend '{}'", backend_name);
+
+                    let local_pushpin_proxy_port = match local_pushpin_proxy_port {
+                        None => {
+                            error!("Pushpin redirect signaled, but Pushpin mode not enabled.");
+                            let err = anyhow::anyhow!(
+                                "Pushpin redirect signaled, but Pushpin mode not enabled."
+                            );
+                            let resp = Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from(hyper::Body::from(err.to_string())))?;
+                            return Ok((resp, Some(err)));
+                        }
+                        Some(port) => port,
+                    };
+
+                    let proxy_resp = proxy_through_pushpin(
+                        SocketAddr::new(Ipv4Addr::LOCALHOST.into(), local_pushpin_proxy_port),
+                        backend_name,
+                        redirect_request_info,
+                        orig_request_info_for_pushpin,
+                        orig_body_tee,
+                        orig_req_on_upgrade,
+                    )
+                    .await;
+
+                    let (p, hyper_body) = proxy_resp.into_parts();
+                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                }
+                Err(e) => {
+                    err = Some(e);
+                }
+            }
+        }
+
+        Ok((resp, err))
     }
 
     /// Spawn a new guest to process a request whose processing was never attempted by
@@ -430,7 +496,7 @@ impl ExecuteCtx {
             let original = std::mem::replace(&mut downstream.sender, sender);
             let (resp, err) = self.spawn_guest(downstream, receiver).await;
             let resp = guest_result_to_response(resp, err);
-            let _ = original.send(resp);
+            let _ = original.send(DownstreamResponse::Http(resp));
         });
     }
 
@@ -466,7 +532,11 @@ impl ExecuteCtx {
                 Ok(()) => {
                     // Drop lock and wait for the guest to process our request.
                     drop(reusable);
-                    return (receiver.await.unwrap_or_default(), None);
+
+                    if let Some(response) = Self::maybe_receive_response(receiver).await {
+                        return response;
+                    }
+                    return (Response::default(), None);
                 }
                 Err(nr) => next_req = nr,
             }
@@ -483,7 +553,7 @@ impl ExecuteCtx {
     async fn spawn_guest(
         self: Arc<Self>,
         downstream: DownstreamRequest,
-        receiver: oneshot::Receiver<Response<Body>>,
+        receiver: oneshot::Receiver<DownstreamResponse>,
     ) -> (Response<Body>, Option<anyhow::Error>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
@@ -496,8 +566,8 @@ impl ExecuteCtx {
                 .instrument(info_span!("request", id = req_id)),
         ));
 
-        if let Ok(resp) = receiver.await {
-            return (resp, None);
+        if let Some(response) = Self::maybe_receive_response(receiver).await {
+            return response;
         }
 
         match guest_handle
@@ -858,6 +928,12 @@ impl ExecuteCtxBuilder {
     /// Set the stderr logging policy for this execution context.
     pub fn with_log_stderr(mut self, log_stderr: bool) -> Self {
         self.inner.log_stderr = log_stderr;
+        self
+    }
+
+    /// Set the local Pushpin proxy port
+    pub fn with_local_pushpin_proxy_port(mut self, local_pushpin_proxy_port: Option<u16>) -> Self {
+        self.inner.local_pushpin_proxy_port = local_pushpin_proxy_port;
         self
     }
 }

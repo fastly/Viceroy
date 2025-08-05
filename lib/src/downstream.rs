@@ -3,7 +3,8 @@ use std::net::SocketAddr;
 
 use crate::body::Body;
 use crate::error::DownstreamRequestError;
-use http::{HeaderMap, Request};
+use crate::pushpin::PushpinRedirectInfo;
+use http::{HeaderMap, Request, Response};
 use hyper::Uri;
 use tokio::sync::oneshot::Sender;
 
@@ -29,7 +30,13 @@ pub struct DownstreamMetadata {
 pub struct DownstreamRequest {
     pub req: hyper::Request<Body>,
     pub metadata: DownstreamMetadata,
-    pub sender: Sender<hyper::Response<Body>>,
+    pub sender: Sender<DownstreamResponse>,
+}
+
+#[derive(Debug)]
+pub enum DownstreamResponse {
+    Http(Response<Body>),
+    RedirectToPushpin(PushpinRedirectInfo),
 }
 
 /// Canonicalize the incoming request into the form expected by host calls.
