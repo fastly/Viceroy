@@ -338,6 +338,7 @@ async fn create_execution_context(
     let dictionaries = config.dictionaries();
     let object_stores = config.object_stores();
     let secret_stores = config.secret_stores();
+    let shielding_sites = config.shielding_sites();
     let backend_names = itertools::join(backends.keys(), ", ");
 
     let ctx = ctx
@@ -348,6 +349,7 @@ async fn create_execution_context(
         .with_dictionaries(dictionaries.clone())
         .with_object_stores(object_stores.clone())
         .with_secret_stores(secret_stores.clone())
+        .with_shielding_sites(shielding_sites.clone())
         .with_config_path(config_path.into())
         .finish()?;
 
