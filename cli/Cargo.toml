@@ -24,8 +24,8 @@ include = [
     "../doc/logo.png",
     "src/**/*"
 ]
-# MSRV: 1.78 for wasm32-wasip1
-rust-version = "1.78"
+# MSRV: 1.85 for 2024 edition
+rust-version = "1.85"
 
 [[bin]]
 name = "viceroy"
