@@ -26,6 +26,7 @@ include = [
 ]
 # MSRV: 1.78 for wasm32-wasip1
 rust-version = "1.78"
+resolver = "3"
 
 [[bin]]
 name = "viceroy"

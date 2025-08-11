@@ -25,6 +25,7 @@ include = [
 ]
 # MSRV: 1.82 for is_none_or
 rust-version = "1.82"
+resolver = "3"
 
 [dependencies]
 anyhow = { workspace = true }

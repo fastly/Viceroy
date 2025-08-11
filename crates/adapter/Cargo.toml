@@ -3,6 +3,7 @@ name = "viceroy-component-adapter"
 version = "0.0.0"
 edition = "2021"
 publish = false
+resolver = "3"
 
 [dependencies]
 wasi = { workspace = true }
