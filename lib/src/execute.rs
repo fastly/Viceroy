@@ -989,7 +989,7 @@ fn configure_wasmtime(
     use wasmtime::{Config, InstanceAllocationStrategy, WasmBacktraceDetails};
 
     let mut config = Config::new();
-    config.debug_info(false); // Keep this disabled - wasmtime will hang if enabled
+    config.debug_info(true);
     config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
     config.async_support(true);
     config.epoch_interruption(true);
