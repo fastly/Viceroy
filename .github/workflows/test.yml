@@ -10,6 +10,7 @@ jobs:
     strategy:
       matrix:
         platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-13, macos-14, macos-15]
+        rust-toolchain: ["1.89"]
     runs-on: ${{ matrix.platform }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -20,7 +21,7 @@ jobs:
       with:
         submodules: true
     - name: Install Rust
-      run: rustup update --no-self-update 1.84 && rustup default 1.84
+      run: rustup update --no-self-update ${{ matrix.rust-toolchain }} && rustup default ${{ matrix.rust-toolchain }}
       shell: bash
     - name: Add wasm32-wasip1 Rust target
       run: rustup target add wasm32-wasip1
@@ -63,7 +64,7 @@ jobs:
       with:
         submodules: true
     - name: Install Rust
-      run: rustup update --no-self-update 1.83 && rustup default 1.83
+      run: rustup update --no-self-update ${{ matrix.rust-toolchain }} && rustup default ${{ matrix.rust-toolchain }}
       shell: bash
     - name: Add wasm32-wasip1 Rust target
       run: rustup target add wasm32-wasip1
@@ -89,7 +90,7 @@ jobs:
         with:
           submodules: true
       - name: Install Rust
-        run: rustup update 1.84 && rustup default 1.84
+        run: rustup update ${{ matrix.rust-toolchain }} && rustup default ${{ matrix.rust-toolchain }}
         shell: bash
       - name: Check crates can be published
         run: make package-check
