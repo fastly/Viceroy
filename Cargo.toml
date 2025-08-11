@@ -5,7 +5,7 @@ members = [
     "crates/adapter",
     "crates/adapter/byte-array-literals",
 ]
-resolver = "2"
+resolver = "3"
 
 # Exclude our integration test fixtures, which need to be compiled to wasm
 # (managed by the Makefile)
