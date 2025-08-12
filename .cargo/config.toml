@@ -1,4 +1,4 @@
-[target.'cfg(not(target_arch = "wasm32"))']
+[build]
 rustflags = [
     "-C",
     "force-unwind-tables",
