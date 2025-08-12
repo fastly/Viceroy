@@ -1,0 +1,5 @@
+[target.'cfg(not(target_arch = "wasm32"))']
+rustflags = [
+    "-C",
+    "force-unwind-tables",
+]
