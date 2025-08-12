@@ -10,10 +10,10 @@ jobs:
     strategy:
       matrix:
         rust-toolchain: ["1.89"]
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-14, windows-2025]
         arch: [amd64, arm64]
         exclude:
-          - os: windows-2022
+          - os: windows-2025
             arch: arm64
         include:
           - os: ubuntu-24.04
@@ -22,7 +22,7 @@ jobs:
           - os: macos-14
             name: darwin
             rust_abi: apple-darwin
-          - os: windows-2022
+          - os: windows-2025
             name: windows
             rust_abi: pc-windows-msvc
             extension: .exe
