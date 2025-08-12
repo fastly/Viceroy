@@ -42,7 +42,7 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
     wasmtime_wasi::bindings::io::streams::add_to_linker_get_host(linker, wrap)?;
     wasmtime_wasi::bindings::io::poll::add_to_linker_get_host(linker, wrap)?;
     wasmtime_wasi::bindings::cli::environment::add_to_linker_get_host(linker, wrap)?;
-    wasmtime_wasi::bindings::cli::exit::add_to_linker_get_host(linker, wrap)?;
+    wasmtime_wasi::bindings::cli::exit::add_to_linker_get_host(linker, &Default::default(), wrap)?;
     wasmtime_wasi::bindings::cli::stdin::add_to_linker_get_host(linker, wrap)?;
     wasmtime_wasi::bindings::cli::stdout::add_to_linker_get_host(linker, wrap)?;
     wasmtime_wasi::bindings::cli::stderr::add_to_linker_get_host(linker, wrap)?;
