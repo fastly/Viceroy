@@ -1,25 +1,24 @@
 use super::fastly::api::{shielding, types};
 use crate::config::Backend;
 use crate::error::Error;
-use crate::linking::ComponentCtx;
+use crate::linking::{ComponentCtx, SessionView};
 use http::Uri;
 use std::str::FromStr;
 
-#[async_trait::async_trait]
 impl shielding::Host for ComponentCtx {
     async fn shield_info(&mut self, name: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
         // Validate input name and return the unsupported error.
         let name = String::from_utf8(name)?;
 
-        let running_on = self.session.shielding_sites().is_local(&name);
+        let running_on = self.session().shielding_sites().is_local(&name);
         let unencrypted = self
-            .session
+            .session()
             .shielding_sites()
             .get_unencrypted(&name)
             .map(|x| x.to_string())
             .unwrap_or_default();
         let encrypted = self
-            .session
+            .session()
             .shielding_sites()
             .get_encrypted(&name)
             .map(|x| x.to_string())
@@ -79,7 +78,7 @@ impl shielding::Host for ComponentCtx {
             ca_certs: Vec::new(),
         };
 
-        if !self.session.add_backend(&new_name, new_backend) {
+        if !self.session_mut().add_backend(&new_name, new_backend) {
             return Err(Error::BackendNameRegistryError(new_name).into());
         }
 

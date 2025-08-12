@@ -8,7 +8,7 @@ use {
         types::TrappableError,
     },
     crate::{
-        linking::ComponentCtx,
+        linking::{ComponentCtx, SessionView},
         object_store::{ObjectKey, ObjectStoreError},
         session::{
             PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
@@ -16,7 +16,7 @@ use {
         },
         wiggle_abi::types::KvInsertMode,
     },
-    wasmtime_wasi::WasiView,
+    wasmtime_wasi::p2::IoView,
 };
 
 pub struct LookupResult {
@@ -25,7 +25,6 @@ pub struct LookupResult {
     generation: u64,
 }
 
-#[async_trait::async_trait]
 impl kv_store::HostLookupResult for ComponentCtx {
     async fn body(
         &mut self,
@@ -67,13 +66,12 @@ impl kv_store::HostLookupResult for ComponentCtx {
     }
 }
 
-#[async_trait::async_trait]
 impl kv_store::Host for ComponentCtx {
     async fn open(&mut self, name: Vec<u8>) -> Result<Option<kv_store::Handle>, types::Error> {
         let name = String::from_utf8(name)?;
-        if self.session.kv_store().store_exists(&name)? {
+        if self.session().kv_store().store_exists(&name)? {
             // todo (byoung), handle optional/none/error case
-            let h = self.session.kv_store_handle(&name)?;
+            let h = self.session_mut().kv_store_handle(&name)?;
             Ok(Some(h.into()))
         } else {
             Err(ObjectStoreError::UnknownObjectStore(name.to_owned()).into())
@@ -85,13 +83,16 @@ impl kv_store::Host for ComponentCtx {
         store: kv_store::Handle,
         key: Vec<u8>,
     ) -> Result<kv_store::LookupHandle, types::Error> {
-        let store = self.session.get_kv_store_key(store.into()).unwrap();
+        let store = self.session().get_kv_store_key(store.into()).unwrap();
         let key = String::from_utf8(key)?;
         // just create a future that's already ready
-        let fut = futures::future::ok(self.session.obj_lookup(store.clone(), ObjectKey::new(key)?));
+        let fut = futures::future::ok(
+            self.session()
+                .obj_lookup(store.clone(), ObjectKey::new(key)?),
+        );
         let task = PeekableTask::spawn(fut).await;
         let lh = self
-            .session
+            .session_mut()
             .insert_pending_kv_lookup(PendingKvLookupTask::new(task));
         Ok(lh.into())
     }
@@ -107,7 +108,7 @@ impl kv_store::Host for ComponentCtx {
         types::Error,
     > {
         let resp = self
-            .session
+            .session_mut()
             .take_pending_kv_lookup(handle.into())?
             .task()
             .recv()
@@ -116,7 +117,7 @@ impl kv_store::Host for ComponentCtx {
         match resp {
             Ok(value) => {
                 let lr = kv_store::LookupResult {
-                    body: self.session.insert_body(value.body.into()).into(),
+                    body: self.session_mut().insert_body(value.body.into()).into(),
                     metadata: match value.metadata_len {
                         0 => None,
                         _ => Some(value.metadata),
@@ -141,11 +142,11 @@ impl kv_store::Host for ComponentCtx {
         config: kv_store::InsertConfig,
     ) -> Result<kv_store::InsertHandle, types::Error> {
         let body = self
-            .session
+            .session_mut()
             .take_body(body_handle.into())?
             .read_into_vec()
             .await?;
-        let store = self.session.get_kv_store_key(store.into()).unwrap();
+        let store = self.session().get_kv_store_key(store.into()).unwrap();
         let key = String::from_utf8(key)?;
 
         let mode = match config.mode {
@@ -175,7 +176,7 @@ impl kv_store::Host for ComponentCtx {
             None
         };
 
-        let fut = futures::future::ok(self.session.kv_insert(
+        let fut = futures::future::ok(self.session().kv_insert(
             store.clone(),
             ObjectKey::new(key)?,
             body,
@@ -186,7 +187,7 @@ impl kv_store::Host for ComponentCtx {
         ));
         let task = PeekableTask::spawn(fut).await;
         let handle = self
-            .session
+            .session_mut()
             .insert_pending_kv_insert(PendingKvInsertTask::new(task));
         Ok(handle.into())
     }
@@ -196,7 +197,7 @@ impl kv_store::Host for ComponentCtx {
         handle: kv_store::InsertHandle,
     ) -> Result<kv_store::KvStatus, types::Error> {
         let resp = self
-            .session
+            .session_mut()
             .take_pending_kv_insert(handle.into())?
             .task()
             .recv()
@@ -213,13 +214,16 @@ impl kv_store::Host for ComponentCtx {
         store: kv_store::Handle,
         key: Vec<u8>,
     ) -> Result<kv_store::DeleteHandle, types::Error> {
-        let store = self.session.get_kv_store_key(store.into()).unwrap();
+        let store = self.session().get_kv_store_key(store.into()).unwrap();
         let key = String::from_utf8(key)?;
         // just create a future that's already ready
-        let fut = futures::future::ok(self.session.kv_delete(store.clone(), ObjectKey::new(key)?));
+        let fut = futures::future::ok(
+            self.session()
+                .kv_delete(store.clone(), ObjectKey::new(key)?),
+        );
         let task = PeekableTask::spawn(fut).await;
         let lh = self
-            .session
+            .session_mut()
             .insert_pending_kv_delete(PendingKvDeleteTask::new(task));
         Ok(lh.into())
     }
@@ -229,7 +233,7 @@ impl kv_store::Host for ComponentCtx {
         handle: kv_store::DeleteHandle,
     ) -> Result<kv_store::KvStatus, types::Error> {
         let resp = self
-            .session
+            .session_mut()
             .take_pending_kv_delete(handle.into())?
             .task()
             .recv()
@@ -247,7 +251,7 @@ impl kv_store::Host for ComponentCtx {
         mask: kv_store::ListConfigOptions,
         options: kv_store::ListConfig,
     ) -> Result<kv_store::ListHandle, types::Error> {
-        let store = self.session.get_kv_store_key(store.into()).unwrap();
+        let store = self.session().get_kv_store_key(store.into()).unwrap();
 
         let cursor = if mask.contains(kv_store::ListConfigOptions::CURSOR) {
             Some(String::from_utf8(options.cursor)?)
@@ -267,10 +271,10 @@ impl kv_store::Host for ComponentCtx {
             None
         };
 
-        let fut = futures::future::ok(self.session.kv_list(store.clone(), cursor, prefix, limit));
+        let fut = futures::future::ok(self.session().kv_list(store.clone(), cursor, prefix, limit));
         let task = PeekableTask::spawn(fut).await;
         let handle = self
-            .session
+            .session_mut()
             .insert_pending_kv_list(PendingKvListTask::new(task));
         Ok(handle.into())
     }
@@ -280,7 +284,7 @@ impl kv_store::Host for ComponentCtx {
         handle: kv_store::ListHandle,
     ) -> Result<(Option<kv_store::BodyHandle>, kv_store::KvStatus), types::Error> {
         let resp = self
-            .session
+            .session_mut()
             .take_pending_kv_list(handle.into())?
             .task()
             .recv()
@@ -288,7 +292,7 @@ impl kv_store::Host for ComponentCtx {
 
         match resp {
             Ok(value) => Ok((
-                Some(self.session.insert_body(value.into()).into()),
+                Some(self.session_mut().insert_body(value.into()).into()),
                 kv_store::KvStatus::Ok,
             )),
             Err(e) => Ok((None, e.into())),

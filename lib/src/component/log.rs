@@ -1,6 +1,6 @@
 use {
     super::fastly::api::{log, types},
-    crate::linking::ComponentCtx,
+    crate::linking::{ComponentCtx, SessionView},
     lazy_static::lazy_static,
 };
 
@@ -16,7 +16,6 @@ fn is_reserved_endpoint(name: &[u8]) -> bool {
     RESERVED_ENDPOINT_RE.is_match(name)
 }
 
-#[async_trait::async_trait]
 impl log::Host for ComponentCtx {
     async fn endpoint_get(&mut self, name: String) -> Result<log::Handle, types::Error> {
         let name = name.as_bytes();
@@ -25,11 +24,11 @@ impl log::Host for ComponentCtx {
             return Err(types::Error::InvalidArgument.into());
         }
 
-        Ok(self.session.log_endpoint_handle(name).into())
+        Ok(self.session_mut().log_endpoint_handle(name).into())
     }
 
     async fn write(&mut self, h: log::Handle, msg: String) -> Result<u32, types::Error> {
-        let endpoint = self.session.log_endpoint(h.into())?;
+        let endpoint = self.session().log_endpoint(h.into())?;
         let msg = msg.as_bytes();
         endpoint.write_entry(&msg)?;
         Ok(u32::try_from(msg.len()).unwrap())

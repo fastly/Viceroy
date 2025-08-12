@@ -7,7 +7,6 @@ use {
 #[derive(Debug)]
 pub struct UserAgent {}
 
-#[async_trait::async_trait]
 impl uap::HostUserAgent for ComponentCtx {
     async fn family(
         &mut self,
@@ -46,7 +45,6 @@ impl uap::HostUserAgent for ComponentCtx {
     }
 }
 
-#[async_trait::async_trait]
 impl uap::Host for ComponentCtx {
     async fn parse(&mut self, _user_agent: String) -> Result<Resource<UserAgent>, types::Error> {
         // not available

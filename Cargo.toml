@@ -41,21 +41,21 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "28.0.0", features = ["call-hook"] }
-wasmtime-wasi = "28.0.0"
-wasmtime-wasi-nn = "28.0.0"
-wiggle = "28.0.0"
+wasmtime = { version =  "35.0.0", features = ["call-hook"] }
+wasmtime-wasi = "35.0.0"
+wasmtime-wasi-nn = "35.0.0"
+wiggle = "35.0.0"
 wat = "1.212.0"
-wasmparser = "0.217.0"
-wasm-encoder = { version = "0.217.0", features = ["wasmparser"] }
-wit-component = "0.217.0"
+wasmparser = "0.236.0"
+wasm-encoder = { version = "0.236.0", features = ["wasmparser"] }
+wit-component = "0.236.0"
 
 # Adapter dependencies
 byte-array-literals = { path = "crates/adapter/byte-array-literals" }
 bitflags = { version = "2.5.0", default-features = false }
 object = { version = "0.33", default-features = false, features = ["archive"] }
 wasi = { version = "0.11.0", default-features = false }
-wit-bindgen-rust-macro = { version = "0.32.0", default-features = false }
+wit-bindgen-rust-macro = { version = "0.43.0", default-features = false }
 
 [profile.release.package.viceroy-component-adapter]
 opt-level = 's'

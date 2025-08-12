@@ -1,7 +1,6 @@
 use super::fastly::api::{http_req, http_types, image_optimizer, types};
 use crate::linking::ComponentCtx;
 
-#[async_trait::async_trait]
 impl image_optimizer::Host for ComponentCtx {
     async fn transform_image_optimizer_request(
         &mut self,

@@ -314,6 +314,4 @@ pub enum UnknownImportBehavior {
     LinkError,
     /// Unknown imports trap when called
     Trap,
-    /// Unknown imports return zero or a null pointer, depending on the type
-    ZeroOrNull,
 }

@@ -1602,16 +1602,16 @@ interface compute-runtime {
 }
 
 world compute {
-  import wasi:clocks/wall-clock@0.2.0;
-  import wasi:clocks/monotonic-clock@0.2.0;
-  import wasi:io/error@0.2.0;
-  import wasi:io/streams@0.2.0;
-  import wasi:random/random@0.2.0;
-  import wasi:cli/environment@0.2.0;
-  import wasi:cli/exit@0.2.0;
-  import wasi:cli/stdout@0.2.0;
-  import wasi:cli/stderr@0.2.0;
-  import wasi:cli/stdin@0.2.0;
+  import wasi:clocks/wall-clock@0.2.6;
+  import wasi:clocks/monotonic-clock@0.2.6;
+  import wasi:io/error@0.2.6;
+  import wasi:io/streams@0.2.6;
+  import wasi:random/random@0.2.6;
+  import wasi:cli/environment@0.2.6;
+  import wasi:cli/exit@0.2.6;
+  import wasi:cli/stdout@0.2.6;
+  import wasi:cli/stderr@0.2.6;
+  import wasi:cli/stdin@0.2.6;
 
   // public interfaces
   import acl;

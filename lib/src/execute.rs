@@ -14,7 +14,7 @@ use {
         },
         downstream::{prepare_request, DownstreamMetadata, DownstreamRequest, DownstreamResponse},
         error::{ExecutionError, NonHttpResponse},
-        linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
+        linking::{create_store, link_host_functions, ComponentCtx, ViceroyCtx, WasmCtx},
         object_store::ObjectStores,
         pushpin::{proxy_through_pushpin, PushpinRedirectRequestInfo},
         secret_store::SecretStores,
@@ -200,12 +200,6 @@ impl ExecuteCtx {
         let config = &configure_wasmtime(is_component, profiling_strategy);
         let engine = Engine::new(config)?;
         let instance_pre = if is_component {
-            if unknown_import_behavior != UnknownImportBehavior::LinkError {
-                return Err(Error::Other(anyhow::anyhow!(
-                    "Wasm components do not support unknown import behaviors other than link-time errors"
-                )));
-            }
-
             warn!(
                 "
 
@@ -226,6 +220,14 @@ impl ExecuteCtx {
             } else {
                 Component::from_binary(&engine, &input)?
             };
+
+            match unknown_import_behavior {
+                UnknownImportBehavior::LinkError => (),
+                UnknownImportBehavior::Trap => {
+                    linker.define_unknown_imports_as_traps(&component)?
+                }
+            }
+
             let instance_pre = linker.instantiate_pre(&component)?;
             Instance::Component(compute::ComputePre::new(instance_pre)?)
         } else {
@@ -240,9 +242,6 @@ impl ExecuteCtx {
             match unknown_import_behavior {
                 UnknownImportBehavior::LinkError => (),
                 UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
-                UnknownImportBehavior::ZeroOrNull => {
-                    linker.define_unknown_imports_as_default_values(&module)?
-                }
             }
 
             let instance_pre = linker.instantiate_pre(&module)?;
@@ -623,7 +622,7 @@ impl ExecuteCtx {
                 let req = session.downstream_request();
                 let body = session.downstream_request_body();
 
-                let mut store = ComponentCtx::create_store(&self, session, None, |ctx| {
+                let mut store = ViceroyCtx::create_store(&self, session, None, |ctx| {
                     ctx.arg("compute-app");
                 })
                 .map_err(ExecutionError::Context)?;
@@ -654,13 +653,13 @@ impl ExecuteCtx {
 
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
-                store.data_mut().close_downstream_response_sender();
+                store.data_mut().0 .0.close_downstream_response_sender();
 
                 let request_duration = Instant::now().duration_since(start_timestamp);
 
                 info!(
                     "request completed using {} of WebAssembly heap",
-                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
+                    bytesize::ByteSize::b(store.data().0 .0.limiter().memory_allocated as u64),
                 );
 
                 info!("request completed in {:.0?}", request_duration);
