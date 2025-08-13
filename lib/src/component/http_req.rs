@@ -8,7 +8,7 @@ use {
     crate::{
         config::{Backend, ClientCertInfo},
         error::Error,
-        linking::ComponentCtx,
+        linking::{ComponentCtx, SessionView},
         pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
         secret_store::SecretLookup,
         session::{AsyncItem, AsyncItemHandle, PeekableTask, ViceroyRequestMetadata},
@@ -51,20 +51,24 @@ use {
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
-impl ComponentCtx {
-    fn ds_req(&self) -> u32 {
-        self.session.downstream_request().into()
+/// Extension trait to add a `.ds_req_handle()` for `CompontentCtx` so to help
+/// `http_req` implementations forward to `http_downstream` implementations.
+trait DsView {
+    fn ds_req_handle(&self) -> u32;
+}
+impl DsView for ComponentCtx {
+    fn ds_req_handle(&self) -> u32 {
+        self.session().downstream_request().into()
     }
 }
 
-#[async_trait::async_trait]
 impl http_req::Host for ComponentCtx {
     async fn method_get(
         &mut self,
         h: http_types::RequestHandle,
         max_len: u64,
     ) -> Result<String, types::Error> {
-        let req = self.session.request_parts(h.into())?;
+        let req = self.session().request_parts(h.into())?;
         let req_method = &req.method;
 
         if req_method.as_str().len() > usize::try_from(max_len).unwrap() {
@@ -81,7 +85,7 @@ impl http_req::Host for ComponentCtx {
         h: http_types::RequestHandle,
         max_len: u64,
     ) -> Result<String, types::Error> {
-        let req = self.session.request_parts(h.into())?;
+        let req = self.session().request_parts(h.into())?;
         let req_uri = &req.uri;
         let res = req_uri.to_string();
 
@@ -116,17 +120,17 @@ impl http_req::Host for ComponentCtx {
     }
 
     async fn downstream_client_ip_addr(&mut self) -> wasmtime::Result<Option<types::IpAddress>> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_client_ip_addr(self, h).await
     }
 
     async fn downstream_server_ip_addr(&mut self) -> wasmtime::Result<Option<types::IpAddress>> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_server_ip_addr(self, h).await
     }
 
     async fn downstream_client_ddos_detected(&mut self) -> Result<u32, types::Error> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_client_ddos_detected(self, h).await
     }
 
@@ -134,17 +138,17 @@ impl http_req::Host for ComponentCtx {
         &mut self,
         max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_tls_cipher_openssl_name(self, h, max_len).await
     }
 
     async fn downstream_tls_protocol(&mut self, max_len: u64) -> Result<Vec<u8>, types::Error> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_tls_protocol(self, h, max_len).await
     }
 
     async fn downstream_tls_client_hello(&mut self, max_len: u64) -> Result<Vec<u8>, types::Error> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_tls_client_hello(self, h, max_len).await
     }
 
@@ -152,23 +156,23 @@ impl http_req::Host for ComponentCtx {
         &mut self,
         max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_tls_raw_client_certificate(self, h, max_len).await
     }
 
     async fn downstream_tls_client_cert_verify_result(
         &mut self,
     ) -> Result<http_req::ClientCertVerifyResult, types::Error> {
-        HttpDownstream::downstream_tls_client_cert_verify_result(self, self.ds_req()).await
+        HttpDownstream::downstream_tls_client_cert_verify_result(self, self.ds_req_handle()).await
     }
 
     async fn downstream_tls_ja3_md5(&mut self) -> Result<Vec<u8>, types::Error> {
-        HttpDownstream::downstream_tls_ja3_md5(self, self.ds_req()).await
+        HttpDownstream::downstream_tls_ja3_md5(self, self.ds_req_handle()).await
     }
 
     async fn new(&mut self) -> Result<http_types::RequestHandle, types::Error> {
         let (parts, _) = Request::new(()).into_parts();
-        Ok(self.session.insert_request_parts(parts).into())
+        Ok(self.session_mut().insert_request_parts(parts).into())
     }
 
     async fn header_names_get(
@@ -177,7 +181,7 @@ impl http_req::Host for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        let headers = &self.session.request_parts(h.into())?.headers;
+        let headers = &self.session().request_parts(h.into())?.headers;
 
         let (buf, next) = write_values(
             headers.keys(),
@@ -207,7 +211,7 @@ impl http_req::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &self.session.request_parts(h.into())?.headers;
+        let headers = &self.session().request_parts(h.into())?.headers;
         let value = if let Some(value) = headers.get(&name) {
             value
         } else {
@@ -228,7 +232,7 @@ impl http_req::Host for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
-        let headers = &self.session.request_parts(h.into())?.headers;
+        let headers = &self.session().request_parts(h.into())?.headers;
 
         let values = headers.get_all(HeaderName::from_str(&name)?);
 
@@ -260,7 +264,7 @@ impl http_req::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
 
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let values = {
@@ -294,7 +298,7 @@ impl http_req::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
@@ -312,7 +316,7 @@ impl http_req::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
@@ -329,7 +333,7 @@ impl http_req::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.request_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers
             .remove(name)
@@ -343,7 +347,7 @@ impl http_req::Host for ComponentCtx {
         h: http_types::RequestHandle,
         method: String,
     ) -> Result<(), types::Error> {
-        let method_ref = &mut self.session.request_parts_mut(h.into())?.method;
+        let method_ref = &mut self.session_mut().request_parts_mut(h.into())?.method;
         *method_ref = Method::from_bytes(method.as_bytes())?;
         Ok(())
     }
@@ -353,7 +357,7 @@ impl http_req::Host for ComponentCtx {
         h: http_types::RequestHandle,
         uri: String,
     ) -> Result<(), types::Error> {
-        let uri_ref = &mut self.session.request_parts_mut(h.into())?.uri;
+        let uri_ref = &mut self.session_mut().request_parts_mut(h.into())?.uri;
         *uri_ref = Uri::try_from(uri.as_bytes())?;
         Ok(())
     }
@@ -362,7 +366,7 @@ impl http_req::Host for ComponentCtx {
         &mut self,
         h: http_types::RequestHandle,
     ) -> Result<http_types::HttpVersion, types::Error> {
-        let req = self.session.request_parts(h.into())?;
+        let req = self.session().request_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
     }
@@ -372,7 +376,7 @@ impl http_req::Host for ComponentCtx {
         h: http_types::RequestHandle,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
-        let req = self.session.request_parts_mut(h.into())?;
+        let req = self.session_mut().request_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
     }
@@ -384,17 +388,17 @@ impl http_req::Host for ComponentCtx {
         backend_name: String,
     ) -> Result<http_types::Response, types::Error> {
         // prepare the request
-        let req_parts = self.session.take_request_parts(h.into())?;
-        let req_body = self.session.take_body(b.into())?;
+        let req_parts = self.session_mut().take_request_parts(h.into())?;
+        let req_body = self.session_mut().take_body(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
-            .session
+            .session()
             .backend(&backend_name)
             .ok_or_else(|| Error::UnknownBackend(backend_name))?;
 
         // synchronously send the request
-        let resp = upstream::send_request(req, backend, self.session.tls_config()).await?;
-        let (resp_handle, body_handle) = self.session.insert_response(resp);
+        let resp = upstream::send_request(req, backend, self.session().tls_config()).await?;
+        let (resp_handle, body_handle) = self.session_mut().insert_response(resp);
         Ok((resp_handle.into(), body_handle.into()))
     }
 
@@ -427,11 +431,11 @@ impl http_req::Host for ComponentCtx {
         backend_name: String,
     ) -> Result<http_types::PendingRequestHandle, types::Error> {
         // prepare the request
-        let req_parts = self.session.take_request_parts(h.into())?;
-        let req_body = self.session.take_body(b.into())?;
+        let req_parts = self.session_mut().take_request_parts(h.into())?;
+        let req_body = self.session_mut().take_body(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
-            .session
+            .session()
             .backend(&backend_name)
             .ok_or(types::Error::from(types::Error::UnknownError))?;
 
@@ -439,12 +443,12 @@ impl http_req::Host for ComponentCtx {
         let task = PeekableTask::spawn(upstream::send_request(
             req,
             backend,
-            self.session.tls_config(),
+            self.session().tls_config(),
         ))
         .await;
 
         // return a handle to the pending request
-        Ok(self.session.insert_pending_request(task).into())
+        Ok(self.session_mut().insert_pending_request(task).into())
     }
 
     async fn send_async_v2(
@@ -455,11 +459,10 @@ impl http_req::Host for ComponentCtx {
         streaming: bool,
     ) -> Result<http_types::PendingRequestHandle, types::Error> {
         if streaming {
-            self.send_async_streaming(h, b, backend_name)
+            self.send_async_streaming(h, b, backend_name).await
         } else {
-            self.send_async(h, b, backend_name)
+            self.send_async(h, b, backend_name).await
         }
-        .await
     }
 
     async fn send_async_streaming(
@@ -469,11 +472,11 @@ impl http_req::Host for ComponentCtx {
         backend_name: String,
     ) -> Result<http_types::PendingRequestHandle, types::Error> {
         // prepare the request
-        let req_parts = self.session.take_request_parts(h.into())?;
-        let req_body = self.session.begin_streaming(b.into())?;
+        let req_parts = self.session_mut().take_request_parts(h.into())?;
+        let req_body = self.session_mut().begin_streaming(b.into())?;
         let req = Request::from_parts(req_parts, req_body);
         let backend = self
-            .session
+            .session()
             .backend(&backend_name)
             .ok_or(types::Error::from(types::Error::UnknownError))?;
 
@@ -481,12 +484,12 @@ impl http_req::Host for ComponentCtx {
         let task = PeekableTask::spawn(upstream::send_request(
             req,
             backend,
-            self.session.tls_config(),
+            self.session().tls_config(),
         ))
         .await;
 
         // return a handle to the pending request
-        Ok(self.session.insert_pending_request(task).into())
+        Ok(self.session_mut().insert_pending_request(task).into())
     }
 
     async fn pending_req_poll(
@@ -494,12 +497,16 @@ impl http_req::Host for ComponentCtx {
         h: http_types::PendingRequestHandle,
     ) -> Result<Option<http_types::Response>, types::Error> {
         if self
-            .session
+            .session_mut()
             .async_item_mut(AsyncItemHandle::from_u32(h))?
             .is_ready()
         {
-            let resp = self.session.take_pending_request(h.into())?.recv().await?;
-            let (resp_handle, resp_body_handle) = self.session.insert_response(resp);
+            let resp = self
+                .session_mut()
+                .take_pending_request(h.into())?
+                .recv()
+                .await?;
+            let (resp_handle, resp_body_handle) = self.session_mut().insert_response(resp);
             Ok(Some((resp_handle.into(), resp_body_handle.into())))
         } else {
             Ok(None)
@@ -519,8 +526,12 @@ impl http_req::Host for ComponentCtx {
         &mut self,
         h: http_types::PendingRequestHandle,
     ) -> Result<http_types::Response, types::Error> {
-        let pending_req = self.session.take_pending_request(h.into())?.recv().await?;
-        let (resp_handle, body_handle) = self.session.insert_response(pending_req);
+        let pending_req = self
+            .session_mut()
+            .take_pending_request(h.into())?
+            .recv()
+            .await?;
+        let (resp_handle, body_handle) = self.session_mut().insert_response(pending_req);
         Ok((resp_handle.into(), body_handle.into()))
     }
 
@@ -545,14 +556,14 @@ impl http_req::Host for ComponentCtx {
 
         // perform the select operation
         let done_index = self
-            .session
+            .session_mut()
             .select_impl(
                 h.iter()
                     .map(|handle| types::PendingRequestHandle::from(*handle).into()),
             )
             .await?;
 
-        let item = self.session.take_async_item(
+        let item = self.session_mut().take_async_item(
             types::PendingRequestHandle::from(h.get(done_index).cloned().unwrap()).into(),
         )?;
 
@@ -560,7 +571,7 @@ impl http_req::Host for ComponentCtx {
             AsyncItem::PendingReq(res) => match res {
                 PeekableTask::Complete(resp) => match resp {
                     Ok(resp) => {
-                        let (resp_handle, body_handle) = self.session.insert_response(resp);
+                        let (resp_handle, body_handle) = self.session_mut().insert_response(resp);
                         (done_index as u32, (resp_handle.into(), body_handle.into()))
                     }
                     // Unfortunately, the ABI provides no means of returning error information
@@ -588,13 +599,13 @@ impl http_req::Host for ComponentCtx {
     }
 
     async fn fastly_key_is_valid(&mut self) -> Result<bool, types::Error> {
-        HttpDownstream::fastly_key_is_valid(self, self.ds_req()).await
+        HttpDownstream::fastly_key_is_valid(self, self.ds_req_handle()).await
     }
 
     async fn close(&mut self, h: http_types::RequestHandle) -> Result<(), types::Error> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
-        self.session.take_request_parts(h.into())?;
+        self.session_mut().take_request_parts(h.into())?;
         Ok(())
     }
 
@@ -607,7 +618,7 @@ impl http_req::Host for ComponentCtx {
 
         // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
         // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
-        let extensions = &mut self.session.request_parts_mut(h.into())?.extensions;
+        let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;
 
         let encodings = types::ContentEncodings::try_from(encodings.as_array()[0])?;
 
@@ -652,7 +663,8 @@ impl http_req::Host for ComponentCtx {
             request_info: None,
         };
 
-        self.session.redirect_downstream_to_pushpin(redirect_info)?;
+        self.session_mut()
+            .redirect_downstream_to_pushpin(redirect_info)?;
         Ok(())
     }
 
@@ -661,7 +673,7 @@ impl http_req::Host for ComponentCtx {
         req_handle: http_req::RequestHandle,
         backend_name: String,
     ) -> Result<(), types::Error> {
-        let request_info = match self.session.request_parts(req_handle.into()) {
+        let request_info = match self.session().request_parts(req_handle.into()) {
             Ok(req) => Some(PushpinRedirectRequestInfo::from_parts(req)),
             Err(_) => {
                 // This function can legitimately be called with an invalid request handle;
@@ -676,7 +688,8 @@ impl http_req::Host for ComponentCtx {
             request_info,
         };
 
-        self.session.redirect_downstream_to_pushpin(redirect_info)?;
+        self.session_mut()
+            .redirect_downstream_to_pushpin(redirect_info)?;
         Ok(())
     }
 
@@ -778,17 +791,18 @@ impl http_req::Host for ComponentCtx {
         };
 
         let client_cert = if options.contains(http_types::BackendConfigOptions::CLIENT_CERT) {
-            let key_lookup = self.session.secret_lookup(config.client_key.into()).ok_or(
-                Error::SecretStoreError(SecretStoreError::InvalidSecretHandle(
-                    config.client_key.into(),
-                )),
-            )?;
+            let key_lookup = self
+                .session()
+                .secret_lookup(config.client_key.into())
+                .ok_or(Error::SecretStoreError(
+                    SecretStoreError::InvalidSecretHandle(config.client_key.into()),
+                ))?;
             let key = match &key_lookup {
                 SecretLookup::Standard {
                     store_name,
                     secret_name,
                 } => self
-                    .session
+                    .session()
                     .secret_stores()
                     .get_store(store_name)
                     .ok_or(Error::SecretStoreError(
@@ -824,7 +838,7 @@ impl http_req::Host for ComponentCtx {
             ca_certs,
         };
 
-        if !self.session.add_backend(name, new_backend) {
+        if !self.session_mut().add_backend(name, new_backend) {
             return Err(Error::BackendNameRegistryError(name.to_string()).into());
         }
 
@@ -835,32 +849,33 @@ impl http_req::Host for ComponentCtx {
         &mut self,
         max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        HttpDownstream::downstream_client_request_id(self, self.ds_req(), max_len).await
+        HttpDownstream::downstream_client_request_id(self, self.ds_req_handle(), max_len).await
     }
 
     async fn downstream_client_h2_fingerprint(
         &mut self,
         max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        HttpDownstream::downstream_client_h2_fingerprint(self, self.ds_req(), max_len).await
+        HttpDownstream::downstream_client_h2_fingerprint(self, self.ds_req_handle(), max_len).await
     }
 
     async fn downstream_client_oh_fingerprint(
         &mut self,
         max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        HttpDownstream::downstream_client_oh_fingerprint(self, self.ds_req(), max_len).await
+        HttpDownstream::downstream_client_oh_fingerprint(self, self.ds_req_handle(), max_len).await
     }
 
     async fn downstream_tls_ja4(&mut self, max_len: u64) -> Result<Vec<u8>, types::Error> {
-        HttpDownstream::downstream_tls_ja4(self, self.ds_req(), max_len).await
+        HttpDownstream::downstream_tls_ja4(self, self.ds_req_handle(), max_len).await
     }
 
     async fn downstream_compliance_region(
         &mut self,
         region_max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        HttpDownstream::downstream_compliance_region(self, self.ds_req(), region_max_len).await
+        HttpDownstream::downstream_compliance_region(self, self.ds_req_handle(), region_max_len)
+            .await
     }
 
     async fn get_original_header_names(
@@ -868,11 +883,17 @@ impl http_req::Host for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
-        HttpDownstream::downstream_original_header_names(self, self.ds_req(), max_len, cursor).await
+        HttpDownstream::downstream_original_header_names(
+            self,
+            self.ds_req_handle(),
+            max_len,
+            cursor,
+        )
+        .await
     }
 
     async fn original_header_count(&mut self) -> Result<u32, types::Error> {
-        let h = self.ds_req();
+        let h = self.ds_req_handle();
         HttpDownstream::downstream_original_header_count(self, h).await
     }
 
@@ -887,8 +908,8 @@ impl http_req::Host for ComponentCtx {
         use http_req::InspectConfigOptions as Flags;
 
         // Make sure we're given valid handles, even though we won't use them.
-        let _ = self.session.request_parts(ds_req.into())?;
-        let _ = self.session.body(ds_body.into())?;
+        let _ = self.session().request_parts(ds_req.into())?;
+        let _ = self.session().body(ds_body.into())?;
 
         // For now, corp and workspace arguments are required to actually generate the hostname,
         // but in the future the lookaside service will be generated using the customer ID, and
@@ -902,7 +923,7 @@ impl http_req::Host for ComponentCtx {
         }
 
         // Return the mock NGWAF response.
-        let ngwaf_resp = self.session.ngwaf_response();
+        let ngwaf_resp = self.session().ngwaf_response();
         let ngwaf_resp_len = ngwaf_resp.len();
 
         match u64::try_from(ngwaf_resp_len) {

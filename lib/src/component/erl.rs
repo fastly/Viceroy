@@ -3,7 +3,6 @@ use {
     crate::linking::ComponentCtx,
 };
 
-#[async_trait::async_trait]
 impl erl::Host for ComponentCtx {
     async fn check_rate(
         &mut self,

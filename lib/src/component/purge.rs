@@ -1,9 +1,11 @@
 use {
     super::fastly::api::{purge, types},
-    crate::{error::Error, linking::ComponentCtx},
+    crate::{
+        error::Error,
+        linking::{ComponentCtx, SessionView},
+    },
 };
 
-#[async_trait::async_trait]
 impl purge::Host for ComponentCtx {
     async fn purge_surrogate_key(
         &mut self,
@@ -23,7 +25,7 @@ impl purge::Host for ComponentCtx {
         }
 
         let surrogate_key = surrogate_key.parse()?;
-        let purged = self.session.cache().purge(surrogate_key, soft_purge);
+        let purged = self.session().cache().purge(surrogate_key, soft_purge);
         tracing::debug!("{purged} variants purged");
         Ok(None)
     }

@@ -58,24 +58,3 @@ async fn trap_behavior_function_not_called() -> TestResult {
 
     Ok(())
 }
-
-/// A test using the zero-or-null value behavior, where calling the function returns an expected
-/// zero value and execution proceeds normally.
-#[tokio::test(flavor = "multi_thread")]
-async fn zero_or_null_behavior_function_called() -> TestResult {
-    let resp = Test::using_fixture("unknown-import.wasm")
-        .backend("TheOrigin", "/", None, |_req| {
-            Response::builder()
-                .status(StatusCode::OK)
-                .body(vec![])
-                .unwrap()
-        })
-        .await
-        .using_unknown_import_behavior(UnknownImportBehavior::ZeroOrNull)
-        .against(Request::get("/").header("call-it", "yes").body("").unwrap())
-        .await?;
-
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    Ok(())
-}

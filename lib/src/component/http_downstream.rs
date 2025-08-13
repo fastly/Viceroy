@@ -3,10 +3,9 @@ use std::time::Duration;
 use crate::component::fastly::api::{http_downstream, http_req, http_types, types};
 use crate::component::headers::write_values;
 use crate::error::Error;
-use crate::linking::ComponentCtx;
+use crate::linking::{ComponentCtx, SessionView};
 use crate::session::{AsyncItemHandle, Session};
 
-#[async_trait::async_trait]
 impl http_downstream::Host for ComponentCtx {
     async fn next_request(
         &mut self,
@@ -17,7 +16,7 @@ impl http_downstream::Host for ComponentCtx {
             .contains(http_downstream::NextRequestOptionsMask::TIMEOUT)
             .then(|| Duration::from_millis(options.timeout_ms));
         let handle = self
-            .session
+            .session_mut()
             .register_pending_downstream_req(timeout)
             .await?;
 
@@ -29,7 +28,7 @@ impl http_downstream::Host for ComponentCtx {
         handle: http_types::RequestPromiseHandle,
     ) -> Result<(), types::Error> {
         let handle = AsyncItemHandle::from_u32(handle.into());
-        self.session.abandon_pending_downstream_req(handle)?;
+        self.session_mut().abandon_pending_downstream_req(handle)?;
         Ok(())
     }
 
@@ -38,7 +37,7 @@ impl http_downstream::Host for ComponentCtx {
         handle: http_types::RequestPromiseHandle,
     ) -> Result<(http_types::RequestHandle, http_types::BodyHandle), types::Error> {
         let handle = AsyncItemHandle::from_u32(handle.into());
-        let (req, body) = self.session.await_downstream_req(handle).await?;
+        let (req, body) = self.session_mut().await_downstream_req(handle).await?;
 
         Ok((req.into(), body.into()))
     }
@@ -47,7 +46,7 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: http_req::RequestHandle,
     ) -> wasmtime::Result<Option<types::IpAddress>> {
-        match self.session.downstream_client_ip(h.into())? {
+        match self.session().downstream_client_ip(h.into())? {
             None => Ok(None),
             Some(ip) => Ok(Some(ip.into())),
         }
@@ -57,7 +56,7 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: http_req::RequestHandle,
     ) -> wasmtime::Result<Option<types::IpAddress>> {
-        match self.session.downstream_server_ip(h.into())? {
+        match self.session().downstream_server_ip(h.into())? {
             None => Ok(None),
             Some(ip) => Ok(Some(ip.into())),
         }
@@ -75,7 +74,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -85,7 +84,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -95,7 +94,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -105,7 +104,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -114,7 +113,7 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: http_req::RequestHandle,
     ) -> Result<http_req::ClientCertVerifyResult, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -123,7 +122,7 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: http_req::RequestHandle,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -133,7 +132,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -144,7 +143,7 @@ impl http_downstream::Host for ComponentCtx {
         max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
         let reqid = self
-            .session
+            .session()
             .downstream_request_id(h.into())?
             .ok_or(Error::MissingDownstreamMetadata)?;
         let result = format!("{:032x}", reqid);
@@ -163,7 +162,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -173,7 +172,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         _max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        self.session
+        self.session()
             .absent_metadata_value(h.into())
             .map_err(Into::into)
     }
@@ -183,7 +182,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
         region_max_len: u64,
     ) -> Result<Vec<u8>, types::Error> {
-        let region = Session::downstream_compliance_region(&self.session, h.into())?
+        let region = Session::downstream_compliance_region(self.session(), h.into())?
             .ok_or(Error::MissingDownstreamMetadata)?;
         let region_len = region.len();
 
@@ -200,7 +199,7 @@ impl http_downstream::Host for ComponentCtx {
         cursor: u32,
     ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
         let headers = self
-            .session
+            .session()
             .downstream_original_headers(h.into())?
             .ok_or(Error::MissingDownstreamMetadata)?;
         let res = write_values(
@@ -219,7 +218,7 @@ impl http_downstream::Host for ComponentCtx {
         h: http_req::RequestHandle,
     ) -> Result<u32, types::Error> {
         Ok(self
-            .session
+            .session()
             .downstream_original_headers(h.into())?
             .ok_or(Error::MissingDownstreamMetadata)?
             .len()

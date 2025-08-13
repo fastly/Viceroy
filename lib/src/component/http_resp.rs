@@ -1,7 +1,11 @@
 use {
     super::fastly::api::{http_resp, http_types, types},
     super::{headers::write_values, types::TrappableError},
-    crate::{error::Error, linking::ComponentCtx, upstream},
+    crate::{
+        error::Error,
+        linking::{ComponentCtx, SessionView},
+        upstream,
+    },
     cfg_if::cfg_if,
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
@@ -10,18 +14,17 @@ use {
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
-#[async_trait::async_trait]
 impl http_resp::Host for ComponentCtx {
     async fn new(&mut self) -> Result<http_types::ResponseHandle, types::Error> {
         let (parts, _) = Response::new(()).into_parts();
-        Ok(self.session.insert_response_parts(parts).into())
+        Ok(self.session_mut().insert_response_parts(parts).into())
     }
 
     async fn status_get(
         &mut self,
         h: http_types::ResponseHandle,
     ) -> Result<http_types::HttpStatus, types::Error> {
-        let parts = self.session.response_parts(h.into())?;
+        let parts = self.session().response_parts(h.into())?;
         Ok(parts.status.as_u16())
     }
 
@@ -30,7 +33,7 @@ impl http_resp::Host for ComponentCtx {
         h: http_types::ResponseHandle,
         status: http_types::HttpStatus,
     ) -> Result<(), types::Error> {
-        let resp = self.session.response_parts_mut(h.into())?;
+        let resp = self.session_mut().response_parts_mut(h.into())?;
         let status = hyper::StatusCode::from_u16(status)?;
         resp.status = status;
         Ok(())
@@ -46,7 +49,7 @@ impl http_resp::Host for ComponentCtx {
             Err(types::Error::InvalidArgument)?;
         }
 
-        let headers = &mut self.session.response_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
@@ -62,15 +65,15 @@ impl http_resp::Host for ComponentCtx {
         let resp = {
             // Take the response parts and body from the session, and use them to build a response.
             // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
-            let resp_parts = self.session.take_response_parts(h.into())?;
+            let resp_parts = self.session_mut().take_response_parts(h.into())?;
             let body = if streaming {
-                self.session.begin_streaming(b.into())?
+                self.session_mut().begin_streaming(b.into())?
             } else {
-                self.session.take_body(b.into())?
+                self.session_mut().take_body(b.into())?
             };
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.session.send_downstream_response(resp)?;
+        self.session_mut().send_downstream_response(resp)?;
         Ok(())
     }
 
@@ -80,7 +83,7 @@ impl http_resp::Host for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
-        let headers = &self.session.response_parts(h.into())?.headers;
+        let headers = &self.session_mut().response_parts(h.into())?.headers;
 
         let (buf, next) = write_values(
             headers.keys(),
@@ -110,7 +113,7 @@ impl http_resp::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &self.session.response_parts(h.into())?.headers;
+        let headers = &self.session().response_parts(h.into())?.headers;
         let value = if let Some(value) = headers.get(&name) {
             value
         } else {
@@ -142,7 +145,7 @@ impl http_resp::Host for ComponentCtx {
                     return Err(Error::InvalidArgument.into());
                 }
 
-                let headers = &self.session.response_parts(h.into())?.headers;
+                let headers = &self.session().response_parts(h.into())?.headers;
 
                 let values = headers.get_all(HeaderName::from_str(&name)?);
 
@@ -176,7 +179,7 @@ impl http_resp::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.response_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
 
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let values = {
@@ -210,7 +213,7 @@ impl http_resp::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.response_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
@@ -227,7 +230,7 @@ impl http_resp::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session.response_parts_mut(h.into())?.headers;
+        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers
             .remove(name)
@@ -240,7 +243,7 @@ impl http_resp::Host for ComponentCtx {
         &mut self,
         h: http_types::ResponseHandle,
     ) -> Result<http_types::HttpVersion, types::Error> {
-        let req = self.session.response_parts(h.into())?;
+        let req = self.session().response_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
     }
@@ -250,7 +253,7 @@ impl http_resp::Host for ComponentCtx {
         h: http_types::ResponseHandle,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
-        let req = self.session.response_parts_mut(h.into())?;
+        let req = self.session_mut().response_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
     }
@@ -258,7 +261,7 @@ impl http_resp::Host for ComponentCtx {
     async fn close(&mut self, h: http_types::ResponseHandle) -> Result<(), types::Error> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
-        self.session.take_response_parts(h.into())?;
+        self.session_mut().take_response_parts(h.into())?;
         Ok(())
     }
 
@@ -292,7 +295,7 @@ impl http_resp::Host for ComponentCtx {
         &mut self,
         resp_handle: http_types::ResponseHandle,
     ) -> Result<Vec<u8>, types::Error> {
-        let resp = self.session.response_parts(resp_handle.into())?;
+        let resp = self.session().response_parts(resp_handle.into())?;
         let md = resp
             .extensions
             .get::<upstream::ConnMetadata>()
@@ -316,7 +319,7 @@ impl http_resp::Host for ComponentCtx {
         &mut self,
         resp_handle: http_types::ResponseHandle,
     ) -> Result<u16, types::Error> {
-        let resp = self.session.response_parts(resp_handle.into())?;
+        let resp = self.session().response_parts(resp_handle.into())?;
         let md = resp
             .extensions
             .get::<upstream::ConnMetadata>()

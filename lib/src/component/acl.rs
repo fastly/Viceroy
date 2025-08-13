@@ -1,13 +1,12 @@
 use super::fastly::api::{acl, http_body, types};
-use crate::linking::ComponentCtx;
+use crate::linking::{ComponentCtx, SessionView};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-#[async_trait::async_trait]
 impl acl::Host for ComponentCtx {
     async fn open(&mut self, acl_name: Vec<u8>) -> Result<acl::AclHandle, types::Error> {
         let acl_name = String::from_utf8(acl_name)?;
         let handle = self
-            .session
+            .session_mut()
             .acl_handle_by_name(&acl_name)
             .ok_or(types::Error::OptionalNone)?;
         Ok(handle.into())
@@ -20,7 +19,7 @@ impl acl::Host for ComponentCtx {
         ip_len: u64,
     ) -> Result<(Option<http_body::BodyHandle>, acl::AclError), types::Error> {
         let acl = self
-            .session
+            .session()
             .acl_by_handle(acl_handle.into())
             .ok_or(types::Error::BadHandle)?;
 
@@ -38,7 +37,7 @@ impl acl::Host for ComponentCtx {
             Some(entry) => {
                 let body =
                     serde_json::to_vec_pretty(&entry).map_err(|_| types::Error::GenericError)?;
-                let body_handle = self.session.insert_body(body.into());
+                let body_handle = self.session_mut().insert_body(body.into());
                 Ok((Some(body_handle.into()), acl::AclError::Ok))
             }
             None => Ok((None, acl::AclError::NoContent)),
