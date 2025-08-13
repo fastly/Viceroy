@@ -55,6 +55,7 @@ pub mod bindings {
             extern "C" {
                 fn _start();
             }
+            unsafe { super::set_allocation_state(super::AllocationState::StackAllocated) };
 
             let res = crate::State::with::<crate::fastly::FastlyStatus>(|state| {
                 let old = state.request.replace(Some(req));
@@ -1573,14 +1574,15 @@ impl State {
 
     #[cold]
     fn new() -> *mut State {
-        #[link(wasm_import_module = "__main_module__")]
-        extern "C" {
-            fn cabi_realloc(
-                old_ptr: *mut u8,
-                old_len: usize,
-                align: usize,
-                new_len: usize,
-            ) -> *mut u8;
+        unsafe fn cabi_realloc(
+            _old_ptr: *mut u8,
+            _old_len: usize,
+            align: usize,
+            new_len: usize,
+        ) -> *mut u8 {
+            use std::alloc::{alloc, Layout};
+            let layout = Layout::from_size_align(new_len, align).unwrap();
+            alloc(layout)
         }
 
         assert!(matches!(
