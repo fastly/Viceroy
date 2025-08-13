@@ -1,5 +1,20 @@
 ## Unreleased
 
+## 0.14.2
+
+- Upgrade to wasmtime v28
+
+## 0.14.1
+
+- Fix Cargo.lock file to allow publication on crates.io
+
+## 0.14.0
+
+- Fix for shielding suport ([#503](https://github.com/fastly/Viceroy/pull/503))
+
+  Shielding support in 0.13.0 was, alas, slightly broken: the `toml` settings were
+  not passed through to the main library.
+
 - Add support for integrating with a local Pushpin instance ([#497](https://github.com/fastly/Viceroy/pull/497))
 
   Viceroy can be invoked with `--local-pushpin-proxy-port=<port>` to cause
@@ -21,9 +36,35 @@
   configured automatically if Viceroy is called through the Fastly CLI's
   `fastly compute serve` command.
 
+- Support the simple cache API ([#487](https://github.com/fastly/Viceroy/issues/487)) and core cache API
+
+  The [simple cache API](https://docs.rs/fastly/latest/fastly/cache/simple/index.html) is fully supported in Viceroy.
+  The [core cache API](https://docs.rs/fastly/latest/fastly/cache/core/index.html) is also supported, with the exception of the "replace" family of calls ([#495](https://github.com/fastly/Viceroy/issues/495)).
+
+  Both of these use an in-memory store for cached data; restarting Viceroy flushes the cache.
+
+  The HTTP cache layer (readthrough cache) is not supported at this time ([#496](https://github.com/fastly/Viceroy/issues/496)).
+
+- Experimental support for reusable sessions
+
+  The default behavior for Viceroy (and Fastly Compute) is to launch a new WASM instance
+  for each inbound HTTP request.
+
+  This default behavior remains unchanged. However, this release adds experimental
+  hostcalls that allow a WASM instance to receive and respond to additional HTTP requests
+  after the first.
+
+  This is an experimental feature (not yet available through any SDK),
+  and requires an opt-in (using the new hostcalls).
+  Fastly may modify or remove this feature in the future- don't rely on it (yet)!
+
+- Make `SecretStore` public ([#486](https://github.com/fastly/Viceroy/pull/486))
+
+  Make the `SecretStore` type public, so it can be configured in integration tests that use `viceroy-lib`.
+
 ## 0.13.0
 
-- Add support for shielding primitives in Viceroy ([#455](https://github.com/fastly/Viceroy/pull/455)
+- Add support for shielding primitives in Viceroy ([#455](https://github.com/fastly/Viceroy/pull/455))
 
   Shielding definitions can be creating inside `fastly.toml` using the
   `local-server.shielding_sites` key. These definitions are just a normal TOML
