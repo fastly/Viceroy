@@ -833,11 +833,11 @@ pub unsafe extern "C" fn fd_tell(_fd: Fd, _offset: *mut Filesize) -> Errno {
 macro_rules! user_mem {
     ($body:block) => {{
         unsafe {
-            std::arch::asm!("i32.const 123456789", "drop", options(nostack));
+            std::arch::asm!("i32.const 123456789", "drop");
         }
         let result = $body;
         unsafe {
-            std::arch::asm!("i32.const 123456789", "drop", options(nostack));
+            std::arch::asm!("i32.const 123456789", "drop");
         }
         result
     }};
@@ -872,7 +872,7 @@ pub unsafe extern "C" fn fd_write(
 
     let ptr = user_mem!({(*iovs_ptr).buf});
     let len = user_mem!({(*iovs_ptr).buf_len});
-    let bytes = slice::from_raw_parts(user_mem!({ptr}), len);
+    let bytes = user_mem!({slice::from_raw_parts(ptr, len)});
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
@@ -882,7 +882,7 @@ pub unsafe extern "C" fn fd_write(
 
                 let nbytes = BlockingMode::Blocking.write(wasi_stream, bytes)?;
 
-                *nwritten = nbytes;
+                user_mem!({*nwritten = nbytes;});
                 Ok(())
             }
             Descriptor::Closed(_) | Descriptor::Bad => Err(ERRNO_BADF),
