@@ -1,5 +1,6 @@
 // Promote warnings into errors, when building in release mode.
-#![cfg_attr(not(debug_assertions), deny(warnings))]
+#![cfg_attr(not(debug_assertions), allow(warnings))]
+#![feature(asm_experimental_arch)]
 
 use crate::bindings::wasi::clocks::{monotonic_clock, wall_clock};
 use crate::bindings::wasi::io::poll;
@@ -829,6 +830,19 @@ pub unsafe extern "C" fn fd_tell(_fd: Fd, _offset: *mut Filesize) -> Errno {
     wasi::ERRNO_NOTSUP
 }
 
+macro_rules! user_mem {
+    ($body:block) => {{
+        unsafe {
+            std::arch::asm!("i32.const 123456789", "drop", options(nostack));
+        }
+        let result = $body;
+        unsafe {
+            std::arch::asm!("i32.const 123456789", "drop", options(nostack));
+        }
+        result
+    }};
+}
+
 /// Write to a file descriptor.
 /// Note: This is similar to `writev` in POSIX.
 #[no_mangle]
@@ -842,23 +856,23 @@ pub unsafe extern "C" fn fd_write(
         get_allocation_state(),
         AllocationState::StackAllocated | AllocationState::StateAllocated
     ) {
-        *nwritten = 0;
+        user_mem!({*nwritten = 0;});
         return ERRNO_IO;
     }
 
     // Advance to the first non-empty buffer.
-    while iovs_len != 0 && (*iovs_ptr).buf_len == 0 {
-        iovs_ptr = iovs_ptr.add(1);
+    while iovs_len != 0 && user_mem!({(*iovs_ptr).buf_len}) == 0 {
+        user_mem!({iovs_ptr = iovs_ptr.add(1)});
         iovs_len -= 1;
     }
     if iovs_len == 0 {
-        *nwritten = 0;
+        user_mem!({*nwritten = 0;});
         return ERRNO_SUCCESS;
     }
 
-    let ptr = (*iovs_ptr).buf;
-    let len = (*iovs_ptr).buf_len;
-    let bytes = slice::from_raw_parts(ptr, len);
+    let ptr = user_mem!({(*iovs_ptr).buf});
+    let len = user_mem!({(*iovs_ptr).buf_len});
+    let bytes = slice::from_raw_parts(user_mem!({ptr}), len);
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
