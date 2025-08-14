@@ -862,7 +862,7 @@ pub unsafe extern "C" fn fd_write(
 
     // Advance to the first non-empty buffer.
     while iovs_len != 0 && user_mem!({(*iovs_ptr).buf_len}) == 0 {
-        user_mem!({iovs_ptr = iovs_ptr.add(1)});
+        iovs_ptr = iovs_ptr.add(1);
         iovs_len -= 1;
     }
     if iovs_len == 0 {
@@ -872,7 +872,7 @@ pub unsafe extern "C" fn fd_write(
 
     let ptr = user_mem!({(*iovs_ptr).buf});
     let len = user_mem!({(*iovs_ptr).buf_len});
-    let bytes = user_mem!({slice::from_raw_parts(ptr, len)});
+    let bytes = slice::from_raw_parts(ptr, len);
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
