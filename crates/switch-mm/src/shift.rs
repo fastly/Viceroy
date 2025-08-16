@@ -1,5 +1,5 @@
-use walrus::*;
 use walrus::ir::*;
+use walrus::*;
 
 const OFFSET_PAGES: i32 = 2;
 const OFFSET: i32 = OFFSET_PAGES * 64 * 1024;
@@ -18,35 +18,86 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     stack.push(seq);
                     instrs.push((instr, loc));
                 }
-                Instr::IfElse(IfElse { consequent, alternative }) => {
+                Instr::IfElse(IfElse {
+                    consequent,
+                    alternative,
+                }) => {
                     stack.push(consequent);
                     stack.push(alternative);
                     instrs.push((instr, loc));
                 }
                 Instr::MemorySize(_) | Instr::MemoryGrow(_) => {
                     instrs.push((instr, loc));
-                    instrs.push((Instr::Const(Const { value: Value::I32(OFFSET_PAGES) }), Default::default()));
-                    instrs.push((Instr::Binop(Binop { op: BinaryOp::I32Sub }), Default::default()));
+                    instrs.push((
+                        Instr::Const(Const {
+                            value: Value::I32(OFFSET_PAGES),
+                        }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Binop(Binop {
+                            op: BinaryOp::I32Sub,
+                        }),
+                        Default::default(),
+                    ));
                 }
                 Instr::MemoryInit(_) => {
                     let local1 = get_local(gen, &mut locals, 0);
                     let local2 = get_local(gen, &mut locals, 1);
-                    instrs.push((Instr::LocalSet(LocalSet { local: local1 }), Default::default()));
-                    instrs.push((Instr::LocalSet(LocalSet { local: local2 }), Default::default()));
-                    instrs.push((Instr::Const(Const { value: Value::I32(OFFSET) }), Default::default()));
-                    instrs.push((Instr::Binop(Binop { op: BinaryOp::I32Add }), Default::default()));
-                    instrs.push((Instr::LocalGet(LocalGet { local: local2 }), Default::default()));
-                    instrs.push((Instr::LocalGet(LocalGet { local: local1 }), Default::default()));
+                    instrs.push((
+                        Instr::LocalSet(LocalSet { local: local1 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::LocalSet(LocalSet { local: local2 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Const(Const {
+                            value: Value::I32(OFFSET),
+                        }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Binop(Binop {
+                            op: BinaryOp::I32Add,
+                        }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::LocalGet(LocalGet { local: local2 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::LocalGet(LocalGet { local: local1 }),
+                        Default::default(),
+                    ));
                     instrs.push((instr, loc));
                 }
-                Instr::Load(Load { memory, kind, arg: MemArg { align, offset }}) => {
+                Instr::Load(Load {
+                    memory,
+                    kind,
+                    arg: MemArg { align, offset },
+                }) => {
                     let offset = offset.checked_add(OFFSET as u32).unwrap();
-                    let instr = Instr::Load(Load { memory, kind, arg: MemArg { align, offset }});
+                    let instr = Instr::Load(Load {
+                        memory,
+                        kind,
+                        arg: MemArg { align, offset },
+                    });
                     instrs.push((instr, loc));
                 }
-                Instr::Store(Store { memory, kind, arg: MemArg { align, offset }}) => {
+                Instr::Store(Store {
+                    memory,
+                    kind,
+                    arg: MemArg { align, offset },
+                }) => {
                     let offset = offset.checked_add(OFFSET as u32).unwrap();
-                    let instr = Instr::Store(Store { memory, kind, arg: MemArg { align, offset }});
+                    let instr = Instr::Store(Store {
+                        memory,
+                        kind,
+                        arg: MemArg { align, offset },
+                    });
                     instrs.push((instr, loc));
                 }
                 _ => instrs.push((instr, loc)),
@@ -78,30 +129,41 @@ pub fn shift_adapter_module(module: &mut Module) -> Result<()> {
             }
         })
         .unwrap();
-    module.globals.get_mut(stack_pointer).kind = GlobalKind::Local(ConstExpr::Value(Value::I32(64 * 1024)));
+    module.globals.get_mut(stack_pointer).kind =
+        GlobalKind::Local(ConstExpr::Value(Value::I32(64 * 1024)));
     Ok(())
 }
 pub fn shift_main_module(module: &mut Module) -> Result<()> {
     // enlarge memory
     if module.memories.is_empty() {
-        module.memories.add_local(false, false, OFFSET_PAGES as u64, None, None);
+        module
+            .memories
+            .add_local(false, false, OFFSET_PAGES as u64, None, None);
     } else {
         assert!(module.memories.len() == 1);
         let mem = module.memories.iter_mut().next().unwrap();
         mem.initial += OFFSET_PAGES as u64;
-        mem.maximum = mem.maximum.map(|m| m.checked_add(OFFSET_PAGES as u64).unwrap());
+        mem.maximum = mem
+            .maximum
+            .map(|m| m.checked_add(OFFSET_PAGES as u64).unwrap());
     }
     // shift data
     let data_ids: Vec<_> = module.data.iter().map(|d| d.id()).collect();
     for id in data_ids {
         let data = module.data.get_mut(id);
         match data.kind {
-            DataKind::Active { offset: ConstExpr::Value(Value::I32(offset)), memory } => {
+            DataKind::Active {
+                offset: ConstExpr::Value(Value::I32(offset)),
+                memory,
+            } => {
                 let offset = offset.checked_add(OFFSET).unwrap();
-                data.kind = DataKind::Active { memory, offset: ConstExpr::Value(Value::I32(offset)) };
-            },
+                data.kind = DataKind::Active {
+                    memory,
+                    offset: ConstExpr::Value(Value::I32(offset)),
+                };
+            }
             DataKind::Active { .. } => unreachable!(),
-            DataKind::Passive { .. } => {},
+            DataKind::Passive { .. } => {}
         }
     }
     // shift memory access

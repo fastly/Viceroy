@@ -1,6 +1,5 @@
 // Promote warnings into errors, when building in release mode.
 #![cfg_attr(not(debug_assertions), allow(warnings))]
-#![feature(asm_experimental_arch)]
 
 use crate::bindings::wasi::clocks::{monotonic_clock, wall_clock};
 use crate::bindings::wasi::io::poll;
@@ -833,8 +832,8 @@ pub unsafe extern "C" fn fd_tell(_fd: Fd, _offset: *mut Filesize) -> Errno {
 const OFFSET: usize = 2 * 64 * 1024;
 macro_rules! user_ptr {
     ($ptr:expr) => {{
-        $ptr.add(OFFSET)
-    }}
+        $ptr.byte_add(OFFSET)
+    }};
 }
 
 /// Write to a file descriptor.
@@ -1305,8 +1304,8 @@ pub unsafe extern "C" fn random_get(buf: *mut u8, buf_len: Size) -> Errno {
         State::with::<Errno>(|state| {
             assert_eq!(buf_len as u32 as Size, buf_len);
             let result = state
-                .with_one_import_alloc(buf, buf_len, || random::get_random_bytes(buf_len as u64));
-            assert_eq!(result.as_ptr(), buf);
+                .with_one_import_alloc(user_ptr!(buf), buf_len, || random::get_random_bytes(buf_len as u64));
+            assert_eq!(result.as_ptr(), user_ptr!(buf));
 
             // The returned buffer's memory was allocated in `buf`, so don't separately
             // free it.

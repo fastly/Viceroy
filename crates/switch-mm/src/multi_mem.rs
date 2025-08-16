@@ -1,5 +1,5 @@
-use walrus::*;
 use walrus::ir::*;
+use walrus::*;
 
 /// A visitor to replace memory 0 with memory 1.
 struct MemoryRemapper {
