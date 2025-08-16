@@ -65,6 +65,22 @@ fn get_local(gen: &mut ModuleLocals, locals: &mut Vec<LocalId>, idx: usize) -> L
         locals[idx]
     }
 }
+pub fn shift_adapter_module(module: &mut Module) -> Result<()> {
+    let stack_pointer = module
+        .globals
+        .iter()
+        .find_map(|g| {
+            let name = g.name.clone()?;
+            if name == "__stack_pointer" {
+                Some(g.id())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    module.globals.get_mut(stack_pointer).kind = GlobalKind::Local(ConstExpr::Value(Value::I32(64 * 1024)));
+    Ok(())
+}
 pub fn shift_main_module(module: &mut Module) -> Result<()> {
     // enlarge memory
     if module.memories.is_empty() {

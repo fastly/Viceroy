@@ -33,7 +33,7 @@ fn main() -> Result<()> {
         multi_mem::use_multi_memory(&mut module)?
     } else {
         if args.adapter {
-            //shift::shift_adapter_module(args)
+            shift::shift_adapter_module(&mut module)?
         } else {
             shift::shift_main_module(&mut module)?
         }

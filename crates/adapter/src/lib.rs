@@ -830,17 +830,11 @@ pub unsafe extern "C" fn fd_tell(_fd: Fd, _offset: *mut Filesize) -> Errno {
     wasi::ERRNO_NOTSUP
 }
 
-macro_rules! user_mem {
-    ($body:block) => {{
-        unsafe {
-            std::arch::asm!("i32.const 123456789", "drop");
-        }
-        let result = $body;
-        unsafe {
-            std::arch::asm!("i32.const 123456789", "drop");
-        }
-        result
-    }};
+const OFFSET: usize = 2 * 64 * 1024;
+macro_rules! user_ptr {
+    ($ptr:expr) => {{
+        $ptr.add(OFFSET)
+    }}
 }
 
 /// Write to a file descriptor.
@@ -856,23 +850,23 @@ pub unsafe extern "C" fn fd_write(
         get_allocation_state(),
         AllocationState::StackAllocated | AllocationState::StateAllocated
     ) {
-        user_mem!({*nwritten = 0;});
+        *user_ptr!(nwritten) = 0;
         return ERRNO_IO;
     }
 
     // Advance to the first non-empty buffer.
-    while iovs_len != 0 && user_mem!({(*iovs_ptr).buf_len}) == 0 {
+    while iovs_len != 0 && (*user_ptr!(iovs_ptr)).buf_len == 0 {
         iovs_ptr = iovs_ptr.add(1);
         iovs_len -= 1;
     }
     if iovs_len == 0 {
-        user_mem!({*nwritten = 0;});
+        *user_ptr!(nwritten) = 0;
         return ERRNO_SUCCESS;
     }
 
-    let ptr = user_mem!({(*iovs_ptr).buf});
-    let len = user_mem!({(*iovs_ptr).buf_len});
-    let bytes = slice::from_raw_parts(ptr, len);
+    let ptr = (*user_ptr!(iovs_ptr)).buf;
+    let len = (*user_ptr!(iovs_ptr)).buf_len;
+    let bytes = slice::from_raw_parts(user_ptr!(ptr), len);
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
@@ -882,7 +876,7 @@ pub unsafe extern "C" fn fd_write(
 
                 let nbytes = BlockingMode::Blocking.write(wasi_stream, bytes)?;
 
-                user_mem!({*nwritten = nbytes;});
+                *user_ptr!(nwritten) = nbytes;
                 Ok(())
             }
             Descriptor::Closed(_) | Descriptor::Bad => Err(ERRNO_BADF),
@@ -1594,9 +1588,7 @@ impl State {
             align: usize,
             new_len: usize,
         ) -> *mut u8 {
-            use std::alloc::{alloc, Layout};
-            let layout = Layout::from_size_align(new_len, align).unwrap();
-            alloc(layout)
+            (64 * 1024) as *mut u8
         }
 
         assert!(matches!(
