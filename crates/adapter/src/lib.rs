@@ -106,9 +106,16 @@ impl<T, E> TrappingUnwrap<T> for Result<T, E> {
 }
 
 const OFFSET: usize = 2 * 64 * 1024;
+// Used to annotate the address that comes from main module
 macro_rules! user_ptr {
     ($ptr:expr) => {{
         $ptr.byte_add(OFFSET)
+    }};
+}
+// Used to annotate the address sending back to main module
+macro_rules! unshift_ptr {
+    ($ptr:expr) => {{
+        $ptr.byte_sub(OFFSET)
     }};
 }
 
@@ -406,8 +413,10 @@ pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errn
         // here.
         for i in 0..list.len {
             let s = list.base.add(i).read();
-            *user_ptr!(argv.add(i)) = s.ptr.cast_mut();
-            *s.ptr.add(s.len).cast_mut() = 0;
+            // When sending string pointer back to the main module, we need to minus
+            // the offset, since the main module doesn't know it's been shifted.
+            *user_ptr!(argv.add(i)) = unshift_ptr!(s.ptr).cast_mut();
+            *unshift_ptr!(s.ptr).add(s.len).cast_mut() = 0;
         }
         Ok(())
     })
