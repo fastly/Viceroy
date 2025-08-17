@@ -541,20 +541,21 @@ pub unsafe extern "C" fn environ_sizes_get(
 /// Note: This is similar to `clock_getres` in POSIX.
 #[no_mangle]
 pub extern "C" fn clock_res_get(id: Clockid, resolution: &mut Timestamp) -> Errno {
+    let resolution = unsafe { user_ptr!(resolution as *mut Timestamp) };
     match id {
         CLOCKID_MONOTONIC => {
-            *resolution = monotonic_clock::resolution();
+            unsafe {*resolution = monotonic_clock::resolution();};
             ERRNO_SUCCESS
         }
         CLOCKID_REALTIME => {
             let res = wall_clock::resolution();
-            *resolution = match Timestamp::from(res.seconds)
+            unsafe {*resolution = match Timestamp::from(res.seconds)
                 .checked_mul(1_000_000_000)
                 .and_then(|ns| ns.checked_add(res.nanoseconds.into()))
             {
                 Some(ns) => ns,
                 None => return ERRNO_OVERFLOW,
-            };
+            }};
             ERRNO_SUCCESS
         }
         _ => ERRNO_BADF,
@@ -569,6 +570,7 @@ pub unsafe extern "C" fn clock_time_get(
     _precision: Timestamp,
     time: &mut Timestamp,
 ) -> Errno {
+    let time = user_ptr!(time as *mut Timestamp);
     match id {
         CLOCKID_MONOTONIC => {
             *time = monotonic_clock::now();
@@ -1071,9 +1073,9 @@ pub unsafe extern "C" fn poll_oneoff(
     nsubscriptions: Size,
     nevents: *mut Size,
 ) -> Errno {
-    *nevents = 0;
+    *user_ptr!(nevents) = 0;
 
-    let subscriptions = slice::from_raw_parts(r#in, nsubscriptions);
+    let subscriptions = slice::from_raw_parts(user_ptr!(r#in), nsubscriptions);
 
     // We're going to split the `nevents` buffer into two non-overlapping
     // buffers: one to store the pollable handles, and the other to store
@@ -1098,8 +1100,8 @@ pub unsafe extern "C" fn poll_oneoff(
     );
     // Store the pollable handles at the beginning, and the bool results at the
     // end, so that we don't clobber the bool results when writting the events.
-    let pollables = out as *mut c_void as *mut Pollable;
-    let results = out.add(nsubscriptions).cast::<u32>().sub(nsubscriptions);
+    let pollables = user_ptr!(out as *mut c_void as *mut Pollable);
+    let results = user_ptr!(out.add(nsubscriptions).cast::<u32>().sub(nsubscriptions));
 
     // Indefinite sleeping is not supported in preview1.
     if nsubscriptions == 0 {
@@ -1257,7 +1259,7 @@ pub unsafe extern "C" fn poll_oneoff(
                 _ => unreachable!(),
             };
 
-            *out.add(count) = Event {
+            *user_ptr!(out.add(count)) = Event {
                 userdata: subscription.userdata,
                 error,
                 type_,
@@ -1267,7 +1269,7 @@ pub unsafe extern "C" fn poll_oneoff(
             count += 1;
         }
 
-        *nevents = count;
+        *user_ptr!(nevents) = count;
 
         Ok(())
     })
