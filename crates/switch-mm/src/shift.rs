@@ -41,7 +41,7 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                         Default::default(),
                     ));
                 }
-                Instr::MemoryInit(_) => {
+                Instr::MemoryInit(_) | Instr::MemoryFill(_) => {
                     let local1 = get_local(gen, &mut locals, 0);
                     let local2 = get_local(gen, &mut locals, 1);
                     instrs.push((
@@ -66,6 +66,51 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     ));
                     instrs.push((
                         Instr::LocalGet(LocalGet { local: local2 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::LocalGet(LocalGet { local: local1 }),
+                        Default::default(),
+                    ));
+                    instrs.push((instr, loc));
+                }
+                Instr::MemoryCopy(_) => {
+                    let local1 = get_local(gen, &mut locals, 0);
+                    let local2 = get_local(gen, &mut locals, 1);
+                    instrs.push((
+                        Instr::LocalSet(LocalSet { local: local1 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::LocalSet(LocalSet { local: local2 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Const(Const {
+                            value: Value::I32(OFFSET),
+                        }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Binop(Binop {
+                            op: BinaryOp::I32Add,
+                        }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::LocalGet(LocalGet { local: local2 }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Const(Const {
+                            value: Value::I32(OFFSET),
+                        }),
+                        Default::default(),
+                    ));
+                    instrs.push((
+                        Instr::Binop(Binop {
+                            op: BinaryOp::I32Add,
+                        }),
                         Default::default(),
                     ));
                     instrs.push((
@@ -100,6 +145,8 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     });
                     instrs.push((instr, loc));
                 }
+                Instr::AtomicFence(_) | Instr::AtomicNotify(_) | Instr::AtomicWait(_) | Instr::AtomicRmw(_) | Instr::Cmpxchg(_) => todo!(),
+                Instr::LoadSimd(_) => todo!(),
                 _ => instrs.push((instr, loc)),
             }
         }

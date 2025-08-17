@@ -105,6 +105,13 @@ impl<T, E> TrappingUnwrap<T> for Result<T, E> {
     }
 }
 
+const OFFSET: usize = 2 * 64 * 1024;
+macro_rules! user_ptr {
+    ($ptr:expr) => {{
+        $ptr.byte_add(OFFSET)
+    }};
+}
+
 /// Allocate a file descriptor which will generate an `ERRNO_BADF` if passed to
 /// any WASI Preview 1 function implemented by this adapter.
 ///
@@ -114,7 +121,7 @@ impl<T, E> TrappingUnwrap<T> for Result<T, E> {
 #[no_mangle]
 pub unsafe extern "C" fn adapter_open_badfd(fd: *mut u32) -> Errno {
     State::with::<Errno>(|state| {
-        *fd = state.descriptors_mut().open(Descriptor::Bad)?;
+        *user_ptr!(fd) = state.descriptors_mut().open(Descriptor::Bad)?;
         Ok(())
     })
 }
@@ -380,7 +387,7 @@ pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errn
     State::with(|state| {
         let alloc = ImportAlloc::SeparateStringsAndPointers {
             strings: BumpAlloc {
-                base: argv_buf,
+                base: user_ptr!(argv_buf),
                 len: usize::MAX,
             },
             pointers: state.temporary_alloc(),
@@ -399,7 +406,7 @@ pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errn
         // here.
         for i in 0..list.len {
             let s = list.base.add(i).read();
-            *argv.add(i) = s.ptr.cast_mut();
+            *user_ptr!(argv.add(i)) = s.ptr.cast_mut();
             *s.ptr.add(s.len).cast_mut() = 0;
         }
         Ok(())
@@ -427,10 +434,10 @@ pub unsafe extern "C" fn args_sizes_get(argc: *mut Size, argv_buf_size: *mut Siz
                 strings_size,
                 alloc: _,
             } => {
-                *argc = len;
+                *user_ptr!(argc) = len;
                 // add in bytes needed for a 0-byte at the end of each
                 // argument.
-                *argv_buf_size = strings_size + len;
+                *user_ptr!(argv_buf_size) = strings_size + len;
             }
             _ => unreachable!(),
         }
@@ -829,12 +836,6 @@ pub unsafe extern "C" fn fd_tell(_fd: Fd, _offset: *mut Filesize) -> Errno {
     wasi::ERRNO_NOTSUP
 }
 
-const OFFSET: usize = 2 * 64 * 1024;
-macro_rules! user_ptr {
-    ($ptr:expr) => {{
-        $ptr.byte_add(OFFSET)
-    }};
-}
 
 /// Write to a file descriptor.
 /// Note: This is similar to `writev` in POSIX.
