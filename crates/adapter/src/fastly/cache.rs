@@ -1,6 +1,7 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle, INVALID_HANDLE};
 use crate::{alloc_result_opt, TrappingUnwrap};
 use core::mem::ManuallyDrop;
+use crate::OFFSET;
 
 pub type CacheHandle = u32;
 pub type CacheBusyHandle = u32;
@@ -281,8 +282,8 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
-        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, options) }
+        let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
+        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) }
         {
             Ok(tuple) => tuple,
             Err(err) => return err,
@@ -295,7 +296,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res;
+                    *user_ptr!(cache_handle_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -355,10 +356,10 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
         let options_mask = cache::WriteOptionsMask::from(options_mask);
 
-        let options = match unsafe { write_options(options_mask, options) } {
+        let options = match unsafe { write_options(options_mask, user_ptr!(options)) } {
             Ok(options) => options,
             Err(err) => return err,
         };
@@ -370,7 +371,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res;
+                    *user_ptr!(body_handle_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -386,8 +387,8 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
-        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, options) }
+        let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
+        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) }
         {
             Ok(tuple) => tuple,
             Err(err) => return err,
@@ -397,7 +398,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res;
+                    *user_ptr!(cache_handle_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -413,8 +414,8 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheBusyHandle,
     ) -> FastlyStatus {
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
-        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, options) }
+        let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
+        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) }
         {
             Ok(tuple) => tuple,
             Err(err) => return err,
@@ -424,7 +425,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res;
+                    *user_ptr!(cache_handle_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -440,7 +441,7 @@ mod cache {
         match cache::cache_busy_handle_wait(handle) {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res;
+                    *user_ptr!(cache_handle_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -457,7 +458,7 @@ mod cache {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let options_mask = cache::WriteOptionsMask::from(options_mask);
-        let options = match unsafe { write_options(options_mask, options) } {
+        let options = match unsafe { write_options(options_mask, user_ptr!(options)) } {
             Ok(options) => options,
             Err(err) => return err,
         };
@@ -468,7 +469,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res;
+                    *user_ptr!(body_handle_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -485,7 +486,7 @@ mod cache {
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
         let options_mask = cache::WriteOptionsMask::from(options_mask);
-        let options = match unsafe { write_options(options_mask, options) } {
+        let options = match unsafe { write_options(options_mask, user_ptr!(options)) } {
             Ok(options) => options,
             Err(err) => return err,
         };
@@ -494,8 +495,8 @@ mod cache {
         match res {
             Ok((body_handle, cache_handle)) => {
                 unsafe {
-                    *body_handle_out = body_handle;
-                    *cache_handle_out = cache_handle;
+                    *user_ptr!(body_handle_out) = body_handle;
+                    *user_ptr!(cache_handle_out) = cache_handle;
                 }
                 FastlyStatus::OK
             }
@@ -510,7 +511,7 @@ mod cache {
         options: *const CacheWriteOptions,
     ) -> FastlyStatus {
         let options_mask = cache::WriteOptionsMask::from(options_mask);
-        let options = match unsafe { write_options(options_mask, options) } {
+        let options = match unsafe { write_options(options_mask, user_ptr!(options)) } {
             Ok(options) => options,
             Err(err) => return err,
         };
@@ -542,7 +543,7 @@ mod cache {
         match cache::get_state(handle) {
             Ok(res) => {
                 unsafe {
-                    *cache_lookup_state_out = res.into();
+                    *user_ptr!(cache_lookup_state_out) = res.into();
                 }
                 FastlyStatus::OK
             }
@@ -558,9 +559,9 @@ mod cache {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         alloc_result_opt!(
-            user_metadata_out_ptr,
+            user_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
-            nwritten_out,
+            user_ptr!(nwritten_out),
             {
                 cache::get_user_metadata(
                     handle,
@@ -600,24 +601,24 @@ mod cache {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let options_mask = cache::GetBodyOptionsMask::from(options_mask);
-        let options = unsafe { cache::GetBodyOptions::from(*options) };
+        let options = unsafe { cache::GetBodyOptions::from(*user_ptr!(options)) };
         match cache::get_body(handle, options_mask, options) {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res;
+                    *user_ptr!(body_handle_out) = res;
                 }
                 FastlyStatus::OK
             }
             Err(e) => e.into(),
         }
     }
-
+//TODO
     #[export_name = "fastly_cache#get_length"]
     pub fn get_length(handle: CacheHandle, length_out: *mut CacheObjectLength) -> FastlyStatus {
         match cache::get_length(handle) {
             Ok(res) => {
                 unsafe {
-                    *length_out = res;
+                    *user_ptr!(length_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -630,7 +631,7 @@ mod cache {
         match cache::get_max_age_ns(handle) {
             Ok(res) => {
                 unsafe {
-                    *duration_out = res;
+                    *user_ptr!(duration_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -646,7 +647,7 @@ mod cache {
         match cache::get_stale_while_revalidate_ns(handle) {
             Ok(res) => {
                 unsafe {
-                    *duration_out = res;
+                    *user_ptr!(duration_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -659,7 +660,7 @@ mod cache {
         match cache::get_age_ns(handle) {
             Ok(res) => {
                 unsafe {
-                    *duration_out = res;
+                    *user_ptr!(duration_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -672,7 +673,7 @@ mod cache {
         match cache::get_hits(handle) {
             Ok(res) => {
                 unsafe {
-                    *hits_out = res;
+                    *user_ptr!(hits_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -688,11 +689,11 @@ mod cache {
         options: *const CacheReplaceOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
         let options_mask = cache::ReplaceOptionsMask::from(options_mask);
 
         let replace_strategy =
-            match cache::ReplaceStrategy::try_from(unsafe { (*options).replace_strategy }) {
+            match cache::ReplaceStrategy::try_from(unsafe { (*user_ptr!(options)).replace_strategy }) {
                 Ok(r) => r,
                 Err(e) => return e,
             };
@@ -702,7 +703,7 @@ mod cache {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_string!((*user_ptr!(options)).$ptr_field, (*user_ptr!(options)).$len_field) }
             };
         }
 
@@ -713,7 +714,7 @@ mod cache {
         };
         let options = unsafe {
             cache::ReplaceOptions {
-                request_headers: (*options).request_headers,
+                request_headers: (*user_ptr!(options)).request_headers,
                 replace_strategy,
                 service_id: ManuallyDrop::into_inner(service_id),
             }
@@ -726,7 +727,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res;
+                    *user_ptr!(cache_handle_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -744,7 +745,7 @@ mod cache {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let options_mask = cache::WriteOptionsMask::from(options_mask);
-        let options = match unsafe { write_options(options_mask, options) } {
+        let options = match unsafe { write_options(options_mask, user_ptr!(options)) } {
             Ok(options) => options,
             Err(err) => return err,
         };
@@ -755,7 +756,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res;
+                    *user_ptr!(body_handle_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -773,7 +774,7 @@ mod cache {
         match cache::replace_get_age_ns(handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *user_ptr!(duration_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -791,11 +792,11 @@ mod cache {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let options_mask = cache::GetBodyOptionsMask::from(options_mask);
-        let options = unsafe { cache::GetBodyOptions::from(*options) };
+        let options = unsafe { cache::GetBodyOptions::from(*user_ptr!(options)) };
         match cache::replace_get_body(handle, options_mask, options) {
             Ok(Some(res)) => {
                 unsafe {
-                    *body_handle_out = res;
+                    *user_ptr!(body_handle_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -813,7 +814,7 @@ mod cache {
         match cache::replace_get_hits(handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *hits_out = res;
+                    *user_ptr!(hits_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -831,7 +832,7 @@ mod cache {
         match cache::replace_get_length(handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *length_out = res;
+                    *user_ptr!(length_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -849,7 +850,7 @@ mod cache {
         match cache::replace_get_max_age_ns(handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *user_ptr!(duration_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -867,7 +868,7 @@ mod cache {
         match cache::replace_get_stale_while_revalidate_ns(handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *user_ptr!(duration_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -885,7 +886,7 @@ mod cache {
         match cache::replace_get_state(handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *cache_lookup_state_out = res.into();
+                    *user_ptr!(cache_lookup_state_out) = res.into();
                 }
 
                 FastlyStatus::OK
@@ -903,9 +904,9 @@ mod cache {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         alloc_result_opt!(
-            user_metadata_out_ptr,
+            user_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
-            nwritten_out,
+            user_ptr!(nwritten_out),
             {
                 cache::replace_get_user_metadata(
                     handle,
