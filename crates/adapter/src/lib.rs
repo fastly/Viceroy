@@ -56,7 +56,7 @@ pub mod bindings {
             extern "C" {
                 fn _start();
             }
-            unsafe { super::set_allocation_state(super::AllocationState::StackAllocated) };
+            //unsafe { super::set_allocation_state(super::AllocationState::StackAllocated) };
 
             let res = crate::State::with::<crate::fastly::FastlyStatus>(|state| {
                 let old = state.request.replace(Some(req));
@@ -1590,8 +1590,8 @@ impl State {
         unsafe fn cabi_realloc(
             _old_ptr: *mut u8,
             _old_len: usize,
-            align: usize,
-            new_len: usize,
+            _align: usize,
+            _new_len: usize,
         ) -> *mut u8 {
             (64 * 1024) as *mut u8
         }
