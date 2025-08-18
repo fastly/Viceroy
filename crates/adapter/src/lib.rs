@@ -18,6 +18,7 @@ use wasi::*;
 
 #[macro_use]
 mod macros;
+use crate::macros::OFFSET;
 
 pub mod fastly;
 
@@ -103,20 +104,6 @@ impl<T, E> TrappingUnwrap<T> for Result<T, E> {
             Err(_) => unreachable!(),
         }
     }
-}
-
-const OFFSET: usize = 2 * 64 * 1024;
-// Used to annotate the address that comes from main module
-macro_rules! user_ptr {
-    ($ptr:expr) => {{
-        $ptr.byte_add(OFFSET)
-    }};
-}
-// Used to annotate the address sending back to main module
-macro_rules! unshift_ptr {
-    ($ptr:expr) => {{
-        $ptr.byte_sub(OFFSET)
-    }};
 }
 
 /// Allocate a file descriptor which will generate an `ERRNO_BADF` if passed to
@@ -416,7 +403,7 @@ pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errn
             // When sending string pointer back to the main module, we need to minus
             // the offset, since the main module doesn't know it's been shifted.
             *user_ptr!(argv.add(i)) = unshift_ptr!(s.ptr).cast_mut();
-            *unshift_ptr!(s.ptr).add(s.len).cast_mut() = 0;
+            *s.ptr.add(s.len).cast_mut() = 0;
         }
         Ok(())
     })
@@ -461,7 +448,7 @@ pub unsafe extern "C" fn environ_get(environ: *mut *const u8, environ_buf: *mut 
     State::with(|state| {
         let alloc = ImportAlloc::SeparateStringsAndPointers {
             strings: BumpAlloc {
-                base: environ_buf,
+                base: user_ptr!(environ_buf),
                 len: usize::MAX,
             },
             pointers: state.temporary_alloc(),
@@ -481,7 +468,7 @@ pub unsafe extern "C" fn environ_get(environ: *mut *const u8, environ_buf: *mut 
         // the `\0` at the end of the env var.
         for i in 0..list.len {
             let s = list.base.add(i).read();
-            *environ.add(i) = s.key.ptr;
+            *user_ptr!(environ.add(i)) = unshift_ptr!(s.key.ptr);
             *s.key.ptr.add(s.key.len).cast_mut() = b'=';
             *s.value.ptr.add(s.value.len).cast_mut() = 0;
         }
@@ -500,8 +487,8 @@ pub unsafe extern "C" fn environ_sizes_get(
         get_allocation_state(),
         AllocationState::StackAllocated | AllocationState::StateAllocated
     ) {
-        *environc = 0;
-        *environ_buf_size = 0;
+        *user_ptr!(environc) = 0;
+        *user_ptr!(environ_buf_size) = 0;
         return ERRNO_SUCCESS;
     }
 
@@ -523,10 +510,10 @@ pub unsafe extern "C" fn environ_sizes_get(
                 strings_size,
                 alloc: _,
             } => {
-                *environc = len;
+                *user_ptr!(environc) = len;
                 // Account for `=` between keys and a 0-byte at the end of
                 // each key.
-                *environ_buf_size = strings_size + 2 * len;
+                *user_ptr!(environ_buf_size) = strings_size + 2 * len;
             }
             _ => unreachable!(),
         }
@@ -737,18 +724,25 @@ pub unsafe extern "C" fn fd_read(
     mut iovs_len: usize,
     nread: *mut Size,
 ) -> Errno {
+    if !matches!(
+        get_allocation_state(),
+        AllocationState::StackAllocated | AllocationState::StateAllocated
+    ) {
+        *user_ptr!(nread) = 0;
+        return ERRNO_IO;
+    }
     // Advance to the first non-empty buffer.
-    while iovs_len != 0 && (*iovs_ptr).buf_len == 0 {
+    while iovs_len != 0 && (*user_ptr!(iovs_ptr)).buf_len == 0 {
         iovs_ptr = iovs_ptr.add(1);
         iovs_len -= 1;
     }
     if iovs_len == 0 {
-        *nread = 0;
+        *user_ptr!(nread) = 0;
         return ERRNO_SUCCESS;
     }
 
-    let ptr = (*iovs_ptr).buf;
-    let len = (*iovs_ptr).buf_len;
+    let ptr = (*user_ptr!(iovs_ptr)).buf;
+    let len = (*user_ptr!(iovs_ptr)).buf_len;
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
@@ -759,11 +753,11 @@ pub unsafe extern "C" fn fd_read(
                 let read_len = u64::try_from(len).trapping_unwrap();
                 let wasi_stream = streams.get_read_stream()?;
                 let data = match state
-                    .with_one_import_alloc(ptr, len, || blocking_mode.read(wasi_stream, read_len))
+                    .with_one_import_alloc(user_ptr!(ptr), len, || blocking_mode.read(wasi_stream, read_len))
                 {
                     Ok(data) => data,
                     Err(streams::StreamError::Closed) => {
-                        *nread = 0;
+                        *user_ptr!(nread) = 0;
                         return Ok(());
                     }
                     Err(streams::StreamError::LastOperationFailed(e)) => {
@@ -771,11 +765,11 @@ pub unsafe extern "C" fn fd_read(
                     }
                 };
 
-                assert_eq!(data.as_ptr(), ptr);
+                assert_eq!(data.as_ptr(), user_ptr!(ptr));
                 assert!(data.len() <= len);
 
                 let len = data.len();
-                *nread = len;
+                *user_ptr!(nread) = len;
                 forget(data);
                 Ok(())
             }
