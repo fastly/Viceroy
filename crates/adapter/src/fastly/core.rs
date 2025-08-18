@@ -3798,7 +3798,7 @@ pub mod fastly_purge {
         )
     }
 }
-// TODO
+
 pub mod fastly_shielding {
     use super::*;
     use crate::bindings::fastly::api::{shielding as host, types};
@@ -3843,16 +3843,16 @@ pub mod fastly_shielding {
         info_block_len: usize,
         nwritten_out: *mut u32,
     ) -> FastlyStatus {
-        let name = crate::make_str!(name, name_len);
+        let name = crate::make_str!(user_ptr!(name), name_len);
         with_buffer!(
-            info_block,
+            user_ptr!(info_block),
             info_block_len,
             { host::shield_info(name, u64::try_from(info_block_len).trapping_unwrap()) },
             |res| {
                 match res {
                     Ok(res) => {
                         unsafe {
-                            *nwritten_out = u32::try_from(res.len()).unwrap_or(0);
+                            *user_ptr!(nwritten_out) = u32::try_from(res.len()).unwrap_or(0);
                         }
                         std::mem::forget(res);
                     }
@@ -3860,7 +3860,7 @@ pub mod fastly_shielding {
                     Err(e) => {
                         if let types::Error::BufferLen(needed) = e {
                             unsafe {
-                                *nwritten_out = u32::try_from(needed).unwrap_or(0);
+                                *user_ptr!(nwritten_out) = u32::try_from(needed).unwrap_or(0);
                             }
                         }
 
@@ -3899,7 +3899,7 @@ pub mod fastly_shielding {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string_result!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_string_result!((*user_ptr!(options)).$ptr_field, (*user_ptr!(options)).$len_field) }
             };
         }
 
@@ -3927,13 +3927,13 @@ pub mod fastly_shielding {
         backend_name_len: usize,
         nwritten_out: *mut u32,
     ) -> FastlyStatus {
-        let name = crate::make_str!(name, name_len);
+        let name = crate::make_str!(user_ptr!(name), name_len);
         let (mask, options) = match shield_backend_options(options_mask, options) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
         with_buffer!(
-            backend_name,
+            user_ptr!(backend_name),
             backend_name_len,
             {
                 let res = host::backend_for_shield(
@@ -3949,7 +3949,7 @@ pub mod fastly_shielding {
                 match res {
                     Ok(res) => {
                         unsafe {
-                            *nwritten_out = u32::try_from(res.len()).unwrap_or(0);
+                            *user_ptr!(nwritten_out) = u32::try_from(res.len()).unwrap_or(0);
                         }
                         std::mem::forget(res);
                     }
@@ -3957,7 +3957,7 @@ pub mod fastly_shielding {
                     Err(e) => {
                         if let types::Error::BufferLen(needed) = e {
                             unsafe {
-                                *nwritten_out = u32::try_from(needed).unwrap_or(0);
+                                *user_ptr!(nwritten_out) = u32::try_from(needed).unwrap_or(0);
                             }
                         }
 
@@ -4617,7 +4617,7 @@ mod fastly_image_optimizer {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let backend_name = crate::make_str!(origin_image_backend, origin_image_backend_len);
+        let backend_name = crate::make_str!(user_ptr!(origin_image_backend), origin_image_backend_len);
         let io_opts = image_optimizer::ImageOptimizerTransformConfigOptions::from(
             io_transform_config_options,
         );
@@ -4629,8 +4629,8 @@ mod fastly_image_optimizer {
             ($ptr_field:ident, $len_field:ident) => {
                 unsafe {
                     crate::make_string!(
-                        (*io_transform_config).$ptr_field,
-                        (*io_transform_config).$len_field
+                        (*user_ptr!(io_transform_config)).$ptr_field,
+                        (*user_ptr!(io_transform_config)).$len_field
                     )
                 }
             };
@@ -4659,14 +4659,14 @@ mod fastly_image_optimizer {
         std::mem::forget(config);
 
         unsafe {
-            (*io_error_detail).tag = ImageOptimizerErrorTag::Uninitialized;
+            (*user_ptr!(io_error_detail)).tag = ImageOptimizerErrorTag::Uninitialized;
         }
         match res {
             Ok((resp, body)) => {
                 unsafe {
-                    *resp_handle_out = resp;
-                    *resp_body_handle_out = body;
-                    (*io_error_detail).tag = ImageOptimizerErrorTag::Ok;
+                    *user_ptr!(resp_handle_out) = resp;
+                    *user_ptr!(resp_body_handle_out) = body;
+                    (*user_ptr!(io_error_detail)).tag = ImageOptimizerErrorTag::Ok;
                 }
                 FastlyStatus::OK
             }
