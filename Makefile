@@ -84,5 +84,5 @@ adapter:
 	cp crates/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
 		lib/data/viceroy-component-adapter.wasm
 	cd crates/switch-mm && cargo build
-	target/debug/switch-mm --adapter lib/data/viceroy-component-adapter.wasm -o lib/data/viceroy-component-adapter.wasm
+	# target/debug/switch-mm --adapter lib/data/viceroy-component-adapter.wasm -o lib/data/viceroy-component-adapter.wasm
 
