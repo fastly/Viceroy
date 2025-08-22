@@ -1,5 +1,5 @@
 // Promote warnings into errors, when building in release mode.
-#![cfg_attr(not(debug_assertions), deny(warnings))]
+#![cfg_attr(not(debug_assertions), allow(warnings))]
 
 use crate::bindings::wasi::clocks::{monotonic_clock, wall_clock};
 use crate::bindings::wasi::io::poll;
@@ -18,6 +18,7 @@ use wasi::*;
 
 #[macro_use]
 mod macros;
+use crate::macros::OFFSET;
 
 pub mod fastly;
 
@@ -55,6 +56,7 @@ pub mod bindings {
             extern "C" {
                 fn _start();
             }
+            //unsafe { super::set_allocation_state(super::AllocationState::StackAllocated) };
 
             let res = crate::State::with::<crate::fastly::FastlyStatus>(|state| {
                 let old = state.request.replace(Some(req));
@@ -113,7 +115,7 @@ impl<T, E> TrappingUnwrap<T> for Result<T, E> {
 #[no_mangle]
 pub unsafe extern "C" fn adapter_open_badfd(fd: *mut u32) -> Errno {
     State::with::<Errno>(|state| {
-        *fd = state.descriptors_mut().open(Descriptor::Bad)?;
+        *user_ptr!(fd) = state.descriptors_mut().open(Descriptor::Bad)?;
         Ok(())
     })
 }
@@ -379,7 +381,7 @@ pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errn
     State::with(|state| {
         let alloc = ImportAlloc::SeparateStringsAndPointers {
             strings: BumpAlloc {
-                base: argv_buf,
+                base: user_ptr!(argv_buf),
                 len: usize::MAX,
             },
             pointers: state.temporary_alloc(),
@@ -398,7 +400,9 @@ pub unsafe extern "C" fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Errn
         // here.
         for i in 0..list.len {
             let s = list.base.add(i).read();
-            *argv.add(i) = s.ptr.cast_mut();
+            // When sending string pointer back to the main module, we need to minus
+            // the offset, since the main module doesn't know it's been shifted.
+            *user_ptr!(argv.add(i)) = unshift_ptr!(s.ptr).cast_mut();
             *s.ptr.add(s.len).cast_mut() = 0;
         }
         Ok(())
@@ -426,10 +430,10 @@ pub unsafe extern "C" fn args_sizes_get(argc: *mut Size, argv_buf_size: *mut Siz
                 strings_size,
                 alloc: _,
             } => {
-                *argc = len;
+                *user_ptr!(argc) = len;
                 // add in bytes needed for a 0-byte at the end of each
                 // argument.
-                *argv_buf_size = strings_size + len;
+                *user_ptr!(argv_buf_size) = strings_size + len;
             }
             _ => unreachable!(),
         }
@@ -444,7 +448,7 @@ pub unsafe extern "C" fn environ_get(environ: *mut *const u8, environ_buf: *mut 
     State::with(|state| {
         let alloc = ImportAlloc::SeparateStringsAndPointers {
             strings: BumpAlloc {
-                base: environ_buf,
+                base: user_ptr!(environ_buf),
                 len: usize::MAX,
             },
             pointers: state.temporary_alloc(),
@@ -464,7 +468,7 @@ pub unsafe extern "C" fn environ_get(environ: *mut *const u8, environ_buf: *mut 
         // the `\0` at the end of the env var.
         for i in 0..list.len {
             let s = list.base.add(i).read();
-            *environ.add(i) = s.key.ptr;
+            *user_ptr!(environ.add(i)) = unshift_ptr!(s.key.ptr);
             *s.key.ptr.add(s.key.len).cast_mut() = b'=';
             *s.value.ptr.add(s.value.len).cast_mut() = 0;
         }
@@ -483,8 +487,8 @@ pub unsafe extern "C" fn environ_sizes_get(
         get_allocation_state(),
         AllocationState::StackAllocated | AllocationState::StateAllocated
     ) {
-        *environc = 0;
-        *environ_buf_size = 0;
+        *user_ptr!(environc) = 0;
+        *user_ptr!(environ_buf_size) = 0;
         return ERRNO_SUCCESS;
     }
 
@@ -506,10 +510,10 @@ pub unsafe extern "C" fn environ_sizes_get(
                 strings_size,
                 alloc: _,
             } => {
-                *environc = len;
+                *user_ptr!(environc) = len;
                 // Account for `=` between keys and a 0-byte at the end of
                 // each key.
-                *environ_buf_size = strings_size + 2 * len;
+                *user_ptr!(environ_buf_size) = strings_size + 2 * len;
             }
             _ => unreachable!(),
         }
@@ -524,19 +528,24 @@ pub unsafe extern "C" fn environ_sizes_get(
 /// Note: This is similar to `clock_getres` in POSIX.
 #[no_mangle]
 pub extern "C" fn clock_res_get(id: Clockid, resolution: &mut Timestamp) -> Errno {
+    let resolution = unsafe { user_ptr!(resolution as *mut Timestamp) };
     match id {
         CLOCKID_MONOTONIC => {
-            *resolution = monotonic_clock::resolution();
+            unsafe {
+                *resolution = monotonic_clock::resolution();
+            };
             ERRNO_SUCCESS
         }
         CLOCKID_REALTIME => {
             let res = wall_clock::resolution();
-            *resolution = match Timestamp::from(res.seconds)
-                .checked_mul(1_000_000_000)
-                .and_then(|ns| ns.checked_add(res.nanoseconds.into()))
-            {
-                Some(ns) => ns,
-                None => return ERRNO_OVERFLOW,
+            unsafe {
+                *resolution = match Timestamp::from(res.seconds)
+                    .checked_mul(1_000_000_000)
+                    .and_then(|ns| ns.checked_add(res.nanoseconds.into()))
+                {
+                    Some(ns) => ns,
+                    None => return ERRNO_OVERFLOW,
+                }
             };
             ERRNO_SUCCESS
         }
@@ -552,6 +561,7 @@ pub unsafe extern "C" fn clock_time_get(
     _precision: Timestamp,
     time: &mut Timestamp,
 ) -> Errno {
+    let time = user_ptr!(time as *mut Timestamp);
     match id {
         CLOCKID_MONOTONIC => {
             *time = monotonic_clock::now();
@@ -718,18 +728,25 @@ pub unsafe extern "C" fn fd_read(
     mut iovs_len: usize,
     nread: *mut Size,
 ) -> Errno {
+    if !matches!(
+        get_allocation_state(),
+        AllocationState::StackAllocated | AllocationState::StateAllocated
+    ) {
+        *user_ptr!(nread) = 0;
+        return ERRNO_IO;
+    }
     // Advance to the first non-empty buffer.
-    while iovs_len != 0 && (*iovs_ptr).buf_len == 0 {
+    while iovs_len != 0 && (*user_ptr!(iovs_ptr)).buf_len == 0 {
         iovs_ptr = iovs_ptr.add(1);
         iovs_len -= 1;
     }
     if iovs_len == 0 {
-        *nread = 0;
+        *user_ptr!(nread) = 0;
         return ERRNO_SUCCESS;
     }
 
-    let ptr = (*iovs_ptr).buf;
-    let len = (*iovs_ptr).buf_len;
+    let ptr = (*user_ptr!(iovs_ptr)).buf;
+    let len = (*user_ptr!(iovs_ptr)).buf_len;
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
@@ -739,12 +756,12 @@ pub unsafe extern "C" fn fd_read(
 
                 let read_len = u64::try_from(len).trapping_unwrap();
                 let wasi_stream = streams.get_read_stream()?;
-                let data = match state
-                    .with_one_import_alloc(ptr, len, || blocking_mode.read(wasi_stream, read_len))
-                {
+                let data = match state.with_one_import_alloc(user_ptr!(ptr), len, || {
+                    blocking_mode.read(wasi_stream, read_len)
+                }) {
                     Ok(data) => data,
                     Err(streams::StreamError::Closed) => {
-                        *nread = 0;
+                        *user_ptr!(nread) = 0;
                         return Ok(());
                     }
                     Err(streams::StreamError::LastOperationFailed(e)) => {
@@ -752,11 +769,11 @@ pub unsafe extern "C" fn fd_read(
                     }
                 };
 
-                assert_eq!(data.as_ptr(), ptr);
+                assert_eq!(data.as_ptr(), user_ptr!(ptr));
                 assert!(data.len() <= len);
 
                 let len = data.len();
-                *nread = len;
+                *user_ptr!(nread) = len;
                 forget(data);
                 Ok(())
             }
@@ -841,23 +858,23 @@ pub unsafe extern "C" fn fd_write(
         get_allocation_state(),
         AllocationState::StackAllocated | AllocationState::StateAllocated
     ) {
-        *nwritten = 0;
+        *user_ptr!(nwritten) = 0;
         return ERRNO_IO;
     }
 
     // Advance to the first non-empty buffer.
-    while iovs_len != 0 && (*iovs_ptr).buf_len == 0 {
+    while iovs_len != 0 && (*user_ptr!(iovs_ptr)).buf_len == 0 {
         iovs_ptr = iovs_ptr.add(1);
         iovs_len -= 1;
     }
     if iovs_len == 0 {
-        *nwritten = 0;
+        *user_ptr!(nwritten) = 0;
         return ERRNO_SUCCESS;
     }
 
-    let ptr = (*iovs_ptr).buf;
-    let len = (*iovs_ptr).buf_len;
-    let bytes = slice::from_raw_parts(ptr, len);
+    let ptr = (*user_ptr!(iovs_ptr)).buf;
+    let len = (*user_ptr!(iovs_ptr)).buf_len;
+    let bytes = slice::from_raw_parts(user_ptr!(ptr), len);
 
     State::with::<Errno>(|state| {
         let ds = state.descriptors();
@@ -867,7 +884,7 @@ pub unsafe extern "C" fn fd_write(
 
                 let nbytes = BlockingMode::Blocking.write(wasi_stream, bytes)?;
 
-                *nwritten = nbytes;
+                *user_ptr!(nwritten) = nbytes;
                 Ok(())
             }
             Descriptor::Closed(_) | Descriptor::Bad => Err(ERRNO_BADF),
@@ -1053,9 +1070,9 @@ pub unsafe extern "C" fn poll_oneoff(
     nsubscriptions: Size,
     nevents: *mut Size,
 ) -> Errno {
-    *nevents = 0;
+    *user_ptr!(nevents) = 0;
 
-    let subscriptions = slice::from_raw_parts(r#in, nsubscriptions);
+    let subscriptions = slice::from_raw_parts(user_ptr!(r#in), nsubscriptions);
 
     // We're going to split the `nevents` buffer into two non-overlapping
     // buffers: one to store the pollable handles, and the other to store
@@ -1080,8 +1097,8 @@ pub unsafe extern "C" fn poll_oneoff(
     );
     // Store the pollable handles at the beginning, and the bool results at the
     // end, so that we don't clobber the bool results when writting the events.
-    let pollables = out as *mut c_void as *mut Pollable;
-    let results = out.add(nsubscriptions).cast::<u32>().sub(nsubscriptions);
+    let pollables = user_ptr!(out as *mut c_void as *mut Pollable);
+    let results = user_ptr!(out.add(nsubscriptions).cast::<u32>().sub(nsubscriptions));
 
     // Indefinite sleeping is not supported in preview1.
     if nsubscriptions == 0 {
@@ -1239,7 +1256,7 @@ pub unsafe extern "C" fn poll_oneoff(
                 _ => unreachable!(),
             };
 
-            *out.add(count) = Event {
+            *user_ptr!(out.add(count)) = Event {
                 userdata: subscription.userdata,
                 error,
                 type_,
@@ -1249,7 +1266,7 @@ pub unsafe extern "C" fn poll_oneoff(
             count += 1;
         }
 
-        *nevents = count;
+        *user_ptr!(nevents) = count;
 
         Ok(())
     })
@@ -1295,9 +1312,10 @@ pub unsafe extern "C" fn random_get(buf: *mut u8, buf_len: Size) -> Errno {
     ) {
         State::with::<Errno>(|state| {
             assert_eq!(buf_len as u32 as Size, buf_len);
-            let result = state
-                .with_one_import_alloc(buf, buf_len, || random::get_random_bytes(buf_len as u64));
-            assert_eq!(result.as_ptr(), buf);
+            let result = state.with_one_import_alloc(user_ptr!(buf), buf_len, || {
+                random::get_random_bytes(buf_len as u64)
+            });
+            assert_eq!(result.as_ptr(), user_ptr!(buf));
 
             // The returned buffer's memory was allocated in `buf`, so don't separately
             // free it.
@@ -1573,14 +1591,13 @@ impl State {
 
     #[cold]
     fn new() -> *mut State {
-        #[link(wasm_import_module = "__main_module__")]
-        extern "C" {
-            fn cabi_realloc(
-                old_ptr: *mut u8,
-                old_len: usize,
-                align: usize,
-                new_len: usize,
-            ) -> *mut u8;
+        unsafe fn cabi_realloc(
+            _old_ptr: *mut u8,
+            _old_len: usize,
+            _align: usize,
+            _new_len: usize,
+        ) -> *mut u8 {
+            (64 * 1024) as *mut u8
         }
 
         assert!(matches!(

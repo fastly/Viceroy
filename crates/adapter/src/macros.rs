@@ -5,6 +5,20 @@
 
 use crate::bindings::wasi::cli::stderr::get_stderr;
 
+pub const OFFSET: usize = 2 * 64 * 1024;
+// Used to annotate the address that comes from main module
+macro_rules! user_ptr {
+    ($ptr:expr) => {{
+        unsafe { $ptr.byte_add(OFFSET) }
+    }};
+}
+// Used to annotate the address sending back to main module
+macro_rules! unshift_ptr {
+    ($ptr:expr) => {{
+        unsafe { $ptr.byte_sub(OFFSET) }
+    }};
+}
+
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn print(message: &[u8]) {

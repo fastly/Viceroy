@@ -19,7 +19,7 @@ fn main() {
     // own module has no stack at all since it's specifically allocated at
     // startup.
     println!("cargo:rustc-link-arg=--import-memory");
-    println!("cargo:rustc-link-arg=-zstack-size=0");
+    println!("cargo:rustc-link-arg=-zstack-size=65536");
 }
 
 /// This function will produce a wasm module which is itself an object file
@@ -74,8 +74,8 @@ fn build_raw_intrinsics() -> Vec<u8> {
     let mut module = Module::new();
 
     let mut types = TypeSection::new();
-    types.function([], [ValType::I32]);
-    types.function([ValType::I32], []);
+    types.ty().function([], [ValType::I32]);
+    types.ty().function([ValType::I32], []);
     module.section(&types);
 
     // Declare the functions, using the type we just added.
@@ -104,7 +104,8 @@ fn build_raw_intrinsics() -> Vec<u8> {
             mutable: true,
             shared: false,
         },
-        &ConstExpr::i32_const(0),
+        // StackAllocated as the space is already reserved.
+        &ConstExpr::i32_const(2),
     );
     module.section(&globals);
 
