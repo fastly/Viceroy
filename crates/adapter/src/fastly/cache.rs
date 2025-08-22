@@ -1,7 +1,7 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle, INVALID_HANDLE};
+use crate::OFFSET;
 use crate::{alloc_result_opt, TrappingUnwrap};
 use core::mem::ManuallyDrop;
-use crate::OFFSET;
 
 pub type CacheHandle = u32;
 pub type CacheBusyHandle = u32;
@@ -257,7 +257,7 @@ mod cache {
         let mask = cache::LookupOptionsMask::from(options_mask);
 
         let service_id = if mask.contains(cache::LookupOptionsMask::SERVICE_ID) {
-            crate::make_string_result!((*options).service, (*options).service_len)
+            crate::make_string_result!(user_ptr!((*options).service), (*options).service_len)
         } else {
             ManuallyDrop::new(Default::default())
         };
@@ -283,11 +283,11 @@ mod cache {
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
         let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
-        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) }
-        {
-            Ok(tuple) => tuple,
-            Err(err) => return err,
-        };
+        let (options_mask, options) =
+            match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) } {
+                Ok(tuple) => tuple,
+                Err(err) => return err,
+            };
 
         let res = cache::lookup(cache_key, options_mask, &options);
 
@@ -313,12 +313,12 @@ mod cache {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_vec!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_vec!(user_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                crate::make_string_result!((*options).$ptr_field, (*options).$len_field)
+                crate::make_string_result!(user_ptr!((*options).$ptr_field), (*options).$len_field)
             };
         }
 
@@ -388,11 +388,11 @@ mod cache {
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
         let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
-        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) }
-        {
-            Ok(tuple) => tuple,
-            Err(err) => return err,
-        };
+        let (options_mask, options) =
+            match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) } {
+                Ok(tuple) => tuple,
+                Err(err) => return err,
+            };
         let res = cache::transaction_lookup(cache_key, options_mask, &options);
         std::mem::forget(options);
         match res {
@@ -415,11 +415,11 @@ mod cache {
         cache_handle_out: *mut CacheBusyHandle,
     ) -> FastlyStatus {
         let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
-        let (options_mask, options) = match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) }
-        {
-            Ok(tuple) => tuple,
-            Err(err) => return err,
-        };
+        let (options_mask, options) =
+            match unsafe { convert_lookup_options(options_mask, user_ptr!(options)) } {
+                Ok(tuple) => tuple,
+                Err(err) => return err,
+            };
         let res = cache::transaction_lookup_async(cache_key, options_mask, &options);
         std::mem::forget(options);
         match res {
@@ -612,7 +612,7 @@ mod cache {
             Err(e) => e.into(),
         }
     }
-//TODO
+    //TODO
     #[export_name = "fastly_cache#get_length"]
     pub fn get_length(handle: CacheHandle, length_out: *mut CacheObjectLength) -> FastlyStatus {
         match cache::get_length(handle) {
@@ -692,18 +692,24 @@ mod cache {
         let cache_key = unsafe { slice::from_raw_parts(user_ptr!(cache_key_ptr), cache_key_len) };
         let options_mask = cache::ReplaceOptionsMask::from(options_mask);
 
-        let replace_strategy =
-            match cache::ReplaceStrategy::try_from(unsafe { (*user_ptr!(options)).replace_strategy }) {
-                Ok(r) => r,
-                Err(e) => return e,
-            };
+        let replace_strategy = match cache::ReplaceStrategy::try_from(unsafe {
+            (*user_ptr!(options)).replace_strategy
+        }) {
+            Ok(r) => r,
+            Err(e) => return e,
+        };
 
         // NOTE: this is only really safe because we never mutate the vectors -- we only need
         // vectors to satisfy the interface produced by the DynamicBackendConfig record,
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string!((*user_ptr!(options)).$ptr_field, (*user_ptr!(options)).$len_field) }
+                unsafe {
+                    crate::make_string!(
+                        user_ptr!((*user_ptr!(options)).$ptr_field),
+                        (*user_ptr!(options)).$len_field
+                    )
+                }
             };
         }
 

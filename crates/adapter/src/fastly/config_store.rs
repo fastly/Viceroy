@@ -1,6 +1,6 @@
 use super::FastlyStatus;
-use crate::{alloc_result_opt, bindings::fastly::api::config_store, TrappingUnwrap};
 use crate::OFFSET;
+use crate::{alloc_result_opt, bindings::fastly::api::config_store, TrappingUnwrap};
 
 pub type ConfigStoreHandle = u32;
 

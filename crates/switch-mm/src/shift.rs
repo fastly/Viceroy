@@ -145,7 +145,11 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     });
                     instrs.push((instr, loc));
                 }
-                Instr::AtomicFence(_) | Instr::AtomicNotify(_) | Instr::AtomicWait(_) | Instr::AtomicRmw(_) | Instr::Cmpxchg(_) => todo!(),
+                Instr::AtomicFence(_)
+                | Instr::AtomicNotify(_)
+                | Instr::AtomicWait(_)
+                | Instr::AtomicRmw(_)
+                | Instr::Cmpxchg(_) => todo!(),
                 Instr::LoadSimd(_) => todo!(),
                 _ => instrs.push((instr, loc)),
             }

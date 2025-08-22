@@ -95,7 +95,7 @@ mod http_cache {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_vec!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_vec!(user_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -166,7 +166,7 @@ mod http_cache {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                crate::make_string_result!((*options).$ptr_field, (*options).$len_field)
+                crate::make_string_result!(user_ptr!((*options).$ptr_field), (*options).$len_field)
             };
         }
 
@@ -217,9 +217,12 @@ mod http_cache {
         key_out_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(key_out_ptr), key_out_len, user_ptr!(nwritten_out), {
-            host::get_suggested_cache_key(req_handle, key_out_len.try_into().trapping_unwrap())
-        })
+        alloc_result!(
+            user_ptr!(key_out_ptr),
+            key_out_len,
+            user_ptr!(nwritten_out),
+            { host::get_suggested_cache_key(req_handle, key_out_len.try_into().trapping_unwrap()) }
+        )
     }
 
     #[export_name = "fastly_http_cache#lookup"]
@@ -462,7 +465,8 @@ mod http_cache {
         if requested.contains(HttpCacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS) {
             options_mask_out.insert(HttpCacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS);
             unsafe {
-                (*user_ptr!(options_out)).stale_while_revalidate_ns = res.stale_while_revalidate_ns();
+                (*user_ptr!(options_out)).stale_while_revalidate_ns =
+                    res.stale_while_revalidate_ns();
             }
         }
 
@@ -617,8 +621,11 @@ mod http_cache {
         vary_rule_out_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(vary_rule_out_ptr), vary_rule_out_len, user_ptr!(nwritten_out), {
-            host::get_vary_rule(handle, vary_rule_out_len.try_into().trapping_unwrap())
-        })
+        alloc_result!(
+            user_ptr!(vary_rule_out_ptr),
+            vary_rule_out_len,
+            user_ptr!(nwritten_out),
+            { host::get_vary_rule(handle, vary_rule_out_len.try_into().trapping_unwrap()) }
+        )
     }
 }

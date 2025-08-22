@@ -3,9 +3,9 @@
 // wrappers around these definitions.
 
 use super::{convert_result, FastlyStatus};
+use crate::OFFSET;
 use crate::{alloc_result, alloc_result_opt, handle_buffer_len, with_buffer, TrappingUnwrap};
 use core::mem::ManuallyDrop;
-use crate::OFFSET;
 
 impl From<crate::bindings::fastly::api::http_types::HttpVersion> for u32 {
     fn from(value: crate::bindings::fastly::api::http_types::HttpVersion) -> Self {
@@ -368,9 +368,12 @@ pub mod fastly_uap {
             Err(e) => return e.into(),
         };
 
-        alloc_result!(user_ptr!(family), family_max_len, user_ptr!(family_written), {
-            ua.family(u64::try_from(family_max_len).trapping_unwrap())
-        });
+        alloc_result!(
+            user_ptr!(family),
+            family_max_len,
+            user_ptr!(family_written),
+            { ua.family(u64::try_from(family_max_len).trapping_unwrap()) }
+        );
 
         alloc_result!(user_ptr!(major), major_max_len, user_ptr!(major_written), {
             ua.major(u64::try_from(major_max_len).trapping_unwrap())
@@ -1029,11 +1032,16 @@ pub mod fastly_http_req {
         cipher_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(cipher_out), cipher_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_tls_cipher_openssl_name(
-                u64::try_from(cipher_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            user_ptr!(cipher_out),
+            cipher_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_tls_cipher_openssl_name(
+                    u64::try_from(cipher_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_tls_protocol"]
@@ -1042,11 +1050,16 @@ pub mod fastly_http_req {
         protocol_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(protocol_out), protocol_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_tls_protocol(
-                u64::try_from(protocol_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            user_ptr!(protocol_out),
+            protocol_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_tls_protocol(
+                    u64::try_from(protocol_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_tls_client_hello"]
@@ -1055,11 +1068,16 @@ pub mod fastly_http_req {
         client_hello_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(client_hello_out), client_hello_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_tls_client_hello(
-                u64::try_from(client_hello_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            user_ptr!(client_hello_out),
+            client_hello_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_tls_client_hello(
+                    u64::try_from(client_hello_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_tls_ja3_md5"]
@@ -1086,11 +1104,16 @@ pub mod fastly_http_req {
         region_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(region_out), region_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_compliance_region(
-                u64::try_from(region_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            user_ptr!(region_out),
+            region_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_compliance_region(
+                    u64::try_from(region_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_tls_raw_client_certificate"]
@@ -1335,8 +1358,8 @@ pub mod fastly_http_req {
                 )
             },
             |res| {
-                let res =
-                    handle_buffer_len!(res, user_ptr!(nwritten)).ok_or(FastlyStatus::INVALID_ARGUMENT)?;
+                let res = handle_buffer_len!(res, user_ptr!(nwritten))
+                    .ok_or(FastlyStatus::INVALID_ARGUMENT)?;
                 unsafe {
                     *user_ptr!(nwritten) = res.len();
                 }
@@ -1609,7 +1632,12 @@ pub mod fastly_http_req {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string!((*user_ptr!(config)).$ptr_field, (*user_ptr!(config)).$len_field) }
+                unsafe {
+                    crate::make_string!(
+                        user_ptr!((*user_ptr!(config)).$ptr_field),
+                        (*user_ptr!(config)).$len_field
+                    )
+                }
             };
         }
 
@@ -1625,8 +1653,12 @@ pub mod fastly_http_req {
             connect_timeout: unsafe { (*user_ptr!(config)).connect_timeout_ms },
             first_byte_timeout: unsafe { (*user_ptr!(config)).first_byte_timeout_ms },
             between_bytes_timeout: unsafe { (*user_ptr!(config)).between_bytes_timeout_ms },
-            tls_min_version: unsafe { (*user_ptr!(config)).tls_min_version }.try_into().ok(),
-            tls_max_version: unsafe { (*user_ptr!(config)).tls_max_version }.try_into().ok(),
+            tls_min_version: unsafe { (*user_ptr!(config)).tls_min_version }
+                .try_into()
+                .ok(),
+            tls_max_version: unsafe { (*user_ptr!(config)).tls_max_version }
+                .try_into()
+                .ok(),
             cert_hostname: ManuallyDrop::into_inner(cert_hostname),
             ca_cert: ManuallyDrop::into_inner(ca_cert),
             ciphers: ManuallyDrop::into_inner(ciphers),
@@ -1635,7 +1667,9 @@ pub mod fastly_http_req {
             client_key: unsafe { (*user_ptr!(config)).client_key },
             http_keepalive_time_ms: unsafe { (*user_ptr!(config)).http_keepalive_time_ms },
             tcp_keepalive_enable: unsafe { (*user_ptr!(config)).tcp_keepalive_enable },
-            tcp_keepalive_interval_secs: unsafe { (*user_ptr!(config)).tcp_keepalive_interval_secs },
+            tcp_keepalive_interval_secs: unsafe {
+                (*user_ptr!(config)).tcp_keepalive_interval_secs
+            },
             tcp_keepalive_probes: unsafe { (*user_ptr!(config)).tcp_keepalive_probes },
             tcp_keepalive_time_secs: unsafe { (*user_ptr!(config)).tcp_keepalive_time_secs },
         };
@@ -1766,8 +1800,9 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let pending_req_handles =
-            unsafe { slice::from_raw_parts(user_ptr!(pending_req_handles), pending_req_handles_len) };
+        let pending_req_handles = unsafe {
+            slice::from_raw_parts(user_ptr!(pending_req_handles), pending_req_handles_len)
+        };
         match http_req::pending_req_select(pending_req_handles) {
             Ok((idx, (resp_handle, resp_body_handle))) => {
                 unsafe {
@@ -1790,8 +1825,9 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let pending_req_handles =
-            unsafe { slice::from_raw_parts(user_ptr!(pending_req_handles), pending_req_handles_len) };
+        let pending_req_handles = unsafe {
+            slice::from_raw_parts(user_ptr!(pending_req_handles), pending_req_handles_len)
+        };
         match http_req::pending_req_select_v2(pending_req_handles) {
             Ok((idx, Ok((resp_handle, resp_body_handle)))) => {
                 unsafe {
@@ -1920,7 +1956,12 @@ pub mod fastly_http_req {
         // `inspect` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string!((*user_ptr!(info)).$ptr_field, (*user_ptr!(info)).$len_field) }
+                unsafe {
+                    crate::make_string!(
+                        user_ptr!((*user_ptr!(info)).$ptr_field),
+                        (*user_ptr!(info)).$len_field
+                    )
+                }
             };
         }
 
@@ -2056,8 +2097,8 @@ pub mod fastly_http_resp {
                 )
             },
             |res| {
-                let res =
-                    handle_buffer_len!(res, user_ptr!(nwritten)).ok_or(FastlyStatus::INVALID_ARGUMENT)?;
+                let res = handle_buffer_len!(res, user_ptr!(nwritten))
+                    .ok_or(FastlyStatus::INVALID_ARGUMENT)?;
                 unsafe {
                     *user_ptr!(nwritten) = res.len();
                 }
@@ -3027,7 +3068,10 @@ pub mod fastly_kv_store {
         let key = unsafe { slice::from_raw_parts(user_ptr!(key_ptr), key_len) };
 
         let metadata = unsafe {
-            crate::make_string!((*user_ptr!(insert_config)).metadata, (*user_ptr!(insert_config)).metadata_len)
+            crate::make_string!(
+                user_ptr!((*user_ptr!(insert_config)).metadata),
+                (*user_ptr!(insert_config)).metadata_len
+            )
         };
         let insert_config_mask = insert_config_mask.into();
         let insert_config = unsafe {
@@ -3146,12 +3190,22 @@ pub mod fastly_kv_store {
         let mask = kv_store::ListConfigOptions::from(list_config_mask);
 
         let cursor = if mask.contains(kv_store::ListConfigOptions::CURSOR) {
-            unsafe { crate::make_string!((*user_ptr!(list_config)).cursor, (*user_ptr!(list_config)).cursor_len) }
+            unsafe {
+                crate::make_string!(
+                    user_ptr!((*user_ptr!(list_config)).cursor),
+                    (*user_ptr!(list_config)).cursor_len
+                )
+            }
         } else {
             ManuallyDrop::new(Default::default())
         };
         let prefix = if mask.contains(kv_store::ListConfigOptions::PREFIX) {
-            unsafe { crate::make_string!((*user_ptr!(list_config)).prefix, (*user_ptr!(list_config)).prefix_len) }
+            unsafe {
+                crate::make_string!(
+                    user_ptr!((*user_ptr!(list_config)).prefix),
+                    (*user_ptr!(list_config)).prefix_len
+                )
+            }
         } else {
             ManuallyDrop::new(Default::default())
         };
@@ -3224,7 +3278,8 @@ pub mod fastly_secret_store {
         secret_store_name_len: usize,
         secret_store_handle_out: *mut SecretStoreHandle,
     ) -> FastlyStatus {
-        let secret_store_name = crate::make_str!(user_ptr!(secret_store_name_ptr), secret_store_name_len);
+        let secret_store_name =
+            crate::make_str!(user_ptr!(secret_store_name_ptr), secret_store_name_len);
         match secret_store::open(secret_store_name) {
             Ok(res) => {
                 unsafe {
@@ -3265,12 +3320,17 @@ pub mod fastly_secret_store {
         plaintext_max_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result_opt!(user_ptr!(plaintext_buf), plaintext_max_len, user_ptr!(nwritten_out), {
-            secret_store::plaintext(
-                secret_handle,
-                u64::try_from(plaintext_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result_opt!(
+            user_ptr!(plaintext_buf),
+            plaintext_max_len,
+            user_ptr!(nwritten_out),
+            {
+                secret_store::plaintext(
+                    secret_handle,
+                    u64::try_from(plaintext_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_secret_store#from_bytes"]
@@ -3788,7 +3848,9 @@ pub mod fastly_purge {
                 )
             },
             |res| {
-                if let Some(res) = handle_buffer_len!(res, user_ptr!((*user_ptr!(options)).ret_buf_nwritten_out)) {
+                if let Some(res) =
+                    handle_buffer_len!(res, user_ptr!((*user_ptr!(options)).ret_buf_nwritten_out))
+                {
                     unsafe {
                         *user_ptr!(((*user_ptr!(options)).ret_buf_nwritten_out)) = res.len();
                     }
@@ -3899,7 +3961,12 @@ pub mod fastly_shielding {
         // `register_dynamic_backend` will never mutate the vectors it's given.
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string_result!((*user_ptr!(options)).$ptr_field, (*user_ptr!(options)).$len_field) }
+                unsafe {
+                    crate::make_string_result!(
+                        user_ptr!((*user_ptr!(options)).$ptr_field),
+                        (*user_ptr!(options)).$len_field
+                    )
+                }
             };
         }
 
@@ -4617,7 +4684,8 @@ mod fastly_image_optimizer {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let backend_name = crate::make_str!(user_ptr!(origin_image_backend), origin_image_backend_len);
+        let backend_name =
+            crate::make_str!(user_ptr!(origin_image_backend), origin_image_backend_len);
         let io_opts = image_optimizer::ImageOptimizerTransformConfigOptions::from(
             io_transform_config_options,
         );
@@ -4629,7 +4697,7 @@ mod fastly_image_optimizer {
             ($ptr_field:ident, $len_field:ident) => {
                 unsafe {
                     crate::make_string!(
-                        (*user_ptr!(io_transform_config)).$ptr_field,
+                        user_ptr!((*user_ptr!(io_transform_config)).$ptr_field),
                         (*user_ptr!(io_transform_config)).$len_field
                     )
                 }

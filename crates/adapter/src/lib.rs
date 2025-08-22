@@ -531,18 +531,22 @@ pub extern "C" fn clock_res_get(id: Clockid, resolution: &mut Timestamp) -> Errn
     let resolution = unsafe { user_ptr!(resolution as *mut Timestamp) };
     match id {
         CLOCKID_MONOTONIC => {
-            unsafe {*resolution = monotonic_clock::resolution();};
+            unsafe {
+                *resolution = monotonic_clock::resolution();
+            };
             ERRNO_SUCCESS
         }
         CLOCKID_REALTIME => {
             let res = wall_clock::resolution();
-            unsafe {*resolution = match Timestamp::from(res.seconds)
-                .checked_mul(1_000_000_000)
-                .and_then(|ns| ns.checked_add(res.nanoseconds.into()))
-            {
-                Some(ns) => ns,
-                None => return ERRNO_OVERFLOW,
-            }};
+            unsafe {
+                *resolution = match Timestamp::from(res.seconds)
+                    .checked_mul(1_000_000_000)
+                    .and_then(|ns| ns.checked_add(res.nanoseconds.into()))
+                {
+                    Some(ns) => ns,
+                    None => return ERRNO_OVERFLOW,
+                }
+            };
             ERRNO_SUCCESS
         }
         _ => ERRNO_BADF,
@@ -752,9 +756,9 @@ pub unsafe extern "C" fn fd_read(
 
                 let read_len = u64::try_from(len).trapping_unwrap();
                 let wasi_stream = streams.get_read_stream()?;
-                let data = match state
-                    .with_one_import_alloc(user_ptr!(ptr), len, || blocking_mode.read(wasi_stream, read_len))
-                {
+                let data = match state.with_one_import_alloc(user_ptr!(ptr), len, || {
+                    blocking_mode.read(wasi_stream, read_len)
+                }) {
                     Ok(data) => data,
                     Err(streams::StreamError::Closed) => {
                         *user_ptr!(nread) = 0;
@@ -840,7 +844,6 @@ pub unsafe extern "C" fn fd_sync(_fd: Fd) -> Errno {
 pub unsafe extern "C" fn fd_tell(_fd: Fd, _offset: *mut Filesize) -> Errno {
     wasi::ERRNO_NOTSUP
 }
-
 
 /// Write to a file descriptor.
 /// Note: This is similar to `writev` in POSIX.
@@ -1309,8 +1312,9 @@ pub unsafe extern "C" fn random_get(buf: *mut u8, buf_len: Size) -> Errno {
     ) {
         State::with::<Errno>(|state| {
             assert_eq!(buf_len as u32 as Size, buf_len);
-            let result = state
-                .with_one_import_alloc(user_ptr!(buf), buf_len, || random::get_random_bytes(buf_len as u64));
+            let result = state.with_one_import_alloc(user_ptr!(buf), buf_len, || {
+                random::get_random_bytes(buf_len as u64)
+            });
             assert_eq!(result.as_ptr(), user_ptr!(buf));
 
             // The returned buffer's memory was allocated in `buf`, so don't separately
