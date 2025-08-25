@@ -1,5 +1,4 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle, INVALID_HANDLE};
-use crate::OFFSET;
 use crate::{alloc_result_opt, TrappingUnwrap};
 use core::mem::ManuallyDrop;
 
@@ -559,7 +558,7 @@ mod cache {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         alloc_result_opt!(
-            user_ptr!(user_metadata_out_ptr),
+            unsafe_user_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
             user_ptr!(nwritten_out),
             {
@@ -910,7 +909,7 @@ mod cache {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         alloc_result_opt!(
-            user_ptr!(user_metadata_out_ptr),
+            unsafe_user_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
             user_ptr!(nwritten_out),
             {

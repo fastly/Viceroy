@@ -3,7 +3,6 @@
 // wrappers around these definitions.
 
 use super::{convert_result, FastlyStatus};
-use crate::OFFSET;
 use crate::{alloc_result, alloc_result_opt, handle_buffer_len, with_buffer, TrappingUnwrap};
 use core::mem::ManuallyDrop;
 
@@ -362,30 +361,39 @@ pub mod fastly_uap {
         patch_max_len: usize,
         patch_written: *mut usize,
     ) -> FastlyStatus {
-        let user_agent = crate::make_str!(user_ptr!(user_agent), user_agent_max_len);
+        let user_agent = crate::make_str!(unsafe_user_ptr!(user_agent), user_agent_max_len);
         let ua = match uap::parse(user_agent) {
             Ok(ua) => ua,
             Err(e) => return e.into(),
         };
 
         alloc_result!(
-            user_ptr!(family),
+            unsafe_user_ptr!(family),
             family_max_len,
             user_ptr!(family_written),
             { ua.family(u64::try_from(family_max_len).trapping_unwrap()) }
         );
 
-        alloc_result!(user_ptr!(major), major_max_len, user_ptr!(major_written), {
-            ua.major(u64::try_from(major_max_len).trapping_unwrap())
-        });
+        alloc_result!(
+            unsafe_user_ptr!(major),
+            major_max_len,
+            user_ptr!(major_written),
+            { ua.major(u64::try_from(major_max_len).trapping_unwrap()) }
+        );
 
-        alloc_result!(user_ptr!(minor), minor_max_len, user_ptr!(minor_written), {
-            ua.minor(u64::try_from(minor_max_len).trapping_unwrap())
-        });
+        alloc_result!(
+            unsafe_user_ptr!(minor),
+            minor_max_len,
+            user_ptr!(minor_written),
+            { ua.minor(u64::try_from(minor_max_len).trapping_unwrap()) }
+        );
 
-        alloc_result!(user_ptr!(patch), patch_max_len, user_ptr!(patch_written), {
-            ua.patch(u64::try_from(patch_max_len).trapping_unwrap())
-        });
+        alloc_result!(
+            unsafe_user_ptr!(patch),
+            patch_max_len,
+            user_ptr!(patch_written),
+            { ua.patch(u64::try_from(patch_max_len).trapping_unwrap()) }
+        );
 
         FastlyStatus::OK
     }
@@ -421,7 +429,7 @@ pub mod fastly_http_body {
         buf_len: usize,
         nread_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(buf), buf_len, user_ptr!(nread_out), {
+        alloc_result!(unsafe_user_ptr!(buf), buf_len, user_ptr!(nread_out), {
             http_body::read(body_handle, u32::try_from(buf_len).trapping_unwrap())
         })
     }
@@ -490,7 +498,7 @@ pub mod fastly_http_body {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 http_body::trailer_names_get(
@@ -533,13 +541,18 @@ pub mod fastly_http_body {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(user_ptr!(name), name_len) };
-        alloc_result_opt!(user_ptr!(value), value_max_len, user_ptr!(nwritten), {
-            http_body::trailer_value_get(
-                body_handle,
-                name,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result_opt!(
+            unsafe_user_ptr!(value),
+            value_max_len,
+            user_ptr!(nwritten),
+            {
+                http_body::trailer_value_get(
+                    body_handle,
+                    name,
+                    u64::try_from(value_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_body#trailer_values_get"]
@@ -555,7 +568,7 @@ pub mod fastly_http_body {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(user_ptr!(name), name_len) };
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 http_body::trailer_values_get(
@@ -615,7 +628,7 @@ pub mod fastly_log {
         name_len: usize,
         endpoint_handle_out: *mut u32,
     ) -> FastlyStatus {
-        let name = crate::make_str!(user_ptr!(name), name_len);
+        let name = crate::make_str!(unsafe_user_ptr!(name), name_len);
         match fastly::api::log::endpoint_get(name) {
             Ok(res) => {
                 unsafe {
@@ -957,9 +970,12 @@ pub mod fastly_http_req {
         addr_octets_out: *mut u8,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(addr_octets_out), 16, user_ptr!(nwritten_out), {
-            fastly::api::http_req::downstream_client_ip_addr()
-        })
+        alloc_result!(
+            unsafe_user_ptr!(addr_octets_out),
+            16,
+            user_ptr!(nwritten_out),
+            { fastly::api::http_req::downstream_client_ip_addr() }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_server_ip_addr"]
@@ -967,9 +983,12 @@ pub mod fastly_http_req {
         addr_octets_out: *mut u8,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(addr_octets_out), 16, user_ptr!(nwritten_out), {
-            fastly::api::http_req::downstream_server_ip_addr()
-        })
+        alloc_result!(
+            unsafe_user_ptr!(addr_octets_out),
+            16,
+            user_ptr!(nwritten_out),
+            { fastly::api::http_req::downstream_server_ip_addr() }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_client_h2_fingerprint"]
@@ -978,11 +997,16 @@ pub mod fastly_http_req {
         h2fp_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(h2fp_out), h2fp_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_client_h2_fingerprint(
-                u64::try_from(h2fp_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            unsafe_user_ptr!(h2fp_out),
+            h2fp_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_client_h2_fingerprint(
+                    u64::try_from(h2fp_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_client_request_id"]
@@ -991,11 +1015,16 @@ pub mod fastly_http_req {
         reqid_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(reqid_out), reqid_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_client_request_id(
-                u64::try_from(reqid_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            unsafe_user_ptr!(reqid_out),
+            reqid_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_client_request_id(
+                    u64::try_from(reqid_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_client_oh_fingerprint"]
@@ -1004,11 +1033,16 @@ pub mod fastly_http_req {
         ohfp_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(ohfp_out), ohfp_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_client_oh_fingerprint(
-                u64::try_from(ohfp_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            unsafe_user_ptr!(ohfp_out),
+            ohfp_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_client_oh_fingerprint(
+                    u64::try_from(ohfp_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_client_ddos_detected"]
@@ -1033,7 +1067,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         alloc_result!(
-            user_ptr!(cipher_out),
+            unsafe_user_ptr!(cipher_out),
             cipher_max_len,
             user_ptr!(nwritten),
             {
@@ -1051,7 +1085,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         alloc_result!(
-            user_ptr!(protocol_out),
+            unsafe_user_ptr!(protocol_out),
             protocol_max_len,
             user_ptr!(nwritten),
             {
@@ -1069,7 +1103,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         alloc_result!(
-            user_ptr!(client_hello_out),
+            unsafe_user_ptr!(client_hello_out),
             client_hello_max_len,
             user_ptr!(nwritten),
             {
@@ -1082,9 +1116,12 @@ pub mod fastly_http_req {
 
     #[export_name = "fastly_http_req#downstream_tls_ja3_md5"]
     pub fn downstream_tls_ja3_md5(ja3_md5_out: *mut u8, nwritten_out: *mut usize) -> FastlyStatus {
-        alloc_result!(user_ptr!(ja3_md5_out), 16, user_ptr!(nwritten_out), {
-            fastly::api::http_req::downstream_tls_ja3_md5()
-        })
+        alloc_result!(
+            unsafe_user_ptr!(ja3_md5_out),
+            16,
+            user_ptr!(nwritten_out),
+            { fastly::api::http_req::downstream_tls_ja3_md5() }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_tls_ja4"]
@@ -1093,9 +1130,16 @@ pub mod fastly_http_req {
         ja4_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(ja4_out), ja4_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::downstream_tls_ja4(u64::try_from(ja4_max_len).trapping_unwrap())
-        })
+        alloc_result!(
+            unsafe_user_ptr!(ja4_out),
+            ja4_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::downstream_tls_ja4(
+                    u64::try_from(ja4_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#downstream_compliance_region"]
@@ -1105,7 +1149,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         alloc_result!(
-            user_ptr!(region_out),
+            unsafe_user_ptr!(region_out),
             region_max_len,
             user_ptr!(nwritten),
             {
@@ -1123,7 +1167,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         alloc_result!(
-            user_ptr!(client_certificate_out),
+            unsafe_user_ptr!(client_certificate_out),
             client_certificate_max_len,
             user_ptr!(nwritten),
             {
@@ -1188,7 +1232,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 fastly::api::http_req::original_header_names_get(
@@ -1243,7 +1287,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 fastly::api::http_req::header_names_get(
@@ -1288,7 +1332,7 @@ pub mod fastly_http_req {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 fastly::api::http_req::header_values_get(
@@ -1348,7 +1392,7 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(user_ptr!(name), name_len) };
         with_buffer!(
-            user_ptr!(value),
+            unsafe_user_ptr!(value),
             value_max_len,
             {
                 fastly::api::http_req::header_value_get(
@@ -1386,12 +1430,17 @@ pub mod fastly_http_req {
         method_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(method), method_max_len, user_ptr!(nwritten), {
-            fastly::api::http_req::method_get(
-                req_handle,
-                u64::try_from(method_max_len).trapping_unwrap(),
-            )
-        })
+        alloc_result!(
+            unsafe_user_ptr!(method),
+            method_max_len,
+            user_ptr!(nwritten),
+            {
+                fastly::api::http_req::method_get(
+                    req_handle,
+                    u64::try_from(method_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 
     #[export_name = "fastly_http_req#method_set"]
@@ -1426,7 +1475,7 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         match fastly::api::http_req::send(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
@@ -1450,7 +1499,7 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         match fastly::api::http_req::send_v2(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
@@ -1486,7 +1535,7 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         match fastly::api::http_req::send_v3(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
@@ -1520,7 +1569,7 @@ pub mod fastly_http_req {
         backend_len: usize,
         pending_req_handle_out: *mut PendingRequestHandle,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         match http_req::send_async(req_handle, body_handle, backend) {
             Ok(res) => {
                 unsafe {
@@ -1542,7 +1591,7 @@ pub mod fastly_http_req {
         streaming: u32,
         pending_req_handle_out: *mut PendingRequestHandle,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         match http_req::send_async_v2(req_handle, body_handle, backend, streaming == 1) {
             Ok(res) => {
                 unsafe {
@@ -1563,7 +1612,7 @@ pub mod fastly_http_req {
         backend_len: usize,
         pending_req_handle_out: *mut PendingRequestHandle,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         match http_req::send_async_streaming(req_handle, body_handle, backend) {
             Ok(res) => {
                 unsafe {
@@ -1577,13 +1626,13 @@ pub mod fastly_http_req {
 
     #[export_name = "fastly_http_req#upgrade_websocket"]
     pub fn upgrade_websocket(backend: *const u8, backend_len: usize) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         convert_result(http_req::upgrade_websocket(backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_websocket_proxy"]
     pub fn redirect_to_websocket_proxy(backend: *const u8, backend_len: usize) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         convert_result(http_req::redirect_to_websocket_proxy(backend))
     }
 
@@ -1593,13 +1642,13 @@ pub mod fastly_http_req {
         backend: *const u8,
         backend_len: usize,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         convert_result(http_req::redirect_to_websocket_proxy_v2(req, backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_grip_proxy"]
     pub fn redirect_to_grip_proxy(backend: *const u8, backend_len: usize) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         convert_result(http_req::redirect_to_grip_proxy(backend))
     }
 
@@ -1609,7 +1658,7 @@ pub mod fastly_http_req {
         backend: *const u8,
         backend_len: usize,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend), backend_len);
         convert_result(http_req::redirect_to_grip_proxy_v2(req, backend))
     }
 
@@ -1622,8 +1671,8 @@ pub mod fastly_http_req {
         config_mask: BackendConfigOptions,
         config: *const DynamicBackendConfig,
     ) -> FastlyStatus {
-        let name_prefix = crate::make_str!(user_ptr!(name_prefix), name_prefix_len);
-        let target = crate::make_str!(user_ptr!(target), target_len);
+        let name_prefix = crate::make_str!(unsafe_user_ptr!(name_prefix), name_prefix_len);
+        let target = crate::make_str!(unsafe_user_ptr!(target), target_len);
 
         let options = http_types::BackendConfigOptions::from(config_mask);
 
@@ -1688,7 +1737,7 @@ pub mod fastly_http_req {
         uri_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(uri), uri_max_len, user_ptr!(nwritten), {
+        alloc_result!(unsafe_user_ptr!(uri), uri_max_len, user_ptr!(nwritten), {
             fastly::api::http_req::uri_get(req_handle, u64::try_from(uri_max_len).trapping_unwrap())
         })
     }
@@ -1975,7 +2024,7 @@ pub mod fastly_http_req {
             workspace: ManuallyDrop::into_inner(workspace),
         };
 
-        let res = alloc_result!(user_ptr!(buf), buf_len, user_ptr!(nwritten_out), {
+        let res = alloc_result!(unsafe_user_ptr!(buf), buf_len, user_ptr!(nwritten_out), {
             fastly::api::http_req::inspect(
                 ds_req,
                 ds_body,
@@ -1996,7 +2045,7 @@ pub mod fastly_http_req {
         service: *const u8,
         service_len: usize,
     ) -> FastlyStatus {
-        let service = crate::make_str!(user_ptr!(service), service_len);
+        let service = crate::make_str!(unsafe_user_ptr!(service), service_len);
         convert_result(fastly::api::http_req::on_behalf_of(request_handle, service))
     }
 }
@@ -2043,7 +2092,7 @@ pub mod fastly_http_resp {
         nwritten: *mut usize,
     ) -> FastlyStatus {
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 http_resp::header_names_get(
@@ -2087,7 +2136,7 @@ pub mod fastly_http_resp {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(user_ptr!(name), name_len) };
         with_buffer!(
-            user_ptr!(value),
+            unsafe_user_ptr!(value),
             value_max_len,
             {
                 http_resp::header_value_get(
@@ -2121,7 +2170,7 @@ pub mod fastly_http_resp {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(user_ptr!(name), name_len) };
         with_buffer!(
-            user_ptr!(buf),
+            unsafe_user_ptr!(buf),
             buf_len,
             {
                 http_resp::header_values_get(
@@ -2295,9 +2344,12 @@ pub mod fastly_http_resp {
         addr_octets_out: *mut u8,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        alloc_result!(user_ptr!(addr_octets_out), 16, user_ptr!(nwritten_out), {
-            fastly::api::http_resp::get_addr_dest_ip(resp_handle)
-        })
+        alloc_result!(
+            unsafe_user_ptr!(addr_octets_out),
+            16,
+            user_ptr!(nwritten_out),
+            { fastly::api::http_resp::get_addr_dest_ip(resp_handle) }
+        )
     }
 
     #[export_name = "fastly_http_resp#get_addr_dest_port"]
@@ -2324,7 +2376,7 @@ pub mod fastly_dictionary {
         name_len: usize,
         dict_handle_out: *mut DictionaryHandle,
     ) -> FastlyStatus {
-        let name = crate::make_str!(user_ptr!(name), name_len);
+        let name = crate::make_str!(unsafe_user_ptr!(name), name_len);
         match dictionary::open(name) {
             Ok(res) => {
                 unsafe {
@@ -2345,14 +2397,19 @@ pub mod fastly_dictionary {
         value_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        let key = crate::make_str!(user_ptr!(key), key_len);
-        alloc_result_opt!(user_ptr!(value), value_max_len, user_ptr!(nwritten), {
-            dictionary::get(
-                dict_handle,
-                key,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
-        })
+        let key = crate::make_str!(unsafe_user_ptr!(key), key_len);
+        alloc_result_opt!(
+            unsafe_user_ptr!(value),
+            value_max_len,
+            user_ptr!(nwritten),
+            {
+                dictionary::get(
+                    dict_handle,
+                    key,
+                    u64::try_from(value_max_len).trapping_unwrap(),
+                )
+            }
+        )
     }
 }
 
@@ -2370,7 +2427,7 @@ pub mod fastly_geo {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         let addr = unsafe { slice::from_raw_parts(user_ptr!(addr_octets), addr_len) };
-        alloc_result!(user_ptr!(buf), buf_len, user_ptr!(nwritten_out), {
+        alloc_result!(unsafe_user_ptr!(buf), buf_len, user_ptr!(nwritten_out), {
             geo::lookup(addr, u64::try_from(buf_len).trapping_unwrap())
         })
     }
@@ -2388,8 +2445,8 @@ pub mod fastly_device_detection {
         buf_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        let user_agent = crate::make_str!(user_ptr!(user_agent), user_agent_max_len);
-        alloc_result_opt!(user_ptr!(buf), buf_len, user_ptr!(nwritten_out), {
+        let user_agent = crate::make_str!(unsafe_user_ptr!(user_agent), user_agent_max_len);
+        alloc_result_opt!(unsafe_user_ptr!(buf), buf_len, user_ptr!(nwritten_out), {
             device_detection::lookup(user_agent, u64::try_from(buf_len).trapping_unwrap())
         })
     }
@@ -2413,9 +2470,9 @@ pub mod fastly_erl {
         ttl: u32,
         value: *mut u32,
     ) -> FastlyStatus {
-        let rc = crate::make_str!(user_ptr!(rc), rc_max_len);
-        let entry = crate::make_str!(user_ptr!(entry), entry_max_len);
-        let pb = crate::make_str!(user_ptr!(pb), pb_max_len);
+        let rc = crate::make_str!(unsafe_user_ptr!(rc), rc_max_len);
+        let entry = crate::make_str!(unsafe_user_ptr!(entry), entry_max_len);
+        let pb = crate::make_str!(unsafe_user_ptr!(pb), pb_max_len);
         match erl::check_rate(rc, entry, delta, window, limit, pb, ttl) {
             Ok(res) => {
                 unsafe {
@@ -2435,8 +2492,8 @@ pub mod fastly_erl {
         entry_max_len: usize,
         delta: u32,
     ) -> FastlyStatus {
-        let rc = crate::make_str!(user_ptr!(rc), rc_max_len);
-        let entry = crate::make_str!(user_ptr!(entry), entry_max_len);
+        let rc = crate::make_str!(unsafe_user_ptr!(rc), rc_max_len);
+        let entry = crate::make_str!(unsafe_user_ptr!(entry), entry_max_len);
         convert_result(erl::ratecounter_increment(rc, entry, delta))
     }
 
@@ -2449,8 +2506,8 @@ pub mod fastly_erl {
         window: u32,
         value: *mut u32,
     ) -> FastlyStatus {
-        let rc = crate::make_str!(user_ptr!(rc), rc_max_len);
-        let entry = crate::make_str!(user_ptr!(entry), entry_max_len);
+        let rc = crate::make_str!(unsafe_user_ptr!(rc), rc_max_len);
+        let entry = crate::make_str!(unsafe_user_ptr!(entry), entry_max_len);
         match erl::ratecounter_lookup_rate(rc, entry, window) {
             Ok(res) => {
                 unsafe {
@@ -2471,8 +2528,8 @@ pub mod fastly_erl {
         duration: u32,
         value: *mut u32,
     ) -> FastlyStatus {
-        let rc = crate::make_str!(user_ptr!(rc), rc_max_len);
-        let entry = crate::make_str!(user_ptr!(entry), entry_max_len);
+        let rc = crate::make_str!(unsafe_user_ptr!(rc), rc_max_len);
+        let entry = crate::make_str!(unsafe_user_ptr!(entry), entry_max_len);
         match erl::ratecounter_lookup_count(rc, entry, duration) {
             Ok(res) => {
                 unsafe {
@@ -2492,8 +2549,8 @@ pub mod fastly_erl {
         entry_max_len: usize,
         ttl: u32,
     ) -> FastlyStatus {
-        let pb = crate::make_str!(user_ptr!(pb), pb_max_len);
-        let entry = crate::make_str!(user_ptr!(entry), entry_max_len);
+        let pb = crate::make_str!(unsafe_user_ptr!(pb), pb_max_len);
+        let entry = crate::make_str!(unsafe_user_ptr!(entry), entry_max_len);
         convert_result(erl::penaltybox_add(pb, entry, ttl))
     }
 
@@ -2505,8 +2562,8 @@ pub mod fastly_erl {
         entry_max_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let pb = crate::make_str!(user_ptr!(pb), pb_max_len);
-        let entry = crate::make_str!(user_ptr!(entry), entry_max_len);
+        let pb = crate::make_str!(unsafe_user_ptr!(pb), pb_max_len);
+        let entry = crate::make_str!(unsafe_user_ptr!(entry), entry_max_len);
         match erl::penaltybox_has(pb, entry) {
             Ok(res) => {
                 unsafe {
@@ -2529,7 +2586,7 @@ pub mod fastly_object_store {
         name_len: usize,
         object_store_handle_out: *mut ObjectStoreHandle,
     ) -> FastlyStatus {
-        let name = crate::make_str!(user_ptr!(name_ptr), name_len);
+        let name = crate::make_str!(unsafe_user_ptr!(name_ptr), name_len);
         match object_store::open(name) {
             Ok(None) => {
                 unsafe {
@@ -2555,7 +2612,7 @@ pub mod fastly_object_store {
         key_len: usize,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let key = crate::make_str!(user_ptr!(key_ptr), key_len);
+        let key = crate::make_str!(unsafe_user_ptr!(key_ptr), key_len);
         match object_store::lookup(object_store_handle, key) {
             Ok(res) => {
                 unsafe {
@@ -2574,7 +2631,7 @@ pub mod fastly_object_store {
         key_len: usize,
         pending_body_handle_out: *mut PendingObjectStoreLookupHandle,
     ) -> FastlyStatus {
-        let key = crate::make_str!(user_ptr!(key_ptr), key_len);
+        let key = crate::make_str!(unsafe_user_ptr!(key_ptr), key_len);
         match object_store::lookup_async(object_store_handle, key) {
             Ok(res) => {
                 unsafe {
@@ -2609,7 +2666,7 @@ pub mod fastly_object_store {
         key_len: usize,
         body_handle: BodyHandle,
     ) -> FastlyStatus {
-        let key = crate::make_str!(user_ptr!(key_ptr), key_len);
+        let key = crate::make_str!(unsafe_user_ptr!(key_ptr), key_len);
         convert_result(object_store::insert(object_store_handle, key, body_handle))
     }
 
@@ -2621,7 +2678,7 @@ pub mod fastly_object_store {
         body_handle: BodyHandle,
         pending_body_handle_out: *mut PendingObjectStoreInsertHandle,
     ) -> FastlyStatus {
-        let key = crate::make_str!(user_ptr!(key_ptr), key_len);
+        let key = crate::make_str!(unsafe_user_ptr!(key_ptr), key_len);
         match object_store::insert_async(object_store_handle, key, body_handle) {
             Ok(res) => {
                 unsafe {
@@ -2647,7 +2704,7 @@ pub mod fastly_object_store {
         key_len: usize,
         pending_body_handle_out: *mut PendingObjectStoreDeleteHandle,
     ) -> FastlyStatus {
-        let key = crate::make_str!(user_ptr!(key_ptr), key_len);
+        let key = crate::make_str!(unsafe_user_ptr!(key_ptr), key_len);
         match object_store::delete_async(object_store_handle, key) {
             Ok(res) => {
                 unsafe {
@@ -2896,7 +2953,7 @@ pub mod fastly_kv_store {
         name_len: usize,
         kv_store_handle_out: *mut KVStoreHandle,
     ) -> FastlyStatus {
-        let name = crate::make_str!(user_ptr!(name_ptr), name_len);
+        let name = crate::make_str!(unsafe_user_ptr!(name_ptr), name_len);
         match kv_store::open(name) {
             Ok(None) => {
                 unsafe {
@@ -2973,7 +3030,7 @@ pub mod fastly_kv_store {
         };
 
         with_buffer!(
-            user_ptr!(metadata_out),
+            unsafe_user_ptr!(metadata_out),
             metadata_len,
             { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
             |res| {
@@ -3030,7 +3087,7 @@ pub mod fastly_kv_store {
         };
 
         with_buffer!(
-            user_ptr!(metadata_out),
+            unsafe_user_ptr!(metadata_out),
             metadata_len,
             { res.metadata(u64::try_from(metadata_len).trapping_unwrap()) },
             |res| {
@@ -3278,8 +3335,10 @@ pub mod fastly_secret_store {
         secret_store_name_len: usize,
         secret_store_handle_out: *mut SecretStoreHandle,
     ) -> FastlyStatus {
-        let secret_store_name =
-            crate::make_str!(user_ptr!(secret_store_name_ptr), secret_store_name_len);
+        let secret_store_name = crate::make_str!(
+            unsafe_user_ptr!(secret_store_name_ptr),
+            secret_store_name_len
+        );
         match secret_store::open(secret_store_name) {
             Ok(res) => {
                 unsafe {
@@ -3298,7 +3357,7 @@ pub mod fastly_secret_store {
         secret_name_len: usize,
         secret_handle_out: *mut SecretHandle,
     ) -> FastlyStatus {
-        let secret_name = crate::make_str!(user_ptr!(secret_name_ptr), secret_name_len);
+        let secret_name = crate::make_str!(unsafe_user_ptr!(secret_name_ptr), secret_name_len);
         match secret_store::get(secret_store_handle, secret_name) {
             Ok(Some(res)) => {
                 unsafe {
@@ -3321,7 +3380,7 @@ pub mod fastly_secret_store {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         alloc_result_opt!(
-            user_ptr!(plaintext_buf),
+            unsafe_user_ptr!(plaintext_buf),
             plaintext_max_len,
             user_ptr!(nwritten_out),
             {
@@ -3405,7 +3464,7 @@ pub mod fastly_backend {
         backend_len: usize,
         backend_exists_out: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::exists(backend) {
             Ok(res) => {
                 unsafe {
@@ -3423,7 +3482,7 @@ pub mod fastly_backend {
         backend_len: usize,
         backend_health_out: *mut BackendHealth,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::is_healthy(backend) {
             Ok(res) => {
                 unsafe {
@@ -3437,7 +3496,7 @@ pub mod fastly_backend {
 
     #[export_name = "fastly_backend#is_dynamic"]
     pub fn is_dynamic(backend_ptr: *const u8, backend_len: usize, value: *mut u32) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::is_dynamic(backend) {
             Ok(res) => {
                 unsafe {
@@ -3457,10 +3516,13 @@ pub mod fastly_backend {
         value_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
-        alloc_result!(user_ptr!(value), value_max_len, user_ptr!(nwritten), {
-            backend::get_host(backend, u64::try_from(value_max_len).trapping_unwrap())
-        })
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
+        alloc_result!(
+            unsafe_user_ptr!(value),
+            value_max_len,
+            user_ptr!(nwritten),
+            { backend::get_host(backend, u64::try_from(value_max_len).trapping_unwrap()) }
+        )
     }
 
     #[export_name = "fastly_backend#get_override_host"]
@@ -3471,15 +3533,18 @@ pub mod fastly_backend {
         value_max_len: usize,
         nwritten: *mut usize,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
-        alloc_result_opt!(user_ptr!(value), value_max_len, user_ptr!(nwritten), {
-            backend::get_override_host(backend, u64::try_from(value_max_len).trapping_unwrap())
-        })
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
+        alloc_result_opt!(
+            unsafe_user_ptr!(value),
+            value_max_len,
+            user_ptr!(nwritten),
+            { backend::get_override_host(backend, u64::try_from(value_max_len).trapping_unwrap()) }
+        )
     }
 
     #[export_name = "fastly_backend#get_port"]
     pub fn get_port(backend_ptr: *const u8, backend_len: usize, value: *mut u16) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_port(backend) {
             Ok(res) => {
                 unsafe {
@@ -3497,7 +3562,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_connect_timeout_ms(backend) {
             Ok(res) => {
                 unsafe {
@@ -3515,7 +3580,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_first_byte_timeout_ms(backend) {
             Ok(res) => {
                 unsafe {
@@ -3533,7 +3598,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_between_bytes_timeout_ms(backend) {
             Ok(res) => {
                 unsafe {
@@ -3547,7 +3612,7 @@ pub mod fastly_backend {
 
     #[export_name = "fastly_backend#is_ssl"]
     pub fn is_ssl(backend_ptr: *const u8, backend_len: usize, value: *mut u32) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::is_tls(backend) {
             Ok(res) => {
                 unsafe {
@@ -3565,7 +3630,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_tls_min_version(backend) {
             Ok(Some(res)) => {
                 unsafe {
@@ -3584,7 +3649,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_tls_max_version(backend) {
             Ok(Some(res)) => {
                 unsafe {
@@ -3603,7 +3668,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_http_keepalive_time(backend) {
             Ok(res) => {
                 unsafe {
@@ -3623,7 +3688,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_tcp_keepalive_enable(backend) {
             Ok(res) => {
                 unsafe {
@@ -3643,7 +3708,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_tcp_keepalive_interval(backend) {
             Ok(res) => {
                 unsafe {
@@ -3663,7 +3728,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_tcp_keepalive_probes(backend) {
             Ok(res) => {
                 unsafe {
@@ -3683,7 +3748,7 @@ pub mod fastly_backend {
         backend_len: usize,
         value: *mut u32,
     ) -> FastlyStatus {
-        let backend = crate::make_str!(user_ptr!(backend_ptr), backend_len);
+        let backend = crate::make_str!(unsafe_user_ptr!(backend_ptr), backend_len);
         match backend::get_tcp_keepalive_time(backend) {
             Ok(res) => {
                 unsafe {
@@ -3709,7 +3774,7 @@ pub mod fastly_acl {
         acl_name_len: usize,
         acl_handle_out: *mut AclHandle,
     ) -> FastlyStatus {
-        let acl_name = crate::make_str!(user_ptr!(acl_name_ptr), acl_name_len);
+        let acl_name = crate::make_str!(unsafe_user_ptr!(acl_name_ptr), acl_name_len);
         match acl::open(acl_name) {
             Ok(res) => {
                 unsafe {
@@ -3835,10 +3900,11 @@ pub mod fastly_purge {
         options_mask: PurgeOptionsMask,
         options: *mut PurgeOptions,
     ) -> FastlyStatus {
-        let surrogate_key = crate::make_str!(user_ptr!(surrogate_key_ptr), surrogate_key_len);
+        let surrogate_key =
+            crate::make_str!(unsafe_user_ptr!(surrogate_key_ptr), surrogate_key_len);
         let len = unsafe { (*user_ptr!(options)).ret_buf_len };
         with_buffer!(
-            user_ptr!(unsafe { (*user_ptr!(options)).ret_buf_ptr }),
+            unsafe_user_ptr!((*user_ptr!(options)).ret_buf_ptr),
             len,
             {
                 purge::purge_surrogate_key(
@@ -3905,9 +3971,9 @@ pub mod fastly_shielding {
         info_block_len: usize,
         nwritten_out: *mut u32,
     ) -> FastlyStatus {
-        let name = crate::make_str!(user_ptr!(name), name_len);
+        let name = crate::make_str!(unsafe_user_ptr!(name), name_len);
         with_buffer!(
-            user_ptr!(info_block),
+            unsafe_user_ptr!(info_block),
             info_block_len,
             { host::shield_info(name, u64::try_from(info_block_len).trapping_unwrap()) },
             |res| {
@@ -3994,13 +4060,13 @@ pub mod fastly_shielding {
         backend_name_len: usize,
         nwritten_out: *mut u32,
     ) -> FastlyStatus {
-        let name = crate::make_str!(user_ptr!(name), name_len);
+        let name = crate::make_str!(unsafe_user_ptr!(name), name_len);
         let (mask, options) = match shield_backend_options(options_mask, options) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
         with_buffer!(
-            user_ptr!(backend_name),
+            unsafe_user_ptr!(backend_name),
             backend_name_len,
             {
                 let res = host::backend_for_shield(
@@ -4684,8 +4750,10 @@ mod fastly_image_optimizer {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let backend_name =
-            crate::make_str!(user_ptr!(origin_image_backend), origin_image_backend_len);
+        let backend_name = crate::make_str!(
+            unsafe_user_ptr!(origin_image_backend),
+            origin_image_backend_len
+        );
         let io_opts = image_optimizer::ImageOptimizerTransformConfigOptions::from(
             io_transform_config_options,
         );
