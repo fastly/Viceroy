@@ -20,6 +20,7 @@ pub mod config;
 pub mod error;
 pub mod logging;
 pub mod session;
+pub mod shift_mm;
 
 mod acl;
 mod async_io;

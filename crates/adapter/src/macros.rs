@@ -5,6 +5,24 @@
 
 use crate::bindings::wasi::cli::stderr::get_stderr;
 
+// Used to annotate the address that comes from main module
+macro_rules! user_ptr {
+    ($ptr:expr) => {{
+        $ptr.byte_add(131072)
+    }};
+}
+macro_rules! unsafe_user_ptr {
+    ($ptr:expr) => {{
+        unsafe { user_ptr!($ptr) }
+    }};
+}
+// Used to annotate the address sending back to main module
+macro_rules! unshift_ptr {
+    ($ptr:expr) => {{
+        $ptr.byte_sub(131072)
+    }};
+}
+
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn print(message: &[u8]) {

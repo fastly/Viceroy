@@ -83,3 +83,4 @@ adapter:
 		--target wasm32-unknown-unknown
 	cp crates/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
 		lib/data/viceroy-component-adapter.wasm
+
