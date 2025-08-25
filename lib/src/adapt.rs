@@ -46,6 +46,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
 /// `wasi_snapshot_preview1` module, and mangle the function name to
 /// `original_module#original_name`.
 fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
+    let bytes = crate::shift_mm::shift_main_module(bytes)?;
     let mut module = wasm_encoder::Module::new();
 
     for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
