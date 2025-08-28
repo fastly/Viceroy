@@ -5,6 +5,7 @@ use crate::bindings::wasi::clocks::{monotonic_clock, wall_clock};
 use crate::bindings::wasi::io::poll;
 use crate::bindings::wasi::io::streams;
 use crate::bindings::wasi::random::random;
+use crate::fastly::INVALID_HANDLE;
 use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
 use core::ffi::c_void;
 use core::mem::{self, align_of, forget, size_of, MaybeUninit};
@@ -22,16 +23,36 @@ mod macros;
 pub mod fastly;
 
 mod descriptors;
+
 use crate::descriptors::{Descriptor, Descriptors, StreamType};
 
 pub mod bindings {
+    // When building the normal adapter, use the adapter-service
+    // world which includes the imports and exports.
+    #[cfg(feature = "exports")]
     wit_bindgen_rust_macro::generate!({
-        path: "../../wasm_abi/wit",
-        world: "fastly:api/compute",
+        path: "../wit",
+        world: "fastly:adapter/adapter-service",
+        std_feature,
         raw_strings,
         runtime_path: "crate::bindings::wit_bindgen_rt_shim",
         disable_run_ctors_once_workaround: true,
-        skip: ["poll"],
+        skip: ["poll", "select", "select-with-timeout"],
+        generate_all,
+        disable_custom_section_link_helpers: true,
+    });
+
+    // When not building the adapter with "exports", use the
+    // adapter-service-imports world which just has the imports.
+    #[cfg(not(feature = "exports"))]
+    wit_bindgen_rust_macro::generate!({
+        path: "../wit",
+        world: "fastly:adapter/adapter-service-imports",
+        std_feature,
+        raw_strings,
+        runtime_path: "crate::bindings::wit_bindgen_rt_shim",
+        disable_run_ctors_once_workaround: true,
+        skip: ["poll", "select", "select-with-timeout"],
         generate_all,
         disable_custom_section_link_helpers: true,
     });
@@ -42,12 +63,14 @@ pub mod bindings {
         pub fn maybe_link_cabi_realloc() {}
     }
 
+    #[cfg(feature = "exports")]
     pub struct ComponentAdapter;
 
-    impl exports::fastly::api::reactor::Guest for ComponentAdapter {
-        fn serve(
-            req: fastly::api::http_types::RequestHandle,
-            body: fastly::api::http_types::BodyHandle,
+    #[cfg(feature = "exports")]
+    impl exports::fastly::compute::http_incoming::Guest for ComponentAdapter {
+        fn handle(
+            req: fastly::compute::http_req::Request,
+            body: fastly::compute::http_body::Body,
         ) -> Result<(), ()> {
             #[link(wasm_import_module = "__main_module__")]
             extern "C" {
@@ -55,9 +78,9 @@ pub mod bindings {
             }
 
             let res = crate::State::with::<crate::fastly::FastlyStatus>(|state| {
-                let old = state.request.replace(Some(req));
+                let old = state.request.replace(Some(req.take_handle()));
                 assert!(old.is_none());
-                let old = state.request_body.replace(Some(body));
+                let old = state.request_body.replace(Some(body.take_handle()));
                 assert!(old.is_none());
                 Ok(())
             });
@@ -65,6 +88,13 @@ pub mod bindings {
             unsafe {
                 _start();
             }
+
+            // Don't bother making hostcalls to drop these, as the host
+            // will clean them up for us automatically. This also avoids
+            // trouble if the user has already dropped them, after obtaining
+            // them via `body_downstream_get`.
+            std::mem::forget(req);
+            std::mem::forget(body);
 
             if res == crate::fastly::FastlyStatus::OK {
                 Ok(())
@@ -74,6 +104,7 @@ pub mod bindings {
         }
     }
 
+    #[cfg(feature = "exports")]
     export!(ComponentAdapter);
 }
 
@@ -362,7 +393,7 @@ impl BumpAlloc {
     }
 }
 
-#[link(wasm_import_module = "wasi:cli/environment@0.2.0")]
+#[link(wasm_import_module = "wasi:cli/environment@0.2.6")]
 extern "C" {
     #[link_name = "get-arguments"]
     fn wasi_cli_get_arguments(rval: *mut WasmStrList);
@@ -1162,7 +1193,7 @@ pub unsafe extern "C" fn poll_oneoff(
             });
         }
 
-        #[link(wasm_import_module = "wasi:io/poll@0.2.0")]
+        #[link(wasm_import_module = "wasi:io/poll@0.2.6")]
         #[allow(improper_ctypes)] // FIXME(bytecodealliance/wit-bindgen#684)
         extern "C" {
             #[link_name = "poll"]
@@ -1454,11 +1485,32 @@ pub(crate) struct State {
     /// Temporary data
     temporary_data: UnsafeCell<MaybeUninit<[u8; temporary_data_size()]>>,
 
-    /// The incoming request, if the entry-point was through the reactor.
-    pub(crate) request: Cell<Option<bindings::fastly::api::http_req::RequestHandle>>,
+    /// The incoming request `request`, if the entry-point was through the `http-incoming`.
+    pub(crate) request: Cell<Option<u32>>,
 
-    /// The incoming request body, if the entry-point was through the reactor.
-    pub(crate) request_body: Cell<Option<bindings::fastly::api::http_body::BodyHandle>>,
+    /// The incoming request `body` index, if the entry-point was through the `http-incoming`.
+    pub(crate) request_body: Cell<Option<u32>>,
+
+    /// Work around `CacheBusyHandle::wait` in the Rust SDK not consuming `self`.
+    ///
+    /// `cache_busy_handle_wait` consumes its handle, however because the
+    /// SDK's `CacheBusyHandle::wait` doesn't consume `self`, it does a
+    /// seperate drop and calls `close_busy`. To avoid this use of a dangling
+    /// handle, `cache_busy_handle_wait` records the handle it consumed so that
+    /// `close_busy` can check if it's closing a handle that has just been
+    /// consumed.
+    pub(crate) recently_consumed_cache_busy_handle: Cell<u32>,
+
+    /// Work around `CacheReplaceHandle::replace_insert` in the Rust SDK not
+    /// consuming `self`.
+    ///
+    /// `replace_insert` consumes its handle, however because the
+    /// SDK's `CacheReplaceHandle::replace_insert` doesn't consume `self`, it does a
+    /// seperate drop and calls `close`. To avoid this use of a dangling
+    /// handle, `replace_insert` records the handle it consumed so that
+    /// `close` can check if it's closing a handle that has just been
+    /// consumed.
+    pub(crate) recently_consumed_cache_replace_handle: Cell<u32>,
 
     /// Another canary constant located at the end of the structure to catch
     /// memory corruption coming from the bottom.
@@ -1505,7 +1557,7 @@ const fn temporary_data_size() -> usize {
     start -= size_of::<Descriptors>();
 
     // Remove miscellaneous metadata also stored in state.
-    let misc = 12;
+    let misc = 14;
     start -= misc * size_of::<usize>();
 
     // Everything else is the `command_data` allocation.
@@ -1616,6 +1668,8 @@ impl State {
             temporary_data: UnsafeCell::new(MaybeUninit::uninit()),
             request: Cell::new(None),
             request_body: Cell::new(None),
+            recently_consumed_cache_busy_handle: Cell::new(INVALID_HANDLE),
+            recently_consumed_cache_replace_handle: Cell::new(INVALID_HANDLE),
         });
     }
 
