@@ -93,11 +93,11 @@
 (typename $dictionary_handle (handle))
 ;;; (DEPRECATED) A handle to an Object Store.
 (typename $object_store_handle (handle))
-;;; (DEPRECATED) A handle to a pending KV lookup request.
+;;; (DEPRECATED) A handle to a pending KV lookup.
 (typename $pending_kv_lookup_handle (handle))
-;;; (DEPRECATED) A handle to a pending KV insert request.
+;;; (DEPRECATED) A handle to a pending KV insert.
 (typename $pending_kv_insert_handle (handle))
-;;; (DEPRECATED) A handle to a pending KV delete request.
+;;; (DEPRECATED) A handle to a pending KV delete.
 (typename $pending_kv_delete_handle (handle))
 ;;; (DEPRECATED) A handle to a pending KV list.
 (typename $pending_kv_list_handle (handle))
@@ -120,9 +120,9 @@
 ;;; A handle to a request promise.
 (typename $request_promise_handle (handle))
 ;;; A handle to an object supporting generic async operations.
-;;; Can be a `body_handle`, a `pending_request_handle`,
+;;; Can be a `body_handle`, `pending_request_handle`,
 ;;; `cache_handle`, `cache_busy_handle`, `cache_replace_handle` (see cache.witx),
-;;; a `request_promise_handle`, or other handles.
+;;; `request_promise_handle`, or other handles.
 ;;;
 ;;; Each async item has an associated I/O action:
 ;;;
@@ -193,6 +193,103 @@
        $tls_1_1
        $tls_1_2
        $tls_1_3))
+
+(typename $kv_lookup_config_options
+    (flags (@witx repr u32)
+       $reserved
+       ))
+
+(typename $kv_lookup_config
+  (record
+    (field $reserved u32)
+    ))
+
+(typename $kv_delete_config_options
+    (flags (@witx repr u32)
+       $reserved
+       ))
+
+(typename $kv_delete_config
+  (record
+    (field $reserved u32)
+    ))
+
+(typename $kv_insert_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $background_fetch
+       ;; reserved_2 was previously if_generation_match (u32)
+       $reserved_2
+       $metadata
+       $time_to_live_sec
+       $if_generation_match
+       ))
+
+(typename $kv_insert_mode
+    (enum (@witx tag u32)
+       $overwrite
+       $add
+       $append
+       $prepend))
+
+(typename $kv_insert_config
+  (record
+    (field $mode $kv_insert_mode)
+    (field $unused u32)
+    (field $metadata (@witx pointer (@witx char8)))
+    (field $metadata_len u32)
+    (field $time_to_live_sec u32)
+    (field $if_generation_match u64)
+    ))
+
+(typename $kv_list_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $cursor
+       $limit
+       $prefix
+       ))
+
+(typename $kv_list_mode
+    (enum (@witx tag u32)
+       $strong
+       $eventual))
+
+(typename $kv_list_config
+  (record
+    (field $mode $kv_list_mode)
+    (field $cursor (@witx pointer (@witx char8)))
+    (field $cursor_len u32)
+    (field $limit u32)
+    (field $prefix (@witx pointer (@witx char8)))
+    (field $prefix_len u32)
+    ))
+
+(typename $kv_error
+    (enum (@witx tag u32)
+        ;;; The $kv_error has not been set.
+        $uninitialized
+        ;;; There was no error.
+        $ok
+        ;;; KV store cannot or will not process the request due to something that is perceived to be a client error
+        ;;; This will map to the api's 400 codes
+        $bad_request
+        ;;; KV store cannot find the requested resource
+        ;;; This will map to the api's 404 codes
+        $not_found
+        ;;; KV store cannot fulfill the request, as defined by the client's prerequisites (ie. if-generation-match)
+        ;;; This will map to the api's 412 codes
+        $precondition_failed
+        ;;; The size limit for a KV store key was exceeded.
+        ;;; This will map to the api's 413 codes
+        $payload_too_large
+        ;;; The system encountered an unexpected internal error.
+        ;;; This will map to all remaining http error codes
+        $internal_error
+        ;;; Too many requests have been made to the KV store.
+        ;;; This will map to the api's 429 codes
+        $too_many_requests
+        ))
 
 (typename $backend_config_options
     (flags (@witx repr u32)
@@ -406,103 +503,6 @@
         (field $workspace_len u32)
     )
 )
-
-(typename $kv_lookup_config_options
-    (flags (@witx repr u32)
-       $reserved
-       ))
-
-(typename $kv_lookup_config
-  (record
-    (field $reserved u32)
-    ))
-
-(typename $kv_delete_config_options
-    (flags (@witx repr u32)
-       $reserved
-       ))
-
-(typename $kv_delete_config
-  (record
-    (field $reserved u32)
-    ))
-
-(typename $kv_insert_config_options
-    (flags (@witx repr u32)
-       $reserved
-       $background_fetch
-       ;; reserved_2 was previously if_generation_match (u32)
-       $reserved_2
-       $metadata
-       $time_to_live_sec
-       $if_generation_match
-       ))
-
-(typename $kv_insert_mode
-    (enum (@witx tag u32)
-       $overwrite
-       $add
-       $append
-       $prepend))
-
-(typename $kv_insert_config
-  (record
-    (field $mode $kv_insert_mode)
-    (field $unused u32)
-    (field $metadata (@witx pointer (@witx char8)))
-    (field $metadata_len u32)
-    (field $time_to_live_sec u32)
-    (field $if_generation_match u64)
-    ))
-
-(typename $kv_list_config_options
-    (flags (@witx repr u32)
-       $reserved
-       $cursor
-       $limit
-       $prefix
-       ))
-
-(typename $kv_list_mode
-    (enum (@witx tag u32)
-       $strong
-       $eventual))
-
-(typename $kv_list_config
-  (record
-    (field $mode $kv_list_mode)
-    (field $cursor (@witx pointer (@witx char8)))
-    (field $cursor_len u32)
-    (field $limit u32)
-    (field $prefix (@witx pointer (@witx char8)))
-    (field $prefix_len u32)
-    ))
-
-(typename $kv_error
-    (enum (@witx tag u32)
-        ;;; The $kv_error has not been set.
-        $uninitialized
-        ;;; There was no error.
-        $ok
-        ;;; KV store cannot or will not process the request due to something that is perceived to be a client error
-        ;;; This will map to the api's 400 codes
-        $bad_request
-        ;;; KV store cannot find the requested resource
-        ;;; This will map to the api's 404 codes
-        $not_found
-        ;;; KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)
-        ;;; This will map to the api's 412 codes
-        $precondition_failed
-        ;;; The size limit for a KV store key was exceeded.
-        ;;; This will map to the api's 413 codes
-        $payload_too_large
-        ;;; The system encountered an unexpected internal error.
-        ;;; This will map to all remaining http error codes
-        $internal_error
-        ;;; Too many requests have been made to the KV store.
-        ;;; This will map to the api's 429 codes
-        $too_many_requests
-        ))
 
 (typename $acl_error
     (enum (@witx tag u32)
