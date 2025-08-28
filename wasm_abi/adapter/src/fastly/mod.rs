@@ -1,3 +1,4 @@
+mod adapter;
 mod cache;
 mod config_store;
 mod core;
@@ -12,18 +13,18 @@ pub use config_store::*;
 pub use core::*;
 pub use http_cache::*;
 
-use crate::bindings::fastly::api::types;
-
 /// Decode an IP address from `ip_len` bytes pointed to by `ip_octets` into a Wit `IpAddress`.
 pub(crate) unsafe fn decode_ip_address(
     ip_octets: *const u8,
     ip_len: usize,
-) -> Option<types::IpAddress> {
+) -> Option<crate::bindings::fastly::compute::types::IpAddress> {
     let ip = std::slice::from_raw_parts(ip_octets, ip_len);
     if let Ok(bytes) = <[u8; 4]>::try_from(ip) {
-        Some(types::IpAddress::Ipv4(bytes.into()))
+        Some(crate::bindings::fastly::compute::types::IpAddress::Ipv4(
+            bytes.into(),
+        ))
     } else if let Ok(bytes) = <[u8; 16]>::try_from(ip) {
-        Some(types::IpAddress::Ipv6(
+        Some(crate::bindings::fastly::compute::types::IpAddress::Ipv6(
             std::net::Ipv6Addr::from(bytes).segments().into(),
         ))
     } else {
@@ -32,10 +33,15 @@ pub(crate) unsafe fn decode_ip_address(
 }
 
 /// Encode a Wit `IpAddress` into the `ip_octets` buffer, and return the number of bytes written.
-pub(crate) unsafe fn encode_ip_address(ip_addr: types::IpAddress, ip_octets: *mut u8) -> usize {
+pub(crate) unsafe fn encode_ip_address(
+    ip_addr: crate::bindings::fastly::compute::types::IpAddress,
+    ip_octets: *mut u8,
+) -> usize {
     let bytes = match ip_addr {
-        types::IpAddress::Ipv4(bytes) => &<[u8; 4]>::from(bytes)[..],
-        types::IpAddress::Ipv6(segments) => {
+        crate::bindings::fastly::compute::types::IpAddress::Ipv4(bytes) => {
+            &<[u8; 4]>::from(bytes)[..]
+        }
+        crate::bindings::fastly::compute::types::IpAddress::Ipv6(segments) => {
             &std::net::Ipv6Addr::from(<[u16; 8]>::from(segments)).octets()[..]
         }
     };

@@ -12,23 +12,29 @@ impl FastlyStatus {
     pub const OK: Self = FastlyStatus(0);
     pub const UNKNOWN_ERROR: Self = FastlyStatus(1);
     pub const INVALID_ARGUMENT: Self = Self(2);
-    pub const UNSUPPORTED: Self = Self(5);
+    pub const BADF: Self = Self(3);
+    pub const BUFFER_LEN: Self = Self(4);
+    pub const UNSUPPORTED: Self = FastlyStatus(5);
+    pub const HTTPINVALID: Self = FastlyStatus(7);
+    pub const HTTPUSER: Self = FastlyStatus(8);
+    pub const HTTPINCOMPLETE: Self = FastlyStatus(9);
     pub const NONE: Self = FastlyStatus(10);
+    pub const HTTPHEADTOOLARGE: Self = FastlyStatus(11);
+    pub const HTTPINVALIDSTATUS: Self = FastlyStatus(12);
+    pub const LIMITEXCEEDED: Self = FastlyStatus(13);
     pub const AGAIN: Self = FastlyStatus(14);
 }
 
-impl From<crate::bindings::fastly::api::types::Error> for FastlyStatus {
-    fn from(err: crate::bindings::fastly::api::types::Error) -> Self {
-        use crate::bindings::fastly::api::types::Error;
+impl From<crate::bindings::fastly::compute::types::Error> for FastlyStatus {
+    fn from(err: crate::bindings::fastly::compute::types::Error) -> Self {
+        use crate::bindings::fastly::compute::types::Error;
         FastlyStatus(match err {
             // use black_box here to prevent rustc/llvm from generating a switch table
-            Error::UnknownError => std::hint::black_box(100),
-            Error::GenericError => 1,
+            Error::GenericError => std::hint::black_box(1),
             Error::InvalidArgument => Self::INVALID_ARGUMENT.0,
             Error::BadHandle => 3,
             Error::BufferLen(_) => 4,
             Error::Unsupported => 5,
-            Error::BadAlign => 6,
             Error::HttpInvalid => 7,
             Error::HttpUser => 8,
             Error::HttpIncomplete => 9,
@@ -40,11 +46,23 @@ impl From<crate::bindings::fastly::api::types::Error> for FastlyStatus {
     }
 }
 
-pub(crate) fn convert_result(
-    res: Result<(), crate::bindings::fastly::api::types::Error>,
-) -> FastlyStatus {
+impl From<crate::bindings::fastly::compute::kv_store::KvError> for FastlyStatus {
+    fn from(err: crate::bindings::fastly::compute::kv_store::KvError) -> Self {
+        use crate::bindings::fastly::compute::kv_store::KvError;
+        match err {
+            // use black_box here to prevent rustc/llvm from generating a switch table
+            KvError::BadRequest | KvError::PreconditionFailed | KvError::PayloadTooLarge => {
+                std::hint::black_box(FastlyStatus::INVALID_ARGUMENT)
+            }
+            KvError::GenericError | KvError::InternalError => FastlyStatus::UNKNOWN_ERROR,
+            KvError::TooManyRequests => FastlyStatus::LIMITEXCEEDED,
+        }
+    }
+}
+
+pub(crate) fn convert_result<T: Into<FastlyStatus>>(res: Result<(), T>) -> FastlyStatus {
     match res {
         Ok(()) => FastlyStatus::OK,
-        Err(e) => FastlyStatus::from(e),
+        Err(e) => e.into(),
     }
 }
