@@ -1,7 +1,86 @@
+[package]
+name = "viceroy-lib"
+version = "0.14.3"
+description = "Viceroy implementation details."
+authors = ["Fastly"]
+edition = "2021"
+license = "Apache-2.0 WITH LLVM-exception"
+documentation = "https://docs.rs/viceroy-lib"
+homepage = "https://github.com/fastly/Viceroy"
+repository = "https://github.com/fastly/Viceroy"
+keywords = ["wasm", "fastly"]
+categories = [
+    "development-tools",
+    "network-programming",
+    "simulation",
+    "wasm"
+]
+include = [
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "src/**/*",
+    "wasm_abi/wit/**/*",
+    "wasm_abi/compute-at-edge-abi/**/*.witx",
+    "wasm_abi/data/*.wasm",
+]
+# MSRV: 1.82 for is_none_or
+rust-version = "1.82"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = "0.1.59"
+bytes = "^1.2.1"
+bytesize = "^1.1.0"
+cfg-if = "^1.0"
+clap = { workspace = true }
+cranelift-entity = "^0.122.0"
+fastly-shared = "^0.11.5"
+flate2 = "^1.0.24"
+futures = { workspace = true }
+http = "^0.2.8"
+http-body = "^0.4.5"
+hyper = { workspace = true }
+itertools = { workspace = true }
+lazy_static = "^1.4.0"
+pin-project = { workspace = true }
+regex = "^1.3.9"
+rustls = "^0.21.1"
+rustls-native-certs = "^0.6.3"
+rustls-pemfile = "^1.0.3"
+semver = "^0.10.0"
+serde = "^1.0.145"
+serde_derive = "^1.0.114"
+serde_json = { workspace = true }
+thiserror = "^1.0.37"
+tokio = { workspace = true }
+tokio-rustls = "^0.24.1"
+toml = "^0.5.9"
+tracing = { workspace = true }
+tracing-futures = { workspace = true }
+url = { workspace = true }
+wasmparser = { workspace = true }
+wasm-encoder = { workspace = true }
+wit-component = { workspace = true }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+wasmtime-wasi-nn = { workspace = true }
+wat = { workspace = true }
+wiggle = { workspace = true }
+base64 = { workspace = true }
+moka = { version = "0.12.10", features = ["future"] }
+
+[dev-dependencies]
+proptest = "1.6.0"
+proptest-derive = "0.5.1"
+tempfile = "3.6.0"
+
+[features]
+default = []
+test-fatalerror-config = []
+
 [workspace]
 members = [
     "cli",
-    "lib",
 ]
 resolver = "3"
 
@@ -47,13 +126,6 @@ wat = "1.212.0"
 wasmparser = "0.236.0"
 wasm-encoder = { version = "0.236.0", features = ["wasmparser"] }
 wit-component = "0.236.0"
-
-# Adapter dependencies
-byte-array-literals = { path = "crates/adapter/byte-array-literals" }
-bitflags = { version = "2.5.0", default-features = false }
-object = { version = "0.33", default-features = false, features = ["archive"] }
-wasi = { version = "0.11.0", default-features = false }
-wit-bindgen-rust-macro = { version = "0.43.0", default-features = false }
 
 [profile.release.package.viceroy-component-adapter]
 opt-level = 's'

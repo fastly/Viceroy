@@ -4,7 +4,7 @@ use {
 };
 
 component::bindgen!({
-    path: "wit",
+    path: "wasm_abi/wit",
     world: "fastly:api/compute",
     tracing: true,
     async: true,

@@ -26,7 +26,7 @@ use crate::descriptors::{Descriptor, Descriptors, StreamType};
 
 pub mod bindings {
     wit_bindgen_rust_macro::generate!({
-        path: "../../lib/wit",
+        path: "../../wasm_abi/wit",
         world: "fastly:api/compute",
         raw_strings,
         runtime_path: "crate::bindings::wit_bindgen_rt_shim",
