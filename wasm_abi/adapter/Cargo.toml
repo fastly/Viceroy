@@ -26,9 +26,9 @@ bitflags = { version = "2.5.0", default-features = false }
 byte-array-literals = { path = "./byte-array-literals" }
 object = { version = "0.33", default-features = false, features = ["archive"] }
 wasi = { version = "0.11.0", default-features = false }
-wasm-encoder = { version = "0.217.0", features = ["wasmparser"] }
-wit-bindgen-rust-macro = { version = "0.32.0", default-features = false }
-wit-component = "0.217.0"
+wasm-encoder = { version = "0.239.0", features = ["wasmparser"] }
+wit-bindgen-rust-macro = { version = "0.46.0", default-features = false }
+wit-component = "0.239.0"
 fastly-shared = "0.11.5"
 
 [profile.release.package.viceroy-component-adapter]

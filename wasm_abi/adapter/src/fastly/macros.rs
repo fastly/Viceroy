@@ -43,7 +43,7 @@ macro_rules! handle_buffer_len {
         match $res {
             Ok(res) => res,
             Err(err) => {
-                if let crate::bindings::fastly::api::types::Error::BufferLen(needed) = err {
+                if let crate::bindings::fastly::compute::types::Error::BufferLen(needed) = err {
                     unsafe {
                         *$nwritten =
                             crate::TrappingUnwrap::trapping_unwrap(usize::try_from(needed));
@@ -52,6 +52,155 @@ macro_rules! handle_buffer_len {
 
                 return Err(err.into());
             }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! write_result {
+    ($res:expr, $out:ident) => {
+        match $res {
+            Ok(val) => {
+                unsafe {
+                    *$out = val;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! write_result_opt {
+    ($res:expr, $out:ident) => {
+        match $res {
+            Ok(Some(val)) => {
+                unsafe {
+                    *$out = val;
+                }
+
+                FastlyStatus::OK
+            }
+
+            Ok(None) => FastlyStatus::NONE,
+
+            Err(e) => e.into(),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! write_bool_result {
+    ($res:expr, $out:ident) => {
+        match $res {
+            Ok(val) => {
+                unsafe {
+                    *$out = if val { 1 } else { 0 };
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! write_bool_result_opt {
+    ($res:expr, $out:ident) => {
+        match $res {
+            Ok(Some(val)) => {
+                unsafe {
+                    *$out = if val { 1 } else { 0 };
+                }
+
+                FastlyStatus::OK
+            }
+
+            Ok(None) => FastlyStatus::NONE,
+
+            Err(e) => e.into(),
+        }
+    };
+}
+
+/// Construct a temporary `&[T]` containing the given pointer and length.
+#[macro_export]
+macro_rules! make_slice {
+    ($ptr:expr, $len:expr) => {{
+        let ptr = $ptr as *mut _;
+        let len = $crate::TrappingUnwrap::trapping_unwrap(usize::try_from($len));
+        #[allow(unused_unsafe)]
+        unsafe {
+            core::slice::from_raw_parts(ptr, len)
+        }
+    }};
+}
+
+/// Construct a `ManuallyDrop<Vec>` containing the given pointer and length.
+#[macro_export]
+macro_rules! make_vec {
+    ($ptr:expr, $len:expr) => {{
+        let ptr = $ptr as *mut _;
+        let len = $crate::TrappingUnwrap::trapping_unwrap(usize::try_from($len));
+        #[allow(unused_unsafe)]
+        core::mem::ManuallyDrop::new(unsafe { Vec::from_raw_parts(ptr, len, len) })
+    }};
+}
+
+/// Construct a `&str` containing the given pointer and length.
+#[macro_export]
+macro_rules! make_str {
+    ($ptr:expr, $len:expr) => {{
+        $crate::make_slice!($ptr, $len)
+    }};
+}
+
+/// Like `make_str` but wraps the error return value in an `Err`.
+#[macro_export]
+macro_rules! make_str_result {
+    ($ptr:expr, $len:expr) => {{
+        $crate::make_slice!($ptr, $len)
+    }};
+}
+
+/// Construct a `ManuallyDrop<Vec<u8>>` containing the given pointer and length.
+///
+/// This would use `String`, except that we use `raw_strings` for better
+/// compatibility with the witx ABI. The canonical ABI will check for UTF-8
+/// validity.
+#[macro_export]
+macro_rules! make_string {
+    ($ptr:expr, $len:expr) => {{
+        $crate::make_vec!($ptr, $len)
+    }};
+}
+
+/// Like `make_string` but wraps the error return value in an `Err`.
+#[macro_export]
+macro_rules! make_string_result {
+    ($ptr:expr, $len:expr) => {{
+        $crate::make_vec!($ptr, $len)
+    }};
+}
+
+#[macro_export]
+macro_rules! write_handle_result {
+    ($res:expr, $out:ident) => {
+        match $res {
+            Ok(val) => {
+                unsafe {
+                    *$out = val.take_handle();
+                }
+
+                FastlyStatus::OK
+            }
+
+            Err(e) => e.into(),
         }
     };
 }
