@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{erl, types},
+    crate::component::fastly::compute::{erl, types},
     crate::linking::ComponentCtx,
 };
 
@@ -53,7 +53,7 @@ impl erl::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn penaltybox_has(&mut self, _pb: String, _entry: String) -> Result<u32, types::Error> {
-        Ok(0)
+    async fn penaltybox_has(&mut self, _pb: String, _entry: String) -> Result<bool, types::Error> {
+        Ok(false)
     }
 }

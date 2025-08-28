@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{device_detection, types},
+    crate::component::fastly::compute::{device_detection, types},
     crate::linking::{ComponentCtx, SessionView},
 };
 
@@ -8,7 +8,7 @@ impl device_detection::Host for ComponentCtx {
         &mut self,
         user_agent: String,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
+    ) -> Result<Option<String>, types::Error> {
         if let Some(result) = self.session().device_detection_lookup(&user_agent) {
             if result.len() > max_len as usize {
                 return Err(types::Error::BufferLen(
@@ -16,7 +16,7 @@ impl device_detection::Host for ComponentCtx {
                 ));
             }
 
-            Ok(Some(result.into_bytes()))
+            Ok(Some(result))
         } else {
             Ok(None)
         }

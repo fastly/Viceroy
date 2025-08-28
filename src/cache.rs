@@ -7,7 +7,7 @@ use proptest_derive::Arbitrary;
 
 use crate::{
     body::Body,
-    component::fastly::api::types::Error as ComponentError,
+    component::fastly::compute::types::Error as ComponentError,
     wiggle_abi::types::{BodyHandle, CacheOverrideTag, FastlyStatus},
 };
 

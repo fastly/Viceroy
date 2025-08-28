@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{backend, http_types, types},
+    crate::component::fastly::compute::{backend, http_types, types},
     crate::{
         error::Error,
         linking::{ComponentCtx, SessionView},
@@ -131,7 +131,7 @@ impl backend::Host for ComponentCtx {
         .into())
     }
 
-    async fn is_ssl(&mut self, backend: String) -> Result<bool, types::Error> {
+    async fn is_tls(&mut self, backend: String) -> Result<bool, types::Error> {
         let backend = self
             .session()
             .backend(&backend)
@@ -139,7 +139,7 @@ impl backend::Host for ComponentCtx {
         Ok(backend.uri.scheme() == Some(&http::uri::Scheme::HTTPS))
     }
 
-    async fn get_ssl_min_version(
+    async fn get_tls_min_version(
         &mut self,
         backend: String,
     ) -> Result<Option<http_types::TlsVersion>, types::Error> {
@@ -150,12 +150,12 @@ impl backend::Host for ComponentCtx {
             .ok_or(Error::InvalidArgument)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::Unsupported {
-            msg: "ssl version flags are not supported in Viceroy",
+            msg: "tls version flags are not supported in Viceroy",
         }
         .into())
     }
 
-    async fn get_ssl_max_version(
+    async fn get_tls_max_version(
         &mut self,
         backend: String,
     ) -> Result<Option<http_types::TlsVersion>, types::Error> {
@@ -166,7 +166,54 @@ impl backend::Host for ComponentCtx {
             .ok_or(Error::InvalidArgument)?;
         // health checks are not enabled in Viceroy :(
         Err(Error::Unsupported {
-            msg: "ssl version flags are not supported in Viceroy",
+            msg: "tls version flags are not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_http_keepalive_time(
+        &mut self,
+        _backend: String,
+    ) -> Result<backend::TimeoutMs, types::Error> {
+        Err(Error::Unsupported {
+            msg: "backend.get-http-keepalive-time is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_enable(&mut self, _backend: String) -> Result<bool, types::Error> {
+        Err(Error::Unsupported {
+            msg: "backend.get-tcp-keepalive-enable is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_interval(
+        &mut self,
+        _backend: String,
+    ) -> Result<backend::TimeoutSecs, types::Error> {
+        Err(Error::Unsupported {
+            msg: "backend.get-tcp-keepalive-interval is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_probes(
+        &mut self,
+        _backend: String,
+    ) -> Result<backend::ProbeCount, types::Error> {
+        Err(Error::Unsupported {
+            msg: "backend.get-tcp-keepalive-probes is not supported in Viceroy",
+        }
+        .into())
+    }
+
+    async fn get_tcp_keepalive_time(
+        &mut self,
+        _backend: String,
+    ) -> Result<backend::TimeoutSecs, types::Error> {
+        Err(Error::Unsupported {
+            msg: "backend.get_tcp_keepalive_time not supported in Viceroy",
         }
         .into())
     }

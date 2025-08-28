@@ -1,5 +1,6 @@
 use {
-    super::fastly::api::{types, uap},
+    crate::component::fastly::adapter::adapter_uap,
+    crate::component::fastly::compute::types,
     crate::{error::Error, linking::ComponentCtx},
     wasmtime::component::Resource,
 };
@@ -7,7 +8,7 @@ use {
 #[derive(Debug)]
 pub struct UserAgent {}
 
-impl uap::HostUserAgent for ComponentCtx {
+impl adapter_uap::HostUserAgent for ComponentCtx {
     async fn family(
         &mut self,
         _agent: Resource<UserAgent>,
@@ -45,8 +46,8 @@ impl uap::HostUserAgent for ComponentCtx {
     }
 }
 
-impl uap::Host for ComponentCtx {
-    async fn parse(&mut self, _user_agent: String) -> Result<Resource<UserAgent>, types::Error> {
+impl adapter_uap::Host for ComponentCtx {
+    async fn parse(&mut self, _user_agent: Vec<u8>) -> Result<Resource<UserAgent>, types::Error> {
         // not available
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
