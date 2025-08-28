@@ -1,4 +1,4 @@
-const ADAPTER_BYTES: &[u8] = include_bytes!("../data/viceroy-component-adapter.wasm");
+const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
 
 /// Check if the bytes represent a core wasm module, or a component.
 pub fn is_component(bytes: &[u8]) -> bool {
