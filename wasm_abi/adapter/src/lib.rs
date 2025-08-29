@@ -393,7 +393,7 @@ impl BumpAlloc {
     }
 }
 
-#[link(wasm_import_module = "wasi:cli/environment@0.2.0")]
+#[link(wasm_import_module = "wasi:cli/environment@0.2.6")]
 extern "C" {
     #[link_name = "get-arguments"]
     fn wasi_cli_get_arguments(rval: *mut WasmStrList);
@@ -1193,7 +1193,7 @@ pub unsafe extern "C" fn poll_oneoff(
             });
         }
 
-        #[link(wasm_import_module = "wasi:io/poll@0.2.0")]
+        #[link(wasm_import_module = "wasi:io/poll@0.2.6")]
         #[allow(improper_ctypes)] // FIXME(bytecodealliance/wit-bindgen#684)
         extern "C" {
             #[link_name = "poll"]
