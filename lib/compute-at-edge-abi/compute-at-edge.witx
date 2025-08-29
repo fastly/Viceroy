@@ -872,9 +872,8 @@
 
     ;;; Hostcall for getting the destination IP used for this request.
     ;;;
-    ;;; The buffer for the IP address must be 16 bytes. This will return
-    ;;; the number of bytes written to the buffer: 4 for IPv4 addresses,
-    ;;; and 16 for IPv6.
+    ;;; The buffer for the IP address must be 16 bytes. `addr_octets_out`
+    ;;; will be set to 4 for IPv4 addresses, and 16 for IPv6.
     (@interface func (export "get_addr_dest_ip")
         (param $h $response_handle)
         ;; must be a 16-byte array
@@ -997,12 +996,12 @@
     (@interface func (export "lookup_async")
         (param $store $object_store_handle)
         (param $key string)
-        (param $pending_body_handle_out (@witx pointer $pending_kv_lookup_handle))
+        (param $pending_handle_out (@witx pointer $pending_kv_lookup_handle))
         (result $err (expected (error $fastly_status)))
     )
 
     (@interface func (export "pending_lookup_wait")
-        (param $pending_body_handle $pending_kv_lookup_handle)
+        (param $pending_objstr_handle $pending_kv_lookup_handle)
         (param $body_handle_out (@witx pointer $body_handle))
         (result $err (expected (error $fastly_status)))
     )
@@ -1035,8 +1034,22 @@
     )
 
     (@interface func (export "pending_delete_wait")
-        (param $pending_handle $pending_kv_delete_handle)
+        (param $pending_objstr_handle $pending_kv_delete_handle)
         (result $err (expected (error $fastly_status)))
+    )
+)
+
+(module $fastly_image_optimizer
+    (@interface func (export "transform_image_optimizer_request")
+        (param $origin_image_request $request_handle)
+        (param $origin_image_request_body $body_handle)
+        (param $origin_image_request_backend string)
+        (param $io_transform_config_mask $image_optimizer_transform_config_options)
+        (param $io_transform_configuration (@witx pointer $image_optimizer_transform_config))
+        (param $io_error_detail (@witx pointer $image_optimizer_error_detail))
+        (result $err (expected
+                (tuple $response_handle $body_handle)
+                (error $fastly_status)))
     )
 )
 
@@ -1346,19 +1359,5 @@
         (param $body_handle_out (@witx pointer $body_handle))
         (param $acl_error_out (@witx pointer $acl_error))
         (result $err (expected (error $fastly_status)))
-    )
-)
-
-(module $fastly_image_optimizer
-    (@interface func (export "transform_image_optimizer_request")
-        (param $origin_image_request $request_handle)
-        (param $origin_image_request_body $body_handle)
-        (param $origin_image_request_backend string)
-        (param $io_transform_config_mask $image_optimizer_transform_config_options)
-        (param $io_transform_configuration (@witx pointer $image_optimizer_transform_config))
-        (param $io_error_detail (@witx pointer $image_optimizer_error_detail))
-        (result $err (expected
-                (tuple $response_handle $body_handle)
-                (error $fastly_status)))
     )
 )

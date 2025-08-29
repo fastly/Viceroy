@@ -30,10 +30,12 @@
 ;;; `prepare_response_for_storage`.
 (typename $http_storage_action
     (enum (@witx tag u32)
-        ;; Insert the response into cache (`transaction_insert*`).
+        ;; Insert the response into cache (for `transaction-insert` and
+        ;; `transaction-insert-and-stream-back`).
         $insert
 
-        ;; Update the stale response in cache (`transaction_update*`).
+        ;; Update the stale response in cache (for `transaction-update` and
+        ;; `transaction-update-and-return-fresh`).
         $update
 
         ;; Do not store this response.
@@ -55,6 +57,9 @@
         ;; properties.
         (field $override_key_ptr (@witx pointer (@witx char8)))
         (field $override_key_len (@witx usize))
+        ;; Name of the backend the request will eventually be sent to.
+        (field $backend_name_ptr (@witx pointer (@witx char8)))
+        (field $backend_name_len (@witx usize))
     )
 )
 
@@ -63,6 +68,7 @@
     (flags (@witx repr u32)
         $reserved
         $override_key
+        $backend_name
     )
 )
 
@@ -161,10 +167,7 @@
         (result $err (expected (error $fastly_status)))
     )
 
-    ;;; Perform a cache lookup based on the given request without participating in request
-    ;;; collapsing.
-    ;;;
-    ;;; The request is not consumed.
+    ;;; DEPRECATED: use transaction_lookup
     (@interface func (export "lookup")
         (param $req_handle $request_handle)
         (param $options_mask $http_cache_lookup_options_mask)
@@ -343,8 +346,8 @@
         (result $err (expected (tuple $http_storage_action $response_handle) (error $fastly_status)))
     )
 
-    ;;; Retrieve a stored response from the cache, returning the `$none` error if there was no found
-    ;;; response.
+    ;;; Retrieve a stored response from the cache, returning the `$none` error if there was no
+    ;;; response found.
     ;;;
     ;;; If `transform_for_client` is set, the response will be adjusted according to the looked-up
     ;;; request. For example, a response retrieved for a range request may be transformed into a
@@ -364,36 +367,36 @@
         (result $err (expected $cache_lookup_state (error $fastly_status)))
     )
 
-    ;;; Get the length of the found response, returning the `$none` error if there was no found
-    ;;; response or no length was provided.
+    ;;; Get the length of the found response, returning the `$none` error if there was no response
+    ;;; found or no length was provided.
     (@interface func (export "get_length")
         (param $handle $http_cache_handle)
         (result $err (expected $cache_object_length (error $fastly_status)))
     )
 
     ;;; Get the configured max age of the found response in nanoseconds, returning the `$none` error
-    ;;; if there was no found response.
+    ;;; if there was no response found.
     (@interface func (export "get_max_age_ns")
         (param $handle $http_cache_handle)
         (result $err (expected $cache_duration_ns (error $fastly_status)))
     )
 
     ;;; Get the configured stale-while-revalidate period of the found response in nanoseconds,
-    ;;; returning the `$none` error if there was no found response.
+    ;;; returning the `$none` error if there was no response found.
     (@interface func (export "get_stale_while_revalidate_ns")
         (param $handle $http_cache_handle)
         (result $err (expected $cache_duration_ns (error $fastly_status)))
     )
 
     ;;; Get the age of the found response in nanoseconds, returning the `$none` error if there was
-    ;;; no found response.
+    ;;; no response found.
     (@interface func (export "get_age_ns")
         (param $handle $http_cache_handle)
         (result $err (expected $cache_duration_ns (error $fastly_status)))
     )
 
     ;;; Get the number of cache hits for the found response, returning the `$none` error if there
-    ;;; was no found response.
+    ;;; was no response found.
     ;;;
     ;;; Note that this figure only reflects hits for a stored response in a particular cache server
     ;;; or cluster, not the entire Fastly network.
@@ -403,7 +406,7 @@
     )
 
     ;;; Get whether a found response is marked as containing sensitive data, returning the `$none`
-    ;;; error if there was no found response.
+    ;;; error if there was no response found.
     (@interface func (export "get_sensitive_data")
         (param $handle $http_cache_handle)
         (result $err (expected $is_sensitive (error $fastly_status)))
@@ -425,8 +428,8 @@
         (result $err (expected (error $fastly_status)))
     )
 
-    ;;; Get the vary rule of the found response, returning the `$none` error if there was no found
-    ;;; response.
+    ;;; Get the vary rule of the found response, returning the `$none` error if there was no
+    ;;; response found.
     ;;;
     ;;; The output is a list of header names separated by spaces.
     ;;;
