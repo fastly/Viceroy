@@ -7,6 +7,7 @@ use {
 component::bindgen!({
     path: "wasm_abi/wit",
     world: "fastly:adapter/adapter-service-without-wasi",
+    tracing: true,
     async: true,
     with: {
         "fastly:adapter/adapter-uap/user-agent": adapter::uap::UserAgent,
