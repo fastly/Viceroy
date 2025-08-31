@@ -66,8 +66,30 @@ generate-lockfile:
 # Regenerate the adapter, and move it into `wasm_abi/data`
 .PHONY: build-adapter
 build-adapter:
-	cd wasm_abi/adapter && cargo build --release \
-		-p viceroy-component-adapter \
-		--target wasm32-unknown-unknown
+	# Build the component adapter for adapting the host-call abi to the
+	# component model. This version uses `--no-default-features` to disable
+	# the default "exports" feature, to build the imports-only "library"
+	# version of the adapter.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--no-default-features \
+			--profile release-library \
+	)
+
+	# Build the component adapter for adapting the host-call abi to the
+	# component model. This is the normal version that includes the exports.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--release \
+	)
+
 	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
 		wasm_abi/data/viceroy-component-adapter.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.library.wasm
