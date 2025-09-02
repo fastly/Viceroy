@@ -76,8 +76,8 @@ package-check:
 	rm -rf verify-publishable/
 
 # Regenerate the adapter, and move it into `wasm_abi/data`
-.PHONY: adapter
-adapter:
+.PHONY: build-adapter
+build-adapter:
 	cd wasm_abi/adapter && cargo build --release \
 		-p viceroy-component-adapter \
 		--target wasm32-unknown-unknown

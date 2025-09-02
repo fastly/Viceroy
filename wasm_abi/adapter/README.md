@@ -9,7 +9,7 @@ by the compute world of `compute.wit`, whose definition is in `src/lib.rs`
 instead of being defined in `src/fastly`, as the `wit-bindgen::generate!` makes
 assumptions about relative module paths that make it hard to define elsewhere.
 
-Changes to the adapter require running the top-level `make adapter` target, and
+Changes to the adapter require running the top-level `make build-adapter` target, and
 committing the resulting `wasm_abi/data/viceroy-component-adapter.wasm` wasm module.
 This is a bit unfortunate, but as there's no way to hook the packaging step with
 cargo, committing the binary is the easiest way to ensure that fresh checkouts
