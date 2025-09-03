@@ -290,7 +290,7 @@ impl FastlyHttpDownstream for Session {
 
         match u32::try_from(region_len) {
             Ok(region_len) if region_len <= region_max_len => {
-                memory.copy_from_slice(region, region_out.as_array(region_max_len))?;
+                memory.copy_from_slice(region, region_out.as_array(region_len))?;
                 memory.write(nwritten_out, region_len.try_into().unwrap_or(0))?;
 
                 Ok(())

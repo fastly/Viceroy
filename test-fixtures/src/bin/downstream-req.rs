@@ -1,5 +1,17 @@
 use fastly::Request;
+use fastly_shared::FastlyStatus;
 use std::net::IpAddr;
+
+#[link(wasm_import_module = "fastly_http_downstream")]
+extern "C" {
+    #[link_name = "downstream_compliance_region"]
+    pub fn downstream_compliance_region(
+        req_handle: fastly_sys::RequestHandle,
+        region_out: *mut u8,
+        region_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus;
+}
 
 fn main() {
     let mut client_req = Request::from_client();
@@ -59,4 +71,21 @@ fn main() {
     // Other downstream metadata that Viceroy doesn't currently support:
     assert_eq!(client_req.get_client_h2_fingerprint(), None);
     assert_eq!(client_req.get_client_oh_fingerprint(), None);
+
+    // Get the actual handle:
+    let (rh, _) = client_req.into_handles();
+
+    // Check that we get a "none" region:
+    let mut region = Vec::with_capacity(10);
+    let mut nwritten = 0;
+    let status = unsafe {
+        downstream_compliance_region(rh.as_u32(), region.as_mut_ptr(), region.capacity(), &mut nwritten)
+    };
+    unsafe {
+        region.set_len(nwritten);
+    }
+    assert_eq!(status, FastlyStatus::OK);
+    assert_eq!(nwritten, 4);
+    assert_eq!(region.as_slice(), b"none");
+
 }
