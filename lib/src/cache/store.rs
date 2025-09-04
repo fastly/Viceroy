@@ -658,7 +658,7 @@ impl<'a> GetBodyBuilder<'a> {
 
 impl CacheData {
     /// Get a Body to read the cached object with.
-    pub(crate) fn body(&self) -> GetBodyBuilder {
+    pub(crate) fn body(&self) -> GetBodyBuilder<'_> {
         GetBodyBuilder {
             cache_data: self,
             from: None,

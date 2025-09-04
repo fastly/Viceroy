@@ -264,7 +264,7 @@ impl From<Arc<CacheData>> for Found {
 }
 
 impl Found {
-    fn get_body(&self) -> GetBodyBuilder {
+    fn get_body(&self) -> GetBodyBuilder<'_> {
         self.data.as_ref().body()
     }
 
