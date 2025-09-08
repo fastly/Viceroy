@@ -6,6 +6,7 @@ use {
 component::bindgen!({
     path: "wit",
     world: "fastly:api/compute",
+    tracing: true,
     async: true,
     with: {
         "fastly:api/uap/user-agent": uap::UserAgent,
