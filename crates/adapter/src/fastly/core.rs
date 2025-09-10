@@ -278,6 +278,7 @@ bitflags::bitflags! {
         const RESERVED = 1 << 0;
         const CORP = 1 << 1;
         const WORKSPACE = 1 << 2;
+        const OVERRIDE_CLIENT_IP = 1 << 3;
     }
 }
 
@@ -293,6 +294,10 @@ impl From<InspectConfigOptions> for crate::bindings::fastly::api::http_req::Insp
             Self::WORKSPACE,
             options.contains(InspectConfigOptions::WORKSPACE),
         );
+        flags.set(
+            Self::OVERRIDE_CLIENT_IP,
+            options.contains(InspectConfigOptions::OVERRIDE_CLIENT_IP),
+        );
         flags
     }
 }
@@ -303,6 +308,8 @@ pub struct InspectConfig {
     pub corp_len: u32,
     pub workspace: *const u8,
     pub workspace_len: u32,
+    pub override_client_ip_ptr: *const u8,
+    pub override_client_ip_len: u32,
 }
 
 pub mod fastly_acl {
@@ -2297,9 +2304,22 @@ pub mod fastly_http_req {
 
         let info_mask = http_req::InspectConfigOptions::from(info_mask);
 
+        let override_client_ip =
+            if info_mask.contains(http_req::InspectConfigOptions::OVERRIDE_CLIENT_IP) {
+                unsafe {
+                    crate::fastly::decode_ip_address(
+                        (*info).override_client_ip_ptr,
+                        (*info).override_client_ip_len as usize,
+                    )
+                }
+            } else {
+                None
+            };
+
         let info = http_req::InspectConfig {
             corp: make_vec!(corp, corp_len),
             workspace: make_vec!(workspace, workspace_len),
+            override_client_ip,
         };
 
         let res = alloc_result!(buf, buf_len, nwritten_out, {

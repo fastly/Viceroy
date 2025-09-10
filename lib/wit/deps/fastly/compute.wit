@@ -443,11 +443,13 @@ interface http-req {
     reserved,
     corp,
     workspace,
+    override-client-ip,
   }
 
   record inspect-config {
     corp: string,
     workspace: string,
+    override-client-ip: option<ip-address>,
   }
 
   cache-override-set: func(
