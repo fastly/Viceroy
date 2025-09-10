@@ -2755,6 +2755,7 @@ world fastly-imports {
   import purge;
   import secret-store;
   import shielding;
+  import proxy:recorder/%record@0.1.0;
 }
 
 /// Fastly interfaces exported by `fastly:compute/service`.

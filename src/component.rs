@@ -22,6 +22,12 @@ component::bindgen!({
     ],
 });
 
+impl proxy::recorder::record::Host for ComponentCtx {
+    async fn record(&mut self, method: String, input: Vec<String>, output: String) -> () {
+        println!("{method}: args: {input:?} ret: {output}");
+    }
+}
+
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {
     // Add the Viceroy host implementations.
     AdapterServiceWithoutWasi::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
