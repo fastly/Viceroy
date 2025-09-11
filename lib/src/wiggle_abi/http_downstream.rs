@@ -225,6 +225,17 @@ impl FastlyHttpDownstream for Session {
         self.absent_metadata_value(handle)
     }
 
+    fn downstream_tls_client_servername(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+        _sni_out: GuestPtr<u8>,
+        _sni_max_len: u32,
+        _nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        self.absent_metadata_value(handle)
+    }
+
     fn downstream_tls_client_hello(
         &mut self,
         _memory: &mut GuestMemory<'_>,
