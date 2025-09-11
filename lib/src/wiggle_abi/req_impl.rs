@@ -1,4 +1,5 @@
 //! fastly_req` hostcall implementations.
+use std::net::IpAddr;
 
 use super::types::SendErrorDetail;
 use super::SecretStoreError;
@@ -1124,6 +1125,14 @@ impl FastlyHttpReq for Session {
             info.workspace_len,
         )?;
 
+        if info_mask.contains(InspectInfoMask::OVERRIDE_CLIENT_IP) {
+            let _ = read_guest_ip(
+                memory,
+                &info.override_client_ip_ptr,
+                info.override_client_ip_len,
+            )?;
+        }
+
         // Return the mock NGWAF response.
         let ngwaf_resp = self.ngwaf_response();
         let ngwaf_resp_len = ngwaf_resp.len();
@@ -1150,5 +1159,30 @@ impl FastlyHttpReq for Session {
         Err(Error::Unsupported {
             msg: "on_behalf_of is not supported in Viceroy",
         })
+    }
+}
+
+fn try_ip_from_bytes<const N: usize>(bytes: Option<&[u8]>) -> Result<IpAddr, Error>
+where
+    IpAddr: From<[u8; N]>,
+{
+    bytes
+        .and_then(|bs| <[u8; N]>::try_from(bs).ok())
+        .map(IpAddr::from)
+        .ok_or(Error::InvalidArgument)
+}
+
+fn read_guest_ip(
+    memory: &mut GuestMemory<'_>,
+    bytes: &GuestPtr<u8>,
+    len: u32,
+) -> Result<Option<IpAddr>, Error> {
+    let bytes = memory.as_slice(bytes.as_array(len as u32))?;
+
+    match len {
+        0 => Ok(None),
+        4 => try_ip_from_bytes::<4>(bytes).map(Some),
+        16 => try_ip_from_bytes::<16>(bytes).map(Some),
+        _ => Err(Error::InvalidArgument),
     }
 }

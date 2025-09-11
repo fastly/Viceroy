@@ -14,6 +14,23 @@ pub use http_cache::*;
 
 use crate::bindings::fastly::api::types;
 
+/// Decode an IP address from `ip_len` bytes pointed to by `ip_octets` into a Wit `IpAddress`.
+pub(crate) unsafe fn decode_ip_address(
+    ip_octets: *const u8,
+    ip_len: usize,
+) -> Option<types::IpAddress> {
+    let ip = std::slice::from_raw_parts(ip_octets, ip_len);
+    if let Ok(bytes) = <[u8; 4]>::try_from(ip) {
+        Some(types::IpAddress::Ipv4(bytes.into()))
+    } else if let Ok(bytes) = <[u8; 16]>::try_from(ip) {
+        Some(types::IpAddress::Ipv6(
+            std::net::Ipv6Addr::from(bytes).segments().into(),
+        ))
+    } else {
+        None
+    }
+}
+
 /// Encode a Wit `IpAddress` into the `ip_octets` buffer, and return the number of bytes written.
 pub(crate) unsafe fn encode_ip_address(ip_addr: types::IpAddress, ip_octets: *mut u8) -> usize {
     let bytes = match ip_addr {

@@ -492,6 +492,7 @@
         $reserved
         $corp
         $workspace
+        $override_client_ip
     )
 )
 
@@ -501,6 +502,8 @@
         (field $corp_len u32)
         (field $workspace (@witx pointer (@witx char8)))
         (field $workspace_len u32)
+        (field $override_client_ip_ptr (@witx pointer u8))
+        (field $override_client_ip_len u32)
     )
 )
 
