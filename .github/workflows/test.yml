@@ -92,5 +92,5 @@ jobs:
         run: rustup update 1.86 && rustup default 1.86
         shell: bash
       - name: Check crates can be published
-        run: make package-check
+        run: cargo publish --dry-run --package=viceroy-lib
         shell: bash

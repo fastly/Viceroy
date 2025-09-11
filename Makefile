@@ -63,18 +63,6 @@ generate-lockfile:
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=test-fixtures/Cargo.toml
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=cli/tests/trap-test/Cargo.toml
 
-# Check that the crates can be packaged for crates.io.
-#
-# FIXME(katie): Add option flags to `publish.rs` for the vendor directory, remove `.cargo/` after
-# running.
-.PHONY: package-check
-package-check:
-	rustc scripts/publish.rs
-	./publish verify
-	rm publish
-	rm -rf .cargo/
-	rm -rf verify-publishable/
-
 # Regenerate the adapter, and move it into `wasm_abi/data`
 .PHONY: build-adapter
 build-adapter:
