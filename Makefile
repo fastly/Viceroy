@@ -4,6 +4,7 @@ VICEROY_CARGO=cargo
 .PHONY: format
 format:
 	$(VICEROY_CARGO) fmt
+	cd wasm_abi/adapter && $(VICEROY_CARGO) fmt
 
 .PHONY: format-check
 format-check:
@@ -62,23 +63,11 @@ generate-lockfile:
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=test-fixtures/Cargo.toml
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=cli/tests/trap-test/Cargo.toml
 
-# Check that the crates can be packaged for crates.io.
-#
-# FIXME(katie): Add option flags to `publish.rs` for the vendor directory, remove `.cargo/` after
-# running.
-.PHONY: package-check
-package-check:
-	rustc scripts/publish.rs
-	./publish verify
-	rm publish
-	rm -rf .cargo/
-	rm -rf verify-publishable/
-
-# Regenerate the adapter, and move it into `lib/data`.
-.PHONY: adapter
-adapter:
-	cargo build --release \
+# Regenerate the adapter, and move it into `wasm_abi/data`
+.PHONY: build-adapter
+build-adapter:
+	cd wasm_abi/adapter && cargo build --release \
 		-p viceroy-component-adapter \
 		--target wasm32-unknown-unknown
-	cp target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
-		lib/data/viceroy-component-adapter.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.wasm

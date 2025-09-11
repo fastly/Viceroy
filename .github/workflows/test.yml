@@ -44,7 +44,7 @@ jobs:
       run: make ci
       shell: bash
     - name: adapter
-      run: cargo build --release -p viceroy-component-adapter --target wasm32-unknown-unknown
+      run: cd wasm_abi/adapter && cargo build --release -p viceroy-component-adapter --target wasm32-unknown-unknown
 
   # Run the trap test in an isolated job. It needs different cargo features than the usual build, so
   # it entails rebuilding the whole workspace if we combine them in a single job. This way, we
@@ -92,5 +92,5 @@ jobs:
         run: rustup update 1.86 && rustup default 1.86
         shell: bash
       - name: Check crates can be published
-        run: make package-check
+        run: cargo publish --dry-run --package=viceroy-lib
         shell: bash

@@ -1,0 +1,67 @@
+[package]
+name = "viceroy-component-adapter"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+wasi = { workspace = true }
+wit-bindgen-rust-macro = { workspace = true }
+byte-array-literals = { workspace = true }
+bitflags = { workspace = true }
+fastly-shared = { workspace = true }
+
+[build-dependencies]
+wasm-encoder = { workspace = true }
+object = { workspace = true }
+
+[lib]
+test = false
+crate-type = ["cdylib"]
+
+[workspace]
+
+[workspace.dependencies]
+bitflags = { version = "2.5.0", default-features = false }
+byte-array-literals = { path = "./byte-array-literals" }
+object = { version = "0.33", default-features = false, features = ["archive"] }
+wasi = { version = "0.11.0", default-features = false }
+wasm-encoder = { version = "0.217.0", features = ["wasmparser"] }
+wit-bindgen-rust-macro = { version = "0.32.0", default-features = false }
+wit-component = "0.217.0"
+fastly-shared = "0.11.5"
+
+[profile.release.package.viceroy-component-adapter]
+opt-level = 's'
+strip = 'debuginfo'
+
+[profile.release-library]
+inherits = "release"
+
+[profile.dev.package.viceroy-component-adapter]
+# Make dev look like a release build since this adapter module won't work with
+# a debug build that uses data segments and such.
+incremental = false
+opt-level = 's'
+# Omit assertions, which include failure messages which require string
+# initializers.
+debug-assertions = false
+# Omit integer overflow checks, which include failure messages which require
+# string initializers.
+overflow-checks = false
+
+[features]
+default = ["exports"]
+# Include the exports, in addition to the imports. Disable this to build an
+# imports-only "library" adapter, which is useful for building libraries that
+# don't have their own `main` function.
+exports = []
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+# rust 1.84 compat, by @dgohman-fastly: The "std_feature" option in the macro requests bindings that
+# include cfg(feature = "std") conditionals around things that depend on std, which we do because our adapter can't use std.
+# -> So we are disabling the warning for now.
+check-cfg = [
+    'cfg(feature, values("std"))',
+]

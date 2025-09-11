@@ -1146,7 +1146,7 @@ url = "http://localhost:7676/shark-mocks"
 override_host = "somehost.com"
 ca_certificate.file = {:?}
 "#,
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem")
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-fixtures/data/ca.pem")
         );
 
         let with_ca = read_local_server_config(&ca_backend).expect("can parse backends with ca");
@@ -1201,8 +1201,8 @@ Qq7tJAMLnPnAdAUousI0RDcLpB8adGkhZH66lL4oV9U+aQ0dA0oiqSKZtMoHeWbr
 -----END CERTIFICATE-----
 '''
 "#,
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem"),
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem")
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-fixtures/data/ca.pem"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test-fixtures/data/ca.pem")
         );
 
         let with_ca = read_local_server_config(&ca_backend).expect("can parse backends with ca");

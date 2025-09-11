@@ -9,8 +9,8 @@ by the compute world of `compute.wit`, whose definition is in `src/lib.rs`
 instead of being defined in `src/fastly`, as the `wit-bindgen::generate!` makes
 assumptions about relative module paths that make it hard to define elsewhere.
 
-Changes to the adapter require running the top-level `make adapter` target, and
-committing the resulting `lib/data/viceroy-component-adapter.wasm` wasm module.
+Changes to the adapter require running the top-level `make build-adapter` target, and
+committing the resulting `wasm_abi/data/viceroy-component-adapter.wasm` wasm module.
 This is a bit unfortunate, but as there's no way to hook the packaging step with
 cargo, committing the binary is the easiest way to ensure that fresh checkouts
 of this repository and packaged versions of the crates both build seamlessly.
@@ -19,9 +19,9 @@ of this repository and packaged versions of the crates both build seamlessly.
 
 When adding new host calls, the adapter will need to be updated to know how they
 should be adapted to the component model. In most cases, this will involve
-updating the `/lib/wit/deps/fastly/compute.wit` package to describe what the
+updating the `/wasm_abi/wit/deps/fastly/compute.wit` package to describe what the
 component imports of the new host call should look like, implementing it in both
-`/lib/src/wiggle_abi` and `/lib/src/component`, and then finally adding a
+`/src/wiggle_abi` and `/src/component`, and then finally adding a
 version of the host call to the adapter in `src/fastly`. As the adapter builds
 with the same `compute.wit` that `viceroy-lib` does, the imports will
 automatically be available through the top-level `bindings` module.
