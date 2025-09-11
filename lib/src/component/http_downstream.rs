@@ -89,6 +89,14 @@ impl http_downstream::Host for ComponentCtx {
             .map_err(Into::into)
     }
 
+    async fn downstream_tls_client_servername(
+        &mut self,
+        h: http_req::RequestHandle,
+        _max_len: u64,
+    ) -> Result<Option<String>, types::Error> {
+        self.session().absent_metadata_none(h).map_err(Into::into)
+    }
+
     async fn downstream_tls_client_hello(
         &mut self,
         h: http_req::RequestHandle,
@@ -231,5 +239,20 @@ impl http_downstream::Host for ComponentCtx {
         _h: http_req::RequestHandle,
     ) -> Result<bool, types::Error> {
         Ok(false)
+    }
+}
+
+impl Session {
+    /// Stub for metadata that Viceroy does not support.
+    ///
+    /// Validates the handle normally, and then returns `Ok(None)`.
+    pub fn absent_metadata_none<T>(
+        &self,
+        handle: http_req::RequestHandle,
+    ) -> Result<Option<T>, Error> {
+        let _ = self
+            .downstream_metadata(handle.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?;
+        Ok(None)
     }
 }

@@ -351,6 +351,14 @@ interface http-downstream {
     h: request-handle
   ) -> result<client-cert-verify-result, error>;
 
+  /// Returns the Server Name Indication from the downstream client TLS handshake.
+  ///
+  /// Returns `ok(none)` if not available.
+  downstream-tls-client-servername: func(
+    h: request-handle,
+    max-len: u64
+  ) -> result<option<string>, error>;
+
   downstream-tls-ja3-md5: func(
     h: request-handle
   ) -> result<list<u8>, error>;

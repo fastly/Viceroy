@@ -925,6 +925,21 @@ pub mod fastly_http_downstream {
         })
     }
 
+    #[export_name = "fastly_http_downstream#downstream_tls_client_servername"]
+    pub fn downstream_tls_client_servername(
+        req_handle: RequestHandle,
+        sni_out: *mut u8,
+        sni_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        alloc_result_opt!(sni_out, sni_max_len, nwritten, {
+            http_downstream::downstream_tls_client_servername(
+                req_handle,
+                u64::try_from(sni_max_len).trapping_unwrap(),
+            )
+        })
+    }
+
     #[export_name = "fastly_http_downstream#downstream_tls_client_hello"]
     pub fn downstream_tls_client_hello(
         req_handle: RequestHandle,
