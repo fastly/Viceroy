@@ -213,6 +213,22 @@ impl ExecuteCtx {
             "
             );
 
+            // If logging isn't enabled, print the notice to stderr.
+            if !tracing::enabled!(Level::WARN) {
+                eprintln!(
+                    "
+
+   +------------------------------------------------------------------------+
+   |                                                                        |
+   | Wasm Component support in viceroy is in active development, and is not |
+   |                    supported for general consumption.                  |
+   |                                                                        |
+   +------------------------------------------------------------------------+
+
+            "
+                );
+            }
+
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
             compute::link_host_functions(&mut linker)?;
             let component = if is_wat {
