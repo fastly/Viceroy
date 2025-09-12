@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{http_req, kv_store::KvStatus, types},
+    crate::component::bindings::fastly::compute::{http_req, kv_store::KvError, types},
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
@@ -106,19 +106,18 @@ impl From<wiggle::GuestError> for types::Error {
     fn from(err: wiggle::GuestError) -> Self {
         use wiggle::GuestError::*;
         match err {
-            PtrNotAligned { .. } => types::Error::BadAlign,
             // We may want to expand the FastlyStatus enum to distinguish between more of these
             // values.
-            InvalidFlagValue { .. }
+            PtrNotAligned { .. }
+            | InvalidFlagValue { .. }
             | InvalidEnumValue { .. }
             | PtrOutOfBounds { .. }
-            | PtrBorrowed { .. }
             | PtrOverflow { .. }
             | InvalidUtf8 { .. }
             | TryFromIntError { .. } => types::Error::InvalidArgument,
             // These errors indicate either a pathological user input or an internal programming
             // error
-            BorrowCheckerOutOfHandles | SliceLengthsDiffer => types::Error::UnknownError,
+            SliceLengthsDiffer => types::Error::GenericError,
             // Recursive case: InFunc wraps a GuestError with some context which
             // doesn't determine what sort of FastlyStatus we return.
             InFunc { err, .. } => Self::from(*err),
@@ -142,9 +141,7 @@ impl From<KvStoreError> for types::Error {
         use KvStoreError::*;
         match err {
             Uninitialized => panic!("{}", err),
-            Ok => panic!("{err} should never be converted to an error"),
             BadRequest => types::Error::InvalidArgument,
-            NotFound => types::Error::OptionalNone,
             PreconditionFailed => types::Error::InvalidArgument,
             PayloadTooLarge => types::Error::InvalidArgument,
             InternalError => types::Error::InvalidArgument,
@@ -161,18 +158,16 @@ impl From<ResourceTableError> for types::Error {
     }
 }
 
-impl From<KvStoreError> for KvStatus {
+impl From<KvStoreError> for KvError {
     fn from(err: KvStoreError) -> Self {
         use KvStoreError::*;
         match err {
             Uninitialized => panic!("{}", err),
-            Ok => KvStatus::Ok,
-            BadRequest => KvStatus::BadRequest,
-            NotFound => KvStatus::NotFound,
-            PreconditionFailed => KvStatus::PreconditionFailed,
-            PayloadTooLarge => KvStatus::PayloadTooLarge,
-            InternalError => KvStatus::InternalError,
-            TooManyRequests => KvStatus::TooManyRequests,
+            BadRequest => KvError::BadRequest,
+            PreconditionFailed => KvError::PreconditionFailed,
+            PayloadTooLarge => KvError::PayloadTooLarge,
+            InternalError => KvError::InternalError,
+            TooManyRequests => KvError::TooManyRequests,
         }
     }
 }
@@ -218,7 +213,7 @@ impl From<error::Error> for types::Error {
             Error::HyperError(e) if e.is_parse() => types::Error::HttpInvalid,
             Error::HyperError(e) if e.is_user() => types::Error::HttpUser,
             Error::HyperError(e) if e.is_incomplete_message() => types::Error::HttpIncomplete,
-            Error::HyperError(_) => types::Error::UnknownError,
+            Error::HyperError(_) => types::Error::GenericError,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => e.into(),
             // We delegate to some error types' own implementation of `to_fastly_status`.
@@ -263,6 +258,17 @@ impl From<error::Error> for types::Error {
             | Error::InvalidAlpnRepsonse { .. }
             | Error::DeviceDetectionError(_)
             | Error::SharedMemory => types::Error::GenericError,
+        }
+    }
+}
+
+impl From<error::Error> for KvError {
+    fn from(err: error::Error) -> Self {
+        use error::Error;
+        match err {
+            Error::InvalidStatusCode { .. } | Error::InvalidArgument => KvError::BadRequest,
+            Error::LimitExceeded { .. } => KvError::PayloadTooLarge,
+            _ => KvError::InternalError,
         }
     }
 }

@@ -1,15 +1,13 @@
-use super::fastly::api::{shielding, types};
+use crate::component::bindings::fastly::compute::{shielding, types};
 use crate::config::Backend;
 use crate::error::Error;
 use crate::linking::{ComponentCtx, SessionView};
 use http::Uri;
 use std::str::FromStr;
+use wasmtime::component::Resource;
 
 impl shielding::Host for ComponentCtx {
-    async fn shield_info(&mut self, name: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
-        // Validate input name and return the unsupported error.
-        let name = String::from_utf8(name)?;
-
+    fn shield_info(&mut self, name: String, max_len: u64) -> Result<String, types::Error> {
         let running_on = self.session().shielding_sites().is_local(&name);
         let unencrypted = self
             .session()
@@ -28,15 +26,15 @@ impl shielding::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let mut output_bytes = Vec::new();
+        let mut output = String::new();
 
-        output_bytes.push(if running_on { 1u8 } else { 0 });
-        output_bytes.extend_from_slice(unencrypted.as_bytes());
-        output_bytes.push(0);
-        output_bytes.extend_from_slice(encrypted.as_bytes());
-        output_bytes.push(0);
+        output.push(if running_on { '\x01' } else { '\0' });
+        output += unencrypted.as_str();
+        output.push('\0');
+        output += encrypted.as_str();
+        output.push('\0');
 
-        let target_len = output_bytes.len() as u64;
+        let target_len = output.len() as u64;
 
         if target_len > max_len {
             return Err(Error::BufferLengthError {
@@ -46,22 +44,16 @@ impl shielding::Host for ComponentCtx {
             .into());
         }
 
-        Ok(output_bytes)
+        Ok(output)
     }
 
-    async fn backend_for_shield(
+    fn backend_for_shield(
         &mut self,
-        name: Vec<u8>,
-        options_mask: shielding::ShieldBackendOptionsMask,
-        options: shielding::ShieldBackendOptions,
+        name: String,
+        _options: shielding::ShieldBackendOptions,
         max_len: u64,
-    ) -> Result<Vec<u8>, types::Error> {
-        // Validate our inputs and return the unsupported error.
-        let shield_uri = String::from_utf8(name)?;
-
-        if options_mask.contains(shielding::ShieldBackendOptionsMask::CACHE_KEY) {
-            let _ = String::from_utf8(options.cache_key)?;
-        }
+    ) -> Result<String, types::Error> {
+        let shield_uri = name;
 
         let Ok(uri) = Uri::from_str(&shield_uri) else {
             return Err(Error::InvalidArgument.into());
@@ -82,9 +74,7 @@ impl shielding::Host for ComponentCtx {
             return Err(Error::BackendNameRegistryError(new_name).into());
         }
 
-        let new_name_bytes = new_name.as_bytes().to_vec();
-
-        let target_len = new_name_bytes.len() as u64;
+        let target_len = new_name.len() as u64;
 
         if target_len > max_len {
             return Err(Error::BufferLengthError {
@@ -94,6 +84,15 @@ impl shielding::Host for ComponentCtx {
             .into());
         }
 
-        Ok(new_name_bytes)
+        Ok(new_name)
+    }
+}
+
+impl shielding::HostExtraShieldBackendOptions for ComponentCtx {
+    fn drop(
+        &mut self,
+        _options: Resource<shielding::ExtraShieldBackendOptions>,
+    ) -> wasmtime::Result<()> {
+        Ok(())
     }
 }
