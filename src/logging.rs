@@ -1,7 +1,10 @@
 use std::{
     io::{self, Write},
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
 };
+use tokio::io::AsyncWrite;
 
 /// A named logging endpoint.
 #[derive(Clone)]
@@ -69,19 +72,25 @@ impl Write for LogEndpoint {
     }
 }
 
-impl wasmtime_wasi::p2::StdoutStream for LogEndpoint {
-    fn stream(&self) -> Box<dyn wasmtime_wasi::p2::OutputStream> {
+impl wasmtime_wasi::cli::StdoutStream for LogEndpoint {
+    fn p2_stream(&self) -> Box<dyn wasmtime_wasi::p2::OutputStream> {
         Box::new(self.clone())
     }
 
-    fn isatty(&self) -> bool {
-        false
+    fn async_stream(&self) -> Box<dyn AsyncWrite + Send + Sync> {
+        Box::new(self.clone())
     }
 }
 
 #[wiggle::async_trait]
 impl wasmtime_wasi::p2::Pollable for LogEndpoint {
     async fn ready(&mut self) {}
+}
+
+impl wasmtime_wasi::cli::IsTerminal for LogEndpoint {
+    fn is_terminal(&self) -> bool {
+        false
+    }
 }
 
 impl wasmtime_wasi::p2::OutputStream for LogEndpoint {
@@ -97,5 +106,30 @@ impl wasmtime_wasi::p2::OutputStream for LogEndpoint {
 
     fn check_write(&mut self) -> wasmtime_wasi::p2::StreamResult<usize> {
         Ok(1024 * 1024)
+    }
+}
+
+impl AsyncWrite for LogEndpoint {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        self.write_entry(&buf)?;
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Poll::Ready(<Self as Write>::flush(&mut self))
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Poll::Ready(Ok(()))
     }
 }

@@ -1,7 +1,8 @@
 use {
-    super::fastly::api::{log, types},
+    crate::component::bindings::fastly::compute::{log, types},
     crate::linking::{ComponentCtx, SessionView},
     lazy_static::lazy_static,
+    wasmtime::component::Resource,
 };
 
 fn is_reserved_endpoint(name: &[u8]) -> bool {
@@ -16,21 +17,26 @@ fn is_reserved_endpoint(name: &[u8]) -> bool {
     RESERVED_ENDPOINT_RE.is_match(name)
 }
 
-impl log::Host for ComponentCtx {
-    async fn endpoint_get(&mut self, name: String) -> Result<log::Handle, types::Error> {
+impl log::Host for ComponentCtx {}
+
+impl log::HostEndpoint for ComponentCtx {
+    fn open(&mut self, name: String) -> Result<Resource<log::Endpoint>, types::OpenError> {
         let name = name.as_bytes();
 
         if is_reserved_endpoint(name) {
-            return Err(types::Error::InvalidArgument.into());
+            return Err(types::OpenError::Reserved);
         }
 
         Ok(self.session_mut().log_endpoint_handle(name).into())
     }
 
-    async fn write(&mut self, h: log::Handle, msg: String) -> Result<u32, types::Error> {
+    fn write(&mut self, h: Resource<log::Endpoint>, msg: Vec<u8>) -> Result<u32, types::Error> {
         let endpoint = self.session().log_endpoint(h.into())?;
-        let msg = msg.as_bytes();
         endpoint.write_entry(&msg)?;
         Ok(u32::try_from(msg.len()).unwrap())
+    }
+
+    fn drop(&mut self, _endpoint: Resource<log::Endpoint>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }

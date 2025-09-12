@@ -1,5 +1,6 @@
 use {
-    super::fastly::api::{types, uap},
+    crate::component::bindings::fastly::adapter::adapter_uap,
+    crate::component::bindings::fastly::compute::types,
     crate::{error::Error, linking::ComponentCtx},
     wasmtime::component::Resource,
 };
@@ -7,8 +8,8 @@ use {
 #[derive(Debug)]
 pub struct UserAgent {}
 
-impl uap::HostUserAgent for ComponentCtx {
-    async fn family(
+impl adapter_uap::HostUserAgent for ComponentCtx {
+    fn family(
         &mut self,
         _agent: Resource<UserAgent>,
         _max_len: u64,
@@ -16,7 +17,7 @@ impl uap::HostUserAgent for ComponentCtx {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 
-    async fn major(
+    fn major(
         &mut self,
         _agent: Resource<UserAgent>,
         _max_len: u64,
@@ -24,7 +25,7 @@ impl uap::HostUserAgent for ComponentCtx {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 
-    async fn minor(
+    fn minor(
         &mut self,
         _agent: Resource<UserAgent>,
         _max_len: u64,
@@ -32,7 +33,7 @@ impl uap::HostUserAgent for ComponentCtx {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 
-    async fn patch(
+    fn patch(
         &mut self,
         _agent: Resource<UserAgent>,
         _max_len: u64,
@@ -40,13 +41,13 @@ impl uap::HostUserAgent for ComponentCtx {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 
-    async fn drop(&mut self, _agent: Resource<UserAgent>) -> wasmtime::Result<()> {
+    fn drop(&mut self, _agent: Resource<UserAgent>) -> wasmtime::Result<()> {
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
 }
 
-impl uap::Host for ComponentCtx {
-    async fn parse(&mut self, _user_agent: String) -> Result<Resource<UserAgent>, types::Error> {
+impl adapter_uap::Host for ComponentCtx {
+    fn parse(&mut self, _user_agent: Vec<u8>) -> Result<Resource<UserAgent>, types::Error> {
         // not available
         Err(Error::NotAvailable("User-agent parsing is not available").into())
     }
