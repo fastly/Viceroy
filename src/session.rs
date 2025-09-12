@@ -41,7 +41,7 @@ use {
             KvInsertMode, KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle,
             KvStoreListHandle, KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle,
             PendingKvListHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
-            ResponseHandle, SecretHandle, SecretStoreHandle,
+            RequestPromiseHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
         },
         ExecuteCtx,
     },
@@ -207,10 +207,10 @@ impl Session {
     pub fn downstream_compliance_region(
         &self,
         handle: RequestHandle,
-    ) -> Result<Option<&[u8]>, HandleError> {
+    ) -> Result<Option<&str>, HandleError> {
         Ok(self
             .downstream_metadata(handle)?
-            .map(|md| md.compliance_region.as_slice()))
+            .map(|md| md.compliance_region.as_str()))
     }
 
     /// Retrieve the request ID for the given request handle.
@@ -727,7 +727,7 @@ impl Session {
         obj: Vec<u8>,
         mode: Option<KvInsertMode>,
         generation: Option<u64>,
-        metadata: Option<Vec<u8>>,
+        metadata: Option<String>,
         ttl: Option<Duration>,
     ) -> Result<(), KvStoreError> {
         let mode = match mode {
@@ -789,7 +789,7 @@ impl Session {
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<(), KvStoreError> {
+    ) -> Result<bool, KvStoreError> {
         self.kv_store().delete(obj_store_key, obj_key)
     }
 
@@ -843,7 +843,7 @@ impl Session {
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<ObjectValue, KvStoreError> {
+    ) -> Result<Option<ObjectValue>, KvStoreError> {
         self.kv_store().lookup(obj_store_key, obj_key)
     }
 
@@ -1160,6 +1160,10 @@ impl Session {
         // Invalid handle, reinsert the item.
         debug_assert!(self.async_items[handle].is_none());
         self.async_items[handle] = Some(item);
+    }
+
+    pub fn new_ready(&mut self) -> AsyncItemHandle {
+        self.async_items.push(Some(AsyncItem::Ready))
     }
 
     /// Returns the unique identifier for the current session.
@@ -1522,6 +1526,18 @@ impl From<AsyncItemHandle> for CacheBusyHandle {
 
 impl From<CacheBusyHandle> for AsyncItemHandle {
     fn from(h: CacheBusyHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for RequestPromiseHandle {
+    fn from(h: AsyncItemHandle) -> RequestPromiseHandle {
+        RequestPromiseHandle::from(h.as_u32())
+    }
+}
+
+impl From<RequestPromiseHandle> for AsyncItemHandle {
+    fn from(h: RequestPromiseHandle) -> AsyncItemHandle {
         AsyncItemHandle::from_u32(h.into())
     }
 }

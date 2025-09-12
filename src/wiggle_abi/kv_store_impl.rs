@@ -82,7 +82,7 @@ impl FastlyKvStore for Session {
             .await?;
 
         match resp {
-            Ok(value) => {
+            Ok(Some(value)) => {
                 let body_handle = self.insert_body(value.body.into());
 
                 memory.write(body_handle_out, body_handle)?;
@@ -99,13 +99,17 @@ impl FastlyKvStore for Session {
                             });
                         }
                         memory.copy_from_slice(
-                            &value.metadata,
+                            value.metadata.as_bytes(),
                             metadata_buf.as_array(meta_len_u32),
                         )?;
                     }
                 }
                 memory.write(generation_out, 0)?;
                 memory.write(kv_error_out, KvError::Ok)?;
+                Ok(())
+            }
+            Ok(None) => {
+                memory.write(kv_error_out, KvError::NotFound)?;
                 Ok(())
             }
             Err(e) => {
@@ -133,7 +137,7 @@ impl FastlyKvStore for Session {
             .await?;
 
         match resp {
-            Ok(value) => {
+            Ok(Some(value)) => {
                 let body_handle = self.insert_body(value.body.into());
 
                 memory.write(body_handle_out, body_handle)?;
@@ -150,13 +154,17 @@ impl FastlyKvStore for Session {
                             });
                         }
                         memory.copy_from_slice(
-                            &value.metadata,
+                            value.metadata.as_bytes(),
                             metadata_buf.as_array(meta_len_u32),
                         )?;
                     }
                 }
                 memory.write(generation_out, value.generation)?;
                 memory.write(kv_error_out, KvError::Ok)?;
+                Ok(())
+            }
+            Ok(None) => {
+                memory.write(kv_error_out, KvError::NotFound)?;
                 Ok(())
             }
             Err(e) => {
@@ -211,6 +219,11 @@ impl FastlyKvStore for Session {
             config.metadata,
             config.metadata_len,
         )?;
+        let meta = if let Some(meta) = meta {
+            Some(String::from_utf8(meta).map_err(|_| Error::InvalidArgument)?)
+        } else {
+            None
+        };
 
         let ttl = if insert_config_mask.contains(KvInsertConfigOptions::TIME_TO_LIVE_SEC) {
             Some(std::time::Duration::from_secs(

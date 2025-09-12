@@ -8,7 +8,7 @@ use {
     crate::{
         body::Body,
         error::Error,
-        object_store::{KvStoreError, ObjectKey, ObjectStoreError},
+        object_store::{ObjectKey, ObjectStoreError},
         session::Session,
         wiggle_abi::{
             fastly_object_store::FastlyObjectStore,
@@ -45,7 +45,7 @@ impl FastlyObjectStore for Session {
         let store = self.get_kv_store_key(store.into()).unwrap();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         match self.obj_lookup(store.clone(), key) {
-            Ok(obj) => {
+            Ok(Some(obj)) => {
                 let new_handle = self.insert_body(Body::from(obj.body));
                 memory.write(opt_body_handle_out, new_handle)?;
                 Ok(())
@@ -53,7 +53,7 @@ impl FastlyObjectStore for Session {
             // Don't write to the invalid handle as the SDK will return Ok(None)
             // if the object does not exist. We need to return `Ok(())` here to
             // make sure Viceroy does not crash
-            Err(KvStoreError::NotFound) => Ok(()),
+            Ok(None) => Ok(()),
             Err(err) => Err(err.into()),
         }
     }
@@ -90,12 +90,12 @@ impl FastlyObjectStore for Session {
             .await?;
         // proceed with the normal match from lookup()
         match pending_obj {
-            Ok(obj) => {
+            Ok(Some(obj)) => {
                 let new_handle = self.insert_body(Body::from(obj.body));
                 memory.write(opt_body_handle_out, new_handle)?;
                 Ok(())
             }
-            Err(KvStoreError::NotFound) => Ok(()),
+            Ok(None) => Ok(()),
             Err(err) => Err(err.into()),
         }
     }
@@ -171,10 +171,15 @@ impl FastlyObjectStore for Session {
         _memory: &mut GuestMemory<'_>,
         pending_delete_handle: PendingKvDeleteHandle,
     ) -> Result<(), Error> {
-        Ok((self
+        if !(self
             .take_pending_kv_delete(pending_delete_handle)?
             .task()
             .recv()
-            .await?)?)
+            .await?)?
+        {
+            Err(Error::ValueAbsent)
+        } else {
+            Ok(())
+        }
     }
 }

@@ -1,10 +1,12 @@
-use super::fastly::api::{acl, http_body, types};
+use crate::component::bindings::fastly::compute::{acl, http_body, types};
 use crate::linking::{ComponentCtx, SessionView};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
+use wasmtime::component::Resource;
 
-impl acl::Host for ComponentCtx {
-    async fn open(&mut self, acl_name: Vec<u8>) -> Result<acl::AclHandle, types::Error> {
-        let acl_name = String::from_utf8(acl_name)?;
+impl acl::Host for ComponentCtx {}
+
+impl acl::HostAcl for ComponentCtx {
+    fn open(&mut self, acl_name: String) -> Result<Resource<acl::Acl>, types::Error> {
         let handle = self
             .session_mut()
             .acl_handle_by_name(&acl_name)
@@ -12,35 +14,27 @@ impl acl::Host for ComponentCtx {
         Ok(handle.into())
     }
 
-    async fn lookup(
+    fn lookup(
         &mut self,
-        acl_handle: acl::AclHandle,
-        ip_octets: Vec<u8>,
-        ip_len: u64,
-    ) -> Result<(Option<http_body::BodyHandle>, acl::AclError), types::Error> {
-        let acl = self
-            .session()
-            .acl_by_handle(acl_handle.into())
-            .ok_or(types::Error::BadHandle)?;
+        acl_handle: Resource<acl::Acl>,
+        ip_addr: acl::IpAddress,
+    ) -> Result<Option<Resource<http_body::Body>>, acl::AclError> {
+        let acl = self.session().acl_by_handle(acl_handle.into()).unwrap();
 
-        let ip: IpAddr = match ip_len {
-            4 => IpAddr::V4(Ipv4Addr::from(
-                TryInto::<[u8; 4]>::try_into(ip_octets).unwrap(),
-            )),
-            16 => IpAddr::V6(Ipv6Addr::from(
-                TryInto::<[u8; 16]>::try_into(ip_octets).unwrap(),
-            )),
-            _ => return Err(types::Error::InvalidArgument),
-        };
+        let ip: IpAddr = ip_addr.into();
 
         match acl.lookup(ip) {
             Some(entry) => {
                 let body =
-                    serde_json::to_vec_pretty(&entry).map_err(|_| types::Error::GenericError)?;
+                    serde_json::to_vec_pretty(&entry).map_err(|_| acl::AclError::GenericError)?;
                 let body_handle = self.session_mut().insert_body(body.into());
-                Ok((Some(body_handle.into()), acl::AclError::Ok))
+                Ok(Some(body_handle.into()))
             }
-            None => Ok((None, acl::AclError::NoContent)),
+            None => Ok(None),
         }
+    }
+
+    fn drop(&mut self, _acl_handle: Resource<acl::Acl>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }

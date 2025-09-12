@@ -1,5 +1,5 @@
 use {
-    super::fastly::api::{http_types, types},
+    crate::component::bindings::fastly::compute::{http_types, types},
     crate::linking::ComponentCtx,
 };
 

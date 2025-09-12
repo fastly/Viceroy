@@ -1,28 +1,17 @@
 use {
-    super::fastly::api::{geo, types},
-    crate::{
-        error,
-        linking::{ComponentCtx, SessionView},
-    },
-    std::net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    crate::component::bindings::fastly::compute::{geo, types},
+    crate::{error, linking::ComponentCtx},
+    std::net::IpAddr,
 };
 
 impl geo::Host for ComponentCtx {
-    async fn lookup(&mut self, octets: Vec<u8>, max_len: u64) -> Result<Vec<u8>, types::Error> {
-        let ip_addr: IpAddr = match octets.len() {
-            4 => IpAddr::V4(Ipv4Addr::from(
-                TryInto::<[u8; 4]>::try_into(octets).unwrap(),
-            )),
-            16 => IpAddr::V6(Ipv6Addr::from(
-                TryInto::<[u8; 16]>::try_into(octets).unwrap(),
-            )),
-            _ => return Err(error::Error::InvalidArgument.into()),
-        };
+    fn lookup(&mut self, addr: types::IpAddress, max_len: u64) -> Result<String, types::Error> {
+        let ip_addr: IpAddr = addr.into();
 
         let json = self
             .session()
             .geolocation_lookup(&ip_addr)
-            .ok_or(geo::Error::UnknownError)?;
+            .ok_or(geo::Error::GenericError)?;
 
         if json.len() > usize::try_from(max_len).unwrap() {
             return Err(error::Error::BufferLengthError {
@@ -32,6 +21,6 @@ impl geo::Host for ComponentCtx {
             .into());
         }
 
-        Ok(json.into_bytes())
+        Ok(json)
     }
 }
