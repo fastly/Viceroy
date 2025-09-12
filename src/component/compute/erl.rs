@@ -1,10 +1,10 @@
 use {
-    super::fastly::api::{erl, types},
+    crate::component::bindings::fastly::compute::{erl, types},
     crate::linking::ComponentCtx,
 };
 
 impl erl::Host for ComponentCtx {
-    async fn check_rate(
+    fn check_rate(
         &mut self,
         _rc: String,
         _entry: String,
@@ -17,7 +17,7 @@ impl erl::Host for ComponentCtx {
         Ok(0)
     }
 
-    async fn ratecounter_increment(
+    fn ratecounter_increment(
         &mut self,
         _rc: String,
         _entry: String,
@@ -26,7 +26,7 @@ impl erl::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn ratecounter_lookup_rate(
+    fn ratecounter_lookup_rate(
         &mut self,
         _rc: String,
         _entry: String,
@@ -35,7 +35,7 @@ impl erl::Host for ComponentCtx {
         Ok(0)
     }
 
-    async fn ratecounter_lookup_count(
+    fn ratecounter_lookup_count(
         &mut self,
         _rc: String,
         _entry: String,
@@ -44,7 +44,7 @@ impl erl::Host for ComponentCtx {
         Ok(0)
     }
 
-    async fn penaltybox_add(
+    fn penaltybox_add(
         &mut self,
         _pb: String,
         _entry: String,
@@ -53,7 +53,7 @@ impl erl::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn penaltybox_has(&mut self, _pb: String, _entry: String) -> Result<u32, types::Error> {
-        Ok(0)
+    fn penaltybox_has(&mut self, _pb: String, _entry: String) -> Result<bool, types::Error> {
+        Ok(false)
     }
 }

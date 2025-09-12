@@ -20,7 +20,7 @@ pub struct DownstreamMetadata {
     ///
     /// For now this is just always `"none"`, but we place the field in the session
     /// to make it easier to implement custom configuration values later on.
-    pub compliance_region: Vec<u8>,
+    pub compliance_region: String,
     /// The originally received headers in this request, before the
     /// guest potentially modified them.
     pub original_headers: HeaderMap,

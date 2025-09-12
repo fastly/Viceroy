@@ -12,7 +12,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct ObjectValue {
     pub body: Vec<u8>,
-    pub metadata: Vec<u8>,
+    pub metadata: String,
     pub metadata_len: usize,
     pub generation: u64,
     pub expiration: Option<SystemTime>,
@@ -44,8 +44,8 @@ impl ObjectStores {
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<ObjectValue, KvStoreError> {
-        let mut res = Err(KvStoreError::Uninitialized);
+    ) -> Result<Option<ObjectValue>, KvStoreError> {
+        let mut res = Ok(None);
 
         self.stores
             .write()
@@ -53,17 +53,17 @@ impl ObjectStores {
             .entry(obj_store_key)
             .and_modify(|store| match store.get(&obj_key) {
                 Some(val) => {
-                    res = Ok(val.clone());
+                    res = Ok(Some(val.clone()));
                     // manages ttl
                     if let Some(exp) = val.expiration {
                         if SystemTime::now() >= exp {
                             store.remove(&obj_key);
-                            res = Err(KvStoreError::NotFound);
+                            res = Ok(None);
                         }
                     }
                 }
                 None => {
-                    res = Err(KvStoreError::NotFound);
+                    res = Ok(None);
                 }
             });
 
@@ -91,14 +91,16 @@ impl ObjectStores {
         obj: Vec<u8>,
         mode: KvInsertMode,
         generation: Option<u64>,
-        metadata: Option<Vec<u8>>,
+        metadata: Option<String>,
         ttl: Option<std::time::Duration>,
     ) -> Result<(), KvStoreError> {
         // manages ttl
-        let existing = self.lookup(obj_store_key.clone(), obj_key.clone());
+        let existing = self
+            .lookup(obj_store_key.clone(), obj_key.clone())
+            .map_err(|_| KvStoreError::InternalError)?;
 
         if let Some(g) = generation {
-            if let Ok(val) = &existing {
+            if let Some(val) = &existing {
                 if val.generation != g {
                     return Err(KvStoreError::PreconditionFailed);
                 }
@@ -108,7 +110,7 @@ impl ObjectStores {
         let out_obj = match mode {
             KvInsertMode::Overwrite => obj,
             KvInsertMode::Add => {
-                if existing.is_ok() {
+                if existing.is_some() {
                     // key exists, add fails
                     return Err(KvStoreError::PreconditionFailed);
                 }
@@ -117,11 +119,10 @@ impl ObjectStores {
             KvInsertMode::Append => {
                 let mut out_obj;
                 match existing {
-                    Err(KvStoreError::NotFound) => {
+                    None => {
                         out_obj = obj;
                     }
-                    Err(_) => return Err(KvStoreError::InternalError),
-                    Ok(v) => {
+                    Some(v) => {
                         out_obj = v.body;
                         out_obj.append(&mut obj.clone());
                     }
@@ -131,11 +132,10 @@ impl ObjectStores {
             KvInsertMode::Prepend => {
                 let mut out_obj;
                 match existing {
-                    Err(KvStoreError::NotFound) => {
+                    None => {
                         out_obj = obj;
                     }
-                    Err(_) => return Err(KvStoreError::InternalError),
-                    Ok(mut v) => {
+                    Some(mut v) => {
                         out_obj = obj;
                         out_obj.append(&mut v.body);
                     }
@@ -148,7 +148,7 @@ impl ObjectStores {
 
         let mut obj_val = ObjectValue {
             body: out_obj,
-            metadata: vec![],
+            metadata: String::new(),
             metadata_len: 0,
             generation: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -187,8 +187,8 @@ impl ObjectStores {
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<(), KvStoreError> {
-        let mut res = Ok(());
+    ) -> Result<bool, KvStoreError> {
+        let mut res = Ok(true);
 
         self.stores
             .write()
@@ -200,14 +200,12 @@ impl ObjectStores {
                     // manages ttl
                     if let Some(exp) = val.expiration {
                         if SystemTime::now() >= exp {
-                            res = Err(KvStoreError::NotFound);
+                            res = Ok(false);
                         }
                     }
                     store.remove(&obj_key);
                 }
-                None => {
-                    res = Err(KvStoreError::NotFound);
-                }
+                None => res = Ok(false),
             });
 
         res
@@ -361,12 +359,8 @@ impl From<&ObjectStoreError> for FastlyStatus {
 pub enum KvStoreError {
     #[error("The error was not set")]
     Uninitialized,
-    #[error("There was no error")]
-    Ok,
     #[error("KV store cannot or will not process the request due to something that is perceived to be a client error")]
     BadRequest,
-    #[error("KV store cannot find the requested resource")]
-    NotFound,
     #[error("KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)")]
     PreconditionFailed,
     #[error("The size limit for a KV store key was exceeded")]
@@ -377,18 +371,18 @@ pub enum KvStoreError {
     TooManyRequests,
 }
 
-impl From<&KvError> for KvStoreError {
+impl From<&KvError> for Result<Option<()>, KvStoreError> {
     fn from(e: &KvError) -> Self {
-        match e {
+        Err(match e {
+            KvError::Ok => return Ok(Some(())),
+            KvError::NotFound => return Ok(None),
             KvError::Uninitialized => KvStoreError::Uninitialized,
-            KvError::Ok => KvStoreError::Ok,
             KvError::BadRequest => KvStoreError::BadRequest,
-            KvError::NotFound => KvStoreError::NotFound,
             KvError::PreconditionFailed => KvStoreError::PreconditionFailed,
             KvError::PayloadTooLarge => KvStoreError::PayloadTooLarge,
             KvError::InternalError => KvStoreError::InternalError,
             KvError::TooManyRequests => KvStoreError::TooManyRequests,
-        }
+        })
     }
 }
 
@@ -396,9 +390,7 @@ impl From<&KvStoreError> for KvError {
     fn from(e: &KvStoreError) -> Self {
         match e {
             KvStoreError::Uninitialized => KvError::Uninitialized,
-            KvStoreError::Ok => KvError::Ok,
             KvStoreError::BadRequest => KvError::BadRequest,
-            KvStoreError::NotFound => KvError::NotFound,
             KvStoreError::PreconditionFailed => KvError::PreconditionFailed,
             KvStoreError::PayloadTooLarge => KvError::PayloadTooLarge,
             KvStoreError::InternalError => KvError::InternalError,
@@ -407,23 +399,11 @@ impl From<&KvStoreError> for KvError {
     }
 }
 
-impl From<&KvStoreError> for ObjectStoreError {
-    fn from(e: &KvStoreError) -> Self {
-        match e {
-            // the only real one
-            KvStoreError::NotFound => ObjectStoreError::MissingObject,
-            _ => ObjectStoreError::UnknownObjectStore("".to_string()),
-        }
-    }
-}
-
 impl From<&KvStoreError> for FastlyStatus {
     fn from(e: &KvStoreError) -> Self {
         match e {
             KvStoreError::Uninitialized => panic!("{}", e),
-            KvStoreError::Ok => FastlyStatus::Ok,
             KvStoreError::BadRequest => FastlyStatus::Inval,
-            KvStoreError::NotFound => FastlyStatus::None,
             KvStoreError::PreconditionFailed => FastlyStatus::Inval,
             KvStoreError::PayloadTooLarge => FastlyStatus::Inval,
             KvStoreError::InternalError => FastlyStatus::Inval,
@@ -521,7 +501,8 @@ mod tests {
         let res = stores.store_exists(STORE_NAME);
         match res {
             Ok(true) => {}
-            _ => panic!("should have been OK(true)"),
+            Ok(false) => panic!("should have Ok(true)"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
 
@@ -546,7 +527,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
 
@@ -556,10 +537,11 @@ mod tests {
             ObjectKey(key.clone()),
         );
         match res {
-            Ok(ov) => {
+            Ok(Some(ov)) => {
                 assert_eq!(ov.body, val1.as_bytes().to_vec())
             }
-            Err(_) => panic!("should have been OK"),
+            Ok(None) => panic!("should have been Ok(Some(_))"),
+            Err(_) => panic!("should have been Ok(_)"),
         }
 
         // list
@@ -570,7 +552,7 @@ mod tests {
                 let val = format!(r#"{{"data":["{key}"],"meta":{{"limit":{limit}}}}}"#);
                 assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
             }
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // delete
@@ -580,7 +562,7 @@ mod tests {
         );
         match res {
             Ok(_) => {}
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
 
@@ -596,8 +578,9 @@ mod tests {
             ObjectKey("bad_key".to_string()),
         );
         match res {
-            Ok(_) => panic!("should not have been OK"),
-            Err(e) => assert_eq!(e, KvStoreError::NotFound),
+            Ok(Some(_)) => panic!("should have been Ok(None)"),
+            Ok(None) => {}
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         let res = stores.delete(
@@ -605,8 +588,9 @@ mod tests {
             ObjectKey("bad_key".to_string()),
         );
         match res {
-            Ok(_) => panic!("should not have been OK"),
-            Err(e) => assert_eq!(e, KvStoreError::NotFound),
+            Ok(true) => panic!("should have been Ok(false)"),
+            Ok(false) => {}
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
 
@@ -657,7 +641,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
         // append val3
@@ -671,7 +655,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
         let res = stores.lookup(
@@ -679,11 +663,12 @@ mod tests {
             ObjectKey(key.clone()),
         );
         match res {
-            Ok(ov) => {
+            Ok(Some(ov)) => {
                 let val = format!("{val2}{val1}{val3}");
                 assert_eq!(ov.body, val.as_bytes().to_vec())
             }
-            Err(_) => panic!("should have been OK"),
+            Ok(None) => panic!("should have been Ok(Some((_))"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // overwrite val3
@@ -693,11 +678,11 @@ mod tests {
             val3.clone().into(),
             KvInsertMode::Overwrite,
             None,
-            Some(val2.as_bytes().to_vec()),
+            Some(val2.clone()),
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
 
@@ -707,11 +692,12 @@ mod tests {
             ObjectKey(key.clone()),
         );
         match res {
-            Ok(ov) => {
+            Ok(Some(ov)) => {
                 assert_eq!(ov.body, val3.as_bytes().to_vec());
-                assert_eq!(ov.metadata, val2.as_bytes().to_vec());
+                assert_eq!(ov.metadata, val2);
             }
-            Err(_) => panic!("should have been OK"),
+            Ok(None) => panic!("should have been Ok(Some(_))"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
 
@@ -736,7 +722,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
 
@@ -747,11 +733,12 @@ mod tests {
             ObjectKey(key.clone()),
         );
         match res {
-            Ok(ov) => {
+            Ok(Some(ov)) => {
                 assert_eq!(ov.body, val1.as_bytes().to_vec());
                 generation = ov.generation;
             }
-            Err(_) => panic!("should have been OK"),
+            Ok(None) => panic!("should have been Ok(Some(_))"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // test generation match failure
@@ -781,7 +768,7 @@ mod tests {
         );
         match res {
             Ok(_) => {}
-            _ => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // check result
@@ -790,10 +777,11 @@ mod tests {
             ObjectKey(key.clone()),
         );
         match res {
-            Ok(ov) => {
+            Ok(Some(ov)) => {
                 assert_eq!(ov.body, val1.as_bytes().to_vec());
             }
-            Err(_) => panic!("should have been OK"),
+            Ok(None) => panic!("should have been Ok(Some(_))"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
 
@@ -824,7 +812,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
 
@@ -839,7 +827,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
         // insert val2
@@ -853,7 +841,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
         // insert val3
@@ -867,7 +855,7 @@ mod tests {
             None,
         );
         match res {
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
             _ => {}
         }
 
@@ -881,7 +869,7 @@ mod tests {
                 );
                 assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
             }
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // list w/prefix
@@ -899,7 +887,7 @@ mod tests {
                 );
                 assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
             }
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // list w/prefix&limit
@@ -918,7 +906,7 @@ mod tests {
                 );
                 assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
             }
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // list w/prefix&limit&cursor
@@ -938,7 +926,7 @@ mod tests {
                 );
                 assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
             }
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
 
         // list w/prefix&limit&cursor
@@ -957,7 +945,7 @@ mod tests {
                 );
                 assert_eq!(std::str::from_utf8(&ov).unwrap(), val)
             }
-            Err(_) => panic!("should have been OK"),
+            Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
 }

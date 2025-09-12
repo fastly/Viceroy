@@ -1,6 +1,6 @@
 use {
-    super::fastly::api::{http_resp, http_types, types},
-    super::{headers::write_values, types::TrappableError},
+    crate::component::bindings::fastly::compute::{http_body, http_resp, http_types, types},
+    crate::component::compute::headers::{get_names, get_values},
     crate::{
         error::Error,
         linking::{ComponentCtx, SessionView},
@@ -9,28 +9,69 @@ use {
     cfg_if::cfg_if,
     http::{HeaderName, HeaderValue},
     hyper::http::response::Response,
-    std::net::IpAddr,
+    wasmtime::component::Resource,
 };
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 impl http_resp::Host for ComponentCtx {
-    async fn new(&mut self) -> Result<http_types::ResponseHandle, types::Error> {
+    fn send_downstream(
+        &mut self,
+        h: Resource<http_resp::Response>,
+        b: Resource<http_body::Body>,
+    ) -> Result<(), types::Error> {
+        let resp = {
+            // Take the response parts and body from the session, and use them to build a response.
+            // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
+            let resp_parts = self.session_mut().take_response_parts(h.into())?;
+            let body = self.session_mut().take_body(b.into())?;
+            Response::from_parts(resp_parts, body)
+        }; // Set the downstream response, and return.
+        self.session_mut().send_downstream_response(resp)?;
+        Ok(())
+    }
+
+    fn send_downstream_streaming(
+        &mut self,
+        h: Resource<http_resp::Response>,
+        b: Resource<http_body::Body>,
+    ) -> Result<(), types::Error> {
+        let resp = {
+            // Take the response parts and body from the session, and use them to build a response.
+            // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
+            let resp_parts = self.session_mut().take_response_parts(h.into())?;
+            let body = self.session_mut().begin_streaming(b.into())?;
+            Response::from_parts(resp_parts, body)
+        }; // Set the downstream response, and return.
+        self.session_mut().send_downstream_response(resp)?;
+        Ok(())
+    }
+
+    fn close(&mut self, h: Resource<http_resp::Response>) -> Result<(), types::Error> {
+        // We don't do anything with the parts, but we do pass the error up if
+        // the handle given doesn't exist
+        self.session_mut().take_response_parts(h.into())?;
+        Ok(())
+    }
+}
+
+impl http_resp::HostResponse for ComponentCtx {
+    fn new(&mut self) -> Result<Resource<http_resp::Response>, types::Error> {
         let (parts, _) = Response::new(()).into_parts();
         Ok(self.session_mut().insert_response_parts(parts).into())
     }
 
-    async fn status_get(
+    fn get_status(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
     ) -> Result<http_types::HttpStatus, types::Error> {
         let parts = self.session().response_parts(h.into())?;
         Ok(parts.status.as_u16())
     }
 
-    async fn status_set(
+    fn set_status(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         status: http_types::HttpStatus,
     ) -> Result<(), types::Error> {
         let resp = self.session_mut().response_parts_mut(h.into())?;
@@ -39,9 +80,9 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn header_append(
+    fn append_header(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         name: String,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
@@ -56,56 +97,22 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn send_downstream(
+    fn get_header_names(
         &mut self,
-        h: http_types::ResponseHandle,
-        b: http_types::BodyHandle,
-        streaming: bool,
-    ) -> Result<(), types::Error> {
-        let resp = {
-            // Take the response parts and body from the session, and use them to build a response.
-            // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
-            let resp_parts = self.session_mut().take_response_parts(h.into())?;
-            let body = if streaming {
-                self.session_mut().begin_streaming(b.into())?
-            } else {
-                self.session_mut().take_body(b.into())?
-            };
-            Response::from_parts(resp_parts, body)
-        }; // Set the downstream response, and return.
-        self.session_mut().send_downstream_response(resp)?;
-        Ok(())
-    }
-
-    async fn header_names_get(
-        &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
+    ) -> Result<(String, Option<u32>), types::Error> {
         let headers = &self.session_mut().response_parts(h.into())?.headers;
 
-        let (buf, next) = write_values(
-            headers.keys(),
-            b'\0',
-            usize::try_from(max_len).unwrap(),
-            cursor,
-        )
-        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
+        let (buf, next) = get_names(headers.keys(), max_len, cursor)?;
 
-        // At this point we know that the buffer being empty will also mean that there are no
-        // remaining entries to read.
-        if buf.is_empty() {
-            debug_assert!(next.is_none());
-            Ok(None)
-        } else {
-            Ok(Some((buf, next)))
-        }
+        Ok((buf, next))
     }
 
-    async fn header_value_get(
+    fn get_header_value(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         name: String,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
@@ -127,51 +134,40 @@ impl http_resp::Host for ComponentCtx {
         Ok(Some(value.as_bytes().to_owned()))
     }
 
-    async fn header_values_get(
+    fn get_header_values(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, TrappableError> {
+    ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
         cfg_if! {
             if #[cfg(feature = "test-fatalerror-config")] {
                 // Avoid warnings:
                 let _ = (h, name, max_len, cursor);
                 return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into());
             } else {
-                use std::str::FromStr;
                 if name.len() > MAX_HEADER_NAME_LEN {
                     return Err(Error::InvalidArgument.into());
                 }
 
-                let headers = &self.session().response_parts(h.into())?.headers;
+                let headers = &self.session().response_parts(h.into()).unwrap().headers;
 
-                let values = headers.get_all(HeaderName::from_str(&name)?);
-
-                let (buf, next) = write_values(
-                    values.into_iter(),
-                    b'\0',
-                    usize::try_from(max_len).unwrap(),
+                let (buf, next) = get_values(
+                    headers,
+                    &name,
+                    max_len,
                     cursor,
-                )
-                .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
+                )?;
 
-                // At this point we know that the buffer being empty will also mean that there are no
-                // remaining entries to read.
-                if buf.is_empty() {
-                    debug_assert!(next.is_none());
-                    Ok(None)
-                } else {
-                    Ok(Some((buf, next)))
-                }
+                Ok((buf, next))
             }
         }
     }
 
-    async fn header_values_set(
+    fn set_header_values(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         name: String,
         values: Vec<u8>,
     ) -> Result<(), types::Error> {
@@ -203,9 +199,9 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn header_insert(
+    fn insert_header(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         name: String,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
@@ -221,9 +217,9 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn header_remove(
+    fn remove_header(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         name: String,
     ) -> Result<(), types::Error> {
         if name.len() > MAX_HEADER_NAME_LEN {
@@ -232,25 +228,23 @@ impl http_resp::Host for ComponentCtx {
 
         let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
-        headers
-            .remove(name)
-            .ok_or(types::Error::from(types::Error::InvalidArgument))?;
+        headers.remove(name).ok_or(types::Error::InvalidArgument)?;
 
         Ok(())
     }
 
-    async fn version_get(
+    fn get_version(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
     ) -> Result<http_types::HttpVersion, types::Error> {
         let req = self.session().response_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
     }
 
-    async fn version_set(
+    fn set_version(
         &mut self,
-        h: http_types::ResponseHandle,
+        h: Resource<http_resp::Response>,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
         let req = self.session_mut().response_parts_mut(h.into())?;
@@ -258,16 +252,9 @@ impl http_resp::Host for ComponentCtx {
         Ok(())
     }
 
-    async fn close(&mut self, h: http_types::ResponseHandle) -> Result<(), types::Error> {
-        // We don't do anything with the parts, but we do pass the error up if
-        // the handle given doesn't exist
-        self.session_mut().take_response_parts(h.into())?;
-        Ok(())
-    }
-
-    async fn framing_headers_mode_set(
+    fn set_framing_headers_mode(
         &mut self,
-        _h: http_types::ResponseHandle,
+        _h: Resource<http_resp::Response>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
         match mode {
@@ -278,9 +265,9 @@ impl http_resp::Host for ComponentCtx {
         }
     }
 
-    async fn http_keepalive_mode_set(
+    fn set_http_keepalive_mode(
         &mut self,
-        _: http_types::ResponseHandle,
+        _: Resource<http_resp::Response>,
         mode: http_resp::KeepaliveMode,
     ) -> Result<(), types::Error> {
         match mode {
@@ -291,40 +278,24 @@ impl http_resp::Host for ComponentCtx {
         }
     }
 
-    async fn get_addr_dest_ip(
+    fn get_remote_ip_addr(
         &mut self,
-        resp_handle: http_types::ResponseHandle,
-    ) -> Result<Vec<u8>, types::Error> {
-        let resp = self.session().response_parts(resp_handle.into())?;
-        let md = resp
-            .extensions
-            .get::<upstream::ConnMetadata>()
-            .ok_or(Error::ValueAbsent)?;
+        resp_handle: Resource<http_resp::Response>,
+    ) -> Option<http_resp::IpAddress> {
+        let resp = self.session().response_parts(resp_handle.into()).unwrap();
+        let md = resp.extensions.get::<upstream::ConnMetadata>()?;
 
-        match md.remote_addr.ip() {
-            IpAddr::V4(addr) => {
-                let octets = addr.octets();
-                debug_assert_eq!(octets.len(), 4);
-                Ok(Vec::from(octets))
-            }
-            IpAddr::V6(addr) => {
-                let octets = addr.octets();
-                debug_assert_eq!(octets.len(), 16);
-                Ok(Vec::from(octets))
-            }
-        }
+        Some(md.remote_addr.ip().into())
     }
 
-    async fn get_addr_dest_port(
-        &mut self,
-        resp_handle: http_types::ResponseHandle,
-    ) -> Result<u16, types::Error> {
-        let resp = self.session().response_parts(resp_handle.into())?;
-        let md = resp
-            .extensions
-            .get::<upstream::ConnMetadata>()
-            .ok_or(Error::ValueAbsent)?;
+    fn get_remote_port(&mut self, resp_handle: Resource<http_resp::Response>) -> Option<u16> {
+        let resp = self.session().response_parts(resp_handle.into()).unwrap();
+        let md = resp.extensions.get::<upstream::ConnMetadata>()?;
         let port = md.remote_addr.port();
-        Ok(port)
+        Some(port)
+    }
+
+    fn drop(&mut self, _response: Resource<http_resp::Response>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }
