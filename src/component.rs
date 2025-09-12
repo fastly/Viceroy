@@ -12,6 +12,10 @@ pub(crate) mod bindings {
 
             "fastly:compute/backend/[constructor]dynamic-backend-options": trappable,
 
+            // The trap-test test depends on being able to induce an artificial
+            // trap in `get-header-values`.
+            "fastly:compute/http-resp/[method]response.get-header-values": trappable,
+
             "fastly:compute/http-body/append": async | tracing,
             "fastly:compute/kv-store/await-delete": async | tracing,
             "fastly:compute/cache/await-entry": async | tracing,

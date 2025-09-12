@@ -134,13 +134,16 @@ impl http_resp::HostResponse for ComponentCtx {
         Ok(Some(value.as_bytes().to_owned()))
     }
 
+    // This function has an extra `wasmtime::Result` wrapped around its return
+    // type because it's marked as "trappable" in src/component.rs, in order
+    // to support the artificial trap used by the trap-test testcase.
     fn get_header_values(
         &mut self,
         h: Resource<http_resp::Response>,
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
+    ) -> wasmtime::Result<Result<(Vec<u8>, Option<u32>), types::Error>> {
         cfg_if! {
             if #[cfg(feature = "test-fatalerror-config")] {
                 // Avoid warnings:
@@ -148,19 +151,22 @@ impl http_resp::HostResponse for ComponentCtx {
                 return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into());
             } else {
                 if name.len() > MAX_HEADER_NAME_LEN {
-                    return Err(Error::InvalidArgument.into());
+                    return Ok(Err(Error::InvalidArgument.into()));
                 }
 
                 let headers = &self.session().response_parts(h.into()).unwrap().headers;
 
-                let (buf, next) = get_values(
+                let (buf, next) = match get_values(
                     headers,
                     &name,
                     max_len,
                     cursor,
-                )?;
+                ) {
+                    Ok(tuple) => tuple,
+                    Err(err) => return Ok(Err(err)),
+                };
 
-                Ok((buf, next))
+                Ok(Ok((buf, next)))
             }
         }
     }
