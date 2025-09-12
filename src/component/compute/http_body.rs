@@ -1,7 +1,7 @@
 use {
-    super::{
-        fastly::api::{http_body, http_types, types},
-        headers,
+    crate::component::{
+        bindings::fastly::compute::{http_body, types},
+        compute::headers,
     },
     crate::{
         body::Body,
@@ -9,6 +9,7 @@ use {
         linking::{ComponentCtx, SessionView},
     },
     http::header::{HeaderName, HeaderValue},
+    wasmtime::component::Resource,
 };
 
 /// This constant reflects a similar constant within Hyper, which will panic
@@ -16,35 +17,26 @@ use {
 pub const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 impl http_body::Host for ComponentCtx {
-    async fn new(&mut self) -> Result<http_types::BodyHandle, types::Error> {
+    fn new(&mut self) -> Result<Resource<http_body::Body>, types::Error> {
         Ok(self.session_mut().insert_body(Body::empty()).into())
     }
 
     async fn write(
         &mut self,
-        h: http_types::BodyHandle,
+        h: Resource<http_body::Body>,
         buf: Vec<u8>,
-        end: http_body::WriteEnd,
     ) -> Result<u32, types::Error> {
+        let h = h.into();
+
         // Validate the body handle and the buffer.
         let buf = buf.as_slice();
 
-        // Push the buffer onto the front or back of the body based on the `BodyWriteEnd` flag.
-        match end {
-            http_body::WriteEnd::Front => {
-                // Only normal bodies can be front-written
-                let body = self.session_mut().body_mut(h.into())?;
-                body.push_front(buf);
-            }
-            http_body::WriteEnd::Back => {
-                if self.session().is_streaming_body(h.into()) {
-                    let body = self.session_mut().streaming_body_mut(h.into())?;
-                    body.send_chunk(buf).await?;
-                } else {
-                    let body = self.session_mut().body_mut(h.into())?;
-                    body.push_back(buf);
-                }
-            }
+        if self.session().is_streaming_body(h) {
+            let body = self.session_mut().streaming_body_mut(h)?;
+            body.send_chunk(buf).await?;
+        } else {
+            let body = self.session_mut().body_mut(h)?;
+            body.push_back(buf);
         }
 
         // Finally, return the number of bytes written, which is _always_ the full buffer
@@ -54,22 +46,47 @@ impl http_body::Host for ComponentCtx {
             .expect("the buffer length must fit into a u32"))
     }
 
+    async fn write_front(
+        &mut self,
+        h: Resource<http_body::Body>,
+        buf: Vec<u8>,
+    ) -> Result<(), types::Error> {
+        let h = h.into();
+
+        // Validate the body handle and the buffer.
+        let buf = buf.as_slice();
+
+        // Only normal bodies can be front-written
+        if self.session().is_streaming_body(h) {
+            return Err(Error::Unsupported {
+                msg: "can only write to the end of a streaming body",
+            }
+            .into());
+        }
+
+        let body = self.session_mut().body_mut(h)?;
+        body.push_front(buf);
+
+        Ok(())
+    }
+
     async fn append(
         &mut self,
-        dest: http_types::BodyHandle,
-        src: http_types::BodyHandle,
+        dest: Resource<http_body::Body>,
+        src: Resource<http_body::Body>,
     ) -> Result<(), types::Error> {
         // Take the `src` body out of the session, and get a mutable reference
         // to the `dest` body we will append to.
         let src = self.session_mut().take_body(src.into())?;
 
-        if self.session().is_streaming_body(dest.into()) {
-            let dest = self.session_mut().streaming_body_mut(dest.into())?;
+        let dest = dest.into();
+        if self.session().is_streaming_body(dest) {
+            let dest = self.session_mut().streaming_body_mut(dest)?;
             for chunk in src {
                 dest.send_chunk(chunk).await?;
             }
         } else {
-            let dest = self.session_mut().body_mut(dest.into())?;
+            let dest = self.session_mut().body_mut(dest)?;
             dest.append(src);
         }
         Ok(())
@@ -77,11 +94,13 @@ impl http_body::Host for ComponentCtx {
 
     async fn read(
         &mut self,
-        h: http_types::BodyHandle,
+        h: Resource<http_body::Body>,
         chunk_size: u32,
     ) -> Result<Vec<u8>, types::Error> {
+        let h = h.into();
+
         // only normal bodies (not streaming bodies) can be read from
-        let body = self.session_mut().body_mut(h.into())?;
+        let body = self.session_mut().body_mut(h)?;
 
         let mut buffer = Vec::new();
         buffer.resize(chunk_size as usize, 0u8);
@@ -90,42 +109,43 @@ impl http_body::Host for ComponentCtx {
         Ok(buffer)
     }
 
-    async fn close(&mut self, h: http_types::BodyHandle) -> Result<(), types::Error> {
+    fn close(&mut self, h: Resource<http_body::Body>) -> Result<(), types::Error> {
         // Drop the body and pass up an error if the handle does not exist
-        if self.session().is_streaming_body(h.into()) {
+        let h = h.into();
+        if self.session().is_streaming_body(h) {
             // Make sure a streaming body gets a `finish` message
-            self.session_mut().take_streaming_body(h.into())?.finish()?;
+            self.session_mut().take_streaming_body(h)?.finish()?;
             Ok(())
         } else {
-            Ok(self.session_mut().drop_body(h.into())?)
+            Ok(self.session_mut().drop_body(h)?)
         }
     }
 
-    async fn known_length(&mut self, h: http_types::BodyHandle) -> Result<u64, types::Error> {
-        if self.session().is_streaming_body(h.into()) {
-            Err(Error::ValueAbsent.into())
-        } else if let Some(len) = self.session_mut().body_mut(h.into())?.len() {
-            Ok(len)
+    fn get_known_length(&mut self, h: Resource<http_body::Body>) -> Option<u64> {
+        let h = h.into();
+        if self.session().is_streaming_body(h) {
+            None
         } else {
-            Err(Error::ValueAbsent.into())
+            self.session_mut().body_mut(h).unwrap().len()
         }
     }
 
-    async fn trailer_append(
+    fn append_trailer(
         &mut self,
-        h: http_types::BodyHandle,
+        h: Resource<http_body::Body>,
         name: String,
         value: Vec<u8>,
     ) -> Result<(), types::Error> {
         // Appending trailers is always allowed for bodies and streaming bodies.
-        if self.session().is_streaming_body(h.into()) {
-            let body = self.session_mut().streaming_body_mut(h.into())?;
+        let h = h.into();
+        if self.session().is_streaming_body(h) {
+            let body = self.session_mut().streaming_body_mut(h)?;
             let name = HeaderName::from_bytes(name.as_bytes())?;
             let value = HeaderValue::from_bytes(value.as_slice())?;
             body.append_trailer(name, value);
             Ok(())
         } else {
-            let trailers = &mut self.session_mut().body_mut(h.into())?.trailers;
+            let trailers = &mut self.session_mut().body_mut(h)?.trailers;
             if name.len() > MAX_HEADER_NAME_LEN {
                 return Err(Error::InvalidArgument.into());
             }
@@ -137,53 +157,44 @@ impl http_body::Host for ComponentCtx {
         }
     }
 
-    async fn trailer_names_get(
+    fn get_trailer_names(
         &mut self,
-        h: http_types::BodyHandle,
+        h: Resource<http_body::Body>,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
+    ) -> Result<(String, Option<u32>), types::Error> {
+        let h = h.into();
+
         // Read operations are not allowed on streaming bodies.
-        if self.session().is_streaming_body(h.into()) {
+        if self.session().is_streaming_body(h) {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h.into())?;
+        let body = self.session_mut().body_mut(h)?;
         if !body.trailers_ready {
             return Err(Error::Again.into());
         }
 
         let trailers = &body.trailers;
-        let (buf, next) = headers::write_values(
-            trailers.keys(),
-            b'\0',
-            usize::try_from(max_len).unwrap(),
-            cursor,
-        )
-        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
+        let (buf, next) = headers::get_names(trailers.keys(), max_len, cursor)?;
 
-        // At this point we know that the buffer being empty will also mean that there are no
-        // remaining entries to read.
-        if buf.is_empty() {
-            debug_assert!(next.is_none());
-            Ok(None)
-        } else {
-            Ok(Some((buf, next)))
-        }
+        Ok((buf, next))
     }
 
-    async fn trailer_value_get(
+    fn get_trailer_value(
         &mut self,
-        h: http_types::BodyHandle,
+        h: Resource<http_body::Body>,
         name: String,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
+        let h = h.into();
+
         // Read operations are not allowed on streaming bodies.
-        if self.session().is_streaming_body(h.into()) {
+        if self.session().is_streaming_body(h) {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h.into())?;
+        let body = self.session_mut().body_mut(h)?;
         if !body.trailers_ready {
             return Err(Error::Again.into());
         }
@@ -213,40 +224,28 @@ impl http_body::Host for ComponentCtx {
         Ok(Some(value.as_bytes().to_owned()))
     }
 
-    async fn trailer_values_get(
+    fn get_trailer_values(
         &mut self,
-        h: http_types::BodyHandle,
+        h: Resource<http_body::Body>,
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u32>)>, types::Error> {
+    ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
+        let h = h.into();
+
         // Read operations are not allowed on streaming bodies.
-        if self.session().is_streaming_body(h.into()) {
+        if self.session().is_streaming_body(h) {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h.into())?;
+        let body = self.session_mut().body_mut(h)?;
         if !body.trailers_ready {
             return Err(Error::Again.into());
         }
 
         let trailers = &mut body.trailers;
-        let name = HeaderName::from_bytes(name.as_bytes())?;
-        let (buf, next) = headers::write_values(
-            trailers.get_all(&name).into_iter(),
-            b'\0',
-            usize::try_from(max_len).unwrap(),
-            cursor,
-        )
-        .map_err(|needed| types::Error::BufferLen(u64::try_from(needed).unwrap_or(0)))?;
+        let (buf, next) = headers::get_values(trailers, &name, max_len, cursor)?;
 
-        // At this point we know that the buffer being empty will also mean that there are no
-        // remaining entries to read.
-        if buf.is_empty() {
-            debug_assert!(next.is_none());
-            Ok(None)
-        } else {
-            Ok(Some((buf, next)))
-        }
+        Ok((buf, next))
     }
 }

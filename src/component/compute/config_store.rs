@@ -1,21 +1,25 @@
 use {
-    super::fastly::api::{config_store, types},
+    crate::component::bindings::fastly::compute::{config_store, types},
     crate::linking::{ComponentCtx, SessionView},
+    crate::wiggle_abi::types::{ConfigStoreHandle, DictionaryHandle},
+    wasmtime::component::Resource,
 };
 
-impl config_store::Host for ComponentCtx {
-    async fn open(&mut self, name: String) -> Result<config_store::Handle, types::Error> {
+impl config_store::HostStore for ComponentCtx {
+    fn open(&mut self, name: String) -> Result<Resource<config_store::Store>, types::OpenError> {
         let handle = self.session_mut().dictionary_handle(name.as_str())?;
+        let handle = ConfigStoreHandle::from(u32::from(handle));
         Ok(handle.into())
     }
 
-    async fn get(
+    fn get(
         &mut self,
-        store: config_store::Handle,
+        store: Resource<config_store::Store>,
         name: String,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
-        let dict = &self.session().dictionary(store.into())?.contents;
+    ) -> Result<Option<String>, types::Error> {
+        let handle = DictionaryHandle::from(store.rep());
+        let dict = &self.session().dictionary(handle)?.contents;
 
         let item = if let Some(item) = dict.get(&name) {
             item
@@ -27,6 +31,12 @@ impl config_store::Host for ComponentCtx {
             return Err(types::Error::BufferLen(u64::try_from(item.len()).unwrap()));
         }
 
-        Ok(Some(item.as_bytes().to_owned()))
+        Ok(Some(item.clone()))
+    }
+
+    fn drop(&mut self, _store: Resource<config_store::Store>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }
+
+impl config_store::Host for ComponentCtx {}

@@ -14,7 +14,7 @@ use {
         },
         downstream::{prepare_request, DownstreamMetadata, DownstreamRequest, DownstreamResponse},
         error::{ExecutionError, NonHttpResponse},
-        linking::{create_store, link_host_functions, ComponentCtx, ViceroyCtx, WasmCtx},
+        linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
         object_store::ObjectStores,
         pushpin::{proxy_through_pushpin, PushpinRedirectRequestInfo},
         secret_store::SecretStores,
@@ -57,11 +57,11 @@ use {
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
 const NEXT_REQ_PENDING_MAX: usize = 5;
-const REGION_NONE: &[u8] = b"none";
+const REGION_NONE: &str = "none";
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
-    Component(compute::ComputePre<ComponentCtx>),
+    Component(compute::bindings::AdapterServicePre<ComponentCtx>),
 }
 
 impl Instance {
@@ -229,7 +229,7 @@ impl ExecuteCtx {
             }
 
             let instance_pre = linker.instantiate_pre(&component)?;
-            Instance::Component(compute::ComputePre::new(instance_pre)?)
+            Instance::Component(compute::bindings::AdapterServicePre::new(instance_pre)?)
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
@@ -429,7 +429,7 @@ impl ExecuteCtx {
             req_id,
             server_addr: local,
             client_addr: remote,
-            compliance_region: Vec::from(REGION_NONE),
+            compliance_region: String::from(REGION_NONE),
             original_headers,
         };
 
@@ -622,7 +622,7 @@ impl ExecuteCtx {
                 let req = session.downstream_request();
                 let body = session.downstream_request_body();
 
-                let mut store = ViceroyCtx::create_store(&self, session, None, |ctx| {
+                let mut store = ComponentCtx::create_store(&self, session, None, |ctx| {
                     ctx.arg("compute-app");
                 })
                 .map_err(ExecutionError::Context)?;
@@ -633,8 +633,8 @@ impl ExecuteCtx {
                     .map_err(ExecutionError::Instantiation)?;
 
                 let result = compute
-                    .fastly_api_reactor()
-                    .call_serve(&mut store, req.into(), body.into())
+                    .fastly_compute_http_incoming()
+                    .call_handle(&mut store, req.into(), body.into())
                     .await;
 
                 let outcome = match result {
@@ -653,13 +653,13 @@ impl ExecuteCtx {
 
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
-                store.data_mut().0 .0.close_downstream_response_sender();
+                store.data_mut().session.close_downstream_response_sender();
 
                 let request_duration = Instant::now().duration_since(start_timestamp);
 
                 info!(
                     "request completed using {} of WebAssembly heap",
-                    bytesize::ByteSize::b(store.data().0 .0.limiter().memory_allocated as u64),
+                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
                 );
 
                 info!("request completed in {:.0?}", request_duration);
@@ -747,7 +747,7 @@ impl ExecuteCtx {
             req_id: 0,
             server_addr: (Ipv4Addr::LOCALHOST, 80).into(),
             client_addr: (Ipv4Addr::LOCALHOST, 0).into(),
-            compliance_region: Vec::from(REGION_NONE),
+            compliance_region: String::from(REGION_NONE),
             original_headers: Default::default(),
         };
         let (sender, receiver) = oneshot::channel();

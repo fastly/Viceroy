@@ -12,12 +12,12 @@ use http::Response;
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
-pub struct PendingKvLookupTask(PeekableTask<Result<ObjectValue, KvStoreError>>);
+pub struct PendingKvLookupTask(PeekableTask<Result<Option<ObjectValue>, KvStoreError>>);
 impl PendingKvLookupTask {
-    pub fn new(t: PeekableTask<Result<ObjectValue, KvStoreError>>) -> PendingKvLookupTask {
+    pub fn new(t: PeekableTask<Result<Option<ObjectValue>, KvStoreError>>) -> PendingKvLookupTask {
         PendingKvLookupTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<ObjectValue, KvStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<Option<ObjectValue>, KvStoreError>> {
         self.0
     }
 }
@@ -34,12 +34,12 @@ impl PendingKvInsertTask {
 }
 
 #[derive(Debug)]
-pub struct PendingKvDeleteTask(PeekableTask<Result<(), KvStoreError>>);
+pub struct PendingKvDeleteTask(PeekableTask<Result<bool, KvStoreError>>);
 impl PendingKvDeleteTask {
-    pub fn new(t: PeekableTask<Result<(), KvStoreError>>) -> PendingKvDeleteTask {
+    pub fn new(t: PeekableTask<Result<bool, KvStoreError>>) -> PendingKvDeleteTask {
         PendingKvDeleteTask(t)
     }
-    pub fn task(self) -> PeekableTask<Result<(), KvStoreError>> {
+    pub fn task(self) -> PeekableTask<Result<bool, KvStoreError>> {
         self.0
     }
 }
@@ -156,6 +156,7 @@ pub enum AsyncItem {
     PendingKvDelete(PendingKvDeleteTask),
     PendingKvList(PendingKvListTask),
     PendingCache(PendingCacheTask),
+    Ready,
 }
 
 impl AsyncItem {
@@ -335,6 +336,7 @@ impl AsyncItem {
             Self::PendingKvDelete(req) => req.0.await_ready().await,
             Self::PendingKvList(req) => req.0.await_ready().await,
             Self::PendingCache(req) => req.0.await_ready().await,
+            Self::Ready => (),
         }
     }
 

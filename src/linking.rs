@@ -7,10 +7,7 @@ use {
     },
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
-    wasmtime_wasi::{
-        p2::{IoImpl, WasiCtxBuilder, WasiImpl},
-        preview1::WasiP1Ctx,
-    },
+    wasmtime_wasi::preview1::WasiP1Ctx,
     wasmtime_wasi_nn::witx::WasiNnCtx,
 };
 
@@ -95,15 +92,14 @@ impl wasmtime::ResourceLimiter for Limiter {
 }
 
 #[allow(unused)]
-pub struct ViceroyCtx {
-    table: wasmtime_wasi::ResourceTable,
-    wasi: wasmtime_wasi::p2::WasiCtx,
+pub struct ComponentCtx {
+    pub wasi_ctx: wasmtime_wasi::WasiCtx,
+    pub wasi_table: wasmtime_wasi::ResourceTable,
+    pub wasi_random: wasmtime_wasi::random::WasiRandomCtx,
     pub(crate) session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
     limiter: Limiter,
 }
-
-pub type ComponentCtx = WasiImpl<ViceroyCtx>;
 
 /// An extension trait for users of `ComponentCtx` to access the session.
 pub trait SessionView {
@@ -113,17 +109,17 @@ pub trait SessionView {
 
 impl SessionView for ComponentCtx {
     fn session(&self) -> &Session {
-        &self.0 .0.session
+        &self.session
     }
 
     fn session_mut(&mut self) -> &mut Session {
-        &mut self.0 .0.session
+        &mut self.session
     }
 }
 
-impl ViceroyCtx {
-    pub fn wasi(&mut self) -> &mut wasmtime_wasi::p2::WasiCtx {
-        &mut self.wasi
+impl ComponentCtx {
+    pub fn wasi(&mut self) -> &mut wasmtime_wasi::WasiCtx {
+        &mut self.wasi_ctx
     }
 
     pub fn session(&mut self) -> &mut Session {
@@ -150,55 +146,58 @@ impl ViceroyCtx {
         ctx: &ExecuteCtx,
         session: Session,
         guest_profiler: Option<GuestProfiler>,
-        extra_init: impl FnOnce(&mut WasiCtxBuilder),
+        extra_init: impl FnOnce(&mut wasmtime_wasi::WasiCtxBuilder),
     ) -> Result<Store<ComponentCtx>, anyhow::Error> {
         let mut builder = make_wasi_ctx(ctx, &session);
 
         extra_init(&mut builder);
 
         let wasm_ctx = Self {
-            table: wasmtime_wasi::ResourceTable::new(),
-            wasi: builder.build(),
+            wasi_table: wasmtime_wasi::ResourceTable::new(),
+            wasi_ctx: builder.build(),
+            wasi_random: wasmtime_wasi::random::WasiRandomCtx::default(),
             session,
             guest_profiler: guest_profiler.map(Box::new),
             limiter: Limiter::new(100, 100),
         };
-        let wasm_ctx = WasiImpl(IoImpl(wasm_ctx));
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
 
         // instrument hostcalls to have those show up in profiles
         store.call_hook(|mut store, kind| {
-            if let Some(mut prof) = store.data_mut().0 .0.guest_profiler.take() {
+            if let Some(mut prof) = store.data_mut().guest_profiler.take() {
                 prof.call_hook(&store, kind);
-                store.data_mut().0 .0.guest_profiler = Some(prof);
+                store.data_mut().guest_profiler = Some(prof);
             }
             Ok(())
         });
 
         // sampling profiler
         store.epoch_deadline_callback(|mut store| {
-            if let Some(mut prof) = store.data_mut().0 .0.guest_profiler.take() {
+            if let Some(mut prof) = store.data_mut().guest_profiler.take() {
                 prof.sample(&store, std::time::Duration::ZERO);
-                store.data_mut().0 .0.guest_profiler = Some(prof);
+                store.data_mut().guest_profiler = Some(prof);
             }
             Ok(UpdateDeadline::Yield(1))
         });
 
-        store.limiter(|ctx| &mut ctx.0 .0.limiter);
+        store.limiter(|ctx| &mut ctx.limiter);
         Ok(store)
     }
 }
 
-impl wasmtime_wasi::p2::WasiView for ViceroyCtx {
-    fn ctx(&mut self) -> &mut wasmtime_wasi::p2::WasiCtx {
-        &mut self.wasi
+impl wasmtime_wasi::WasiView for ComponentCtx {
+    fn ctx(&mut self) -> wasmtime_wasi::WasiCtxView<'_> {
+        wasmtime_wasi::WasiCtxView {
+            ctx: &mut self.wasi_ctx,
+            table: &mut self.wasi_table,
+        }
     }
 }
 
-impl wasmtime_wasi::p2::IoView for ViceroyCtx {
+impl wasmtime_wasi_io::IoView for ComponentCtx {
     fn table(&mut self) -> &mut wasmtime_wasi::ResourceTable {
-        &mut self.table
+        &mut self.wasi_table
     }
 }
 
@@ -246,7 +245,7 @@ pub(crate) fn create_store(
     ctx: &ExecuteCtx,
     session: Session,
     guest_profiler: Option<GuestProfiler>,
-    extra_init: impl FnOnce(&mut WasiCtxBuilder),
+    extra_init: impl FnOnce(&mut wasmtime_wasi::WasiCtxBuilder),
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
     let mut builder = make_wasi_ctx(ctx, &session);
 
@@ -288,8 +287,8 @@ pub(crate) fn create_store(
 }
 
 /// Constructs a `WasiCtxBuilder` for _each_ incoming request.
-fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> WasiCtxBuilder {
-    let mut wasi_ctx = WasiCtxBuilder::new();
+fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> wasmtime_wasi::WasiCtxBuilder {
+    let mut wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new();
 
     // Viceroy provides the same `FASTLY_*` environment variables that the production
     // Compute platform provides:

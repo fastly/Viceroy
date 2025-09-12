@@ -23,8 +23,7 @@ include = [
     "wasm_abi/compute-at-edge-abi/**/*.witx",
     "wasm_abi/data/*.wasm",
 ]
-# MSRV: 1.82 for is_none_or
-rust-version = "1.82"
+rust-version = "1.86"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -33,7 +32,7 @@ bytes = "^1.2.1"
 bytesize = "^1.1.0"
 cfg-if = "^1.0"
 clap = { workspace = true }
-cranelift-entity = "^0.122.0"
+cranelift-entity = "^0.123.0"
 fastly-shared = "^0.11.5"
 flate2 = "^1.0.24"
 futures = { workspace = true }
@@ -63,6 +62,7 @@ wasm-encoder = { workspace = true }
 wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
+wasmtime-wasi-io = { workspace = true }
 wasmtime-wasi-nn = { workspace = true }
 wat = { workspace = true }
 wiggle = { workspace = true }
@@ -118,10 +118,11 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "35.0.0", features = ["call-hook"] }
-wasmtime-wasi = "35.0.0"
-wasmtime-wasi-nn = "35.0.0"
-wiggle = "35.0.0"
+wasmtime = { version =  "36.0.2", features = ["call-hook"] }
+wasmtime-wasi = "36.0.2"
+wasmtime-wasi-io = "36.0.2"
+wasmtime-wasi-nn = "36.0.2"
+wiggle = "36.0.2"
 wat = "1.212.0"
 wasmparser = "0.236.0"
 wasm-encoder = { version = "0.236.0", features = ["wasmparser"] }

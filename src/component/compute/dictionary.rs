@@ -1,20 +1,21 @@
 use {
-    super::fastly::api::{dictionary, types},
+    crate::component::bindings::fastly::compute::{dictionary, types},
     crate::linking::{ComponentCtx, SessionView},
+    wasmtime::component::Resource,
 };
 
-impl dictionary::Host for ComponentCtx {
-    async fn open(&mut self, name: String) -> Result<dictionary::Handle, types::Error> {
+impl dictionary::HostDictionary for ComponentCtx {
+    fn open(&mut self, name: String) -> Result<Resource<dictionary::Dictionary>, types::OpenError> {
         let handle = self.session_mut().dictionary_handle(name.as_str())?;
         Ok(handle.into())
     }
 
-    async fn get(
+    fn lookup(
         &mut self,
-        h: dictionary::Handle,
+        h: Resource<dictionary::Dictionary>,
         key: String,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
+    ) -> Result<Option<String>, types::Error> {
         let dict = &self.session().dictionary(h.into())?.contents;
 
         let item = if let Some(item) = dict.get(&key) {
@@ -27,6 +28,12 @@ impl dictionary::Host for ComponentCtx {
             return Err(types::Error::BufferLen(u64::try_from(item.len()).unwrap()));
         }
 
-        Ok(Some(item.as_bytes().to_owned()))
+        Ok(Some(item.as_str().to_owned()))
+    }
+
+    fn drop(&mut self, _dictionary: Resource<dictionary::Dictionary>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }
+
+impl dictionary::Host for ComponentCtx {}
