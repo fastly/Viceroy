@@ -1,14 +1,21 @@
-## Unreleased
+## 0.14.3 (2025-09-17)
 
-## 0.14.2
+- Upgrade to wasmtime v35 ([#513](https://github.com/fastly/Viceroy/pull/513))
+- Fix implementation of `downstream_compliance_region` hostcall ([#519](https://github.com/fastly/Viceroy/pull/519))
+- Fix warnings due to `mismatched_lifetime_syntaxes` lint in Rust 1.89 ([#522](https://github.com/fastly/Viceroy/pull/522))
+- Enable tracing in WIT bindings ([#521](https://github.com/fastly/Viceroy/pull/521))
+- Support overriding client IP with `inspect` hostcall ([#523](https://github.com/fastly/Viceroy/pull/523))
+- Add stub for `downstream_client_tls_servername` hostcall ([#524](https://github.com/fastly/Viceroy/pull/524))
+
+## 0.14.2 (2025-08-12)
 
 - Upgrade to wasmtime v28
 
-## 0.14.1
+## 0.14.1 (2025-08-08)
 
 - Fix Cargo.lock file to allow publication on crates.io
 
-## 0.14.0
+## 0.14.0 (2025-08-08)
 
 - Fix for shielding suport ([#503](https://github.com/fastly/Viceroy/pull/503))
 
@@ -62,7 +69,7 @@
 
   Make the `SecretStore` type public, so it can be configured in integration tests that use `viceroy-lib`.
 
-## 0.13.0
+## 0.13.0 (2025-04-25)
 
 - Add support for shielding primitives in Viceroy ([#455](https://github.com/fastly/Viceroy/pull/455))
 
