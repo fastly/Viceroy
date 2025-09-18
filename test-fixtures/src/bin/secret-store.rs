@@ -17,6 +17,8 @@ fn main() {
     );
     assert_eq!(store_one.get("second").unwrap().plaintext(), "More data");
 
+    assert_eq!(store_one.get("fourth").unwrap().plaintext(), "my-env-value");
+
     match store_one.try_get("third").unwrap() {
         None => {}
         _ => panic!(),
