@@ -160,7 +160,7 @@ async fn bad_config_store_fields_not_exclusive() -> TestResult {
                                     ..
                                 }) => {},
                     Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileDataEnvExclusive"),
-                    Ok(_) => todo!()
+                    Ok(_) => panic!("Expected an error, but got Ok")
                 }
             }
         }
