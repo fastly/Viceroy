@@ -112,43 +112,65 @@ impl TryFrom<Table> for SecretStoreConfig {
                     });
                 }
 
-                let bytes = match (item.get("file"), item.get("data")) {
-                    (None, None) => {
+                let file = item.get("file");
+                let data = item.get("data");
+                let env = item.get("env");
+
+                let sources = [file.is_some(), data.is_some(), env.is_some()];
+                let count = sources.iter().filter(|&&b| b).count();
+
+                let bytes = match count {
+                    0 => {
                         return Err(FastlyConfigError::InvalidSecretStoreDefinition {
                             name: store_name.to_string(),
-                            err: SecretStoreConfigError::NoFileOrData(key.to_string()),
-                        })
+                            err: SecretStoreConfigError::FileDataEnvNotSet(key.to_string()),
+                        });
                     }
-                    (Some(_), Some(_)) => {
+                    1 => {
+                        if let Some(path) = file {
+                            let path = path.as_str().ok_or_else(|| {
+                                FastlyConfigError::InvalidSecretStoreDefinition {
+                                    name: store_name.to_string(),
+                                    err: SecretStoreConfigError::FileNotAString(key.to_string()),
+                                }
+                            })?;
+                            fs::read(path)
+                                .map_err(|e| FastlyConfigError::InvalidSecretStoreDefinition {
+                                    name: store_name.to_string(),
+                                    err: SecretStoreConfigError::IoError(e),
+                                })?
+                                .into()
+                        } else if let Some(data) = data {
+                            data.as_str()
+                                .ok_or_else(|| FastlyConfigError::InvalidSecretStoreDefinition {
+                                    name: store_name.to_string(),
+                                    err: SecretStoreConfigError::DataNotAString(key.to_string()),
+                                })?
+                                .to_owned()
+                                .into()
+                        } else if let Some(env) = env {
+                            // env branch
+                            let var = env.as_str().ok_or_else(|| {
+                                FastlyConfigError::InvalidSecretStoreDefinition {
+                                    name: store_name.to_string(),
+                                    err: SecretStoreConfigError::EnvNotAString(key.to_string()),
+                                }
+                            })?;
+                            std::env::var(var)
+                                .unwrap_or_else(|_| String::new())
+                                .into_bytes()
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    _ => {
                         return Err(FastlyConfigError::InvalidSecretStoreDefinition {
                             name: store_name.to_string(),
-                            err: SecretStoreConfigError::FileAndData(key.to_string()),
-                        })
+                            err: SecretStoreConfigError::FileDataEnvExclusive(key.to_string()),
+                        });
                     }
-                    (Some(path), None) => {
-                        let path = path.as_str().ok_or_else(|| {
-                            FastlyConfigError::InvalidSecretStoreDefinition {
-                                name: store_name.to_string(),
-                                err: SecretStoreConfigError::FileNotAString(key.to_string()),
-                            }
-                        })?;
-                        fs::read(path)
-                            .map_err(|e| FastlyConfigError::InvalidSecretStoreDefinition {
-                                name: store_name.to_string(),
-                                err: SecretStoreConfigError::IoError(e),
-                            })?
-                            .into()
-                    }
-                    (None, Some(data)) => data
-                        .as_str()
-                        .ok_or_else(|| FastlyConfigError::InvalidSecretStoreDefinition {
-                            name: store_name.to_string(),
-                            err: SecretStoreConfigError::DataNotAString(key.to_string()),
-                        })?
-                        .to_owned()
-                        .into(),
                 };
-                secret_store.add_secret(key.to_string(), bytes);
+                secret_store.add_secret(key.to_string(), bytes.into());
             }
             stores.add_store(store_name.clone(), secret_store);
         }

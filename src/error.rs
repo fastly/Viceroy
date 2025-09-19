@@ -752,14 +752,18 @@ pub enum SecretStoreConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON object."
     )]
     FileWrongFormat,
-    #[error("The `file` and `data` keys for the object `{0}` are set. Only one can be used.")]
-    FileAndData(String),
-    #[error("The `file` or `data` key for the object `{0}` is not set. One must be used.")]
-    NoFileOrData(String),
+    #[error("More than one of `file`, `data`, or `env` keys for the object `{0}` are set. Only one can be used.")]
+    FileDataEnvExclusive(String),
+    #[error(
+        "None of `file`, `data`, or `env` keys for the object `{0}` is set. One must be used."
+    )]
+    FileDataEnvNotSet(String),
     #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
     #[error("The `file` value for the object `{0}` is not a string.")]
     FileNotAString(String),
+    #[error("The `env` value for the object `{0}` is not a string.")]
+    EnvNotAString(String),
 
     #[error("The `key` key for an object is not set. It must be used.")]
     NoKey,
