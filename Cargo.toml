@@ -126,19 +126,3 @@ wat = "1.212.0"
 wasmparser = "0.236.0"
 wasm-encoder = { version = "0.236.0", features = ["wasmparser"] }
 wit-component = "0.236.0"
-
-[profile.release.package.viceroy-component-adapter]
-opt-level = 's'
-strip = 'debuginfo'
-
-[profile.dev.package.viceroy-component-adapter]
-# Make dev look like a release build since this adapter module won't work with
-# a debug build that uses data segments and such.
-incremental = false
-opt-level = 's'
-# Omit assertions, which include failure messages which require string
-# initializers.
-debug-assertions = false
-# Omit integer overflow checks, which include failure messages which require
-# string initializers.
-overflow-checks = false
