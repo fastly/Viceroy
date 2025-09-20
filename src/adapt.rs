@@ -1,31 +1,32 @@
 const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
 
+const LIBRARY_ADAPTER_BYTES: &[u8] =
+    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.wasm");
+
 /// Check if the bytes represent a core wasm module, or a component.
 pub fn is_component(bytes: &[u8]) -> bool {
-    matches!(
-        wasmparser::Parser::new(0).parse(&bytes, true),
-        Ok(wasmparser::Chunk::Parsed {
-            payload: wasmparser::Payload::Version {
-                encoding: wasmparser::Encoding::Component,
-                ..
-            },
-            ..
-        })
-    )
+    wasmparser::Parser::is_component(bytes)
 }
 
 /// Given bytes that represent a core wasm module in the wat format, adapt it to a component using
 /// the viceroy adapter.
-pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
+pub fn adapt_wat(wat: &str, library: bool) -> anyhow::Result<Vec<u8>> {
     let bytes = wat::parse_str(wat)?;
-    adapt_bytes(&bytes)
+    adapt_bytes(&bytes, library)
 }
 
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
-pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub fn adapt_bytes(bytes: &[u8], library: bool) -> anyhow::Result<Vec<u8>> {
     let bytes = crate::shift_mem::shift_main_module(bytes)?;
     let module = mangle_imports(&bytes)?;
+
+    // If the user has requested a library adapter, use the imports-only "library" adapter.
+    let adapter_bytes = if library {
+        LIBRARY_ADAPTER_BYTES
+    } else {
+        ADAPTER_BYTES
+    };
 
     let component = wit_component::ComponentEncoder::default()
         .module(module.as_slice())?
@@ -34,7 +35,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         // codebase make more sense, but plumbing that name all the way through the adapter would
         // require adjusting all preview1 functions to have a mangled name, like
         // "wasi_snapshot_preview1#args_get".
-        .adapter("wasi_snapshot_preview1", ADAPTER_BYTES)?
+        .adapter("wasi_snapshot_preview1", adapter_bytes)?
         .validate(true)
         .encode()?;
 

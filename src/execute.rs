@@ -183,13 +183,14 @@ impl ExecuteCtx {
         // apply the component adapter.
         let is_component = adapt::is_component(&input);
         let (is_wat, is_component, input) = if !is_component && adapt_components {
+            let library = false;
             let input = if is_wat {
                 let text = String::from_utf8(input).map_err(|_| {
                     anyhow::anyhow!("Failed to parse {}", module_path.as_ref().display())
                 })?;
-                adapt::adapt_wat(&text)?
+                adapt::adapt_wat(&text, library)?
             } else {
-                adapt::adapt_bytes(&input)?
+                adapt::adapt_bytes(&input, library)?
             };
 
             (false, true, input)
