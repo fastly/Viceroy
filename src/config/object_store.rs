@@ -181,8 +181,7 @@ impl TryFrom<Table> for ObjectStoreConfig {
                                 name: store.to_string(),
                                 err: ObjectStoreConfigError::MetadataNotAString(key.to_string()),
                             })?
-                            .as_bytes()
-                            .to_vec(),
+                            .to_owned(),
                     ),
                     None => None,
                 };

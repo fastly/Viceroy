@@ -1,6 +1,6 @@
 use super::FastlyStatus;
-use crate::{alloc_result_opt, bindings::fastly::api::config_store, TrappingUnwrap};
-use core::slice;
+use crate::{alloc_result_opt, bindings::fastly::compute::config_store, TrappingUnwrap};
+use core::mem::ManuallyDrop;
 
 pub type ConfigStoreHandle = u32;
 
@@ -10,14 +10,20 @@ pub fn open(
     name_len: usize,
     store_handle_out: *mut ConfigStoreHandle,
 ) -> FastlyStatus {
-    let name = unsafe { slice::from_raw_parts(name, name_len) };
-    match config_store::open(name) {
+    let name = crate::make_str!(name, name_len);
+    match config_store::Store::open(name) {
         Ok(res) => {
             unsafe {
-                *store_handle_out = res;
+                *store_handle_out = res.take_handle();
             }
             FastlyStatus::OK
         }
+        // As a special case, `fastly_config_store#open` uses `BADF` to indicate not found.
+        Err(config_store::OpenError::NotFound) => FastlyStatus::BADF,
+        // As a special case, `fastly_config_store#open` uses `NONE` to indicate an empty name.
+        Err(config_store::OpenError::InvalidSyntax) if name_len == 0 => FastlyStatus::NONE,
+        // As a special case, `fastly_config_store#open` uses `UNSUPPORTED` to indicate an empty name.
+        Err(config_store::OpenError::NameTooLong) => FastlyStatus::UNSUPPORTED,
         Err(e) => e.into(),
     }
 }
@@ -31,12 +37,9 @@ pub fn get(
     value_max_len: usize,
     nwritten: *mut usize,
 ) -> FastlyStatus {
-    let key = unsafe { slice::from_raw_parts(key, key_len) };
+    let key = crate::make_str!(key, key_len);
+    let store_handle = ManuallyDrop::new(unsafe { config_store::Store::from_handle(store_handle) });
     alloc_result_opt!(value, value_max_len, nwritten, {
-        config_store::get(
-            store_handle,
-            key,
-            u64::try_from(value_max_len).trapping_unwrap(),
-        )
+        store_handle.get(key, u64::try_from(value_max_len).trapping_unwrap())
     })
 }
