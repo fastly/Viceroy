@@ -307,7 +307,7 @@ impl Cache {
     pub async fn lookup(&self, key: &CacheKey, headers: &HeaderMap) -> CacheEntry {
         let found = self
             .inner
-            .get_with_by_ref(&key, async { Default::default() })
+            .get_with_by_ref(key, async { Default::default() })
             .await
             .get(headers)
             .map(|data| Found {
@@ -331,7 +331,7 @@ impl Cache {
     ) -> CacheEntry {
         let (found, obligation) = self
             .inner
-            .get_with_by_ref(&key, async { Default::default() })
+            .get_with_by_ref(key, async { Default::default() })
             .await
             .transaction_get(headers, ok_to_wait)
             .await;
@@ -354,7 +354,7 @@ impl Cache {
         body: Body,
     ) {
         self.inner
-            .get_with_by_ref(&key, async { Default::default() })
+            .get_with_by_ref(key, async { Default::default() })
             .await
             .insert(request_headers, options, body, None);
     }

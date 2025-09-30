@@ -277,9 +277,9 @@ fn test_edge_expired() {
     assert!(!found.is_stale());
     assert!(found.age() >= Duration::from_secs(2));
     assert!(
-        found.ttl() > Duration::from_secs(1),
+        found.max_age() > Duration::from_secs(1),
         "got ttl: {}",
-        found.ttl().as_secs_f32()
+        found.max_age().as_secs_f32()
     );
 }
 
@@ -1092,7 +1092,7 @@ fn test_racing_transactions() {
     let tx = pending.wait().unwrap();
     assert!(!tx.must_insert());
     let found = tx.found().unwrap();
-    assert_eq!(found.ttl(), Duration::from_secs(125));
+    assert_eq!(found.max_age(), Duration::from_secs(125));
     let mut rd_body = found.to_stream().unwrap();
 
     // Write the body and read it back:
