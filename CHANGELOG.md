@@ -1,6 +1,11 @@
-## Unreleased
+## 0.14.4 (2025-10-01)
 
-- Enable loading Secret Store configuration through environment variables
+- Enable loading Secret Store configuration through environment variables ([#527](https://github.com/fastly/Viceroy/pull/527))
+- Remove deprecated `macos-13` runners from CI matrix ([#528](https://github.com/fastly/Viceroy/pull/528))
+- Remove now-unneeded adapter profiles from the top-level Cargo.toml. ([#530](https://github.com/fastly/Viceroy/pull/530))
+- Fix double borrows in `get_with_by_ref()` calls ([#532](https://github.com/fastly/Viceroy/pull/532))
+- Fix warnings due to SDK deprecations ([#532](https://github.com/fastly/Viceroy/pull/532))
+- Update references of `wasm32-wasi` to `wasm32-wasip1` in README ([#533](https://github.com/fastly/Viceroy/pull/533))
 
 ## 0.14.3 (2025-09-17)
 
