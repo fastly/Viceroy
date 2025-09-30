@@ -1,8 +1,7 @@
-on:
-  pull_request:
-    paths-ignore:
-      - '**.md'
 name: Test
+
+on: [pull_request]
+
 env:
   CACHE_GENERATION: 0
 jobs:
