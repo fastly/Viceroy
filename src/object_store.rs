@@ -501,7 +501,7 @@ mod tests {
         let res = stores.store_exists(STORE_NAME);
         match res {
             Ok(true) => {}
-            Ok(false) => panic!("should have Ok(true)"),
+            Ok(false) => panic!("should have been Ok(true)"),
             Err(e) => panic!("should not have been Err({:?})", e),
         }
     }
