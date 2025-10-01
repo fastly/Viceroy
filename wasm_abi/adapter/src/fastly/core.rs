@@ -379,6 +379,13 @@ pub mod fastly_http_body {
                 )
             },
             |res| {
+                let res = match res {
+                    Ok(value) => Ok(value),
+                    Err(http_body::TrailerError::NotAvailableYet) => {
+                        return Err(FastlyStatus::AGAIN)
+                    }
+                    Err(http_body::TrailerError::Error(err)) => Err(err),
+                };
                 let (bytes, next) = handle_buffer_len!(res, nwritten);
                 let written = bytes.len();
                 let end = match next {
@@ -407,13 +414,35 @@ pub mod fastly_http_body {
     ) -> FastlyStatus {
         let name = unsafe { slice::from_raw_parts(name, name_len) };
         let body_handle = ManuallyDrop::new(unsafe { http_body::Body::from_handle(body_handle) });
-        alloc_result_opt!(value, value_max_len, nwritten, {
-            http_body::get_trailer_value(
-                &body_handle,
-                name,
-                u64::try_from(value_max_len).trapping_unwrap(),
-            )
-        })
+
+        with_buffer!(
+            value,
+            value_max_len,
+            {
+                http_body::get_trailer_value(
+                    &body_handle,
+                    name,
+                    u64::try_from(value_max_len).trapping_unwrap(),
+                )
+            },
+            |res| {
+                let res = match res {
+                    Ok(value) => Ok(value),
+                    Err(http_body::TrailerError::NotAvailableYet) => {
+                        return Err(FastlyStatus::AGAIN)
+                    }
+                    Err(http_body::TrailerError::Error(err)) => Err(err),
+                };
+                let bytes = handle_buffer_len!(res, nwritten).ok_or(FastlyStatus::NONE)?;
+                let written = bytes.len();
+
+                std::mem::forget(bytes);
+
+                unsafe {
+                    *nwritten = written;
+                }
+            }
+        )
     }
 
     #[export_name = "fastly_http_body#trailer_values_get"]
@@ -441,6 +470,13 @@ pub mod fastly_http_body {
                 )
             },
             |res| {
+                let res = match res {
+                    Ok(value) => Ok(value),
+                    Err(http_body::TrailerError::NotAvailableYet) => {
+                        return Err(FastlyStatus::AGAIN)
+                    }
+                    Err(http_body::TrailerError::Error(err)) => Err(err),
+                };
                 let (bytes, next) = handle_buffer_len!(res, nwritten);
                 let written = bytes.len();
                 let end = match next {
@@ -590,8 +626,8 @@ pub mod fastly_http_downstream {
         req_handle_out: *mut RequestHandle,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let promise_handle = unsafe { http_req::RequestPromise::from_handle(handle) };
-        match http_downstream::await_next_request(promise_handle) {
+        let promise_handle = unsafe { http_req::PendingRequest::from_handle(handle) };
+        match http_downstream::await_request(promise_handle) {
             Ok(Some(res)) => {
                 unsafe {
                     *req_handle_out = res.0.take_handle();
@@ -621,7 +657,7 @@ pub mod fastly_http_downstream {
 
     #[export_name = "fastly_http_downstream#next_request_abandon"]
     pub fn next_request_abandon(handle: RequestPromiseHandle) -> FastlyStatus {
-        let handle = unsafe { http_req::RequestPromise::from_handle(handle) };
+        let handle = unsafe { http_req::PendingRequest::from_handle(handle) };
         let res = http_downstream::next_request_abandon(handle);
         convert_result(res)
     }
@@ -1014,18 +1050,6 @@ pub mod fastly_http_req {
         pub tls_alert_id: u8,
     }
 
-    impl SendErrorDetail {
-        pub fn uninitialized_all() -> Self {
-            Self {
-                tag: SendErrorDetailTag::Uninitialized,
-                mask: SendErrorDetailMask::all(),
-                dns_error_rcode: Default::default(),
-                dns_error_info_code: Default::default(),
-                tls_alert_id: Default::default(),
-            }
-        }
-    }
-
     /// Convert from witx ABI values to a `CacheOverride`.
     impl From<(u32, u32, u32, Option<ManuallyDrop<Vec<u8>>>)>
         for fastly::compute::http_req::CacheOverride<'_>
@@ -1066,127 +1090,126 @@ pub mod fastly_http_req {
         }
     }
 
-    impl Into<SendErrorDetailTag> for fastly::compute::http_req::SendErrorDetailTag {
-        fn into(self) -> SendErrorDetailTag {
-            match self {
-                http_req::SendErrorDetailTag::Uninitialized => SendErrorDetailTag::Uninitialized,
-                http_req::SendErrorDetailTag::Ok => SendErrorDetailTag::Ok,
-                http_req::SendErrorDetailTag::DnsTimeout => SendErrorDetailTag::DnsTimeout,
-                http_req::SendErrorDetailTag::DnsError => SendErrorDetailTag::DnsError,
-                http_req::SendErrorDetailTag::DestinationNotFound => {
-                    SendErrorDetailTag::DestinationNotFound
+    impl From<fastly::compute::http_req::SendErrorDetail> for SendErrorDetail {
+        fn from(err: fastly::compute::http_req::SendErrorDetail) -> Self {
+            match err {
+                http_req::SendErrorDetail::DnsTimeout => SendErrorDetailTag::DnsTimeout.into(),
+                http_req::SendErrorDetail::DnsError(dns_error) => dns_error.into(),
+                http_req::SendErrorDetail::DestinationNotFound => {
+                    SendErrorDetailTag::DestinationNotFound.into()
                 }
-                http_req::SendErrorDetailTag::DestinationUnavailable => {
-                    SendErrorDetailTag::DestinationUnavailable
+                http_req::SendErrorDetail::DestinationUnavailable => {
+                    SendErrorDetailTag::DestinationUnavailable.into()
                 }
-                http_req::SendErrorDetailTag::DestinationIpUnroutable => {
-                    SendErrorDetailTag::DestinationIpUnroutable
+                http_req::SendErrorDetail::DestinationIpUnroutable => {
+                    SendErrorDetailTag::DestinationIpUnroutable.into()
                 }
-                http_req::SendErrorDetailTag::ConnectionRefused => {
-                    SendErrorDetailTag::ConnectionRefused
+                http_req::SendErrorDetail::ConnectionRefused => {
+                    SendErrorDetailTag::ConnectionRefused.into()
                 }
-                http_req::SendErrorDetailTag::ConnectionTerminated => {
-                    SendErrorDetailTag::ConnectionTerminated
+                http_req::SendErrorDetail::ConnectionTerminated => {
+                    SendErrorDetailTag::ConnectionTerminated.into()
                 }
-                http_req::SendErrorDetailTag::ConnectionTimeout => {
-                    SendErrorDetailTag::ConnectionTimeout
+                http_req::SendErrorDetail::ConnectionTimeout => {
+                    SendErrorDetailTag::ConnectionTimeout.into()
                 }
-                http_req::SendErrorDetailTag::ConnectionLimitReached => {
-                    SendErrorDetailTag::ConnectionLimitReached
+                http_req::SendErrorDetail::ConnectionLimitReached => {
+                    SendErrorDetailTag::ConnectionLimitReached.into()
                 }
-                http_req::SendErrorDetailTag::TlsCertificateError => {
-                    SendErrorDetailTag::TlsCertificateError
+                http_req::SendErrorDetail::TlsCertificateError => {
+                    SendErrorDetailTag::TlsCertificateError.into()
                 }
-                http_req::SendErrorDetailTag::TlsConfigurationError => {
-                    SendErrorDetailTag::TlsConfigurationError
+                http_req::SendErrorDetail::TlsConfigurationError => {
+                    SendErrorDetailTag::TlsConfigurationError.into()
                 }
-                http_req::SendErrorDetailTag::HttpIncompleteResponse => {
-                    SendErrorDetailTag::HttpIncompleteResponse
+                http_req::SendErrorDetail::HttpIncompleteResponse => {
+                    SendErrorDetailTag::HttpIncompleteResponse.into()
                 }
-                http_req::SendErrorDetailTag::HttpResponseHeaderSectionTooLarge => {
-                    SendErrorDetailTag::HttpResponseHeaderSectionTooLarge
+                http_req::SendErrorDetail::HttpResponseHeaderSectionTooLarge => {
+                    SendErrorDetailTag::HttpResponseHeaderSectionTooLarge.into()
                 }
-                http_req::SendErrorDetailTag::HttpResponseBodyTooLarge => {
-                    SendErrorDetailTag::HttpResponseBodyTooLarge
+                http_req::SendErrorDetail::HttpResponseBodyTooLarge => {
+                    SendErrorDetailTag::HttpResponseBodyTooLarge.into()
                 }
-                http_req::SendErrorDetailTag::HttpResponseTimeout => {
-                    SendErrorDetailTag::HttpResponseTimeout
+                http_req::SendErrorDetail::HttpResponseTimeout => {
+                    SendErrorDetailTag::HttpResponseTimeout.into()
                 }
-                http_req::SendErrorDetailTag::HttpResponseStatusInvalid => {
-                    SendErrorDetailTag::HttpResponseStatusInvalid
+                http_req::SendErrorDetail::HttpResponseStatusInvalid => {
+                    SendErrorDetailTag::HttpResponseStatusInvalid.into()
                 }
-                http_req::SendErrorDetailTag::HttpUpgradeFailed => {
-                    SendErrorDetailTag::HttpUpgradeFailed
+                http_req::SendErrorDetail::HttpUpgradeFailed => {
+                    SendErrorDetailTag::HttpUpgradeFailed.into()
                 }
-                http_req::SendErrorDetailTag::HttpProtocolError => {
-                    SendErrorDetailTag::HttpProtocolError
+                http_req::SendErrorDetail::HttpProtocolError => {
+                    SendErrorDetailTag::HttpProtocolError.into()
                 }
-                http_req::SendErrorDetailTag::HttpRequestCacheKeyInvalid => {
-                    SendErrorDetailTag::HttpRequestCacheKeyInvalid
+                http_req::SendErrorDetail::HttpRequestCacheKeyInvalid => {
+                    SendErrorDetailTag::HttpRequestCacheKeyInvalid.into()
                 }
-                http_req::SendErrorDetailTag::HttpRequestUriInvalid => {
-                    SendErrorDetailTag::HttpRequestUriInvalid
+                http_req::SendErrorDetail::HttpRequestUriInvalid => {
+                    SendErrorDetailTag::HttpRequestUriInvalid.into()
                 }
-                http_req::SendErrorDetailTag::InternalError => SendErrorDetailTag::InternalError,
-                http_req::SendErrorDetailTag::TlsAlertReceived => {
-                    SendErrorDetailTag::TlsAlertReceived
+                http_req::SendErrorDetail::InternalError => {
+                    SendErrorDetailTag::InternalError.into()
                 }
-                http_req::SendErrorDetailTag::TlsProtocolError => {
-                    SendErrorDetailTag::TlsProtocolError
+                http_req::SendErrorDetail::TlsAlertReceived(tls_alert) => tls_alert.into(),
+                http_req::SendErrorDetail::TlsProtocolError => {
+                    SendErrorDetailTag::TlsProtocolError.into()
                 }
             }
         }
     }
 
-    impl Default for http_req::SendErrorDetail {
-        fn default() -> Self {
+    impl From<http_req::DnsErrorDetail> for SendErrorDetail {
+        fn from(dns_error: http_req::DnsErrorDetail) -> Self {
+            let mut mask = SendErrorDetailMask::empty();
+            let mut dns_error_rcode = Default::default();
+            let mut dns_error_info_code = Default::default();
+            if let Some(rcode) = dns_error.rcode {
+                mask |= SendErrorDetailMask::DNS_ERROR_RCODE;
+                dns_error_rcode = rcode;
+            }
+            if let Some(info_code) = dns_error.info_code {
+                mask |= SendErrorDetailMask::DNS_ERROR_INFO_CODE;
+                dns_error_info_code = info_code;
+            }
             Self {
-                tag: http_req::SendErrorDetailTag::Uninitialized,
-                dns_error_rcode: None,
-                dns_error_info_code: None,
-                tls_alert_id: None,
-            }
-        }
-    }
-
-    impl Into<SendErrorDetail> for http_req::SendErrorDetail {
-        fn into(self) -> SendErrorDetail {
-            let mut mask = SendErrorDetailMask::default();
-            mask.set(
-                SendErrorDetailMask::DNS_ERROR_RCODE,
-                self.dns_error_rcode.is_some(),
-            );
-            mask.set(
-                SendErrorDetailMask::DNS_ERROR_INFO_CODE,
-                self.dns_error_info_code.is_some(),
-            );
-            mask.set(
-                SendErrorDetailMask::TLS_ALERT_ID,
-                self.tls_alert_id.is_some(),
-            );
-
-            SendErrorDetail {
-                tag: self.tag.into(),
+                tag: SendErrorDetailTag::DnsError,
                 mask,
-                dns_error_rcode: self.dns_error_rcode.unwrap_or_default(),
-                dns_error_info_code: self.dns_error_info_code.unwrap_or_default(),
-                tls_alert_id: self.tls_alert_id.unwrap_or_default(),
+                dns_error_rcode,
+                dns_error_info_code,
+                tls_alert_id: Default::default(),
             }
         }
     }
 
-    impl From<http_req::SendErrorDetailTag> for http_req::SendErrorDetail {
-        fn from(tag: http_req::SendErrorDetailTag) -> Self {
+    impl From<http_req::TlsAlertReceivedDetail> for SendErrorDetail {
+        fn from(tls_alert: http_req::TlsAlertReceivedDetail) -> Self {
+            let mut mask = SendErrorDetailMask::empty();
+            let mut tls_alert_id = Default::default();
+            if let Some(id) = tls_alert.id {
+                mask |= SendErrorDetailMask::TLS_ALERT_ID;
+                tls_alert_id = id;
+            }
+            Self {
+                tag: SendErrorDetailTag::TlsAlertReceived,
+                mask,
+                dns_error_rcode: Default::default(),
+                dns_error_info_code: Default::default(),
+                tls_alert_id,
+            }
+        }
+    }
+
+    impl From<SendErrorDetailTag> for SendErrorDetail {
+        fn from(tag: SendErrorDetailTag) -> Self {
             Self {
                 tag,
-                ..Self::default()
+                mask: SendErrorDetailMask::empty(),
+                dns_error_rcode: Default::default(),
+                dns_error_info_code: Default::default(),
+                tls_alert_id: Default::default(),
             }
-        }
-    }
-
-    impl From<http_req::SendErrorDetailTag> for SendErrorDetail {
-        fn from(tag: http_req::SendErrorDetailTag) -> Self {
-            http_req::SendErrorDetail::from(tag).into()
         }
     }
 
@@ -1732,7 +1755,7 @@ pub mod fastly_http_req {
         match http_req::send(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
-                    *error_detail = http_req::SendErrorDetailTag::Ok.into();
+                    *error_detail = SendErrorDetailTag::Ok.into();
                     *resp_handle_out = resp_handle.take_handle();
                     *resp_body_handle_out = resp_body_handle.take_handle();
                 }
@@ -1743,8 +1766,8 @@ pub mod fastly_http_req {
                 unsafe {
                     *error_detail = err
                         .detail
-                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
-                        .into();
+                        .map(Into::into)
+                        .unwrap_or_else(|| SendErrorDetailTag::Uninitialized.into());
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
@@ -1770,7 +1793,7 @@ pub mod fastly_http_req {
         match http_req::send_uncached(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
-                    *error_detail = http_req::SendErrorDetailTag::Ok.into();
+                    *error_detail = SendErrorDetailTag::Ok.into();
                     *resp_handle_out = resp_handle.take_handle();
                     *resp_body_handle_out = resp_body_handle.take_handle();
                 }
@@ -1781,8 +1804,8 @@ pub mod fastly_http_req {
                 unsafe {
                     *error_detail = err
                         .detail
-                        .unwrap_or_else(|| http_req::SendErrorDetailTag::Uninitialized.into())
-                        .into();
+                        .map(Into::into)
+                        .unwrap_or_else(|| SendErrorDetailTag::Uninitialized.into());
                     *resp_handle_out = INVALID_HANDLE;
                     *resp_body_handle_out = INVALID_HANDLE;
                 }
@@ -2043,8 +2066,9 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let wit_handle =
-            ManuallyDrop::new(unsafe { http_req::PendingRequest::from_handle(pending_req_handle) });
+        let wit_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingResponse::from_handle(pending_req_handle)
+        });
         if wit_handle.is_ready() {
             unsafe {
                 *is_done_out = 1;
@@ -2068,8 +2092,9 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let wit_handle =
-            ManuallyDrop::new(unsafe { http_req::PendingRequest::from_handle(pending_req_handle) });
+        let wit_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingResponse::from_handle(pending_req_handle)
+        });
         if wit_handle.is_ready() {
             let status = pending_req_wait_v2(
                 pending_req_handle,
@@ -2155,9 +2180,9 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let pending_req_handle =
-            unsafe { http_req::PendingRequest::from_handle(pending_req_handle) };
-        match http_req::await_request(pending_req_handle) {
+        let pending_resp_handle =
+            unsafe { http_req::PendingResponse::from_handle(pending_req_handle) };
+        match http_req::await_response(pending_resp_handle) {
             Ok((resp, body)) => unsafe {
                 *resp_handle_out = resp.take_handle();
                 *resp_body_handle_out = body.take_handle();
@@ -2179,11 +2204,11 @@ pub mod fastly_http_req {
         resp_handle_out: *mut ResponseHandle,
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let pending_req_handle =
-            unsafe { http_req::PendingRequest::from_handle(pending_req_handle) };
-        match http_req::await_request(pending_req_handle) {
+        let pending_resp_handle =
+            unsafe { http_req::PendingResponse::from_handle(pending_req_handle) };
+        match http_req::await_response(pending_resp_handle) {
             Ok((resp_handle, resp_body_handle)) => unsafe {
-                *error_detail = http_req::SendErrorDetailTag::Ok.into();
+                *error_detail = SendErrorDetailTag::Ok.into();
                 *resp_handle_out = resp_handle.take_handle();
                 *resp_body_handle_out = resp_body_handle.take_handle();
                 FastlyStatus::OK
@@ -2192,7 +2217,7 @@ pub mod fastly_http_req {
                 if let Some(detail) = e.detail {
                     *error_detail = detail.into();
                 } else {
-                    *error_detail = http_req::SendErrorDetailTag::Uninitialized.into();
+                    *error_detail = SendErrorDetailTag::Uninitialized.into();
                 }
                 *resp_handle_out = INVALID_HANDLE;
                 *resp_body_handle_out = INVALID_HANDLE;
@@ -2302,7 +2327,10 @@ pub mod fastly_http_req {
         let service = crate::make_str!(service, service_len);
         let request_handle =
             ManuallyDrop::new(unsafe { http_req::Request::from_handle(request_handle) });
-        convert_result(request_handle.on_behalf_of(service))
+        convert_result(adapter_http_req::on_behalf_of_deprecated(
+            &request_handle,
+            service,
+        ))
     }
 }
 
@@ -3722,7 +3750,7 @@ pub mod fastly_secret_store {
     ) -> FastlyStatus {
         let secret_handle =
             ManuallyDrop::new(unsafe { secret_store::Secret::from_handle(secret_handle) });
-        alloc_result_opt!(plaintext_buf, plaintext_max_len, nwritten_out, {
+        alloc_result!(plaintext_buf, plaintext_max_len, nwritten_out, {
             secret_handle.plaintext(u64::try_from(plaintext_max_len).trapping_unwrap())
         })
     }
@@ -4289,6 +4317,7 @@ pub mod fastly_shielding {
         pub struct ShieldBackendOptions: u32 {
             const RESERVED = 1 << 0;
             const CACHE_KEY = 1 << 1;
+            const FIRST_BYTE_TIMEOUT = 1 << 2;
         }
     }
 
@@ -4296,6 +4325,7 @@ pub mod fastly_shielding {
     pub struct ShieldBackendConfig {
         pub cache_key: *const u8,
         pub cache_key_len: u32,
+        pub first_byte_timeout_ms: u32,
     }
 
     impl Default for ShieldBackendConfig {
@@ -4303,6 +4333,7 @@ pub mod fastly_shielding {
             ShieldBackendConfig {
                 cache_key: std::ptr::null(),
                 cache_key_len: 0,
+                first_byte_timeout_ms: 0,
             }
         }
     }
@@ -4351,33 +4382,6 @@ pub mod fastly_shielding {
         )
     }
 
-    fn shield_backend_options(
-        mask: ShieldBackendOptions,
-        options: *const ShieldBackendConfig,
-    ) -> Result<host::ShieldBackendOptions<'static>, FastlyStatus> {
-        macro_rules! make_string {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_string_result!((*options).$ptr_field, (*options).$len_field) }
-            };
-        }
-
-        let cache_key = if mask.contains(ShieldBackendOptions::CACHE_KEY) {
-            Some(ManuallyDrop::into_inner(make_string!(
-                cache_key,
-                cache_key_len
-            )))
-        } else {
-            None
-        };
-
-        let options = host::ShieldBackendOptions {
-            cache_key,
-            extra: None,
-        };
-
-        Ok(options)
-    }
-
     /// Turn a pop name into a backend that we can send requests to.
     #[export_name = "fastly_shielding#backend_for_shield"]
     pub fn backend_for_shield(
@@ -4390,24 +4394,35 @@ pub mod fastly_shielding {
         nwritten_out: *mut u32,
     ) -> FastlyStatus {
         let name = crate::make_str!(name, name_len);
-        let options = match shield_backend_options(options_mask, options) {
-            Ok(tuple) => tuple,
-            Err(err) => return err,
+
+        let adapted_options = if options_mask.is_empty() {
+            // Skip the hostcalls to create the options resource.
+            None
+        } else {
+            let adapted_options = host::ShieldBackendOptions::new();
+            if options_mask.contains(ShieldBackendOptions::FIRST_BYTE_TIMEOUT) {
+                adapted_options.set_first_byte_timeout(unsafe { (*options).first_byte_timeout_ms });
+            }
+            if options_mask.contains(ShieldBackendOptions::CACHE_KEY) {
+                let s =
+                    unsafe { crate::make_slice!((*options).cache_key, (*options).cache_key_len) };
+                adapted_options.set_cache_key(&s);
+            }
+
+            Some(adapted_options)
         };
+        // We allow the ShieldBackendOptions Resource to drop at the end of this call;
+        // we don't need it any more, and it has no heap allocations.
+
         with_buffer!(
             backend_name,
             backend_name_len,
             {
                 let res = host::backend_for_shield(
                     name,
-                    &options,
+                    adapted_options.as_ref(),
                     u64::try_from(backend_name_len).trapping_unwrap(),
                 );
-
-                // Don't drop the options; even though this specific option type
-                // doesn't currently have pointers or handles, future versions of
-                // it might.
-                std::mem::forget(options);
 
                 res
             },

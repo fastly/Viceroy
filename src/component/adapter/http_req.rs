@@ -144,4 +144,15 @@ impl adapter_http_req::Host for ComponentCtx {
     fn downstream_tls_ja3_md5(&mut self) -> Result<Option<Vec<u8>>, types::Error> {
         HttpDownstream::downstream_tls_ja3_md5(self, self.ds_req_handle())
     }
+
+    fn on_behalf_of_deprecated(
+        &mut self,
+        _: Resource<http_req::Request>,
+        _: String,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "http-req.on-behalf-of is not supported in Viceroy",
+        }
+        .into())
+    }
 }

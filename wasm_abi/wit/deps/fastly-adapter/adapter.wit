@@ -21,7 +21,7 @@ package fastly:adapter;
 /// accessible to public Wit users.
 interface adapter-http-req {
   use fastly:compute/types.{error, ip-address};
-  use fastly:compute/http-req.{client-cert-verify-result};
+  use fastly:compute/http-req.{client-cert-verify-result, request};
 
   downstream-client-ip-addr: func() -> option<ip-address>;
   downstream-server-ip-addr: func() -> option<ip-address>;
@@ -54,6 +54,12 @@ interface adapter-http-req {
 
   /// Deprecated; use `redirect-to-grip-proxy` instead.
   redirect-to-grip-proxy-deprecated: func(backend: string) -> result<_, error>;
+
+  /// Deprecated; this function depends on per-service authority.
+  on-behalf-of-deprecated: func(
+    request: borrow<request>,
+    service: string,
+  ) -> result<_, error>;
 }
 
 interface adapter-http-downstream {
@@ -78,6 +84,32 @@ interface adapter-http-cache {
     req-handle: borrow<request>,
     options: lookup-options,
   ) -> result<entry, error>;
+}
+
+/// Adapter Core Cache functions.
+interface adapter-cache {
+  use fastly:compute/types.{error};
+  use fastly:compute/cache.{
+    extra-lookup-options, extra-write-options, extra-replace-options
+  };
+
+  /// Deprecated; this function depends on per-service authority.
+  set-lookup-service-id-deprecated: func(
+    options: borrow<extra-lookup-options>,
+    service-id: string
+  ) -> result<_, error>;
+
+  /// Deprecated; this function depends on per-service authority.
+  set-write-service-id-deprecated: func(
+    options: borrow<extra-write-options>,
+    service-id: string
+  ) -> result<_, error>;
+
+  /// Deprecated; this function depends on per-service authority.
+  set-replace-service-id-deprecated: func(
+    options: borrow<extra-replace-options>,
+    service-id: string
+  ) -> result<_, error>;
 }
 
 /// User-agent string parsing (deprecated).
@@ -105,6 +137,7 @@ world adapter-imports {
   import adapter-http-req;
   import adapter-http-downstream;
   import adapter-http-cache;
+  import adapter-cache;
   import adapter-uap;
 }
 

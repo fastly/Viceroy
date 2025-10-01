@@ -46,7 +46,7 @@ impl secret_store::HostSecret for ComponentCtx {
         &mut self,
         secret: Resource<secret_store::Secret>,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
+    ) -> Result<Vec<u8>, types::Error> {
         let secret = secret.into();
         let lookup = self
             .session()
@@ -83,7 +83,7 @@ impl secret_store::HostSecret for ComponentCtx {
             .into());
         }
 
-        Ok(Some(plaintext.to_owned()))
+        Ok(plaintext.to_owned())
     }
 
     fn from_bytes(

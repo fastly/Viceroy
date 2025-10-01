@@ -160,14 +160,6 @@ macro_rules! make_str {
     }};
 }
 
-/// Like `make_str` but wraps the error return value in an `Err`.
-#[macro_export]
-macro_rules! make_str_result {
-    ($ptr:expr, $len:expr) => {{
-        $crate::make_slice!($ptr, $len)
-    }};
-}
-
 /// Construct a `ManuallyDrop<Vec<u8>>` containing the given pointer and length.
 ///
 /// This would use `String`, except that we use `raw_strings` for better
@@ -175,14 +167,6 @@ macro_rules! make_str_result {
 /// validity.
 #[macro_export]
 macro_rules! make_string {
-    ($ptr:expr, $len:expr) => {{
-        $crate::make_vec!($ptr, $len)
-    }};
-}
-
-/// Like `make_string` but wraps the error return value in an `Err`.
-#[macro_export]
-macro_rules! make_string_result {
     ($ptr:expr, $len:expr) => {{
         $crate::make_vec!($ptr, $len)
     }};

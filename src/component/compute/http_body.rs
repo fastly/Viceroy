@@ -162,7 +162,7 @@ impl http_body::Host for ComponentCtx {
         h: Resource<http_body::Body>,
         max_len: u64,
         cursor: u32,
-    ) -> Result<(String, Option<u32>), types::Error> {
+    ) -> Result<(String, Option<u32>), http_body::TrailerError> {
         let h = h.into();
 
         // Read operations are not allowed on streaming bodies.
@@ -172,7 +172,7 @@ impl http_body::Host for ComponentCtx {
 
         let body = self.session_mut().body_mut(h)?;
         if !body.trailers_ready {
-            return Err(Error::Again.into());
+            return Err(http_body::TrailerError::NotAvailableYet);
         }
 
         let trailers = &body.trailers;
@@ -186,7 +186,7 @@ impl http_body::Host for ComponentCtx {
         h: Resource<http_body::Body>,
         name: String,
         max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
+    ) -> Result<Option<Vec<u8>>, http_body::TrailerError> {
         let h = h.into();
 
         // Read operations are not allowed on streaming bodies.
@@ -196,7 +196,7 @@ impl http_body::Host for ComponentCtx {
 
         let body = self.session_mut().body_mut(h)?;
         if !body.trailers_ready {
-            return Err(Error::Again.into());
+            return Err(http_body::TrailerError::NotAvailableYet);
         }
 
         let trailers = &mut body.trailers;
@@ -230,7 +230,7 @@ impl http_body::Host for ComponentCtx {
         name: String,
         max_len: u64,
         cursor: u32,
-    ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
+    ) -> Result<(Vec<u8>, Option<u32>), http_body::TrailerError> {
         let h = h.into();
 
         // Read operations are not allowed on streaming bodies.
@@ -238,14 +238,20 @@ impl http_body::Host for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h)?;
+        let body = self.session_mut().body_mut(h).unwrap();
         if !body.trailers_ready {
-            return Err(Error::Again.into());
+            return Err(http_body::TrailerError::NotAvailableYet);
         }
 
         let trailers = &mut body.trailers;
         let (buf, next) = headers::get_values(trailers, &name, max_len, cursor)?;
 
         Ok((buf, next))
+    }
+}
+
+impl<T: Into<types::Error>> From<T> for http_body::TrailerError {
+    fn from(err: T) -> Self {
+        Self::Error(err.into())
     }
 }
