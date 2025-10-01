@@ -50,7 +50,7 @@ impl shielding::Host for ComponentCtx {
     fn backend_for_shield(
         &mut self,
         name: String,
-        _options: shielding::ShieldBackendOptions,
+        _options: Option<Resource<shielding::ShieldBackendOptions>>,
         max_len: u64,
     ) -> Result<String, types::Error> {
         let shield_uri = name;
@@ -88,10 +88,31 @@ impl shielding::Host for ComponentCtx {
     }
 }
 
-impl shielding::HostExtraShieldBackendOptions for ComponentCtx {
+impl shielding::HostShieldBackendOptions for ComponentCtx {
+    fn set_first_byte_timeout(
+        &mut self,
+        _resource: Resource<shielding::ShieldBackendOptions>,
+        _timeout_ms: u32,
+    ) {
+    }
+
+    fn set_cache_key(
+        &mut self,
+        _resource: Resource<shielding::ShieldBackendOptions>,
+        _cache_key: String,
+    ) {
+    }
+
+    fn new(&mut self) -> Result<Resource<shielding::ShieldBackendOptions>, anyhow::Error> {
+        Err(Error::Unsupported {
+            msg: "Shield backend options not yet supported in Viceroy",
+        }
+        .into())
+    }
+
     fn drop(
         &mut self,
-        _options: Resource<shielding::ExtraShieldBackendOptions>,
+        _options: Resource<shielding::ShieldBackendOptions>,
     ) -> wasmtime::Result<()> {
         Ok(())
     }

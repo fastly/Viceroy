@@ -120,5 +120,5 @@ resource_impl!(
 
 resource_impl!(
     RequestPromiseHandle,
-    crate::component::bindings::fastly::compute::http_downstream::RequestPromise
+    crate::component::bindings::fastly::compute::http_downstream::PendingRequest
 );

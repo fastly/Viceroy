@@ -12,7 +12,7 @@ impl http_downstream::Host for ComponentCtx {
     async fn next_request(
         &mut self,
         options: http_downstream::NextRequestOptions,
-    ) -> Result<Resource<http_downstream::RequestPromise>, types::Error> {
+    ) -> Result<Resource<http_downstream::PendingRequest>, types::Error> {
         let timeout = options.timeout_ms.map(Duration::from_millis);
         let handle = self
             .session_mut()
@@ -26,16 +26,16 @@ impl http_downstream::Host for ComponentCtx {
 
     fn next_request_abandon(
         &mut self,
-        handle: Resource<http_downstream::RequestPromise>,
+        handle: Resource<http_downstream::PendingRequest>,
     ) -> Result<(), types::Error> {
         let handle = RequestPromiseHandle::from(handle).into();
         self.session_mut().abandon_pending_downstream_req(handle)?;
         Ok(())
     }
 
-    async fn await_next_request(
+    async fn await_request(
         &mut self,
-        handle: Resource<http_downstream::RequestPromise>,
+        handle: Resource<http_downstream::PendingRequest>,
     ) -> Result<Option<(Resource<http_req::Request>, Resource<http_body::Body>)>, types::Error>
     {
         let handle = RequestPromiseHandle::from(handle).into();

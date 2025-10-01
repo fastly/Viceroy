@@ -57,13 +57,6 @@ fn load_write_options(options: &api::WriteOptions) -> Result<WriteOptions, Error
     let length = options.length;
     let sensitive_data = options.sensitive_data;
 
-    // SERVICE_ID differences are observable- but we don't implement that behavior. Error explicitly.
-    if options.service_id.is_some() {
-        return Err(Error::Unsupported {
-            msg: "cache on_behalf_of is not supported in Viceroy",
-        });
-    }
-
     let edge_max_age = if let Some(edge_max_age_ns) = options.edge_max_age_ns {
         Duration::from_nanos(edge_max_age_ns)
     } else {
@@ -588,6 +581,10 @@ impl api::HostEntry for ComponentCtx {
 }
 
 impl api::HostExtraReplaceOptions for ComponentCtx {
+    fn new(&mut self) -> wasmtime::Result<Resource<api::ExtraReplaceOptions>> {
+        Ok(Resource::<api::ExtraReplaceOptions>::new_own(0))
+    }
+
     fn drop(&mut self, _options: Resource<api::ExtraReplaceOptions>) -> wasmtime::Result<()> {
         Ok(())
     }
@@ -600,12 +597,20 @@ impl api::HostExtraGetBodyOptions for ComponentCtx {
 }
 
 impl api::HostExtraWriteOptions for ComponentCtx {
+    fn new(&mut self) -> wasmtime::Result<Resource<api::ExtraWriteOptions>> {
+        Ok(Resource::<api::ExtraWriteOptions>::new_own(0))
+    }
+
     fn drop(&mut self, _options: Resource<api::ExtraWriteOptions>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
 
 impl api::HostExtraLookupOptions for ComponentCtx {
+    fn new(&mut self) -> wasmtime::Result<Resource<api::ExtraLookupOptions>> {
+        Ok(Resource::<api::ExtraLookupOptions>::new_own(0))
+    }
+
     fn drop(&mut self, _options: Resource<api::ExtraLookupOptions>) -> wasmtime::Result<()> {
         Ok(())
     }

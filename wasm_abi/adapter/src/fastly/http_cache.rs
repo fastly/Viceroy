@@ -130,7 +130,7 @@ mod http_cache {
 
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                crate::make_string_result!((*options).$ptr_field, (*options).$len_field)
+                crate::make_string!((*options).$ptr_field, (*options).$len_field)
             };
         }
 

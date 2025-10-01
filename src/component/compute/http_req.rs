@@ -148,7 +148,7 @@ impl http_req::Host for ComponentCtx {
         Ok(self.session.insert_pending_request(task).into())
     }
 
-    async fn await_request(
+    async fn await_response(
         &mut self,
         h: Resource<http_req::PendingRequest>,
     ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
@@ -472,17 +472,6 @@ impl http_req::HostRequest for ComponentCtx {
         self.session_mut()
             .redirect_downstream_to_pushpin(redirect_info)?;
         Ok(())
-    }
-
-    fn on_behalf_of(
-        &mut self,
-        _: Resource<http_req::Request>,
-        _: String,
-    ) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "http-req.on-behalf-of is not supported in Viceroy",
-        }
-        .into())
     }
 
     fn drop(&mut self, _request: Resource<http_req::Request>) -> wasmtime::Result<()> {

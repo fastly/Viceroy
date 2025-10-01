@@ -248,7 +248,7 @@ interface http-body {
     body: borrow<body>,
     max-len: u64,
     cursor: u32,
-  ) -> result<tuple<string, option<u32>>, error>;
+  ) -> result<tuple<string, option<u32>>, trailer-error>;
 
   /// Gets the value for the trailer with the given name, or `none` if the trailer is not present.
   ///
@@ -263,7 +263,7 @@ interface http-body {
     body: borrow<body>,
     name: string,
     max-len: u64,
-  ) -> result<option<list<u8>>, error>;
+  ) -> result<option<list<u8>>, trailer-error>;
 
   /// Gets multiple values associated with the trailer with the given name.
   ///
@@ -279,7 +279,17 @@ interface http-body {
     name: string,
     max-len: u64,
     cursor: u32
-  ) -> result<tuple<list<u8>, option<u32>>, error>;
+  ) -> result<tuple<list<u8>, option<u32>>, trailer-error>;
+
+  /// Trailers aren't available until the body has been completely transmitted, so this error
+  /// type can either indicate that the errors aren't available yet, or that an error occurred.
+  variant trailer-error {
+    /// The trailers aren't available yet.
+    not-available-yet,
+
+    /// An error occurred.
+    error(error),
+  }
 }
 
 /// Low-level interface to Fastly's [Real-Time Log Streaming] endpoints.
@@ -317,7 +327,7 @@ interface log {
 interface http-downstream {
   use types.{error, ip-address};
   use http-req.{
-    request, client-cert-verify-result, error-with-detail, cache-override, request-promise,
+    request, client-cert-verify-result, error-with-detail, cache-override, pending-request,
     request-with-body,
   };
 
@@ -335,18 +345,18 @@ interface http-downstream {
   /// Starts waiting for the next request.
   next-request: func(
     options: next-request-options,
-  ) -> result<request-promise, error>;
+  ) -> result<pending-request, error>;
 
   /// Waits until the next request is available, and then returns the resulting
   /// request and body.
   ///
   /// Returns `ok(none)` if there are no more requests for this session.
-  await-next-request: func(
-    pending: request-promise,
+  await-request: func(
+    pending: pending-request,
   ) -> result<option<request-with-body>, error>;
 
   next-request-abandon: func(
-    pending: request-promise,
+    pending: pending-request,
   ) -> result<_, error>;
 
   /// Returns the client request's header names exactly as they were originally received.
@@ -498,11 +508,11 @@ interface http-req {
   use http-body.{body};
   use http-resp.{response-with-body};
 
-  /// Handle that can be used to wait for a sent request.
-  use async-io.{pollable as pending-request};
+  /// Handle that can be used to wait for a response from a sent request.
+  use async-io.{pollable as pending-response};
 
   /// Handle that can be used to wait for incoming requests.
-  use async-io.{pollable as request-promise};
+  use async-io.{pollable as pending-request};
 
   /// An HTTP request.
   resource request {
@@ -628,12 +638,6 @@ interface http-req {
       mode: framing-headers-mode,
     ) -> result<_, error>;
 
-    /// Instead of having this request cache in this service's space, use the
-    /// cache of the named service
-    on-behalf-of: func(
-      service: string,
-    ) -> result<_, error>;
-
     redirect-to-grip-proxy: func(
       backend: string,
     ) -> result<_, error>;
@@ -660,15 +664,15 @@ interface http-req {
   ) -> result<response-with-body, error-with-detail>;
 
   /// Begins sending the request to the given backend server, and returns a
-  /// `pending-request` that can yield the backend response or an error.
+  /// `pending-response` that can yield the backend response or an error.
   ///
   /// This method returns as soon as the request begins sending to the backend,
   /// and transmission of the request body and headers will continue in the
   /// background.
   ///
   /// This method allows for sending more than one request at once and receiving
-  /// their responses in arbitrary orders. See `pending-request` for more
-  /// details on how to wait on, poll, or select between pending requests.
+  /// their responses in arbitrary orders. See `pending-response` for more
+  /// details on how to wait on, poll, or select between pending responses.
   ///
   /// This method is also useful for sending requests where the response is
   /// unimportant, but the request may take longer than the Compute program is
@@ -678,7 +682,7 @@ interface http-req {
     request: request,
     body: body,
     backend: string
-  ) -> result<pending-request, error>;
+  ) -> result<pending-response, error>;
 
   /// This is to `send-async` as `send-uncached` is to `send`.
   ///
@@ -689,15 +693,15 @@ interface http-req {
     request: request,
     body: body,
     backend: string,
-  ) -> result<pending-request, error>;
+  ) -> result<pending-response, error>;
 
   /// Begins sending the request to the given backend server, and returns a
-  /// `pending-request` that can yield the backend response or an error.
+  /// `pending-response` that can yield the backend response or an error.
   ///
   /// The `body` argument is not consumed, so that it can accept further data to send.
   ///
   /// The backend connection is only closed once `http-body.close` is called. The
-  /// `pending-request` will not yield a `response` until the body is finished.
+  /// `pending-response` will not yield a `response` until the body is finished.
   ///
   /// This method is most useful for programs that do some sort of processing or
   /// inspection of a potentially-large client request body. Streaming allows the
@@ -711,7 +715,7 @@ interface http-req {
     request: request,
     body: borrow<body>,
     backend: string,
-  ) -> result<pending-request, error>;
+  ) -> result<pending-response, error>;
 
   /// This is to `send-async-streaming` as `send-uncached` is to `send`.
   ///
@@ -722,7 +726,7 @@ interface http-req {
     request: request,
     body: borrow<body>,
     backend: string,
-  ) -> result<pending-request, error>;
+  ) -> result<pending-response, error>;
 
   type request-with-body = tuple<request, body>;
 
@@ -792,18 +796,14 @@ interface http-req {
     certificate-unknown,
   }
 
-  enum send-error-detail-tag {
-      /// The $send_error_detail struct has not been populated.
-      uninitialized,
-      /// There was no send error.
-      ok,
+  /// Information about errors encountered by sent requests.
+  variant send-error-detail {
       /// The system encountered a timeout when trying to find an IP address for the backend
       /// hostname.
       dns-timeout,
       /// The system encountered a DNS error when trying to find an IP address for the backend
-      /// hostname. The fields `dns-error-rcode` and `dns-error-info-code` may be set in the
-      /// $send_error_detail.
-      dns-error,
+      /// hostname.
+      dns-error(dns-error-detail),
       /// The system cannot determine which backend to use, or the specified backend was invalid.
       destination-not-found,
       /// The system considers the backend to be unavailable, for example when recent attempts to
@@ -850,21 +850,25 @@ interface http-req {
       http-request-uri-invalid,
       /// The system encountered an unexpected internal error.
       internal-error,
-      /// The system received a TLS alert from the backend. The field `tls-alert-id` may be set in
-      /// the $send_error_detail.
-      tls-alert-received,
+      /// The system received a TLS alert from the backend.
+      tls-alert-received(tls-alert-received-detail),
       /// The system encountered a TLS error when communicating with the backend, either during
       /// the handshake or afterwards.
       tls-protocol-error,
   }
 
-  record send-error-detail {
-      tag: send-error-detail-tag,
-      dns-error-rcode: option<u16>,
-      dns-error-info-code: option<u16>,
-      tls-alert-id: option<u8>,
+  /// Variant fields for `send-error.dns-error`.
+  record dns-error-detail {
+      rcode: option<u16>,
+      info-code: option<u16>,
   }
 
+  /// Variant fields for `send-error.tls-alert-received`.
+  record tls-alert-received-detail {
+      id: option<u8>,
+  }
+
+  /// An `error` code, optionally with extra request error information.
   record error-with-detail {
       detail: option<send-error-detail>,
       error: error,
@@ -885,8 +889,8 @@ interface http-req {
 
   /// Waits until the request is completed, and then returns the resulting
   /// response and body.
-  await-request: func(
-    pending: pending-request
+  await-response: func(
+    pending: pending-response
   ) -> result<response-with-body, error-with-detail>;
 
   /// Closes the `request`, releasing any associated resources.
@@ -1470,7 +1474,7 @@ interface secret-store {
     /// Returns the plaintext value of this secret.
     plaintext: func(
       max-len: u64
-    ) -> result<option<list<u8>>, error>;
+    ) -> result<list<u8>, error>;
   }
 
   /// A Secret Store.
@@ -1813,7 +1817,7 @@ interface backend {
 interface async-io {
   /// An object supporting generic async operations.
   ///
-  /// Can be a `http-body.body`, `http-req.pending-request`, `http-req.request-promise`,
+  /// Can be a `http-body.body`, `http-req.pending-response`, `http-req.pending-request`,
   /// `cache.pending-entry`. `kv-store.pending-lookup`, `kv-store.pending-insert`,
   /// `kv-store.pending-delete`, or `kv-store.pending-list`.
   ///
@@ -2122,8 +2126,6 @@ interface cache {
     ///
     request-headers: option<borrow<request>>,
 
-    service-id: option<string>,
-
     always-use-requested-range: bool,
 
     /// Additional options may be added in the future via this resource type.
@@ -2131,7 +2133,9 @@ interface cache {
   }
 
   /// Extensibility for `lookup-options`
-  resource extra-lookup-options {}
+  resource extra-lookup-options {
+    constructor();
+  }
 
   /// Configuration for several functions that write to the cache:
   /// - `insert`
@@ -2161,7 +2165,6 @@ interface cache {
     length: option<object-length>,
     user-metadata: option<list<u8>>,
     edge-max-age-ns: option<duration-ns>,
-    service-id: option<string>,
     sensitive-data: bool,
 
     /// Additional options may be added in the future via this resource type.
@@ -2169,7 +2172,9 @@ interface cache {
   }
 
   /// Extensibility for `write-options`
-  resource extra-write-options {}
+  resource extra-write-options {
+    constructor();
+  }
 
   record get-body-options {
     %from: option<u64>,
@@ -2226,7 +2231,6 @@ interface cache {
     /// a full request handle, but used only for its headers
     request-headers: option<borrow<request>>,
     replace-strategy: option<replace-strategy>,
-    service-id: option<string>,
     always-use-requested-range: bool,
 
     /// Additional options may be added in the future via this resource type.
@@ -2234,7 +2238,9 @@ interface cache {
   }
 
   /// Extensibility for `replace-options`
-  resource extra-replace-options {}
+  resource extra-replace-options {
+    constructor();
+  }
 
   enum replace-strategy {
     /// Immediately start the replace and do not wait for any other pending requests for the same
@@ -2650,19 +2656,17 @@ interface shielding {
     max-len: u64,
   ) -> result<string, error>;
 
-  record shield-backend-options {
-    cache-key: option<string>,
-
-    /// Additional options may be added in the future via this resource type.
-    extra: option<borrow<extra-shield-backend-options>>,
-  }
-
   /// Extensibility for `shield-backend-options`
-  resource extra-shield-backend-options {}
+  resource shield-backend-options {
+    constructor();
+
+    set-cache-key: func(cache-key: string);
+    set-first-byte-timeout: func(timeout-ms: u32);
+  }
 
   backend-for-shield: func(
     name: string,
-    options: shield-backend-options,
+    options: option<borrow<shield-backend-options>>,
     max-len: u64,
   ) -> result<string, error>;
 }

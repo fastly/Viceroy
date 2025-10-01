@@ -10,11 +10,15 @@ pub(crate) mod bindings {
         imports: {
             default: tracing,
 
-            "fastly:compute/backend/[constructor]dynamic-backend-options": trappable,
+            "fastly:compute/backend/[constructor]dynamic-backend-options": tracing | trappable,
+            "fastly:compute/shielding/[constructor]shield-backend-options": tracing | trappable,
+            "fastly:compute/cache/[constructor]extra-lookup-options": tracing | trappable,
+            "fastly:compute/cache/[constructor]extra-replace-options": tracing | trappable,
+            "fastly:compute/cache/[constructor]extra-write-options": tracing | trappable,
 
             // The trap-test test depends on being able to induce an artificial
             // trap in `get-header-values`.
-            "fastly:compute/http-resp/[method]response.get-header-values": trappable,
+            "fastly:compute/http-resp/[method]response.get-header-values": tracing | trappable,
 
             "fastly:compute/http-body/append": async | tracing,
             "fastly:compute/kv-store/await-delete": async | tracing,
@@ -22,8 +26,8 @@ pub(crate) mod bindings {
             "fastly:compute/kv-store/await-insert": async | tracing,
             "fastly:compute/kv-store/await-list": async | tracing,
             "fastly:compute/kv-store/await-lookup": async | tracing | trappable,
-            "fastly:compute/http-downstream/await-next-request": async | tracing,
-            "fastly:compute/http-req/await-request": async | tracing,
+            "fastly:compute/http-downstream/await-request": async | tracing,
+            "fastly:compute/http-req/await-response": async | tracing,
             "fastly:compute/cache/close-entry": async | tracing,
             "fastly:compute/cache/insert": async | tracing,
             "fastly:compute/cache/replace": async | tracing,
