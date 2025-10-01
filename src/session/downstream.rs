@@ -85,6 +85,7 @@ impl DownstreamResponseState {
     }
 
     /// Close the `DownstreamResponse`, potentially without sending any response.
+    #[allow(unused)]
     pub fn close(&mut self) {
         *self = DownstreamResponseState::Closed;
     }
