@@ -27,7 +27,7 @@ version 0.34 or above supports local testing, and the workflow is documented
 
 To install Viceroy as a standalone tool, you'll need to first
 [install Rust](https://www.rust-lang.org/tools/install) if you haven't already.
-Then run `cargo install viceroy`, which will download and build the latest
+Then run `cargo install --locked viceroy`, which will download and build the latest
 Viceroy release.
 
 ## Usage as a library
