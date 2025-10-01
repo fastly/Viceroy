@@ -69,10 +69,10 @@ impl From<Error> for ComponentError {
             // platform uses. Check!
             Error::InvalidKey => ComponentError::InvalidArgument,
             Error::InvalidArgument(_) => ComponentError::InvalidArgument,
-            Error::CannotWrite => ComponentError::BadHandle,
-            Error::Missing => ComponentError::OptionalNone,
-            Error::HandleBodyUsed => ComponentError::BadHandle,
-            Error::NotRevalidatable => ComponentError::BadHandle,
+            Error::CannotWrite => ComponentError::AuxiliaryError,
+            Error::Missing => ComponentError::CannotRead,
+            Error::HandleBodyUsed => ComponentError::AuxiliaryError,
+            Error::NotRevalidatable => ComponentError::AuxiliaryError,
         }
     }
 }

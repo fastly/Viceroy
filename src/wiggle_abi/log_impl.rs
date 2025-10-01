@@ -6,7 +6,6 @@ use {
         session::Session,
         wiggle_abi::{fastly_log::FastlyLog, types::EndpointHandle},
     },
-    anyhow::anyhow,
     lazy_static::lazy_static,
     wiggle::{GuestMemory, GuestPtr},
 };
@@ -46,9 +45,14 @@ impl FastlyLog for Session {
     ) -> Result<u32, Error> {
         let endpoint = self.log_endpoint(endpoint_handle)?;
         let msg = memory.as_slice(msg)?.ok_or(Error::SharedMemory)?;
-        endpoint
-            .write_entry(&msg)
-            .map(|_| msg.len() as u32)
-            .map_err(|e| Error::Other(anyhow!(e)))
+
+        // The log API is infallible, so if we get an error, warn about it
+        // rather than bubbling it up through the log API.
+        match endpoint.write_entry(&msg) {
+            Ok(()) => {}
+            Err(err) => tracing::error!("Error writing log message: {:?}", err),
+        }
+
+        Ok(msg.len().try_into().unwrap())
     }
 }

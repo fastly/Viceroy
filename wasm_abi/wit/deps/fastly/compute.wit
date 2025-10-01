@@ -22,11 +22,21 @@ interface types {
     generic-error,
     /// Invalid argument.
     invalid-argument,
-    /// Invalid handle.
+    /// Auxiliary error value.
     ///
-    /// Returned when a handle is not valid, for example when no dictionary exists with the given
-    /// name.
-    bad-handle,
+    /// For `cache.get-body` and `cache.replace-get-body`, it means the cache implementation was
+    /// busy and not ready to retrieve the body data.
+    ///
+    /// For cache APIs that attempt to write to or update the body of a cache transaction, it means
+    /// that an error occurred while attempting the write or update.
+    ///
+    /// For other cache APIs, it indicates that the underlying cache entry or cache replace entry
+    /// is no longer available.
+    ///
+    /// For writing to a streaming HTTP body, indicates that the body has already been closed.
+    ///
+    /// For a dictionary lookup, indicates that the dictionary was not found.
+    auxiliary-error,
     /// Buffer length error.
     ///
     /// Returned when a buffer is the wrong size.
@@ -51,11 +61,10 @@ interface types {
     ///
     /// This can be returned when a stream ended unexpectedly.
     http-incomplete,
-    /// A “none” error.
+    /// Cannot read.
     ///
-    /// This status code is used to indicate when an optional value did not exist, as opposed to
-    /// an empty value.
-    optional-none,
+    /// An error occurred while attempting to read the body of a cache transaction.
+    cannot-read,
     /// Message head too large.
     http-head-too-large,
     /// Invalid HTTP status.
@@ -315,9 +324,8 @@ interface log {
 
     /// Writes a data to the given endpoint.
     ///
-    /// Each call to `write` produces a single log event. On success, the number of bytes written
-    /// is returned.
-    write: func(msg: list<u8>) -> result<u32, error>;
+    /// Each call to `write` with a non-empty message produces a single log event.
+    write: func(msg: list<u8>);
   }
 }
 
@@ -354,10 +362,6 @@ interface http-downstream {
   await-request: func(
     pending: pending-request,
   ) -> result<option<request-with-body>, error>;
-
-  next-request-abandon: func(
-    pending: pending-request,
-  ) -> result<_, error>;
 
   /// Returns the client request's header names exactly as they were originally received.
   ///
@@ -874,19 +878,6 @@ interface http-req {
       error: error,
   }
 
-  /// Configuration for inspecting a `request` using Security.
-  record inspect-options {
-    corp: option<string>,
-    workspace: option<string>,
-    override-client-ip: option<ip-address>,
-
-    /// Additional options may be added in the future via this resource type.
-    extra: option<borrow<extra-inspect-options>>,
-  }
-
-  /// Extensibility for `inspect-options`
-  resource extra-inspect-options {}
-
   /// Waits until the request is completed, and then returns the resulting
   /// response and body.
   await-response: func(
@@ -907,7 +898,7 @@ interface http-req {
 ///
 /// [Fastly Next-Gen WAF]: https://docs.fastly.com/en/ngwaf/
 interface security {
-  use http-req.{request, body, inspect-options, error};
+  use http-req.{request, body, ip-address, error};
 
   /// Inspects request HTTP traffic using the [NGWAF] lookaside service.
   ///
@@ -920,6 +911,19 @@ interface security {
     options: inspect-options,
     max-len: u64
   ) -> result<string, error>;
+
+  /// Configuration for inspecting a `request` using Security.
+  record inspect-options {
+    corp: option<string>,
+    workspace: option<string>,
+    override-client-ip: option<ip-address>,
+
+    /// Additional options may be added in the future via this resource type.
+    extra: option<borrow<extra-inspect-options>>,
+  }
+
+  /// Extensibility for `inspect-options`
+  resource extra-inspect-options {}
 }
 
 /// HTTP responses.
@@ -2039,79 +2043,56 @@ interface cache {
   use async-io.{pollable as pending-entry};
 
   /// A replace operation.
-  type replace-entry = entry;
+  resource replace-entry {
+    /// The entrypoint to the replace API.
+    ///
+    /// This operation always participates in request collapsing and may return stale objects.
+    replace: static func(
+      key: list<u8>,
+      options: replace-options,
+    ) -> result<replace-entry, error>;
 
-  /// The entrypoint to the replace API.
-  ///
-  /// This operation always participates in request collapsing and may return stale objects.
-  replace: func(
-    key: list<u8>,
-    options: replace-options,
-  ) -> result<replace-entry, error>;
+    /// Gets the age of the existing object during replace, returning
+    /// `ok(none)` if there was no object.
+    get-age-ns: func() -> result<option<duration-ns>, error>;
 
-  /// Replace an object in the cache with the given metadata
-  ///
-  /// The returned handle is to a streaming body that is used for writing the object into
-  /// the cache.
-  replace-insert: func(
-    handle: borrow<replace-entry>,
-    options: write-options,
-  ) -> result<body, error>;
+    /// Gets a range of the existing object body, returning `ok(none)` if there
+    /// was no existing object.
+    ///
+    /// The returned `body` must be closed before calling this function
+    /// again on the same `replace-entry`.
+    get-body: func(
+      options: get-body-options,
+    ) -> result<option<body>, error>;
 
-  /// Gets the age of the existing object during replace, returning
-  /// `ok(none)` if there was no object.
-  replace-get-age-ns: func(
-    handle: borrow<replace-entry>,
-  ) -> result<option<duration-ns>, error>;
+    /// Gets the number of cache hits for the existing object during replace,
+    /// returning `ok(none)` if there was no object.
+    get-hits: func() -> result<option<cache-hit-count>, error>;
 
-  /// Gets a range of the existing object body, returning `ok(none)` if there
-  /// was no existing object.
-  ///
-  /// The returned `body` must be closed before calling this function
-  /// again on the same `replace-entry`.
-  replace-get-body: func(
-    handle: borrow<replace-entry>,
-    options: get-body-options,
-  ) -> result<option<body>, error>;
+    /// Gets the content length of the existing object during replace,
+    /// returning `ok(none)` if there was no object, or no content
+    /// length was provided.
+    get-length: func() -> result<option<object-length>, error>;
 
-  /// Gets the number of cache hits for the existing object during replace,
-  /// returning `ok(none)` if there was no object.
-  replace-get-hits: func(
-    handle: borrow<replace-entry>,
-  ) -> result<option<cache-hit-count>, error>;
+    /// Gets the configured max age of the existing object during replace,
+    /// returning `ok(none)` if there was no object.
+    get-max-age-ns: func() -> result<option<duration-ns>, error>;
 
-  /// Gets the content length of the existing object during replace,
-  /// returning `ok(none)` if there was no object, or no content
-  /// length was provided.
-  replace-get-length: func(
-    handle: borrow<replace-entry>,
-  ) -> result<option<object-length>, error>;
+    /// Gets the configured stale-while-revalidate period of the existing
+    /// object during replace, returning `ok(none)` if there was no
+    /// object.
+    get-stale-while-revalidate-ns: func() -> result<option<duration-ns>, error>;
 
-  /// Gets the configured max age of the existing object during replace,
-  /// returning `ok(none)` if there was no object.
-  replace-get-max-age-ns: func(
-    handle: borrow<replace-entry>,
-  ) -> result<option<duration-ns>, error>;
+    /// Gets the lookup state of the existing object during replace, returning
+    /// `ok(none)` if there was no object.
+    get-state: func() -> result<option<lookup-state>, error>;
 
-  /// Gets the configured stale-while-revalidate period of the existing
-  /// object during replace, returning `ok(none)` if there was no
-  /// object.
-  replace-get-stale-while-revalidate-ns: func(
-    handle: borrow<replace-entry>,
-  ) -> result<option<duration-ns>, error>;
-
-  /// Gets the lookup state of the existing object during replace, returning
-  /// `ok(none)` if there was no object.
-  replace-get-state: func(
-    handle: borrow<replace-entry>,
-  ) -> result<option<lookup-state>, error>;
-
-  /// Gets the user metadata of the existing object during replace, returning
-  /// `ok(none)` if there was no object.
-  replace-get-user-metadata: func(
-    handle: borrow<replace-entry>,
-    max-len: u64,
-  ) -> result<option<list<u8>>, error>;
+    /// Gets the user metadata of the existing object during replace, returning
+    /// `ok(none)` if there was no object.
+    get-user-metadata: func(
+      max-len: u64,
+    ) -> result<option<list<u8>>, error>;
+  }
 
   type object-length = u64;
   type duration-ns = u64;
@@ -2222,9 +2203,23 @@ interface cache {
   /// If the cache handle state includes the `must-insert-or-update` (and hence no insert or
   /// update has been performed), closing the handle cancels any request collapsing, potentially
   /// choosing a new waiter to perform the insertion/update.
-  ///
-  /// This may be passed either an `entry` or a `replace-entry`.
   close-entry: func(handle: entry) -> result<_, error>;
+
+  /// Replace an object in the cache with the given metadata
+  ///
+  /// The returned handle is to a streaming body that is used for writing the object into
+  /// the cache.
+  replace-insert: func(
+    handle: replace-entry,
+    options: write-options,
+  ) -> result<body, error>;
+
+  /// Closes an ongoing replace interaction with the cache.
+  ///
+  /// If the replace handle state includes the `must-insert-or-update` (and hence no insert or
+  /// update has been performed), closing the handle cancels any request collapsing, potentially
+  /// choosing a new waiter to perform the insertion/update.
+  close-replace-entry: func(handle: replace-entry) -> result<_, error>;
 
   /// Options for cache replace operations
   record replace-options {
@@ -2835,7 +2830,10 @@ world service-imports {
   import wasi:clocks/monotonic-clock@0.2.6;
   import wasi:io/error@0.2.6;
   import wasi:io/streams@0.2.6;
+  import wasi:io/poll@0.2.6;
   import wasi:random/random@0.2.6;
+  import wasi:random/insecure@0.2.6;
+  import wasi:random/insecure-seed@0.2.6;
   import wasi:cli/environment@0.2.6;
   import wasi:cli/exit@0.2.6;
   import wasi:cli/stdout@0.2.6;
