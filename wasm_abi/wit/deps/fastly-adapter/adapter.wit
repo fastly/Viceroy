@@ -1,0 +1,126 @@
+/// Interfaces available to the component adapter, which are not otherwise
+/// part of the Fastly Compute platform.
+package fastly:adapter;
+
+/// Adapter functions formerly of `fastly:compute/http-req`.
+///
+/// These functions depend on the host maintaining an implicit downstream
+/// request. They were deprecated and replaced by functions in the
+/// `http-downstream` interface which do the same thing but take an explicit
+/// `request` handle.
+///
+/// We could almost polyfill these functions in the adapter, by having the
+/// adapter remember the downstream request handle passed in and calling the
+/// `http-downstream` versions with it, but not quite. Guest programs can call
+/// `send` and pass it the downstream handle, which consumes the downstream
+/// handle. If guest programs do that and later call one of these functions,
+/// the polyfill no longer has a valid handle it can pass in.
+///
+/// So instead, we moved them to be private functions, still implemented by
+/// the host, and still accessible through the component adapter, but not
+/// accessible to public Wit users.
+interface adapter-http-req {
+  use fastly:compute/types.{error, ip-address};
+  use fastly:compute/http-req.{client-cert-verify-result};
+
+  downstream-client-ip-addr: func() -> option<ip-address>;
+  downstream-server-ip-addr: func() -> option<ip-address>;
+  downstream-client-h2-fingerprint: func(max-len: u64) -> result<string, error>;
+  downstream-client-request-id: func(max-len: u64) -> result<string, error>;
+  downstream-client-oh-fingerprint: func(max-len: u64) -> result<string, error>;
+  downstream-client-ddos-detected: func() -> result<bool, error>;
+  downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<option<list<u8>>, error>;
+  downstream-tls-protocol: func(max-len: u64) -> result<option<list<u8>>, error>;
+  downstream-tls-client-hello: func(max-len: u64) -> result<option<list<u8>>, error>;
+  downstream-tls-client-cert-verify-result: func() -> result<option<client-cert-verify-result>, error>;
+  downstream-tls-ja3-md5: func() -> result<option<list<u8>>, error>;
+  downstream-tls-ja4: func(max-len: u64) -> result<option<string>, error>;
+  downstream-compliance-region: func(max-len: u64) -> result<option<string>, error>;
+
+  /// Deprecated, because it doesn't return `none` on an empty certificate.
+  downstream-tls-raw-client-certificate-deprecated: func(max-len: u64) -> result<option<list<u8>>, error>;
+
+  get-original-header-names: func(
+    max-len: u64,
+    cursor: u32,
+  ) -> result<tuple<string, option<u32>>, error>;
+
+  original-header-count: func() -> result<u32, error>;
+
+  fastly-key-is-valid: func() -> result<bool, error>;
+
+  /// Deprecated; use `redirect-to-websocket-proxy` instead.
+  redirect-to-websocket-proxy-deprecated: func(backend: string) -> result<_, error>;
+
+  /// Deprecated; use `redirect-to-grip-proxy` instead.
+  redirect-to-grip-proxy-deprecated: func(backend: string) -> result<_, error>;
+}
+
+interface adapter-http-downstream {
+  use fastly:compute/types.{error};
+  use fastly:compute/http-req.{request};
+
+  /// Deprecated, because it doesn't return `none` on an empty certificate.
+  downstream-tls-raw-client-certificate-deprecated: func(
+    ds-request: borrow<request>,
+    max-len: u64
+  ) -> result<option<list<u8>>, error>;
+}
+
+/// Deprecated functions formerly of `fastly:compute/http-cache`.
+interface adapter-http-cache {
+  use fastly:compute/types.{error};
+  use fastly:compute/http-req.{request};
+  use fastly:compute/http-cache.{entry, lookup-options};
+
+  /// Deprecated; use `transaction-lookup` instead.
+  lookup: func(
+    req-handle: borrow<request>,
+    options: lookup-options,
+  ) -> result<entry, error>;
+}
+
+/// User-agent string parsing (deprecated).
+///
+/// This was public in the Witx ABI, but it was deprecated, so now it's a
+/// fastly-private API, available to existing code using the adapter, but
+/// not available publicly.
+interface adapter-uap {
+  use fastly:compute/types.{error};
+
+  resource user-agent {
+    family: func(max-len: u64) -> result<string, error>;
+    major: func(max-len: u64) -> result<string, error>;
+    minor: func(max-len: u64) -> result<string, error>;
+    patch: func(max-len: u64) -> result<string, error>;
+  }
+
+  /// Parses a user agent string.
+  parse: func(user-agent: list<u8>) -> result<user-agent, error>;
+}
+
+/// A world that just imports all the deprecated APIs, split out from the main
+/// world below so that we can refer to it in tests.
+world adapter-imports {
+  import adapter-http-req;
+  import adapter-http-downstream;
+  import adapter-http-cache;
+  import adapter-uap;
+}
+
+/// The `fastly:compute/service` world plus the deprecated interfaces.
+world adapter-service {
+  // Make this world a superset of the public `service` world.
+  include fastly:compute/service;
+
+  // And, add all the deprecated interfaces.
+  include adapter-imports;
+}
+
+/// Like `adapter-service`, but only includes the imports, and not the
+/// exports (`http-incoming.handle`), so that it can be used by library components
+/// that don't have their own `main` function.
+world adapter-service-imports {
+    include fastly:compute/service-imports;
+    include adapter-imports;
+}

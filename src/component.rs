@@ -3,111 +3,128 @@ use {
     wasmtime::component::{self, HasSelf},
 };
 
-component::bindgen!({
-    path: "wasm_abi/wit",
-    world: "fastly:api/compute",
-    tracing: true,
-    async: true,
-    with: {
-        "fastly:api/uap/user-agent": uap::UserAgent,
-        "fastly:api/kv-store/lookup-result": kv_store::LookupResult,
+pub(crate) mod bindings {
+    wasmtime::component::bindgen!({
+        path: "wasm_abi/wit",
+        world: "fastly:adapter/adapter-service",
+        imports: {
+            default: tracing,
 
-        "wasi:clocks": wasmtime_wasi::p2::bindings::clocks,
-        "wasi:random": wasmtime_wasi::p2::bindings::random,
-        "wasi:io": wasmtime_wasi::p2::bindings::io,
-        "wasi:cli": wasmtime_wasi::p2::bindings::cli,
-    },
+            "fastly:compute/backend/[constructor]dynamic-backend-options": trappable,
 
-    trappable_error_type: {
-        "fastly:api/types/error" => types::TrappableError,
-    },
+            // The trap-test test depends on being able to induce an artificial
+            // trap in `get-header-values`.
+            "fastly:compute/http-resp/[method]response.get-header-values": trappable,
 
-    trappable_imports: [
-        "downstream-client-ip-addr",
-        "downstream-server-ip-addr",
-        "header-values-get",
-        "[method]lookup-result.body",
-        "[method]lookup-result.metadata",
-        "[method]lookup-result.generation"
-    ],
-});
+            "fastly:compute/http-body/append": async | tracing,
+            "fastly:compute/kv-store/await-delete": async | tracing,
+            "fastly:compute/cache/await-entry": async | tracing,
+            "fastly:compute/kv-store/await-insert": async | tracing,
+            "fastly:compute/kv-store/await-list": async | tracing,
+            "fastly:compute/kv-store/await-lookup": async | tracing | trappable,
+            "fastly:compute/http-downstream/await-next-request": async | tracing,
+            "fastly:compute/http-req/await-request": async | tracing,
+            "fastly:compute/cache/close-entry": async | tracing,
+            "fastly:compute/cache/insert": async | tracing,
+            "fastly:compute/cache/replace": async | tracing,
+            "fastly:compute/cache/replace-get-age-ns": async | tracing,
+            "fastly:compute/cache/replace-get-body": async | tracing,
+            "fastly:compute/cache/replace-get-hits": async | tracing,
+            "fastly:compute/cache/replace-get-length": async | tracing,
+            "fastly:compute/cache/replace-get-max-age-ns": async | tracing,
+            "fastly:compute/cache/replace-get-stale-while-revalidate-ns": async | tracing,
+            "fastly:compute/cache/replace-get-state": async | tracing,
+            "fastly:compute/cache/replace-get-user-metadata": async | tracing,
+            "fastly:compute/cache/replace-insert": async | tracing,
+            "fastly:compute/cache/[method]entry.get-age-ns": async | tracing,
+            "fastly:compute/cache/[method]entry.get-body": async | tracing,
+            "fastly:compute/cache/[method]entry.get-hits": async | tracing,
+            "fastly:compute/cache/[method]entry.get-length": async | tracing,
+            "fastly:compute/cache/[method]entry.get-max-age-ns": async | tracing,
+            "fastly:compute/cache/[method]entry.get-stale-while-revalidate-ns": async | tracing,
+            "fastly:compute/cache/[method]entry.get-state": async | tracing,
+            "fastly:compute/cache/[method]entry.get-user-metadata": async | tracing,
+            "fastly:compute/cache/[method]entry.transaction-cancel": async | tracing,
+            "fastly:compute/cache/[method]entry.transaction-insert": async | tracing,
+            "fastly:compute/cache/[method]entry.transaction-insert-and-stream-back": async | tracing,
+            "fastly:compute/cache/[method]entry.transaction-update": async | tracing,
+            "fastly:compute/kv-store/[method]store.delete": async | tracing,
+            "fastly:compute/kv-store/[method]store.delete-async": async | tracing,
+            "fastly:compute/kv-store/[method]store.insert": async | tracing,
+            "fastly:compute/kv-store/[method]store.insert-async": async | tracing,
+            "fastly:compute/kv-store/[method]store.list": async | tracing,
+            "fastly:compute/kv-store/[method]store.list-async": async | tracing,
+            "fastly:compute/kv-store/[method]store.lookup": async | tracing,
+            "fastly:compute/kv-store/[method]store.lookup-async": async | tracing,
+            "fastly:compute/http-downstream/next-request": async | tracing,
+            "fastly:compute/http-body/read": async | tracing,
+            "fastly:compute/backend/register-dynamic-backend": async | tracing,
+            "fastly:compute/async-io/select": async | tracing | trappable,
+            "fastly:compute/async-io/select-with-timeout": async | tracing,
+            "fastly:compute/http-req/send": async | tracing,
+            "fastly:compute/http-req/send-async": async | tracing,
+            "fastly:compute/http-req/send-async-streaming": async | tracing,
+            "fastly:compute/http-req/send-async-uncached": async | tracing,
+            "fastly:compute/http-req/send-async-uncached-streaming": async | tracing,
+            "fastly:compute/http-req/send-uncached": async | tracing,
+            "fastly:compute/cache/[static]entry.lookup": async | tracing,
+            "fastly:compute/cache/[static]entry.transaction-lookup": async | tracing,
+            "fastly:compute/cache/[static]entry.transaction-lookup-async": async | tracing,
+            "fastly:compute/http-body/write": async | tracing,
+            "fastly:compute/http-body/write-front": async | tracing,
+
+            // Match the `wasmtime-wasi` crate's bindings.
+            "wasi:io/streams/[method]output-stream.write": tracing | trappable,
+            "wasi:io/streams/[method]output-stream.blocking-write-and-flush": async | tracing | trappable,
+            "wasi:io/streams/[method]output-stream.flush": tracing | trappable,
+            "wasi:io/streams/[method]output-stream.blocking-flush": async | tracing | trappable,
+            "wasi:io/streams/[method]output-stream.check-write": tracing | trappable,
+            "wasi:io/streams/[method]output-stream.write-zeroes": tracing | trappable,
+            "wasi:io/streams/[method]output-stream.blocking-write-zeroes-and-flush": async | tracing | trappable,
+            "wasi:io/streams/[method]output-stream.splice": tracing | trappable,
+            "wasi:io/streams/[method]output-stream.blocking-splice": async | tracing | trappable,
+            "wasi:io/streams/[method]input-stream.read": tracing | trappable,
+            "wasi:io/streams/[method]input-stream.blocking-read": async | tracing | trappable,
+            "wasi:io/streams/[method]input-stream.skip": tracing | trappable,
+            "wasi:io/streams/[method]input-stream.blocking-skip": async | tracing | trappable,
+            "wasi:io/poll/poll": async | tracing,
+            "wasi:io/poll/[method]pollable.block": async | tracing,
+            "wasi:cli/exit/exit": tracing | trappable,
+            "wasi:cli/exit/exit-with-code": tracing | trappable,
+        },
+        exports: {
+            default: tracing,
+            "fastly:compute/http-incoming/handle": async | tracing,
+        },
+        with: {
+            // Match the `wasmtime-wasi` crate's bindings.
+            "wasi:io/poll/pollable": wasmtime_wasi::p2::DynPollable,
+            "wasi:io/streams/input-stream": wasmtime_wasi::p2::DynInputStream,
+            "wasi:io/streams/output-stream": wasmtime_wasi::p2::DynOutputStream,
+            "wasi:io/error/error": wasmtime_wasi_io::streams::Error,
+
+            "fastly:adapter/adapter-uap/user-agent": super::adapter::uap::UserAgent,
+            "fastly:compute/kv-store/entry": super::compute::kv_store::Entry,
+            "fastly:compute/backend/dynamic-backend-options": super::compute::backend::BackendBuilder,
+        },
+
+        trappable_error_type: {
+            // Match the wasmtime-wasi crate's bindings.
+            "wasi:io/streams/stream-error" => wasmtime_wasi::p2::StreamError,
+        },
+    });
+}
 
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {
-    wasmtime_wasi::p2::bindings::clocks::wall_clock::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    wasmtime_wasi::p2::bindings::clocks::monotonic_clock::add_to_linker::<_, HasSelf<_>>(
-        linker,
-        |x| x,
-    )?;
-    wasmtime_wasi::p2::bindings::random::random::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    wasmtime_wasi::p2::bindings::filesystem::types::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    wasmtime_wasi::p2::bindings::filesystem::preopens::add_to_linker::<_, HasSelf<_>>(
-        linker,
-        |x| x,
-    )?;
-    wasmtime_wasi::p2::bindings::io::error::add_to_linker::<_, HasSelf<_>>(linker, |x| &mut x.0)?;
-    wasmtime_wasi::p2::bindings::io::streams::add_to_linker::<_, HasSelf<_>>(linker, |x| &mut x.0)?;
-    wasmtime_wasi::p2::bindings::io::poll::add_to_linker::<_, HasSelf<_>>(linker, |x| &mut x.0)?;
-    wasmtime_wasi::p2::bindings::cli::environment::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    wasmtime_wasi::p2::bindings::cli::exit::add_to_linker::<_, HasSelf<_>>(
-        linker,
-        &Default::default(),
-        |x| x,
-    )?;
-    wasmtime_wasi::p2::bindings::cli::stdin::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    wasmtime_wasi::p2::bindings::cli::stdout::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    wasmtime_wasi::p2::bindings::cli::stderr::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
+    let options = bindings::LinkOptions::default();
 
-    fastly::api::acl::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::async_io::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::backend::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::cache::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::compute_runtime::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::config_store::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::device_detection::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::dictionary::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::erl::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::geo::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::http_body::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::http_downstream::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::http_req::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::http_resp::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::http_types::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::image_optimizer::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::kv_store::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::log::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::object_store::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::purge::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::secret_store::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::shielding::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::types::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
-    fastly::api::uap::add_to_linker::<_, HasSelf<_>>(linker, |x| x)?;
+    // Add the Viceroy host implementations.
+    bindings::AdapterService::add_to_linker::<_, HasSelf<_>>(linker, &options, |x| x)?;
 
     Ok(())
 }
 
-pub mod acl;
-pub mod async_io;
-pub mod backend;
-pub mod cache;
-pub mod compute_runtime;
-pub mod config_store;
-pub mod device_detection;
-pub mod dictionary;
-pub mod erl;
-pub mod error;
-pub mod geo;
-pub mod headers;
-pub mod http_body;
-pub mod http_downstream;
-pub mod http_req;
-pub mod http_resp;
-pub mod http_types;
-pub mod image_optimizer;
-pub mod kv_store;
-pub mod log;
-pub mod object_store;
-pub mod purge;
-pub mod secret_store;
-pub mod shielding;
-pub mod types;
-pub mod uap;
+pub mod adapter;
+pub mod compute;
+pub mod handles;
+pub mod wasi;
