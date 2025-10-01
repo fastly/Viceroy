@@ -1279,7 +1279,7 @@ impl Session {
     pub async fn await_downstream_req(
         &mut self,
         handle: AsyncItemHandle,
-    ) -> Result<(RequestHandle, BodyHandle), Error> {
+    ) -> Result<Option<(RequestHandle, BodyHandle)>, Error> {
         if self.downstream_resp.is_unsent() {
             return Err(Error::Unsupported {
                 msg: "cannot accept requests w/o handling the outstanding one",
@@ -1287,7 +1287,9 @@ impl Session {
         }
 
         let item = self.take_pending_downstream_req(handle)?;
-        let downstream = item.recv().await?;
+        let Some(downstream) = item.recv().await? else {
+            return Ok(None);
+        };
 
         let (parts, body) = downstream.req.into_parts();
         let body_handle = self.async_items.push(Some(AsyncItem::Body(body)));
@@ -1300,7 +1302,7 @@ impl Session {
         self.downstream_req_handle = req_handle;
         self.downstream_req_body_handle = body_handle.into();
 
-        Ok((req_handle, body_handle.into()))
+        Ok(Some((req_handle, body_handle.into())))
     }
 
     pub fn abandon_pending_downstream_req(

@@ -63,7 +63,7 @@ impl PendingKvListTask {
 /// any pending requests that are sent to us without dropping them.
 #[derive(Debug)]
 pub enum PendingDownstreamReqTask {
-    Complete(Result<NextRequest, Error>),
+    Complete(Result<Option<NextRequest>, Error>),
     Waiting(oneshot::Receiver<NextRequest>, Instant),
 }
 
@@ -75,7 +75,7 @@ impl PendingDownstreamReqTask {
         if let Some(rx) = rx {
             PendingDownstreamReqTask::Waiting(rx, Instant::now() + timeout)
         } else {
-            PendingDownstreamReqTask::Complete(Err(Error::NoDownstreamReqsAvailable))
+            PendingDownstreamReqTask::Complete(Ok(None))
         }
     }
 
@@ -83,14 +83,18 @@ impl PendingDownstreamReqTask {
     ///
     /// This will block until the sender side of the channel is either dropped
     /// or sends us a value.
-    pub async fn recv(mut self) -> Result<DownstreamRequest, Error> {
+    pub async fn recv(mut self) -> Result<Option<DownstreamRequest>, Error> {
         self.await_ready().await;
 
         let Self::Complete(res) = self else {
-            return Err(Error::NoDownstreamReqsAvailable);
+            return Ok(None);
         };
 
-        res?.into_request().ok_or(Error::NoDownstreamReqsAvailable)
+        let Some(res) = res? else {
+            return Ok(None);
+        };
+
+        Ok(res.into_request())
     }
 
     /// Drive this task to completion.
@@ -115,8 +119,7 @@ impl PendingDownstreamReqTask {
                     .and_then(|r| r.ok())
             };
 
-            let res = v.ok_or(Error::NoDownstreamReqsAvailable);
-            *self = Self::Complete(res);
+            *self = Self::Complete(Ok(v));
         }
     }
 }

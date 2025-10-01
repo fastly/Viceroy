@@ -39,7 +39,9 @@ impl http_downstream::Host for ComponentCtx {
     ) -> Result<Option<(Resource<http_req::Request>, Resource<http_body::Body>)>, types::Error>
     {
         let handle = RequestPromiseHandle::from(handle).into();
-        let (req, body) = self.session_mut().await_downstream_req(handle).await?;
+        let Some((req, body)) = self.session_mut().await_downstream_req(handle).await? else {
+            return Ok(None);
+        };
 
         Ok(Some((req.into(), body.into())))
     }
