@@ -245,13 +245,12 @@ impl Error {
             InvalidFlagValue { .. }
             | InvalidEnumValue { .. }
             | PtrOutOfBounds { .. }
-            | PtrBorrowed { .. }
             | PtrOverflow { .. }
             | InvalidUtf8 { .. }
             | TryFromIntError { .. } => FastlyStatus::Inval,
             // These errors indicate either a pathological user input or an internal programming
             // error
-            BorrowCheckerOutOfHandles | SliceLengthsDiffer => FastlyStatus::Error,
+            SliceLengthsDiffer => FastlyStatus::Error,
             // Recursive case: InFunc wraps a GuestError with some context which
             // doesn't determine what sort of FastlyStatus we return.
             InFunc { err, .. } => Self::guest_error_fastly_status(err),

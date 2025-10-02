@@ -2,12 +2,14 @@
   (flags (@witx repr u32)
     $reserved
     $use_cache_key
+    $first_byte_timeout
   ))
 
 (typename $shield_backend_config
   (record
     (field $cache_key (@witx pointer (@witx char8)))
     (field $cache_key_len u32)
+    (field $first_byte_timeout_ms u32)
     ))
 
 (module $fastly_shielding
