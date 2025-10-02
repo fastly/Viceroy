@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.14.4 (2025-10-01)
 
 - Enable loading Secret Store configuration through environment variables ([#527](https://github.com/fastly/Viceroy/pull/527))
