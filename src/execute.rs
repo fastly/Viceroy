@@ -662,13 +662,17 @@ impl ExecuteCtx {
                     }
 
                     Err(e) => {
-                        if let Some(exit) = e.downcast_ref::<wasmtime_wasi::I32Exit>() {
+                        if let Some(exit) = e.downcast_ref::<I32Exit>() {
                             if exit.0 == 0 {
                                 return Ok(());
+                            } else {
+                                event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);
+                                Err(ExecutionError::WasmTrap(e))
                             }
+                        } else {
+                            event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
+                            Err(ExecutionError::WasmTrap(e))
                         }
-                        event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
-                        Err(ExecutionError::WasmTrap(e))
                     }
                 };
 
