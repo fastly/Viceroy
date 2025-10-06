@@ -183,13 +183,14 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
         let mut new_options = match unsafe { convert_lookup_options(options_mask) } {
             Ok(tuple) => tuple,
@@ -232,7 +233,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res.take_handle();
+                    *main_ptr!(cache_handle_out) = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -250,12 +251,15 @@ mod cache {
     ) -> Result<cache::WriteOptions<'a>, FastlyStatus> {
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_vec!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_vec!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                crate::make_string!((*options).$ptr_field, (*options).$len_field)
+                crate::make_string!(
+                    unsafe_main_ptr!((*options).$ptr_field),
+                    (*options).$len_field
+                )
             };
         }
 
@@ -317,13 +321,14 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
         let request_headers = match unsafe { (*options).request_headers } {
             INVALID_HANDLE => None,
@@ -360,7 +365,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res.take_handle();
+                    *main_ptr!(body_handle_out) = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -376,13 +381,14 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
         let mut new_options = match unsafe { convert_lookup_options(options_mask) } {
             Ok(tuple) => tuple,
             Err(err) => return err,
@@ -423,7 +429,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res.take_handle();
+                    *main_ptr!(cache_handle_out) = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -439,13 +445,14 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheBusyHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
         let mut new_options = match unsafe { convert_lookup_options(options_mask) } {
             Ok(tuple) => tuple,
             Err(err) => return err,
@@ -486,7 +493,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res.take_handle();
+                    *main_ptr!(cache_handle_out) = res.take_handle();
                 }
 
                 // We just created a new `CacheBusyHandle` so forget the
@@ -513,7 +520,7 @@ mod cache {
         match cache::await_entry(cache_busy_handle) {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res.take_handle();
+                    *main_ptr!(cache_handle_out) = res.take_handle();
                 }
 
                 // Remember that we just consumed `handle` so that if there's
@@ -536,9 +543,10 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -578,7 +586,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res.take_handle();
+                    *main_ptr!(body_handle_out) = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -594,9 +602,10 @@ mod cache {
         body_handle_out: *mut BodyHandle,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -636,8 +645,8 @@ mod cache {
         match res {
             Ok((body_handle, cache_handle)) => {
                 unsafe {
-                    *body_handle_out = body_handle.take_handle();
-                    *cache_handle_out = cache_handle.take_handle();
+                    *main_ptr!(body_handle_out) = body_handle.take_handle();
+                    *main_ptr!(cache_handle_out) = cache_handle.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -651,9 +660,10 @@ mod cache {
         options_mask: CacheWriteOptionsMask,
         options: *const CacheWriteOptions,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -752,7 +762,7 @@ mod cache {
         match handle.get_state() {
             Ok(res) => {
                 unsafe {
-                    *cache_lookup_state_out = res.into();
+                    *main_ptr!(cache_lookup_state_out) = res.into();
                 }
                 FastlyStatus::OK
             }
@@ -769,9 +779,9 @@ mod cache {
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         alloc_result_opt!(
-            user_metadata_out_ptr,
+            unsafe_main_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
-            nwritten_out,
+            main_ptr!(nwritten_out),
             { handle.get_user_metadata(u64::try_from(user_metadata_out_len).trapping_unwrap(),) }
         )
     }
@@ -798,7 +808,7 @@ mod cache {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
-        let options = unsafe { cache::GetBodyOptions::from((options_mask, *options)) };
+        let options = unsafe { cache::GetBodyOptions::from((options_mask, *main_ptr!(options))) };
 
         let res = handle.get_body(&options);
 
@@ -807,7 +817,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res.take_handle();
+                    *main_ptr!(body_handle_out) = res.take_handle();
                 }
                 FastlyStatus::OK
             }
@@ -821,7 +831,7 @@ mod cache {
         match handle.get_length() {
             Ok(Some(res)) => {
                 unsafe {
-                    *length_out = res;
+                    *main_ptr!(length_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -836,7 +846,7 @@ mod cache {
         match handle.get_max_age_ns() {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *main_ptr!(duration_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -854,7 +864,7 @@ mod cache {
         match handle.get_stale_while_revalidate_ns() {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *main_ptr!(duration_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -869,7 +879,7 @@ mod cache {
         match handle.get_age_ns() {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *main_ptr!(duration_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -884,7 +894,7 @@ mod cache {
         match handle.get_hits() {
             Ok(Some(res)) => {
                 unsafe {
-                    *hits_out = res;
+                    *main_ptr!(hits_out) = res;
                 }
                 FastlyStatus::OK
             }
@@ -901,7 +911,8 @@ mod cache {
         options: *const CacheReplaceOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let cache_key = unsafe { slice::from_raw_parts(cache_key_ptr, cache_key_len) };
+        let options = unsafe_main_ptr!(options);
+        let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
         let replace_strategy = if options_mask.contains(CacheReplaceOptionsMask::REPLACE_STRATEGY) {
             match cache::ReplaceStrategy::try_from(unsafe { (*options).replace_strategy }) {
@@ -914,7 +925,7 @@ mod cache {
 
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -952,7 +963,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *cache_handle_out = res.take_handle();
+                    *main_ptr!(cache_handle_out) = res.take_handle();
                 }
 
                 // We just created a new `CacheReplaceHandle` so forget the
@@ -977,9 +988,10 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
+        let options = unsafe_main_ptr!(options);
         macro_rules! make_str {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -1019,7 +1031,7 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *body_handle_out = res.take_handle();
+                    *main_ptr!(body_handle_out) = res.take_handle();
                 }
 
                 // Remember that we just consumed `handle` so that if there's
@@ -1045,7 +1057,7 @@ mod cache {
         match cache::replace_get_age_ns(&handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *main_ptr!(duration_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -1063,7 +1075,7 @@ mod cache {
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        let options = unsafe { cache::GetBodyOptions::from((options_mask, *options)) };
+        let options = unsafe { cache::GetBodyOptions::from((options_mask, *main_ptr!(options))) };
 
         let res = cache::replace_get_body(&handle, &options);
 
@@ -1072,7 +1084,7 @@ mod cache {
         match res {
             Ok(Some(res)) => {
                 unsafe {
-                    *body_handle_out = res.take_handle();
+                    *main_ptr!(body_handle_out) = res.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -1091,7 +1103,7 @@ mod cache {
         match cache::replace_get_hits(&handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *hits_out = res;
+                    *main_ptr!(hits_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -1110,7 +1122,7 @@ mod cache {
         match cache::replace_get_length(&handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *length_out = res;
+                    *main_ptr!(length_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -1129,7 +1141,7 @@ mod cache {
         match cache::replace_get_max_age_ns(&handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *main_ptr!(duration_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -1148,7 +1160,7 @@ mod cache {
         match cache::replace_get_stale_while_revalidate_ns(&handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *duration_out = res;
+                    *main_ptr!(duration_out) = res;
                 }
 
                 FastlyStatus::OK
@@ -1167,7 +1179,7 @@ mod cache {
         match cache::replace_get_state(&handle) {
             Ok(Some(res)) => {
                 unsafe {
-                    *cache_lookup_state_out = res.into();
+                    *main_ptr!(cache_lookup_state_out) = res.into();
                 }
 
                 FastlyStatus::OK
@@ -1186,9 +1198,9 @@ mod cache {
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         alloc_result_opt!(
-            user_metadata_out_ptr,
+            unsafe_main_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
-            nwritten_out,
+            main_ptr!(nwritten_out),
             {
                 cache::replace_get_user_metadata(
                     &handle,

@@ -24,7 +24,8 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let module = mangle_imports(bytes)?;
+    let bytes = crate::shift_mem::shift_main_module(bytes)?;
+    let module = mangle_imports(&bytes)?;
 
     let component = wit_component::ComponentEncoder::default()
         .module(module.as_slice())?

@@ -10,11 +10,11 @@ pub fn open(
     name_len: usize,
     store_handle_out: *mut ConfigStoreHandle,
 ) -> FastlyStatus {
-    let name = crate::make_str!(name, name_len);
+    let name = crate::make_str!(unsafe_main_ptr!(name), name_len);
     match config_store::Store::open(name) {
         Ok(res) => {
             unsafe {
-                *store_handle_out = res.take_handle();
+                *main_ptr!(store_handle_out) = res.take_handle();
             }
             FastlyStatus::OK
         }
@@ -37,9 +37,12 @@ pub fn get(
     value_max_len: usize,
     nwritten: *mut usize,
 ) -> FastlyStatus {
-    let key = crate::make_str!(key, key_len);
+    let key = crate::make_str!(unsafe_main_ptr!(key), key_len);
     let store_handle = ManuallyDrop::new(unsafe { config_store::Store::from_handle(store_handle) });
-    alloc_result_opt!(value, value_max_len, nwritten, {
-        store_handle.get(key, u64::try_from(value_max_len).trapping_unwrap())
-    })
+    alloc_result_opt!(
+        unsafe_main_ptr!(value),
+        value_max_len,
+        main_ptr!(nwritten),
+        { store_handle.get(key, u64::try_from(value_max_len).trapping_unwrap()) }
+    )
 }

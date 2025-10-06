@@ -35,6 +35,7 @@ mod pushpin;
 mod secret_store;
 mod service;
 mod shielding_site;
+mod shift_mem;
 mod streaming_body;
 mod upstream;
 pub mod wiggle_abi;
