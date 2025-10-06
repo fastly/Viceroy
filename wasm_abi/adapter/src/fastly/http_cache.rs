@@ -82,7 +82,7 @@ mod http_cache {
     ) -> host::LookupOptions<'static> {
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_vec!((*options).$ptr_field, (*options).$len_field) }
+                unsafe { crate::make_vec!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
             };
         }
 
@@ -130,7 +130,7 @@ mod http_cache {
 
         macro_rules! make_string {
             ($ptr_field:ident, $len_field:ident) => {
-                crate::make_string!((*options).$ptr_field, (*options).$len_field)
+                crate::make_string!(main_ptr!((*options).$ptr_field), (*options).$len_field)
             };
         }
 
@@ -177,6 +177,7 @@ mod http_cache {
     ) -> FastlyStatus {
         let req_handle =
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
+        let is_cacheable_out = unsafe_main_ptr!(is_cacheable_out);
         write_bool_result!(host::is_request_cacheable(&req_handle), is_cacheable_out)
     }
 
@@ -189,9 +190,14 @@ mod http_cache {
     ) -> FastlyStatus {
         let req_handle =
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
-        alloc_result!(key_out_ptr, key_out_len, nwritten_out, {
-            host::get_suggested_cache_key(&req_handle, key_out_len.try_into().trapping_unwrap())
-        })
+        alloc_result!(
+            unsafe_main_ptr!(key_out_ptr),
+            key_out_len,
+            main_ptr!(nwritten_out),
+            {
+                host::get_suggested_cache_key(&req_handle, key_out_len.try_into().trapping_unwrap())
+            }
+        )
     }
 
     #[export_name = "fastly_http_cache#lookup"]
@@ -203,11 +209,12 @@ mod http_cache {
     ) -> FastlyStatus {
         let req_handle =
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
-        let options = cache_lookup_options(options_mask, options);
+        let options = cache_lookup_options(options_mask, unsafe_main_ptr!(options));
 
         let res = adapter_http_cache::lookup(&req_handle, &options);
 
         std::mem::forget(options);
+        let cache_handle_out = unsafe_main_ptr!(cache_handle_out);
         write_handle_result!(res, cache_handle_out)
     }
 
@@ -220,11 +227,12 @@ mod http_cache {
     ) -> FastlyStatus {
         let req_handle =
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
-        let options = cache_lookup_options(options_mask, options);
+        let options = cache_lookup_options(options_mask, unsafe_main_ptr!(options));
 
         let res = host::Entry::transaction_lookup(&req_handle, &options);
 
         std::mem::forget(options);
+        let cache_handle_out = unsafe_main_ptr!(cache_handle_out);
         write_handle_result!(res, cache_handle_out)
     }
 
@@ -238,7 +246,7 @@ mod http_cache {
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
         let resp_handle = unsafe { host_http_resp::Response::from_handle(resp_handle) };
-        let options = match cache_write_options(options_mask, options) {
+        let options = match cache_write_options(options_mask, unsafe_main_ptr!(options)) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
@@ -246,7 +254,7 @@ mod http_cache {
         let res = handle.transaction_insert(resp_handle, &options);
 
         std::mem::forget(options);
-
+        let body_handle_out = unsafe_main_ptr!(body_handle_out);
         write_handle_result!(res, body_handle_out)
     }
 
@@ -261,7 +269,7 @@ mod http_cache {
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
         let resp_handle = unsafe { host_http_resp::Response::from_handle(resp_handle) };
-        let options = match cache_write_options(options_mask, options) {
+        let options = match cache_write_options(options_mask, unsafe_main_ptr!(options)) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
@@ -273,8 +281,8 @@ mod http_cache {
         match res {
             Ok((body_handle, cache_handle)) => {
                 unsafe {
-                    *body_handle_out = body_handle.take_handle();
-                    *cache_handle_out = cache_handle.take_handle();
+                    *main_ptr!(body_handle_out) = body_handle.take_handle();
+                    *main_ptr!(cache_handle_out) = cache_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -292,7 +300,7 @@ mod http_cache {
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
         let resp_handle = unsafe { host_http_resp::Response::from_handle(resp_handle) };
-        let options = match cache_write_options(options_mask, options) {
+        let options = match cache_write_options(options_mask, unsafe_main_ptr!(options)) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
@@ -315,7 +323,7 @@ mod http_cache {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
         let resp_handle = unsafe { host_http_resp::Response::from_handle(resp_handle) };
 
-        let options = match cache_write_options(options_mask, options) {
+        let options = match cache_write_options(options_mask, unsafe_main_ptr!(options)) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
@@ -323,6 +331,7 @@ mod http_cache {
         let res = handle.transaction_update_and_return_fresh(resp_handle, &options);
 
         std::mem::forget(options);
+        let cache_handle_out = unsafe_main_ptr!(cache_handle_out);
         write_handle_result!(res, cache_handle_out)
     }
 
@@ -333,7 +342,7 @@ mod http_cache {
         options: *const HttpCacheWriteOptions,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
-        let options = match cache_write_options(options_mask, options) {
+        let options = match cache_write_options(options_mask, unsafe_main_ptr!(options)) {
             Ok(tuple) => tuple,
             Err(err) => return err,
         };
@@ -363,6 +372,7 @@ mod http_cache {
         req_handle_out: *mut RequestHandle,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let req_handle_out = unsafe_main_ptr!(req_handle_out);
         write_handle_result!(handle.get_suggested_backend_request(), req_handle_out)
     }
 
@@ -376,7 +386,7 @@ mod http_cache {
         options_out: *mut HttpCacheWriteOptions,
     ) -> FastlyStatus {
         let options_mask_out = unsafe {
-            match options_mask_out.as_mut() {
+            match main_ptr!(options_mask_out).as_mut() {
                 Some(mask) => mask,
                 None => return FastlyStatus::INVALID_ARGUMENT,
             }
@@ -390,6 +400,8 @@ mod http_cache {
             Err(e) => return e.into(),
         };
 
+        let options = unsafe_main_ptr!(options);
+        let options_out = unsafe_main_ptr!(options_out);
         // max_age_ns is not optional
         unsafe {
             (*options_out).max_age_ns = res.get_max_age_ns();
@@ -404,7 +416,7 @@ mod http_cache {
             let vary_nwritten = unsafe { &mut (*options_out).vary_rule_len as *mut _ };
 
             with_buffer!(
-                unsafe { (*options).vary_rule_ptr as *mut _ },
+                unsafe { main_ptr!((*options).vary_rule_ptr) as *mut _ },
                 vary_len,
                 { res.get_vary_rule(vary_len.try_into().trapping_unwrap()) },
                 |res| {
@@ -433,7 +445,7 @@ mod http_cache {
                 unsafe { &mut (*options_out).surrogate_keys_len as *mut _ };
 
             with_buffer!(
-                unsafe { (*options).surrogate_keys_ptr as *mut _ },
+                unsafe { main_ptr!((*options).surrogate_keys_ptr) as *mut _ },
                 surrogate_keys_len,
                 { res.get_surrogate_keys(surrogate_keys_len.try_into().trapping_unwrap()) },
                 |res| {
@@ -502,8 +514,8 @@ mod http_cache {
         match handle.prepare_response_for_storage(&resp_handle) {
             Ok((action, resp_handle)) => {
                 unsafe {
-                    *http_storage_action_out = action.into();
-                    *resp_handle_out = resp_handle.take_handle();
+                    *main_ptr!(http_storage_action_out) = action.into();
+                    *main_ptr!(resp_handle_out) = resp_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -524,8 +536,8 @@ mod http_cache {
         match handle.get_found_response(transform_for_client) {
             Ok(Some((resp_handle, body_handle))) => {
                 unsafe {
-                    *resp_handle_out = resp_handle.take_handle();
-                    *body_handle_out = body_handle.take_handle();
+                    *main_ptr!(resp_handle_out) = resp_handle.take_handle();
+                    *main_ptr!(body_handle_out) = body_handle.take_handle();
                 }
 
                 FastlyStatus::OK
@@ -546,7 +558,7 @@ mod http_cache {
         match handle.get_state() {
             Ok(res) => {
                 unsafe {
-                    *cache_lookup_state_out = res.into();
+                    *main_ptr!(cache_lookup_state_out) = res.into();
                 }
                 FastlyStatus::OK
             }
@@ -558,6 +570,7 @@ mod http_cache {
     #[export_name = "fastly_http_cache#get_length"]
     pub fn get_length(handle: HttpCacheHandle, length_out: *mut CacheObjectLength) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let length_out = unsafe_main_ptr!(length_out);
         write_result_opt!(handle.get_length(), length_out)
     }
 
@@ -567,6 +580,7 @@ mod http_cache {
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let duration_out = unsafe_main_ptr!(duration_out);
         write_result_opt!(handle.get_max_age_ns(), duration_out)
     }
 
@@ -576,18 +590,21 @@ mod http_cache {
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let duration_out = unsafe_main_ptr!(duration_out);
         write_result_opt!(handle.get_stale_while_revalidate_ns(), duration_out)
     }
 
     #[export_name = "fastly_http_cache#get_age_ns"]
     pub fn get_age_ns(handle: HttpCacheHandle, duration_out: *mut CacheDurationNs) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let duration_out = unsafe_main_ptr!(duration_out);
         write_result_opt!(handle.get_age_ns(), duration_out)
     }
 
     #[export_name = "fastly_http_cache#get_hits"]
     pub fn get_hits(handle: HttpCacheHandle, hits_out: *mut CacheHitCount) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let hits_out = unsafe_main_ptr!(hits_out);
         write_result_opt!(handle.get_hits(), hits_out)
     }
 
@@ -597,6 +614,7 @@ mod http_cache {
         sensitive_data_out: *mut IsSensitive,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let sensitive_data_out = unsafe_main_ptr!(sensitive_data_out);
         write_bool_result_opt!(handle.get_sensitive_data(), sensitive_data_out)
     }
 
@@ -609,9 +627,9 @@ mod http_cache {
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
         alloc_result_opt!(
-            surrogate_keys_out_ptr,
+            unsafe_main_ptr!(surrogate_keys_out_ptr),
             surrogate_keys_out_len,
-            nwritten_out,
+            main_ptr!(nwritten_out),
             { handle.get_surrogate_keys(surrogate_keys_out_len.try_into().trapping_unwrap(),) }
         )
     }
@@ -624,8 +642,11 @@ mod http_cache {
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
-        alloc_result_opt!(vary_rule_out_ptr, vary_rule_out_len, nwritten_out, {
-            handle.get_vary_rule(vary_rule_out_len.try_into().trapping_unwrap())
-        })
+        alloc_result_opt!(
+            unsafe_main_ptr!(vary_rule_out_ptr),
+            vary_rule_out_len,
+            main_ptr!(nwritten_out),
+            { handle.get_vary_rule(vary_rule_out_len.try_into().trapping_unwrap()) }
+        )
     }
 }

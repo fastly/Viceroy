@@ -19,7 +19,8 @@ fn main() {
     // own module has no stack at all since it's specifically allocated at
     // startup.
     println!("cargo:rustc-link-arg=--import-memory");
-    println!("cargo:rustc-link-arg=-zstack-size=0");
+    // Set the stack pointer to use the first page of memory, as the stack space has been reserved by the `xqd_codegen::shift_mem` module.
+    println!("cargo:rustc-link-arg=-zstack-size=65536");
 }
 
 /// This function will produce a wasm module which is itself an object file
@@ -104,7 +105,10 @@ fn build_raw_intrinsics() -> Vec<u8> {
             mutable: true,
             shared: false,
         },
-        &ConstExpr::i32_const(0),
+        // Default to StackAllocated, as the space is reserved by the `xqd_codegen::shift_mem` module.
+        // And it won't trigger the `[allocate_stack_via_realloc](https://github.com/bytecodealliance/wasm-tools/blob/main/crates/wit-component/src/gc.rs#L122)` function
+        // in `wit-component`.
+        &ConstExpr::i32_const(2),
     );
     module.section(&globals);
 
