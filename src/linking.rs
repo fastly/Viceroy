@@ -2,9 +2,10 @@
 
 use {
     crate::{
-        config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint, session::Session,
-        wiggle_abi, Error,
+        body::Body, config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint,
+        session::Session, wiggle_abi, Error,
     },
+    hyper::Response,
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
     wasmtime_wasi::preview1::WasiP1Ctx,
@@ -134,8 +135,8 @@ impl ComponentCtx {
         &self.limiter
     }
 
-    pub fn close_downstream_response_sender(&mut self) {
-        self.session.close_downstream_response_sender()
+    pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
+        self.session.close_downstream_response_sender(resp)
     }
 
     /// Initialize a new [`Store`][store], given an [`ExecuteCtx`][ctx].
@@ -232,8 +233,8 @@ impl WasmCtx {
 }
 
 impl WasmCtx {
-    pub fn close_downstream_response_sender(&mut self) {
-        self.session.close_downstream_response_sender()
+    pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
+        self.session.close_downstream_response_sender(resp)
     }
 }
 

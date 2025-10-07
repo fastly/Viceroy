@@ -267,9 +267,10 @@ impl Session {
         self.downstream_resp.redirect_to_pushpin(redirect_info)
     }
 
-    /// Close the downstream response sender, potentially without sending any response.
-    pub fn close_downstream_response_sender(&mut self) {
-        self.downstream_resp.close()
+    /// Ensure the downstream response sender is closed, and send the provided response if it
+    /// isn't.
+    pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
+        let _ = self.downstream_resp.send(resp);
     }
 
     // ----- Bodies API -----

@@ -37,11 +37,8 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
     // Trap error supplied by the Guest.
 
     let body = resp.into_body().read_into_string().await?;
-
-    assert_eq!(
-        body,
-        "Fatal error: [A fatal error occurred in the test-only implementation of header_values_get]"
-    );
+    let needle = "Fatal error: [A fatal error occurred in the test-only implementation of header_values_get]";
+    assert!(body.contains(needle), "body missing expected string: {body}");
 
     Ok(())
 }
