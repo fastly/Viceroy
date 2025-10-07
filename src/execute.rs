@@ -1025,6 +1025,15 @@ fn configure_wasmtime(
         config.wasm_component_model(true);
     }
 
+    // Wasm permits the "relaxed" instructions to be nondeterministic
+    // between runs, but requires them to be deterministic within runs.
+    // Snapshotting a program's execution to avoid redundantly running
+    // initialization code on each request is an important optimization,
+    // so we enable deterministic lowerings for relaxed SIMD to ensure
+    // that it works consistently even if the initialization runs on a
+    // different host architecture.
+    config.relaxed_simd_deterministic(true);
+
     config
 }
 
