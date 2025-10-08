@@ -676,6 +676,12 @@ impl ExecuteCtx {
                     }
                 };
 
+                // If we collected a recording trace, write to a file
+                if !store.data().logger.is_empty() {
+                    let trace = serde_json::to_string(&store.data().logger).unwrap();
+                    std::fs::write("trace.out", &trace).unwrap();
+                }
+
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
                 store.data_mut().session.close_downstream_response_sender();
