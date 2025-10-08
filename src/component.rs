@@ -1,5 +1,5 @@
 use {
-    crate::linking::ComponentCtx,
+    crate::linking::{ComponentCtx, FuncCall},
     wasmtime::component::{self, HasSelf},
 };
 
@@ -117,6 +117,30 @@ pub(crate) mod bindings {
             "wasi:io/streams/stream-error" => wasmtime_wasi::p2::StreamError,
         },
     });
+}
+
+impl bindings::proxy::recorder::record::Host for ComponentCtx {
+    fn record_args(&mut self, method: Option<String>, args: Vec<String>, is_export: bool) {
+        let call = if is_export {
+            FuncCall::ExportArgs {
+                method: method.unwrap(),
+                args,
+            }
+        } else {
+            FuncCall::ImportArgs { method, args }
+        };
+        println!("{:?}", call);
+        self.logger.push(call);
+    }
+    fn record_ret(&mut self, method: Option<String>, ret: Option<String>, is_export: bool) {
+        let call = if is_export {
+            FuncCall::ExportRet { method, ret }
+        } else {
+            FuncCall::ImportRet { method, ret }
+        };
+        println!("{:?}", call);
+        self.logger.push(call);
+    }
 }
 
 pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyhow::Result<()> {

@@ -2864,6 +2864,7 @@ world service-imports {
   import secret-store;
   import security;
   import shielding;
+  import proxy:recorder/%record@0.1.0;
 }
 
 /// A Fastly Compute service.
