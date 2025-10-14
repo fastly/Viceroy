@@ -6,13 +6,15 @@
 use crate::component::bindings::wasi;
 use crate::linking::ComponentCtx;
 use wasmtime::component::Resource;
-use wasmtime_wasi::WasiView;
+use wasmtime_wasi::cli::WasiCliView;
+use wasmtime_wasi::clocks::WasiClocksView;
 use wasmtime_wasi_io::IoView;
 
 impl wasi::clocks::wall_clock::Host for ComponentCtx {
     fn now(&mut self) -> wasi::clocks::wall_clock::Datetime {
-        let x = wasmtime_wasi::p2::bindings::sync::clocks::wall_clock::Host::now(&mut self.ctx())
-            .unwrap();
+        let x =
+            wasmtime_wasi::p2::bindings::sync::clocks::wall_clock::Host::now(&mut self.clocks())
+                .unwrap();
         wasi::clocks::wall_clock::Datetime {
             seconds: x.seconds,
             nanoseconds: x.nanoseconds,
@@ -21,7 +23,7 @@ impl wasi::clocks::wall_clock::Host for ComponentCtx {
 
     fn resolution(&mut self) -> wasi::clocks::wall_clock::Datetime {
         let x = wasmtime_wasi::p2::bindings::sync::clocks::wall_clock::Host::resolution(
-            &mut self.ctx(),
+            &mut self.clocks(),
         )
         .unwrap();
         wasi::clocks::wall_clock::Datetime {
@@ -33,13 +35,13 @@ impl wasi::clocks::wall_clock::Host for ComponentCtx {
 
 impl wasi::clocks::monotonic_clock::Host for ComponentCtx {
     fn now(&mut self) -> wasi::clocks::monotonic_clock::Instant {
-        wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::now(&mut self.ctx())
+        wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::now(&mut self.clocks())
             .unwrap()
     }
 
     fn resolution(&mut self) -> wasi::clocks::monotonic_clock::Duration {
         wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::resolution(
-            &mut self.ctx(),
+            &mut self.clocks(),
         )
         .unwrap()
     }
@@ -49,7 +51,7 @@ impl wasi::clocks::monotonic_clock::Host for ComponentCtx {
         when: wasi::clocks::monotonic_clock::Instant,
     ) -> Resource<wasi::clocks::monotonic_clock::Pollable> {
         wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::subscribe_instant(
-            &mut self.ctx(),
+            &mut self.clocks(),
             when,
         )
         .unwrap()
@@ -60,7 +62,7 @@ impl wasi::clocks::monotonic_clock::Host for ComponentCtx {
         when: wasi::clocks::monotonic_clock::Duration,
     ) -> Resource<wasi::clocks::monotonic_clock::Pollable> {
         wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::subscribe_duration(
-            &mut self.ctx(),
+            &mut self.clocks(),
             when,
         )
         .unwrap()
@@ -367,43 +369,43 @@ impl wasi::random::insecure_seed::Host for ComponentCtx {
 
 impl wasi::cli::environment::Host for ComponentCtx {
     fn get_environment(&mut self) -> Vec<(String, String)> {
-        wasmtime_wasi::p2::bindings::cli::environment::Host::get_environment(&mut self.ctx())
+        wasmtime_wasi::p2::bindings::cli::environment::Host::get_environment(&mut self.cli())
             .unwrap()
     }
 
     fn get_arguments(&mut self) -> Vec<String> {
-        wasmtime_wasi::p2::bindings::cli::environment::Host::get_arguments(&mut self.ctx()).unwrap()
+        wasmtime_wasi::p2::bindings::cli::environment::Host::get_arguments(&mut self.cli()).unwrap()
     }
 
     fn initial_cwd(&mut self) -> Option<String> {
-        wasmtime_wasi::p2::bindings::cli::environment::Host::initial_cwd(&mut self.ctx()).unwrap()
+        wasmtime_wasi::p2::bindings::cli::environment::Host::initial_cwd(&mut self.cli()).unwrap()
     }
 }
 
 impl wasi::cli::stdin::Host for ComponentCtx {
     fn get_stdin(&mut self) -> Resource<wasi::cli::stdin::InputStream> {
-        wasmtime_wasi::p2::bindings::cli::stdin::Host::get_stdin(&mut self.ctx()).unwrap()
+        wasmtime_wasi::p2::bindings::cli::stdin::Host::get_stdin(&mut self.cli()).unwrap()
     }
 }
 
 impl wasi::cli::stdout::Host for ComponentCtx {
     fn get_stdout(&mut self) -> Resource<wasi::cli::stdout::OutputStream> {
-        wasmtime_wasi::p2::bindings::cli::stdout::Host::get_stdout(&mut self.ctx()).unwrap()
+        wasmtime_wasi::p2::bindings::cli::stdout::Host::get_stdout(&mut self.cli()).unwrap()
     }
 }
 
 impl wasi::cli::stderr::Host for ComponentCtx {
     fn get_stderr(&mut self) -> Resource<wasi::cli::stderr::OutputStream> {
-        wasmtime_wasi::p2::bindings::cli::stderr::Host::get_stderr(&mut self.ctx()).unwrap()
+        wasmtime_wasi::p2::bindings::cli::stderr::Host::get_stderr(&mut self.cli()).unwrap()
     }
 }
 
 impl wasi::cli::exit::Host for ComponentCtx {
     fn exit(&mut self, status: Result<(), ()>) -> wasmtime::Result<()> {
-        wasmtime_wasi::p2::bindings::cli::exit::Host::exit(&mut self.ctx(), status)
+        wasmtime_wasi::p2::bindings::cli::exit::Host::exit(&mut self.cli(), status)
     }
 
     fn exit_with_code(&mut self, status_code: u8) -> wasmtime::Result<()> {
-        wasmtime_wasi::p2::bindings::cli::exit::Host::exit_with_code(&mut self.ctx(), status_code)
+        wasmtime_wasi::p2::bindings::cli::exit::Host::exit_with_code(&mut self.cli(), status_code)
     }
 }
