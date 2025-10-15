@@ -80,15 +80,18 @@ impl wasmtime::ResourceLimiter for Limiter {
     }
 
     fn instances(&self) -> usize {
-        self.internal.instances()
+        //self.internal.instances()
+        500
     }
 
     fn tables(&self) -> usize {
-        self.internal.tables()
+        //self.internal.tables()
+        500
     }
 
     fn memories(&self) -> usize {
-        self.internal.memories()
+        //self.internal.memories()
+        500
     }
 }
 
