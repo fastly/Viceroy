@@ -1044,6 +1044,7 @@ fn configure_wasmtime(
 
     if allow_components {
         config.wasm_component_model(true);
+        config.wasm_component_model_async(true);
     }
 
     // Wasm permits the "relaxed" instructions to be nondeterministic
