@@ -140,100 +140,6 @@ impl api::Host for ComponentCtx {
         Ok(handle.into())
     }
 
-    async fn replace(
-        &mut self,
-        key: Vec<u8>,
-        _options: api::ReplaceOptions,
-    ) -> Result<Resource<api::ReplaceEntry>, types::Error> {
-        let _key: CacheKey = get_key(key)?;
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_age_ns(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-    ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_body(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-        _options: api::GetBodyOptions,
-    ) -> Result<Option<Resource<http_body::Body>>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_hits(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-    ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_length(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-    ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_max_age_ns(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-    ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_stale_while_revalidate_ns(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-    ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_state(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-    ) -> Result<Option<api::LookupState>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
-    async fn replace_get_user_metadata(
-        &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-        _max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
-    }
-
     async fn replace_insert(
         &mut self,
         _handle: Resource<api::ReplaceEntry>,
@@ -279,6 +185,116 @@ impl api::Host for ComponentCtx {
             .task()
             .recv()
             .await?;
+        Ok(())
+    }
+
+    async fn close_replace_entry(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+}
+
+impl api::HostReplaceEntry for ComponentCtx {
+    async fn replace(
+        &mut self,
+        key: Vec<u8>,
+        _options: api::ReplaceOptions,
+    ) -> Result<Resource<api::ReplaceEntry>, types::Error> {
+        let _key: CacheKey = get_key(key)?;
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_age_ns(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_body(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+        _options: api::GetBodyOptions,
+    ) -> Result<Option<Resource<http_body::Body>>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_hits(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<Option<u64>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_length(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<Option<u64>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_max_age_ns(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_stale_while_revalidate_ns(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<Option<api::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_state(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> Result<Option<api::LookupState>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    async fn get_user_metadata(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+        _max_len: u64,
+    ) -> Result<Option<Vec<u8>>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    fn drop(&mut self, _entry: Resource<api::ReplaceEntry>) -> wasmtime::Result<()> {
         Ok(())
     }
 }

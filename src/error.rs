@@ -159,9 +159,6 @@ pub enum Error {
 
     #[error("cache error: {0}")]
     CacheError(crate::cache::Error),
-
-    #[error("no downstream requests are available")]
-    NoDownstreamReqsAvailable,
 }
 
 impl Error {
@@ -193,7 +190,6 @@ impl Error {
                 FastlyStatus::Httpincomplete
             }
             Error::HyperError(_) => FastlyStatus::Error,
-            Error::NoDownstreamReqsAvailable => FastlyStatus::None,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.

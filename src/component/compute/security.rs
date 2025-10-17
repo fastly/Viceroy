@@ -9,7 +9,7 @@ impl security::Host for ComponentCtx {
         &mut self,
         ds_req: Resource<http_req::Request>,
         ds_body: Resource<http_body::Body>,
-        info: http_req::InspectOptions,
+        info: security::InspectOptions,
         buf_max_len: u64,
     ) -> Result<String, types::Error> {
         // Make sure we're given valid handles, even though we won't use them.
@@ -35,5 +35,11 @@ impl security::Host for ComponentCtx {
             Ok(ngwaf_resp_len) if ngwaf_resp_len <= buf_max_len => Ok(ngwaf_resp),
             too_large => Err(types::Error::BufferLen(too_large.unwrap_or(0))),
         }
+    }
+}
+
+impl security::HostExtraInspectOptions for ComponentCtx {
+    fn drop(&mut self, _options: Resource<security::ExtraInspectOptions>) -> wasmtime::Result<()> {
+        Ok(())
     }
 }

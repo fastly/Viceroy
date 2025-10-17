@@ -749,8 +749,16 @@ mod cache {
             return FastlyStatus::OK;
         }
 
-        let handle = unsafe { cache::Entry::from_handle(handle) };
-        convert_result(cache::close_entry(handle))
+        // The witx `close` is shared between cache entries and replace entries.
+        // We set a bit in the returned handle index to distinguish the two.
+        if is_replace_entry(handle) {
+            let handle = decode_replace_entry(handle);
+            let handle = unsafe { cache::ReplaceEntry::from_handle(handle) };
+            convert_result(cache::close_replace_entry(handle))
+        } else {
+            let handle = unsafe { cache::Entry::from_handle(handle) };
+            convert_result(cache::close_entry(handle))
+        }
     }
 
     #[export_name = "fastly_cache#get_state"]
@@ -956,14 +964,14 @@ mod cache {
             extra: extra.as_ref(),
         };
 
-        let res = cache::replace(cache_key, &options);
+        let res = cache::ReplaceEntry::replace(cache_key, &options);
 
         std::mem::forget(options);
 
         match res {
             Ok(res) => {
                 unsafe {
-                    *main_ptr!(cache_handle_out) = res.take_handle();
+                    *main_ptr!(cache_handle_out) = encode_replace_entry(res.take_handle());
                 }
 
                 // We just created a new `CacheReplaceHandle` so forget the
@@ -995,7 +1003,8 @@ mod cache {
             };
         }
 
-        let replace_handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
+        let replace_handle = decode_replace_entry(handle);
+        let replace_handle = unsafe { cache::ReplaceEntry::from_handle(replace_handle) };
         let request_headers = match unsafe { (*options).request_headers } {
             INVALID_HANDLE => None,
             request_headers => Some(ManuallyDrop::new(unsafe {
@@ -1024,7 +1033,7 @@ mod cache {
             options.extra = Some(&extra);
         }
 
-        let res = cache::replace_insert(&replace_handle, &options);
+        let res = cache::replace_insert(replace_handle, &options);
 
         std::mem::forget(options);
 
@@ -1053,8 +1062,9 @@ mod cache {
         handle: CacheReplaceHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        match cache::replace_get_age_ns(&handle) {
+        match handle.get_age_ns() {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(duration_out) = res;
@@ -1074,10 +1084,11 @@ mod cache {
         options: *const CacheGetBodyOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         let options = unsafe { cache::GetBodyOptions::from((options_mask, *main_ptr!(options))) };
 
-        let res = cache::replace_get_body(&handle, &options);
+        let res = handle.get_body(&options);
 
         std::mem::forget(options);
 
@@ -1099,8 +1110,9 @@ mod cache {
         handle: CacheReplaceHandle,
         hits_out: *mut CacheHitCount,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        match cache::replace_get_hits(&handle) {
+        match handle.get_hits() {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(hits_out) = res;
@@ -1118,8 +1130,9 @@ mod cache {
         handle: CacheReplaceHandle,
         length_out: *mut CacheObjectLength,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        match cache::replace_get_length(&handle) {
+        match handle.get_length() {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(length_out) = res;
@@ -1137,8 +1150,9 @@ mod cache {
         handle: CacheReplaceHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        match cache::replace_get_max_age_ns(&handle) {
+        match handle.get_max_age_ns() {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(duration_out) = res;
@@ -1156,8 +1170,9 @@ mod cache {
         handle: CacheReplaceHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        match cache::replace_get_stale_while_revalidate_ns(&handle) {
+        match handle.get_stale_while_revalidate_ns() {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(duration_out) = res;
@@ -1175,8 +1190,9 @@ mod cache {
         handle: CacheReplaceHandle,
         cache_lookup_state_out: *mut CacheLookupState,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
-        match cache::replace_get_state(&handle) {
+        match handle.get_state() {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(cache_lookup_state_out) = res.into();
@@ -1196,17 +1212,42 @@ mod cache {
         user_metadata_out_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
+        let handle = decode_replace_entry(handle);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         alloc_result_opt!(
             unsafe_main_ptr!(user_metadata_out_ptr),
             user_metadata_out_len,
             main_ptr!(nwritten_out),
-            {
-                cache::replace_get_user_metadata(
-                    &handle,
-                    u64::try_from(user_metadata_out_len).trapping_unwrap(),
-                )
-            }
+            { handle.get_user_metadata(u64::try_from(user_metadata_out_len).trapping_unwrap(),) }
         )
     }
+}
+
+/// The witx `fastly_cache#close` function works on both `CacheHandle` values and
+/// `CacheReplace` values. In the WIT API, these are separate resources. To
+/// distinguish them, we add a bit to the handle value that we expose to witx that
+/// otherwise not used in the Canonical ABI.
+///
+/// The Canonical ABI doesn't use the high four bits, but we don't use the
+/// most-significant bit here to avoid handle values that may look negative to
+/// witx users.
+const REPLACE_ENTRY_MARKER: u32 = 0x4000_0000;
+
+/// Convert a `CacheReplaceHandle` index into a `CacheHandle` index with the
+/// special flag set indicating that it's a replace entry.
+fn encode_replace_entry(cache_entry: CacheReplaceHandle) -> CacheHandle {
+    assert!(!is_replace_entry(cache_entry));
+    cache_entry | REPLACE_ENTRY_MARKER
+}
+
+/// Convert a `CacheHandle` index that holds an encoded replace entry into a
+/// `CacheReplaceHandle` index.
+fn decode_replace_entry(cache_entry: CacheHandle) -> CacheReplaceHandle {
+    assert!(is_replace_entry(cache_entry));
+    cache_entry & !REPLACE_ENTRY_MARKER
+}
+
+/// Test whether the given `CacheHandle` holds an encoded replace entry.
+fn is_replace_entry(cache_entry: CacheHandle) -> bool {
+    (cache_entry & REPLACE_ENTRY_MARKER) == REPLACE_ENTRY_MARKER
 }

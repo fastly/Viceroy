@@ -550,15 +550,11 @@ pub mod fastly_log {
         let endpoint_handle = ManuallyDrop::new(unsafe {
             fastly::compute::log::Endpoint::from_handle(endpoint_handle)
         });
-        match endpoint_handle.write(msg) {
-            Ok(res) => {
-                unsafe {
-                    *main_ptr!(nwritten_out) = usize::try_from(res).trapping_unwrap();
-                }
-                FastlyStatus::OK
-            }
-            Err(e) => e.into(),
+        endpoint_handle.write(msg);
+        unsafe {
+            *main_ptr!(nwritten_out) = msg_len;
         }
+        FastlyStatus::OK
     }
 }
 pub mod fastly_http_downstream {
@@ -658,9 +654,9 @@ pub mod fastly_http_downstream {
 
     #[export_name = "fastly_http_downstream#next_request_abandon"]
     pub fn next_request_abandon(handle: RequestPromiseHandle) -> FastlyStatus {
-        let handle = unsafe { http_req::PendingRequest::from_handle(handle) };
-        let res = http_downstream::next_request_abandon(handle);
-        convert_result(res)
+        let handle = unsafe { http_req::PendingResponse::from_handle(handle) };
+        drop(handle);
+        FastlyStatus::OK
     }
 
     #[export_name = "fastly_http_downstream#downstream_original_header_names"]
@@ -2393,7 +2389,7 @@ pub mod fastly_http_req {
         } else {
             None
         };
-        let options = http_req::InspectOptions {
+        let options = security::InspectOptions {
             corp,
             workspace,
             override_client_ip,

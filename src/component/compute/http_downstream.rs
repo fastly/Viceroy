@@ -24,22 +24,15 @@ impl http_downstream::Host for ComponentCtx {
         Ok(handle.into())
     }
 
-    fn next_request_abandon(
-        &mut self,
-        handle: Resource<http_downstream::PendingRequest>,
-    ) -> Result<(), types::Error> {
-        let handle = RequestPromiseHandle::from(handle).into();
-        self.session_mut().abandon_pending_downstream_req(handle)?;
-        Ok(())
-    }
-
     async fn await_request(
         &mut self,
         handle: Resource<http_downstream::PendingRequest>,
     ) -> Result<Option<(Resource<http_req::Request>, Resource<http_body::Body>)>, types::Error>
     {
         let handle = RequestPromiseHandle::from(handle).into();
-        let (req, body) = self.session_mut().await_downstream_req(handle).await?;
+        let Some((req, body)) = self.session_mut().await_downstream_req(handle).await? else {
+            return Ok(None);
+        };
 
         Ok(Some((req.into(), body.into())))
     }

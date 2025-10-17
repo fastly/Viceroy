@@ -339,6 +339,32 @@ impl wasi::random::random::Host for ComponentCtx {
     }
 }
 
+impl wasi::random::insecure::Host for ComponentCtx {
+    fn get_insecure_random_bytes(&mut self, len: u64) -> Vec<u8> {
+        wasmtime_wasi::p2::bindings::random::insecure::Host::get_insecure_random_bytes(
+            &mut self.wasi_random,
+            len,
+        )
+        .unwrap()
+    }
+
+    fn get_insecure_random_u64(&mut self) -> u64 {
+        wasmtime_wasi::p2::bindings::random::insecure::Host::get_insecure_random_u64(
+            &mut self.wasi_random,
+        )
+        .unwrap()
+    }
+}
+
+impl wasi::random::insecure_seed::Host for ComponentCtx {
+    fn insecure_seed(&mut self) -> (u64, u64) {
+        wasmtime_wasi::p2::bindings::random::insecure_seed::Host::insecure_seed(
+            &mut self.wasi_random,
+        )
+        .unwrap()
+    }
+}
+
 impl wasi::cli::environment::Host for ComponentCtx {
     fn get_environment(&mut self) -> Vec<(String, String)> {
         wasmtime_wasi::p2::bindings::cli::environment::Host::get_environment(&mut self.ctx())
