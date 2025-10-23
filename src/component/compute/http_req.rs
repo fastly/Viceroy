@@ -487,9 +487,3 @@ impl http_req::HostExtraCacheOverrideDetails for ComponentCtx {
         Ok(())
     }
 }
-
-impl http_req::HostExtraInspectOptions for ComponentCtx {
-    fn drop(&mut self, _options: Resource<http_req::ExtraInspectOptions>) -> wasmtime::Result<()> {
-        Ok(())
-    }
-}

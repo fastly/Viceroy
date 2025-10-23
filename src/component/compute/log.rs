@@ -30,10 +30,15 @@ impl log::HostEndpoint for ComponentCtx {
         Ok(self.session_mut().log_endpoint_handle(name).into())
     }
 
-    fn write(&mut self, h: Resource<log::Endpoint>, msg: Vec<u8>) -> Result<u32, types::Error> {
-        let endpoint = self.session().log_endpoint(h.into())?;
-        endpoint.write_entry(&msg)?;
-        Ok(u32::try_from(msg.len()).unwrap())
+    fn write(&mut self, h: Resource<log::Endpoint>, msg: Vec<u8>) {
+        let endpoint = self.session().log_endpoint(h.into()).unwrap();
+
+        // The log API is infallible, so if we get an error, warn about it
+        // rather than bubbling it up through the log API.
+        match endpoint.write_entry(&msg) {
+            Ok(()) => {}
+            Err(err) => tracing::error!("Error writing log message: {:?}", err),
+        }
     }
 
     fn drop(&mut self, _endpoint: Resource<log::Endpoint>) -> wasmtime::Result<()> {

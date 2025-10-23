@@ -1196,10 +1196,19 @@ impl Session {
         // check that this is an async item before removing it
         let _ = self.async_item_mut(handle)?;
 
-        self.async_items
+        let item = self
+            .async_items
             .get_mut(handle)
             .and_then(|tracked| tracked.take())
-            .ok_or_else(|| HandleError::InvalidAsyncItemHandle(handle.into()))
+            .ok_or(HandleError::InvalidAsyncItemHandle(handle.into()))?;
+
+        // We just took the handle out of the table, so if it was "the"
+        // downstream pending handle, it no longer is.
+        if let AsyncItem::PendingDownstream(_) = item {
+            self.downstream_pending_handle = None;
+        }
+
+        Ok(item)
     }
 
     pub async fn select_impl(
@@ -1280,7 +1289,7 @@ impl Session {
     pub async fn await_downstream_req(
         &mut self,
         handle: AsyncItemHandle,
-    ) -> Result<(RequestHandle, BodyHandle), Error> {
+    ) -> Result<Option<(RequestHandle, BodyHandle)>, Error> {
         if self.downstream_resp.is_unsent() {
             return Err(Error::Unsupported {
                 msg: "cannot accept requests w/o handling the outstanding one",
@@ -1288,7 +1297,9 @@ impl Session {
         }
 
         let item = self.take_pending_downstream_req(handle)?;
-        let downstream = item.recv().await?;
+        let Some(downstream) = item.recv().await? else {
+            return Ok(None);
+        };
 
         let (parts, body) = downstream.req.into_parts();
         let body_handle = self.async_items.push(Some(AsyncItem::Body(body)));
@@ -1301,7 +1312,7 @@ impl Session {
         self.downstream_req_handle = req_handle;
         self.downstream_req_body_handle = body_handle.into();
 
-        Ok((req_handle, body_handle.into()))
+        Ok(Some((req_handle, body_handle.into())))
     }
 
     pub fn abandon_pending_downstream_req(
