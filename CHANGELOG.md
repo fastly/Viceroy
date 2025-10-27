@@ -1,4 +1,11 @@
-## Unreleased
+## 0.15.0 (2025-10-27)
+
+- fix: don't throw error when exit code is 0 ([#537](https://github.com/fastly/Viceroy/pull/537))
+- Update adapter with the memory shift fix ([#538](https://github.com/fastly/Viceroy/pull/538))
+- Enable relaxed-simd-deterministic for Viceroy. ([#539](https://github.com/fastly/Viceroy/pull/539))
+- Return 5XX for requests that land in a reused session that crashes ([#540](https://github.com/fastly/Viceroy/pull/540))
+- Update to the latest WITs and adapter. ([#543](https://github.com/fastly/Viceroy/pull/543))
+- Allow components to have multiple memories. ([#545](https://github.com/fastly/Viceroy/pull/545))
 
 ## 0.14.4 (2025-10-01)
 
