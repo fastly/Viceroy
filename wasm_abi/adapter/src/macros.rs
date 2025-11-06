@@ -31,8 +31,8 @@ macro_rules! unshift_ptr {
 }
 
 #[allow(dead_code)]
-#[doc(hidden)]
-pub fn print(message: &[u8]) {
+#[cold]
+pub(crate) fn print(message: &[u8]) {
     let _ = get_stderr().blocking_write_and_flush(message);
 }
 
@@ -58,13 +58,15 @@ macro_rules! eprintln {
     }};
 }
 
-pub(crate) fn eprint_u32(x: u32) {
+#[cold]
+fn eprint_u32(x: u32) {
     if x == 0 {
         eprint!("0");
     } else {
         eprint_u32_impl(x)
     }
 
+    #[cold]
     fn eprint_u32_impl(x: u32) {
         if x != 0 {
             eprint_u32_impl(x / 10);
@@ -75,30 +77,32 @@ pub(crate) fn eprint_u32(x: u32) {
     }
 }
 
+#[allow(dead_code)]
+#[cold]
+pub(crate) fn unreachable(line: u32, message: &[u8]) -> ! {
+    eprint!("unreachable executed at adapter line ");
+    crate::macros::eprint_u32(line);
+    if !message.is_empty() {
+        eprint!(": ");
+        print(message);
+    }
+    eprint!("\n");
+    #[cfg(target_arch = "wasm32")]
+    core::arch::wasm32::unreachable();
+    // This is here to keep rust-analyzer happy when building for native:
+    #[cfg(not(target_arch = "wasm32"))]
+    std::process::abort();
+}
+
 /// A minimal `unreachable`.
 macro_rules! unreachable {
     () => {{
-        eprint!("unreachable executed at adapter line ");
-        crate::macros::eprint_u32(line!());
-        eprint!("\n");
-        #[cfg(target_arch = "wasm32")]
-        core::arch::wasm32::unreachable();
-        // This is here to keep rust-analyzer happy when building for native:
-        #[cfg(not(target_arch = "wasm32"))]
-        std::process::abort();
+        crate::macros::unreachable(line!(), b"");
     }};
 
     ($arg:tt) => {{
-        eprint!("unreachable executed at adapter line ");
-        crate::macros::eprint_u32(line!());
-        eprint!(": ");
-        eprintln!($arg);
-        eprint!("\n");
-        #[cfg(target_arch = "wasm32")]
-        core::arch::wasm32::unreachable();
-        // This is here to keep rust-analyzer happy when building for native:
-        #[cfg(not(target_arch = "wasm32"))]
-        std::process::abort();
+        let message = byte_array_literals::str!($arg);
+        crate::macros::unreachable(line!(), &message);
     }};
 }
 

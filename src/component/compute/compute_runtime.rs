@@ -7,7 +7,7 @@ impl compute_runtime::Host for ComponentCtx {
         self.session().active_cpu_time_us.load(Ordering::SeqCst) / 1000
     }
 
-    fn get_session_id(&mut self) -> String {
+    fn get_sandbox_id(&mut self) -> String {
         format!("{:032x}", self.session().session_id())
     }
 
