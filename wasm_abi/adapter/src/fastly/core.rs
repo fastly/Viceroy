@@ -243,12 +243,15 @@ pub struct InspectConfig {
 
 pub mod fastly_abi {
     use super::*;
+    use crate::bindings::fastly::adapter::adapter_abi;
 
     pub const ABI_VERSION: u64 = 1;
 
     #[export_name = "fastly_abi#init"]
     /// Tell the runtime what ABI version this program is using (FASTLY_ABI_VERSION)
     pub fn init(abi_version: u64) -> FastlyStatus {
+        adapter_abi::init();
+
         if abi_version != ABI_VERSION {
             FastlyStatus::UNKNOWN_ERROR
         } else {
@@ -1049,7 +1052,7 @@ pub mod fastly_http_req {
     use crate::{
         bindings::fastly::{
             self,
-            adapter::adapter_http_req,
+            adapter::{adapter_backend, adapter_http_req},
             compute::{backend, http_req, http_types, security},
         },
         fastly::encode_ip_address,
@@ -1825,7 +1828,7 @@ pub mod fastly_http_req {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
         let body_handle = unsafe { fastly::compute::http_body::Body::from_handle(body_handle) };
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
-        match http_req::send(req_handle, body_handle, backend) {
+        match adapter_http_req::send(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
                     *main_ptr!(resp_handle_out) = resp_handle.take_handle();
@@ -1851,7 +1854,7 @@ pub mod fastly_http_req {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
         let body_handle = unsafe { fastly::compute::http_body::Body::from_handle(body_handle) };
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
-        match http_req::send(req_handle, body_handle, backend) {
+        match adapter_http_req::send(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
                     *main_ptr!(error_detail) = SendErrorDetailTag::Ok.into();
@@ -1889,7 +1892,7 @@ pub mod fastly_http_req {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
         let body_handle = unsafe { fastly::compute::http_body::Body::from_handle(body_handle) };
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
-        match http_req::send_uncached(req_handle, body_handle, backend) {
+        match adapter_http_req::send_uncached(req_handle, body_handle, backend) {
             Ok((resp_handle, resp_body_handle)) => {
                 unsafe {
                     *main_ptr!(error_detail) = SendErrorDetailTag::Ok.into();
@@ -1925,7 +1928,7 @@ pub mod fastly_http_req {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
         let body_handle = unsafe { fastly::compute::http_body::Body::from_handle(body_handle) };
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
-        match http_req::send_async(req_handle, body_handle, backend) {
+        match adapter_http_req::send_async(req_handle, body_handle, backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(pending_req_handle_out) = res.take_handle();
@@ -1950,12 +1953,12 @@ pub mod fastly_http_req {
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
         let res = if streaming == 0 {
             let body_handle = unsafe { fastly::compute::http_body::Body::from_handle(body_handle) };
-            http_req::send_async_uncached(req_handle, body_handle, backend)
+            adapter_http_req::send_async_uncached(req_handle, body_handle, backend)
         } else {
             let body_handle = ManuallyDrop::new(unsafe {
                 fastly::compute::http_body::Body::from_handle(body_handle)
             });
-            http_req::send_async_uncached_streaming(req_handle, &body_handle, backend)
+            adapter_http_req::send_async_uncached_streaming(req_handle, &body_handle, backend)
         };
         match res {
             Ok(res) => {
@@ -1982,7 +1985,7 @@ pub mod fastly_http_req {
             fastly::compute::http_body::Body::from_handle(body_handle)
         });
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
-        match http_req::send_async_streaming(req_handle, &body_handle, backend) {
+        match adapter_http_req::send_async_streaming(req_handle, &body_handle, backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(pending_req_handle_out) = res.take_handle();
@@ -1996,7 +1999,7 @@ pub mod fastly_http_req {
     #[export_name = "fastly_http_req#upgrade_websocket"]
     pub fn upgrade_websocket(backend: *const u8, backend_len: usize) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
-        convert_result(http_req::upgrade_websocket(backend))
+        convert_result(adapter_http_req::upgrade_websocket(backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_websocket_proxy_v2"]
@@ -2007,7 +2010,7 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
         let req = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req) });
-        convert_result(req.redirect_to_websocket_proxy(backend))
+        convert_result(adapter_http_req::redirect_to_websocket_proxy(&req, backend))
     }
 
     #[export_name = "fastly_http_req#redirect_to_grip_proxy_v2"]
@@ -2018,7 +2021,7 @@ pub mod fastly_http_req {
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
         let req = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req) });
-        convert_result(req.redirect_to_grip_proxy(backend))
+        convert_result(adapter_http_req::redirect_to_grip_proxy(&req, backend))
     }
 
     #[export_name = "fastly_http_req#register_dynamic_backend"]
@@ -2118,7 +2121,7 @@ pub mod fastly_http_req {
             builder.grpc(true);
         }
 
-        let res = backend::register_dynamic_backend(name_prefix, target, builder);
+        let res = adapter_backend::register_dynamic_backend(name_prefix, target, builder);
 
         convert_result(res)
     }
@@ -2868,7 +2871,7 @@ pub mod fastly_device_detection {
 
 pub mod fastly_erl {
     use super::*;
-    use crate::bindings::fastly::compute::erl;
+    use crate::bindings::fastly::adapter::adapter_erl;
 
     #[export_name = "fastly_erl#check_rate"]
     pub fn check_rate(
@@ -2887,10 +2890,10 @@ pub mod fastly_erl {
         let rc = crate::make_str!(unsafe_main_ptr!(rc), rc_max_len);
         let entry = crate::make_str!(unsafe_main_ptr!(entry), entry_max_len);
         let pb = crate::make_str!(unsafe_main_ptr!(pb), pb_max_len);
-        match erl::check_rate(rc, entry, delta, window, limit, pb, ttl) {
+        match adapter_erl::check_rate(rc, entry, delta, window, limit, pb, ttl) {
             Ok(res) => {
                 unsafe {
-                    *main_ptr!(value) = res;
+                    *main_ptr!(value) = res.into();
                 }
                 FastlyStatus::OK
             }
@@ -2908,7 +2911,7 @@ pub mod fastly_erl {
     ) -> FastlyStatus {
         let rc = crate::make_str!(unsafe_main_ptr!(rc), rc_max_len);
         let entry = crate::make_str!(unsafe_main_ptr!(entry), entry_max_len);
-        convert_result(erl::ratecounter_increment(rc, entry, delta))
+        convert_result(adapter_erl::ratecounter_increment(rc, entry, delta))
     }
 
     #[export_name = "fastly_erl#ratecounter_lookup_rate"]
@@ -2922,7 +2925,7 @@ pub mod fastly_erl {
     ) -> FastlyStatus {
         let rc = crate::make_str!(unsafe_main_ptr!(rc), rc_max_len);
         let entry = crate::make_str!(unsafe_main_ptr!(entry), entry_max_len);
-        match erl::ratecounter_lookup_rate(rc, entry, window) {
+        match adapter_erl::ratecounter_lookup_rate(rc, entry, window) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -2944,7 +2947,7 @@ pub mod fastly_erl {
     ) -> FastlyStatus {
         let rc = crate::make_str!(unsafe_main_ptr!(rc), rc_max_len);
         let entry = crate::make_str!(unsafe_main_ptr!(entry), entry_max_len);
-        match erl::ratecounter_lookup_count(rc, entry, duration) {
+        match adapter_erl::ratecounter_lookup_count(rc, entry, duration) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -2965,7 +2968,7 @@ pub mod fastly_erl {
     ) -> FastlyStatus {
         let pb = crate::make_str!(unsafe_main_ptr!(pb), pb_max_len);
         let entry = crate::make_str!(unsafe_main_ptr!(entry), entry_max_len);
-        convert_result(erl::penaltybox_add(pb, entry, ttl))
+        convert_result(adapter_erl::penaltybox_add(pb, entry, ttl))
     }
 
     #[export_name = "fastly_erl#penaltybox_has"]
@@ -2978,7 +2981,7 @@ pub mod fastly_erl {
     ) -> FastlyStatus {
         let pb = crate::make_str!(unsafe_main_ptr!(pb), pb_max_len);
         let entry = crate::make_str!(unsafe_main_ptr!(entry), entry_max_len);
-        let res = erl::penaltybox_has(pb, entry);
+        let res = adapter_erl::penaltybox_has(pb, entry);
         let value = unsafe_main_ptr!(value);
         write_bool_result!(res, value)
     }
@@ -3903,6 +3906,7 @@ pub mod fastly_secret_store {
 
 pub mod fastly_backend {
     use super::*;
+    use crate::bindings::fastly::adapter::adapter_backend;
     use crate::bindings::fastly::compute::{backend, http_types};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3955,7 +3959,7 @@ pub mod fastly_backend {
         backend_exists_out: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::exists(backend) {
+        match adapter_backend::exists(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(backend_exists_out) = u32::from(res);
@@ -3973,7 +3977,7 @@ pub mod fastly_backend {
         backend_health_out: *mut BackendHealth,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::is_healthy(backend) {
+        match adapter_backend::is_healthy(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(backend_health_out) = BackendHealth::from(res);
@@ -3987,7 +3991,7 @@ pub mod fastly_backend {
     #[export_name = "fastly_backend#is_dynamic"]
     pub fn is_dynamic(backend_ptr: *const u8, backend_len: usize, value: *mut u32) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::is_dynamic(backend) {
+        match adapter_backend::is_dynamic(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = u32::from(res);
@@ -4011,7 +4015,7 @@ pub mod fastly_backend {
             unsafe_main_ptr!(value),
             value_max_len,
             main_ptr!(nwritten),
-            { backend::get_host(backend, u64::try_from(value_max_len).trapping_unwrap()) }
+            { adapter_backend::get_host(backend, u64::try_from(value_max_len).trapping_unwrap()) }
         )
     }
 
@@ -4028,14 +4032,19 @@ pub mod fastly_backend {
             unsafe_main_ptr!(value),
             value_max_len,
             main_ptr!(nwritten),
-            { backend::get_override_host(backend, u64::try_from(value_max_len).trapping_unwrap()) }
+            {
+                adapter_backend::get_override_host(
+                    backend,
+                    u64::try_from(value_max_len).trapping_unwrap(),
+                )
+            }
         )
     }
 
     #[export_name = "fastly_backend#get_port"]
     pub fn get_port(backend_ptr: *const u8, backend_len: usize, value: *mut u16) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_port(backend) {
+        match adapter_backend::get_port(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4053,7 +4062,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_connect_timeout_ms(backend) {
+        match adapter_backend::get_connect_timeout_ms(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4071,7 +4080,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_first_byte_timeout_ms(backend) {
+        match adapter_backend::get_first_byte_timeout_ms(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4089,7 +4098,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_between_bytes_timeout_ms(backend) {
+        match adapter_backend::get_between_bytes_timeout_ms(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4103,7 +4112,7 @@ pub mod fastly_backend {
     #[export_name = "fastly_backend#is_ssl"]
     pub fn is_ssl(backend_ptr: *const u8, backend_len: usize, value: *mut u32) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::is_tls(backend) {
+        match adapter_backend::is_tls(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = u32::from(res);
@@ -4121,7 +4130,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_tls_min_version(backend) {
+        match adapter_backend::get_tls_min_version(backend) {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(value) = u32::from(res);
@@ -4140,7 +4149,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_tls_max_version(backend) {
+        match adapter_backend::get_tls_max_version(backend) {
             Ok(Some(res)) => {
                 unsafe {
                     *main_ptr!(value) = u32::from(res);
@@ -4159,7 +4168,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_http_keepalive_time(backend) {
+        match adapter_backend::get_http_keepalive_time(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4179,7 +4188,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_tcp_keepalive_enable(backend) {
+        match adapter_backend::get_tcp_keepalive_enable(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = if res { 1 } else { 0 };
@@ -4199,7 +4208,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_tcp_keepalive_interval(backend) {
+        match adapter_backend::get_tcp_keepalive_interval(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4219,7 +4228,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_tcp_keepalive_probes(backend) {
+        match adapter_backend::get_tcp_keepalive_probes(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4239,7 +4248,7 @@ pub mod fastly_backend {
         value: *mut u32,
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
-        match backend::get_tcp_keepalive_time(backend) {
+        match adapter_backend::get_tcp_keepalive_time(backend) {
             Ok(res) => {
                 unsafe {
                     *main_ptr!(value) = res;
@@ -4444,6 +4453,7 @@ pub mod fastly_purge {
 
 pub mod fastly_shielding {
     use super::*;
+    use crate::bindings::fastly::adapter::adapter_shielding;
     use crate::bindings::fastly::compute::{shielding as host, types};
 
     bitflags::bitflags! {
@@ -4555,7 +4565,7 @@ pub mod fastly_shielding {
             unsafe_main_ptr!(backend_name),
             backend_name_len,
             {
-                let res = host::backend_for_shield(
+                let res = adapter_shielding::backend_for_shield(
                     name,
                     adapted_options.as_ref(),
                     u64::try_from(backend_name_len).trapping_unwrap(),
@@ -4632,6 +4642,7 @@ bitflags::bitflags! {
 
 mod fastly_image_optimizer {
     use super::*;
+    use crate::bindings::fastly::adapter::adapter_image_optimizer;
     use crate::bindings::fastly::compute::image_optimizer;
 
     #[repr(C)]
@@ -4702,7 +4713,7 @@ mod fastly_image_optimizer {
             extra: None,
         };
 
-        let res = image_optimizer::transform_image_optimizer_request(
+        let res = adapter_image_optimizer::transform_image_optimizer_request(
             &req_handle,
             body_handle,
             backend_name,
@@ -4734,7 +4745,7 @@ mod fastly_image_optimizer {
 /// allocation to convert a `&[Resource]` to a `&[u32]`.
 fn select_wrapper(hs: &[u32]) -> u32 {
     unsafe {
-        #[link(wasm_import_module = "fastly:compute/async-io")]
+        #[link(wasm_import_module = "fastly:compute/async-io@0.0.0-prerelease.0")]
         extern "C" {
             #[link_name = "select"]
             fn wit_import(_: *const u32, _: usize) -> u32;
@@ -4753,7 +4764,7 @@ fn select_with_timeout_wrapper(hs: &[u32], timeout_ms: u32) -> Option<u32> {
         struct RetArea([::core::mem::MaybeUninit<u8>; 8]);
         let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 8]);
         let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-        #[link(wasm_import_module = "fastly:compute/async-io")]
+        #[link(wasm_import_module = "fastly:compute/async-io@0.0.0-prerelease.0")]
         extern "C" {
             #[link_name = "select-with-timeout"]
             fn wit_import(_: *const u32, _: usize, _: u32, _: *mut u8);

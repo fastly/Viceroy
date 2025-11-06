@@ -20,6 +20,7 @@ test = false
 crate-type = ["cdylib"]
 
 [workspace]
+resolver = "3"
 
 [workspace.dependencies]
 bitflags = { version = "2.5.0", default-features = false }
@@ -62,6 +63,4 @@ level = "warn"
 # rust 1.84 compat, by @dgohman-fastly: The "std_feature" option in the macro requests bindings that
 # include cfg(feature = "std") conditionals around things that depend on std, which we do because our adapter can't use std.
 # -> So we are disabling the warning for now.
-check-cfg = [
-    'cfg(feature, values("std"))',
-]
+check-cfg = ['cfg(feature, values("std"))']
