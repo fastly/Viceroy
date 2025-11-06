@@ -10,7 +10,7 @@ pub mod fastly_http_req {
     #[export_name = "fastly_http_req#redirect_to_websocket_proxy"]
     pub fn redirect_to_websocket_proxy(backend: *const u8, backend_len: usize) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
-        convert_result(adapter_http_req::redirect_to_websocket_proxy_deprecated(
+        convert_result(adapter_http_req::redirect_to_websocket_proxy_norequest(
             backend,
         ))
     }
@@ -18,7 +18,7 @@ pub mod fastly_http_req {
     #[export_name = "fastly_http_req#redirect_to_grip_proxy"]
     pub fn redirect_to_grip_proxy(backend: *const u8, backend_len: usize) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend), backend_len);
-        convert_result(adapter_http_req::redirect_to_grip_proxy_deprecated(backend))
+        convert_result(adapter_http_req::redirect_to_grip_proxy_norequest(backend))
     }
 }
 
