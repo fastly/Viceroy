@@ -9,6 +9,7 @@ use {
     std::mem,
     tokio::sync::oneshot::Sender,
 };
+use crate::session::ViceroyResponseMetadata;
 
 /// Downstream response states.
 ///
@@ -53,7 +54,11 @@ impl DownstreamResponseState {
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
         use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
 
-        filter_outgoing_headers(response.headers_mut());
+        let manual_framing_headers = response.extensions().get::<ViceroyResponseMetadata>()
+            .map(|metadata| metadata.manual_framing_headers).unwrap_or(false);
+        if !manual_framing_headers {
+            filter_outgoing_headers(response.headers_mut());
+        }
 
         // Supporting 103 Early Hints responses is currently infeasible, as Hyper does not
         // support sending multiple responses on a single connection. But we don't want

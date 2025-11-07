@@ -1375,6 +1375,20 @@ impl Default for ViceroyRequestMetadata {
     }
 }
 
+/// Additional Viceroy-specific metadata for requests.
+#[derive(Clone, Debug)]
+pub struct ViceroyResponseMetadata {
+    pub manual_framing_headers: bool
+}
+
+impl Default for ViceroyResponseMetadata {
+    fn default() -> Self {
+        ViceroyResponseMetadata {
+            manual_framing_headers: false
+        }
+    }
+}
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct AsyncItemHandle(u32);
