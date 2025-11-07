@@ -9,6 +9,7 @@ mod config_store_lookup;
 mod device_detection_lookup;
 mod dictionary_lookup;
 mod downstream_req;
+mod early_hints;
 mod edge_rate_limiting;
 mod env_vars;
 mod geolocation_lookup;

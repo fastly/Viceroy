@@ -55,6 +55,20 @@ impl DownstreamResponseState {
 
         filter_outgoing_headers(response.headers_mut());
 
+        // Supporting 103 Early Hints responses is currently infeasible, as Hyper does not
+        // support sending multiple responses on a single connection. But we don't want
+        // to generate errors for them either. Early Hints will be dropped, but logged
+        // so that people will know they *did work*, even though they won't reach
+        // the client.
+        if response.status().as_u16() == 103 {
+            // We'll do these at different log levels in case someone wants to squelch some.
+            tracing::warn!(
+                "Guest returned 103 Early Hints response which will not be sent to the client"
+            );
+            tracing::info!("{:#?}", response);
+            return Ok(());
+        }
+
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
         match mem::replace(self, Sent) {
             Closed => panic!("downstream response channel was closed"),
