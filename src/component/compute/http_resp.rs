@@ -1,9 +1,16 @@
 use {
-    crate::component::bindings::fastly::compute::{http_body, http_resp, http_types, types},
-    crate::component::compute::headers::{get_names, get_values},
     crate::{
+        component::{
+            bindings::fastly::compute::{
+                http_body, http_resp,
+                http_types::{self, FramingHeadersMode},
+                types,
+            },
+            compute::headers::{get_names, get_values},
+        },
         error::Error,
         linking::{ComponentCtx, SessionView},
+        session::ViceroyResponseMetadata,
         upstream,
     },
     cfg_if::cfg_if,
@@ -260,15 +267,33 @@ impl http_resp::HostResponse for ComponentCtx {
 
     fn set_framing_headers_mode(
         &mut self,
-        _h: Resource<http_resp::Response>,
+        h: Resource<http_resp::Response>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
-        match mode {
-            http_types::FramingHeadersMode::ManuallyFromHeaders => {
-                Err(Error::NotAvailable("Manual framing headers").into())
+        let manual_framing_headers = match mode {
+            FramingHeadersMode::ManuallyFromHeaders => true,
+            FramingHeadersMode::Automatic => false,
+        };
+
+        let extensions = &mut self.session_mut().response_parts_mut(h.into())?.extensions;
+
+        match extensions.get_mut::<ViceroyResponseMetadata>() {
+            None => {
+                extensions.insert(ViceroyResponseMetadata {
+                    manual_framing_headers,
+                    // future note: at time of writing, this is the only field of
+                    // this structure, but there is an intention to add more fields.
+                    // When we do, and if/when an error appears, what you're looking
+                    // for is:
+                    // ..Default::default()
+                });
             }
-            http_types::FramingHeadersMode::Automatic => Ok(()),
+            Some(vrm) => {
+                vrm.manual_framing_headers = manual_framing_headers;
+            }
         }
+
+        Ok(())
     }
 
     fn set_http_keepalive_mode(
