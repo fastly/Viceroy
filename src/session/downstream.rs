@@ -3,13 +3,12 @@
 use {
     crate::{
         body::Body, downstream::DownstreamResponse, error::Error, headers::filter_outgoing_headers,
-        pushpin::PushpinRedirectInfo,
+        pushpin::PushpinRedirectInfo, session::ViceroyResponseMetadata
     },
     hyper::http::response::Response,
     std::mem,
     tokio::sync::oneshot::Sender,
 };
-use crate::session::ViceroyResponseMetadata;
 
 /// Downstream response states.
 ///
