@@ -503,13 +503,16 @@ impl api::HostEntry for ComponentCtx {
 
         let mut state = api::LookupState::empty();
         if let Some(found) = entry.found() {
-            state |= api::LookupState::FOUND;
-
-            if !found.meta().is_fresh() {
-                state |= api::LookupState::STALE;
-            }
+            // At the moment, Compute only returns FOUND if the object is fresh.
+            // We adopt the same behavior here, as SDKs (including old SDK versions) do not check
+            // the USABLE bit.
             if found.meta().is_usable() {
                 state |= api::LookupState::USABLE;
+                state |= api::LookupState::FOUND;
+
+                if !found.meta().is_fresh() {
+                    state |= api::LookupState::STALE;
+                }
             }
         }
         if entry.go_get().is_some() {
