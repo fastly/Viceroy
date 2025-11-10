@@ -301,7 +301,15 @@ pub fn send_request(
         })
         .unwrap_or(false);
 
-    filter_outgoing_headers(req.headers_mut());
+    let manual_framing_headers = req
+        .extensions()
+        .get::<ViceroyRequestMetadata>()
+        .map(|vrm| vrm.manual_framing_headers)
+        .unwrap_or(false);
+    if !manual_framing_headers {
+        filter_outgoing_headers(req.headers_mut());
+    }
+
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
