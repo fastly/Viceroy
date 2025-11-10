@@ -1,10 +1,23 @@
 use {
-    crate::{component::{
-        bindings::fastly::compute::{http_body, http_req, http_resp, http_types::{self, FramingHeadersMode}, types},
-        compute::headers::{get_names, get_values},
-    }, error::Error, linking::{ComponentCtx, SessionView}, pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo}, session::{PeekableTask, ViceroyRequestMetadata}, upstream},
+    crate::{
+        component::{
+            bindings::fastly::compute::{
+                http_body, http_req, http_resp,
+                http_types::{self, FramingHeadersMode},
+                types,
+            },
+            compute::headers::{get_names, get_values},
+        },
+        error::Error,
+        linking::{ComponentCtx, SessionView},
+        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
+        session::{PeekableTask, ViceroyRequestMetadata},
+        upstream,
+    },
     http::{
-        Method, Uri, header::{HeaderName, HeaderValue}, request::Request
+        header::{HeaderName, HeaderValue},
+        request::Request,
+        Method, Uri,
     },
     wasmtime::component::Resource,
 };
@@ -430,7 +443,7 @@ impl http_req::HostRequest for ComponentCtx {
     ) -> Result<(), types::Error> {
         let manual_framing_headers = match mode {
             FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => true
+            FramingHeadersMode::Automatic => true,
         };
 
         let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;

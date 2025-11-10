@@ -379,7 +379,7 @@ impl FastlyHttpReq for Session {
     ) -> Result<(), Error> {
         let manual_framing_headers = match mode {
             FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => true
+            FramingHeadersMode::Automatic => true,
         };
         let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
 

@@ -1378,10 +1378,9 @@ impl Default for ViceroyRequestMetadata {
 }
 
 /// Additional Viceroy-specific metadata for responses.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ViceroyResponseMetadata {
-    pub manual_framing_headers: bool
+    pub manual_framing_headers: bool,
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]

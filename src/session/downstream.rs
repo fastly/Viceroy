@@ -3,7 +3,7 @@
 use {
     crate::{
         body::Body, downstream::DownstreamResponse, error::Error, headers::filter_outgoing_headers,
-        pushpin::PushpinRedirectInfo, session::ViceroyResponseMetadata
+        pushpin::PushpinRedirectInfo, session::ViceroyResponseMetadata,
     },
     hyper::http::response::Response,
     std::mem,
@@ -53,8 +53,11 @@ impl DownstreamResponseState {
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
         use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
 
-        let manual_framing_headers = response.extensions().get::<ViceroyResponseMetadata>()
-            .map(|metadata| metadata.manual_framing_headers).unwrap_or(false);
+        let manual_framing_headers = response
+            .extensions()
+            .get::<ViceroyResponseMetadata>()
+            .map(|metadata| metadata.manual_framing_headers)
+            .unwrap_or(false);
         if !manual_framing_headers {
             filter_outgoing_headers(response.headers_mut());
         }
