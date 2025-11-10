@@ -1,5 +1,12 @@
 use crate::{
-    body::{Body, Chunk}, cache::CacheOverride, config::Backend, error::Error, framing::{content_length_is_valid, transfer_encoding_is_supported}, headers::filter_outgoing_headers, session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata}, wiggle_abi::types::ContentEncodings
+    body::{Body, Chunk},
+    cache::CacheOverride,
+    config::Backend,
+    error::Error,
+    framing::{content_length_is_valid, transfer_encoding_is_supported},
+    headers::filter_outgoing_headers,
+    session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
+    wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
 use futures::Future;
 use http::{uri, HeaderValue, Version};
@@ -295,23 +302,23 @@ pub fn send_request(
         })
         .unwrap_or(false);
 
-    let mut manual_framing_headers = req
+    let mut framing_headers_mode = req
         .extensions()
         .get::<ViceroyRequestMetadata>()
-        .map(|vrm| vrm.manual_framing_headers)
-        .unwrap_or(false);
+        .map(|vrm| vrm.framing_headers_mode)
+        .unwrap_or(FramingHeadersMode::Automatic);
 
-    if manual_framing_headers {
+    if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
         if !content_length_is_valid(req.headers()) {
             warn!("Backend request has invalid Content-Length header, falling back to automatic framing.");
-            manual_framing_headers = false;
+            framing_headers_mode = FramingHeadersMode::Automatic;
         }
         if !transfer_encoding_is_supported(req.headers()) {
             warn!("Backend request has unsupported Transfer-Encoding header, falling back to automatic framing.");
-            manual_framing_headers = false;
+            framing_headers_mode = FramingHeadersMode::Automatic;
         }
     }
-    if !manual_framing_headers {
+    if framing_headers_mode != FramingHeadersMode::ManuallyFromHeaders {
         filter_outgoing_headers(req.headers_mut());
     }
 

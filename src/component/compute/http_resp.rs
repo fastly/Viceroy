@@ -1,11 +1,7 @@
 use {
     crate::{
         component::{
-            bindings::fastly::compute::{
-                http_body, http_resp,
-                http_types::{self, FramingHeadersMode},
-                types,
-            },
+            bindings::fastly::compute::{http_body, http_resp, http_types, types},
             compute::headers::{get_names, get_values},
         },
         error::Error,
@@ -270,9 +266,13 @@ impl http_resp::HostResponse for ComponentCtx {
         h: Resource<http_resp::Response>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
-        let manual_framing_headers = match mode {
-            FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => false,
+        let normalized_mode = match mode {
+            http_types::FramingHeadersMode::Automatic => {
+                crate::wiggle_abi::types::FramingHeadersMode::Automatic
+            }
+            http_types::FramingHeadersMode::ManuallyFromHeaders => {
+                crate::wiggle_abi::types::FramingHeadersMode::ManuallyFromHeaders
+            }
         };
 
         let extensions = &mut self.session_mut().response_parts_mut(h.into())?.extensions;
@@ -280,7 +280,7 @@ impl http_resp::HostResponse for ComponentCtx {
         match extensions.get_mut::<ViceroyResponseMetadata>() {
             None => {
                 extensions.insert(ViceroyResponseMetadata {
-                    manual_framing_headers,
+                    framing_headers_mode: normalized_mode,
                     // future note: at time of writing, this is the only field of
                     // this structure, but there is an intention to add more fields.
                     // When we do, and if/when an error appears, what you're looking
@@ -289,7 +289,7 @@ impl http_resp::HostResponse for ComponentCtx {
                 });
             }
             Some(vrm) => {
-                vrm.manual_framing_headers = manual_framing_headers;
+                vrm.framing_headers_mode = normalized_mode;
             }
         }
 

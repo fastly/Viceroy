@@ -377,21 +377,17 @@ impl FastlyHttpReq for Session {
         req_handle: RequestHandle,
         mode: FramingHeadersMode,
     ) -> Result<(), Error> {
-        let manual_framing_headers = match mode {
-            FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => false,
-        };
         let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
 
         match extensions.get_mut::<ViceroyRequestMetadata>() {
             None => {
                 extensions.insert(ViceroyRequestMetadata {
-                    manual_framing_headers,
+                    framing_headers_mode: mode,
                     ..Default::default()
                 });
             }
             Some(vrm) => {
-                vrm.manual_framing_headers = manual_framing_headers;
+                vrm.framing_headers_mode = mode;
             }
         }
 

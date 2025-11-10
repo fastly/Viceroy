@@ -197,16 +197,12 @@ impl FastlyHttpResp for Session {
         resp_handle: ResponseHandle,
         mode: FramingHeadersMode,
     ) -> Result<(), Error> {
-        let manual_framing_headers = match mode {
-            FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => false,
-        };
         let extensions = &mut self.response_parts_mut(resp_handle)?.extensions;
 
         match extensions.get_mut::<ViceroyResponseMetadata>() {
             None => {
                 extensions.insert(ViceroyResponseMetadata {
-                    manual_framing_headers,
+                    framing_headers_mode: mode,
                     // future note: at time of writing, this is the only field of
                     // this structure, but there is an intention to add more fields.
                     // When we do, and if/when an error appears, what you're looking
@@ -215,7 +211,7 @@ impl FastlyHttpResp for Session {
                 });
             }
             Some(vrm) => {
-                vrm.manual_framing_headers = manual_framing_headers;
+                vrm.framing_headers_mode = mode;
             }
         }
 

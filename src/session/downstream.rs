@@ -2,7 +2,14 @@
 
 use {
     crate::{
-        body::Body, downstream::DownstreamResponse, error::Error, framing::{content_length_is_valid, transfer_encoding_is_supported}, headers::filter_outgoing_headers, pushpin::PushpinRedirectInfo, session::ViceroyResponseMetadata
+        body::Body,
+        downstream::DownstreamResponse,
+        error::Error,
+        framing::{content_length_is_valid, transfer_encoding_is_supported},
+        headers::filter_outgoing_headers,
+        pushpin::PushpinRedirectInfo,
+        session::ViceroyResponseMetadata,
+        wiggle_abi::types::FramingHeadersMode,
     },
     hyper::http::response::Response,
     std::mem,
@@ -52,23 +59,23 @@ impl DownstreamResponseState {
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
         use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
 
-        let mut manual_framing_headers = response
+        let mut framing_headers_mode = response
             .extensions()
             .get::<ViceroyResponseMetadata>()
-            .map(|metadata| metadata.manual_framing_headers)
-            .unwrap_or(false);
+            .map(|metadata: &ViceroyResponseMetadata| metadata.framing_headers_mode)
+            .unwrap_or(FramingHeadersMode::Automatic);
 
-        if manual_framing_headers {
+        if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
             if !content_length_is_valid(response.headers()) {
                 tracing::warn!("Downstream response has invalid Content-Length header, falling back to automatic framing.");
-                manual_framing_headers = false;
+                framing_headers_mode = FramingHeadersMode::Automatic;
             }
             if !transfer_encoding_is_supported(response.headers()) {
                 tracing::warn!("Downstream response has unsupported Transfer-Encoding header, falling back to automatic framing.");
-                manual_framing_headers = false;
+                framing_headers_mode = FramingHeadersMode::Automatic;
             }
         }
-        if !manual_framing_headers {
+        if framing_headers_mode != FramingHeadersMode::ManuallyFromHeaders {
             filter_outgoing_headers(response.headers_mut());
         }
 

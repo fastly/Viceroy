@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use crate::cache::{Cache, CacheEntry};
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle};
+use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode};
 
 use {
     self::downstream::DownstreamResponseState,
@@ -1365,22 +1365,30 @@ impl<'session> Drop for SelectedTargets<'session> {
 #[derive(Clone, Debug)]
 pub struct ViceroyRequestMetadata {
     pub auto_decompress_encodings: ContentEncodings,
-    pub manual_framing_headers: bool,
+    pub framing_headers_mode: FramingHeadersMode,
 }
 
 impl Default for ViceroyRequestMetadata {
     fn default() -> Self {
         ViceroyRequestMetadata {
             auto_decompress_encodings: ContentEncodings::empty(),
-            manual_framing_headers: false,
+            framing_headers_mode: FramingHeadersMode::Automatic,
         }
     }
 }
 
 /// Additional Viceroy-specific metadata for responses.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ViceroyResponseMetadata {
-    pub manual_framing_headers: bool,
+    pub framing_headers_mode: FramingHeadersMode,
+}
+
+impl Default for ViceroyResponseMetadata {
+    fn default() -> Self {
+        ViceroyResponseMetadata {
+            framing_headers_mode: FramingHeadersMode::Automatic,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
