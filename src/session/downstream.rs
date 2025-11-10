@@ -2,8 +2,7 @@
 
 use {
     crate::{
-        body::Body, downstream::DownstreamResponse, error::Error, headers::filter_outgoing_headers,
-        pushpin::PushpinRedirectInfo, session::ViceroyResponseMetadata,
+        body::Body, downstream::DownstreamResponse, error::Error, framing::{content_length_is_valid, transfer_encoding_is_supported}, headers::filter_outgoing_headers, pushpin::PushpinRedirectInfo, session::ViceroyResponseMetadata
     },
     hyper::http::response::Response,
     std::mem,
@@ -53,11 +52,22 @@ impl DownstreamResponseState {
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
         use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
 
-        let manual_framing_headers = response
+        let mut manual_framing_headers = response
             .extensions()
             .get::<ViceroyResponseMetadata>()
             .map(|metadata| metadata.manual_framing_headers)
             .unwrap_or(false);
+
+        if manual_framing_headers {
+            if !content_length_is_valid(response.headers()) {
+                tracing::warn!("Downstream response has invalid Content-Length header, falling back to automatic framing.");
+                manual_framing_headers = false;
+            }
+            if !transfer_encoding_is_supported(response.headers()) {
+                tracing::warn!("Downstream response has unsupported Transfer-Encoding header, falling back to automatic framing.");
+                manual_framing_headers = false;
+            }
+        }
         if !manual_framing_headers {
             filter_outgoing_headers(response.headers_mut());
         }
