@@ -443,7 +443,7 @@ impl http_req::HostRequest for ComponentCtx {
     ) -> Result<(), types::Error> {
         let manual_framing_headers = match mode {
             FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => true,
+            FramingHeadersMode::Automatic => false,
         };
 
         let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;

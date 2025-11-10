@@ -199,7 +199,7 @@ impl FastlyHttpResp for Session {
     ) -> Result<(), Error> {
         let manual_framing_headers = match mode {
             FramingHeadersMode::ManuallyFromHeaders => true,
-            FramingHeadersMode::Automatic => true,
+            FramingHeadersMode::Automatic => false,
         };
         let extensions = &mut self.response_parts_mut(resp_handle)?.extensions;
 
