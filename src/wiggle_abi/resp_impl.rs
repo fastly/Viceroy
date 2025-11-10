@@ -207,7 +207,11 @@ impl FastlyHttpResp for Session {
             None => {
                 extensions.insert(ViceroyResponseMetadata {
                     manual_framing_headers,
-                    ..Default::default()
+                    // future note: at time of writing, this is the only field of
+                    // this structure, but there is an intention to add more fields.
+                    // When we do, and if/when an error appears, what you're looking
+                    // for is:
+                    // ..Default::default()
                 });
             }
             Some(vrm) => {

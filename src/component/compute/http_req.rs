@@ -1,19 +1,10 @@
 use {
-    crate::component::{
-        bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
+    crate::{component::{
+        bindings::fastly::compute::{http_body, http_req, http_resp, http_types::{self, FramingHeadersMode}, types},
         compute::headers::{get_names, get_values},
-    },
-    crate::{
-        error::Error,
-        linking::{ComponentCtx, SessionView},
-        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
-        session::{PeekableTask, ViceroyRequestMetadata},
-        upstream,
-    },
+    }, error::Error, linking::{ComponentCtx, SessionView}, pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo}, session::{PeekableTask, ViceroyRequestMetadata}, upstream},
     http::{
-        header::{HeaderName, HeaderValue},
-        request::Request,
-        Method, Uri,
+        Method, Uri, header::{HeaderName, HeaderValue}, request::Request
     },
     wasmtime::component::Resource,
 };
@@ -413,11 +404,7 @@ impl http_req::HostRequest for ComponentCtx {
             None => {
                 extensions.insert(ViceroyRequestMetadata {
                     auto_decompress_encodings: encodings,
-                    // future note: at time of writing, this is the only field of
-                    // this structure, but there is an intention to add more fields.
-                    // When we do, and if/when an error appears, what you're looking
-                    // for is:
-                    // ..Default::default()
+                    ..Default::default()
                 });
             }
             Some(vrm) => {
@@ -438,15 +425,29 @@ impl http_req::HostRequest for ComponentCtx {
 
     fn set_framing_headers_mode(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
-        match mode {
-            http_types::FramingHeadersMode::ManuallyFromHeaders => {
-                Err(Error::NotAvailable("Manual framing headers").into())
+        let manual_framing_headers = match mode {
+            FramingHeadersMode::ManuallyFromHeaders => true,
+            FramingHeadersMode::Automatic => true
+        };
+
+        let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;
+
+        match extensions.get_mut::<ViceroyRequestMetadata>() {
+            None => {
+                extensions.insert(ViceroyRequestMetadata {
+                    manual_framing_headers,
+                    ..Default::default()
+                });
             }
-            http_types::FramingHeadersMode::Automatic => Ok(()),
+            Some(vrm) => {
+                vrm.manual_framing_headers = manual_framing_headers;
+            }
         }
+
+        Ok(())
     }
 
     fn redirect_to_grip_proxy(

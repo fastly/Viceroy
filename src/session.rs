@@ -1365,28 +1365,23 @@ impl<'session> Drop for SelectedTargets<'session> {
 #[derive(Clone, Debug)]
 pub struct ViceroyRequestMetadata {
     pub auto_decompress_encodings: ContentEncodings,
+    pub manual_framing_headers: bool,
 }
 
 impl Default for ViceroyRequestMetadata {
     fn default() -> Self {
         ViceroyRequestMetadata {
             auto_decompress_encodings: ContentEncodings::empty(),
+            manual_framing_headers: false,
         }
     }
 }
 
-/// Additional Viceroy-specific metadata for requests.
+/// Additional Viceroy-specific metadata for responses.
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct ViceroyResponseMetadata {
     pub manual_framing_headers: bool
-}
-
-impl Default for ViceroyResponseMetadata {
-    fn default() -> Self {
-        ViceroyResponseMetadata {
-            manual_framing_headers: false
-        }
-    }
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
