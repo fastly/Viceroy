@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::Session,
+        session::{Session, ViceroyResponseMetadata},
         upstream,
         wiggle_abi::{
             fastly_http_resp::FastlyHttpResp,
@@ -194,15 +194,28 @@ impl FastlyHttpResp for Session {
     fn framing_headers_mode_set(
         &mut self,
         _memory: &mut GuestMemory<'_>,
-        _h: ResponseHandle,
+        resp_handle: ResponseHandle,
         mode: FramingHeadersMode,
     ) -> Result<(), Error> {
-        match mode {
-            FramingHeadersMode::ManuallyFromHeaders => {
-                Err(Error::NotAvailable("Manual framing headers"))
+        let extensions = &mut self.response_parts_mut(resp_handle)?.extensions;
+
+        match extensions.get_mut::<ViceroyResponseMetadata>() {
+            None => {
+                extensions.insert(ViceroyResponseMetadata {
+                    framing_headers_mode: mode,
+                    // future note: at time of writing, this is the only field of
+                    // this structure, but there is an intention to add more fields.
+                    // When we do, and if/when an error appears, what you're looking
+                    // for is:
+                    // ..Default::default()
+                });
             }
-            FramingHeadersMode::Automatic => Ok(()),
+            Some(vrm) => {
+                vrm.framing_headers_mode = mode;
+            }
         }
+
+        Ok(())
     }
 
     fn close(

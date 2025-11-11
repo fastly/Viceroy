@@ -1,9 +1,9 @@
 use {
-    crate::component::{
-        bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
-        compute::headers::{get_names, get_values},
-    },
     crate::{
+        component::{
+            bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
+            compute::headers::{get_names, get_values},
+        },
         error::Error,
         linking::{ComponentCtx, SessionView},
         pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
@@ -413,11 +413,7 @@ impl http_req::HostRequest for ComponentCtx {
             None => {
                 extensions.insert(ViceroyRequestMetadata {
                     auto_decompress_encodings: encodings,
-                    // future note: at time of writing, this is the only field of
-                    // this structure, but there is an intention to add more fields.
-                    // When we do, and if/when an error appears, what you're looking
-                    // for is:
-                    // ..Default::default()
+                    ..Default::default()
                 });
             }
             Some(vrm) => {
@@ -438,15 +434,33 @@ impl http_req::HostRequest for ComponentCtx {
 
     fn set_framing_headers_mode(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
-        match mode {
-            http_types::FramingHeadersMode::ManuallyFromHeaders => {
-                Err(Error::NotAvailable("Manual framing headers").into())
+        let normalized_mode = match mode {
+            http_types::FramingHeadersMode::Automatic => {
+                crate::wiggle_abi::types::FramingHeadersMode::Automatic
             }
-            http_types::FramingHeadersMode::Automatic => Ok(()),
+            http_types::FramingHeadersMode::ManuallyFromHeaders => {
+                crate::wiggle_abi::types::FramingHeadersMode::ManuallyFromHeaders
+            }
+        };
+
+        let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;
+
+        match extensions.get_mut::<ViceroyRequestMetadata>() {
+            None => {
+                extensions.insert(ViceroyRequestMetadata {
+                    framing_headers_mode: normalized_mode,
+                    ..Default::default()
+                });
+            }
+            Some(vrm) => {
+                vrm.framing_headers_mode = normalized_mode;
+            }
         }
+
+        Ok(())
     }
 
     fn redirect_to_grip_proxy(

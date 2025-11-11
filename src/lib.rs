@@ -28,6 +28,7 @@ mod collecting_body;
 pub mod component;
 mod downstream;
 mod execute;
+mod framing;
 mod headers;
 mod linking;
 mod object_store;
