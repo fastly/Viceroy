@@ -1,0 +1,23 @@
+name: Test Rust versions
+
+on:
+  schedule:
+    - cron: "2 13 * * 1"
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        rust: [stable beta nightly]
+    runs-on: forge-amd64-medium
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        submodules: true
+    - name: Install Rust
+      run: rustup default ${{ matrix.rust }}
+    - run: rustup target add wasm32-wasip1
+    - run: rustup target add wasm32-unknown-unknown
+    - run: make ci
