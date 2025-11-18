@@ -16,6 +16,7 @@ mod geolocation_lookup;
 mod grpc;
 mod http_semantics;
 mod inspect;
+mod invalid_status_code;
 mod kv_store;
 mod logging;
 mod memory;
