@@ -84,6 +84,9 @@ impl DownstreamResponseState {
         // to generate errors for them either. Early Hints will be dropped, but logged
         // so that people will know they *did work*, even though they won't reach
         // the client.
+        //
+        // Other 1xx status codes, however, are not allowed and generate an InvalidArgument
+        // error.
         if response.status().as_u16() == 103 {
             // We'll do these at different log levels in case someone wants to squelch some.
             tracing::warn!(
@@ -91,6 +94,8 @@ impl DownstreamResponseState {
             );
             tracing::info!("{:#?}", response);
             return Ok(());
+        } else if response.status().is_informational() {
+            return Err(Error::InvalidArgument);
         }
 
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
