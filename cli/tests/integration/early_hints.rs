@@ -6,7 +6,7 @@ use crate::{
 };
 
 viceroy_test!(early_hints, |is_component| {
-    let resp = Test::using_fixture("env-vars.wasm")
+    let resp = Test::using_fixture("early-hints.wasm")
         .adapt_component(is_component)
         .against_empty()
         .await?;
