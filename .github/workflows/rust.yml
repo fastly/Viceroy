@@ -9,7 +9,7 @@ jobs:
   test:
     strategy:
       matrix:
-        rust: [stable beta nightly]
+        rust: [stable, beta, nightly]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
