@@ -229,7 +229,13 @@ fn canonical_host_header(
                 .authority()
                 .and_then(|auth| HeaderValue::from_str(auth.as_str()).ok())
         })
-        .expect("Could determine a Host header")
+        .or_else(|| {
+            backend
+                .uri
+                .host()
+                .and_then(|h| HeaderValue::from_str(h).ok())
+        })
+        .expect("Could not determine a Host header")
 }
 
 fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) -> Uri {
