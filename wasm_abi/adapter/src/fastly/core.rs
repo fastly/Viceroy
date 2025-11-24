@@ -138,6 +138,9 @@ pub struct DynamicBackendConfig {
     pub tcp_keepalive_interval_secs: u32,
     pub tcp_keepalive_probes: u32,
     pub tcp_keepalive_time_secs: u32,
+    pub max_connections: u32,
+    pub max_use: u32,
+    pub max_lifetime_ms: u32,
 }
 
 impl Default for DynamicBackendConfig {
@@ -166,6 +169,9 @@ impl Default for DynamicBackendConfig {
             tcp_keepalive_interval_secs: 0,
             tcp_keepalive_probes: 0,
             tcp_keepalive_time_secs: 0,
+            max_connections: 0,
+            max_use: 0,
+            max_lifetime_ms: 0,
         }
     }
 }
@@ -208,6 +214,8 @@ bitflags::bitflags! {
         const CLIENT_CERT = 1 << 13;
         const GRPC = 1 << 14;
         const KEEPALIVE = 1 << 15;
+        const POOLING_LIMITS = 1 << 16;
+        const PREFER_IPV4 = 1 << 17;
     }
 }
 
@@ -2095,8 +2103,16 @@ pub mod fastly_http_req {
             builder.tcp_keepalive_probes(unsafe { (*config).tcp_keepalive_probes });
             builder.tcp_keepalive_time_secs(unsafe { (*config).tcp_keepalive_time_secs });
         }
+        if config_mask.contains(BackendConfigOptions::POOLING_LIMITS) {
+            builder.max_connections(unsafe { (*config).max_connections });
+            builder.max_use(unsafe { (*config).max_use });
+            builder.max_lifetime_ms(unsafe { (*config).max_lifetime_ms });
+        }
         if config_mask.contains(BackendConfigOptions::DONT_POOL) {
             builder.pooling(false);
+        }
+        if config_mask.contains(BackendConfigOptions::PREFER_IPV4) {
+            builder.prefer_ipv6(false);
         }
         if config_mask.contains(BackendConfigOptions::GRPC) {
             builder.grpc(true);

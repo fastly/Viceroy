@@ -309,6 +309,8 @@
        $client_cert
        $grpc
        $keepalive
+       $pooling_limits
+       $prefer_ipv4
        ))
 
 (typename $dynamic_backend_config
@@ -336,6 +338,9 @@
     (field $tcp_keepalive_interval_secs $timeout_secs)
     (field $tcp_keepalive_probes $probe_count)
     (field $tcp_keepalive_time_secs $timeout_secs)
+    (field $max_connections u32)
+    (field $max_use u32)
+    (field $max_lifetime_ms $timeout_ms)
     ))
 
 ;;; TLS client certificate verified result from downstream.

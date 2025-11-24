@@ -1,3 +1,7 @@
+use std::mem::take;
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
 use {
     crate::component::bindings::fastly::compute::{backend, http_types, types},
     crate::config::{Backend, ClientCertInfo},
@@ -10,7 +14,6 @@ use {
     },
     http::HeaderValue,
     http::Uri,
-    std::mem::take,
     wasmtime::component::Resource,
     wasmtime_wasi_io::IoView,
 };
@@ -358,125 +361,7 @@ impl backend::Host for ComponentCtx {
     }
 }
 
-impl backend::HostDynamicBackendOptions for ComponentCtx {
-    fn new(&mut self) -> wasmtime::Result<Resource<backend::DynamicBackendOptions>> {
-        let builder = BackendBuilder::default();
-
-        Ok(self.table().push(builder)?)
-    }
-
-    fn override_host(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
-        self.table().get_mut(&config).unwrap().host_override = Some(value);
-    }
-    fn connect_timeout(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
-        self.table().get_mut(&config).unwrap().connect_timeout = value;
-    }
-    fn first_byte_timeout(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
-        self.table().get_mut(&config).unwrap().first_byte_timeout = value;
-    }
-    fn between_bytes_timeout(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
-        self.table().get_mut(&config).unwrap().between_bytes_timeout = value;
-    }
-    fn use_tls(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
-        self.table().get_mut(&config).unwrap().use_tls = value;
-    }
-    fn tls_min_version(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: backend::TlsVersion,
-    ) {
-        self.table().get_mut(&config).unwrap().tls_min_version = Some(value);
-    }
-    fn tls_max_version(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: backend::TlsVersion,
-    ) {
-        self.table().get_mut(&config).unwrap().tls_max_version = Some(value);
-    }
-    fn cert_hostname(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
-        self.table().get_mut(&config).unwrap().cert_hostname = Some(value);
-    }
-    fn ca_certificate(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
-        self.table().get_mut(&config).unwrap().ca_cert = Some(value);
-    }
-    fn tls_ciphers(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
-        self.table().get_mut(&config).unwrap().ciphers = Some(value);
-    }
-    fn sni_hostname(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
-        self.table().get_mut(&config).unwrap().sni_hostname = Some(value);
-    }
-    fn client_cert(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        client_cert: String,
-        client_key: Resource<backend::Secret>,
-    ) {
-        let client_key = SecretHandle::from(client_key);
-        self.table().get_mut(&config).unwrap().client_cert = Some((client_cert, client_key));
-    }
-    fn http_keepalive_time_ms(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
-        let config = self.table().get_mut(&config).unwrap();
-        config.keepalive = true;
-        config.http_keepalive_time_ms = value;
-    }
-    fn tcp_keepalive_enable(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
-        let config = self.table().get_mut(&config).unwrap();
-        config.keepalive = true;
-        config.tcp_keepalive_enable = value;
-    }
-    fn tcp_keepalive_interval_secs(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
-        let config = self.table().get_mut(&config).unwrap();
-        config.keepalive = true;
-        config.tcp_keepalive_interval_secs = value;
-    }
-    fn tcp_keepalive_probes(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
-        let config = self.table().get_mut(&config).unwrap();
-        config.keepalive = true;
-        config.tcp_keepalive_probes = value;
-    }
-    fn tcp_keepalive_time_secs(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
-        let config = self.table().get_mut(&config).unwrap();
-        config.keepalive = true;
-        config.tcp_keepalive_time_secs = value;
-    }
-    fn grpc(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
-        self.table().get_mut(&config).unwrap().grpc = value;
-    }
-    fn pooling(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
-        self.table().get_mut(&config).unwrap().pooling = value;
-    }
-
-    fn drop(&mut self, options: Resource<backend::DynamicBackendOptions>) -> wasmtime::Result<()> {
-        self.table().delete(options).unwrap();
-        Ok(())
-    }
-}
-
+/// Implementation of the `DynamicBackendOptions` resource.
 #[derive(Debug)]
 pub struct BackendBuilder {
     host_override: Option<String>,
@@ -497,6 +382,10 @@ pub struct BackendBuilder {
     tcp_keepalive_interval_secs: u32,
     tcp_keepalive_probes: u32,
     tcp_keepalive_time_secs: u32,
+    max_connections: u32,
+    max_use: Option<NonZeroUsize>,
+    max_lifetime: Duration,
+    prefer_ipv6: bool,
     grpc: bool,
     pooling: bool,
 }
@@ -522,8 +411,165 @@ impl Default for BackendBuilder {
             tcp_keepalive_interval_secs: 0,
             tcp_keepalive_probes: 0,
             tcp_keepalive_time_secs: 0,
+            max_connections: 0,
+            max_use: None,
+            max_lifetime: Duration::ZERO,
             grpc: false,
             pooling: true,
+            prefer_ipv6: true,
         }
+    }
+}
+
+impl backend::HostDynamicBackendOptions for ComponentCtx {
+    fn new(&mut self) -> wasmtime::Result<Resource<backend::DynamicBackendOptions>> {
+        let builder = BackendBuilder::default();
+
+        Ok(self.table().push(builder)?)
+    }
+
+    fn override_host(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
+        self.table().get_mut(&config).unwrap().host_override = Some(value);
+    }
+
+    fn connect_timeout(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
+        self.table().get_mut(&config).unwrap().connect_timeout = value;
+    }
+
+    fn first_byte_timeout(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
+        self.table().get_mut(&config).unwrap().first_byte_timeout = value;
+    }
+
+    fn between_bytes_timeout(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: u32,
+    ) {
+        self.table().get_mut(&config).unwrap().between_bytes_timeout = value;
+    }
+
+    fn use_tls(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
+        self.table().get_mut(&config).unwrap().use_tls = value;
+    }
+
+    fn tls_min_version(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: backend::TlsVersion,
+    ) {
+        self.table().get_mut(&config).unwrap().tls_min_version = Some(value);
+    }
+
+    fn tls_max_version(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: backend::TlsVersion,
+    ) {
+        self.table().get_mut(&config).unwrap().tls_max_version = Some(value);
+    }
+
+    fn cert_hostname(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
+        self.table().get_mut(&config).unwrap().cert_hostname = Some(value);
+    }
+
+    fn ca_certificate(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
+        self.table().get_mut(&config).unwrap().ca_cert = Some(value);
+    }
+
+    fn tls_ciphers(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
+        self.table().get_mut(&config).unwrap().ciphers = Some(value);
+    }
+
+    fn sni_hostname(&mut self, config: Resource<backend::DynamicBackendOptions>, value: String) {
+        self.table().get_mut(&config).unwrap().sni_hostname = Some(value);
+    }
+
+    fn client_cert(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        client_cert: String,
+        client_key: Resource<backend::Secret>,
+    ) {
+        let client_key = SecretHandle::from(client_key);
+        self.table().get_mut(&config).unwrap().client_cert = Some((client_cert, client_key));
+    }
+
+    fn http_keepalive_time_ms(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: u32,
+    ) {
+        let config = self.table().get_mut(&config).unwrap();
+        config.keepalive = true;
+        config.http_keepalive_time_ms = value;
+    }
+
+    fn tcp_keepalive_enable(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: u32,
+    ) {
+        let config = self.table().get_mut(&config).unwrap();
+        config.keepalive = true;
+        config.tcp_keepalive_enable = value;
+    }
+
+    fn tcp_keepalive_interval_secs(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: u32,
+    ) {
+        let config = self.table().get_mut(&config).unwrap();
+        config.keepalive = true;
+        config.tcp_keepalive_interval_secs = value;
+    }
+
+    fn tcp_keepalive_probes(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: u32,
+    ) {
+        let config = self.table().get_mut(&config).unwrap();
+        config.keepalive = true;
+        config.tcp_keepalive_probes = value;
+    }
+
+    fn tcp_keepalive_time_secs(
+        &mut self,
+        config: Resource<backend::DynamicBackendOptions>,
+        value: u32,
+    ) {
+        let config = self.table().get_mut(&config).unwrap();
+        config.keepalive = true;
+        config.tcp_keepalive_time_secs = value;
+    }
+
+    fn max_connections(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
+        self.table().get_mut(&config).unwrap().max_connections = value;
+    }
+
+    fn max_use(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
+        self.table().get_mut(&config).unwrap().max_use = NonZeroUsize::new(value as _);
+    }
+
+    fn max_lifetime_ms(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
+        self.table().get_mut(&config).unwrap().max_lifetime = Duration::from_millis(value as _);
+    }
+
+    fn grpc(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
+        self.table().get_mut(&config).unwrap().grpc = value;
+    }
+
+    fn pooling(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
+        self.table().get_mut(&config).unwrap().pooling = value;
+    }
+
+    fn prefer_ipv6(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
+        self.table().get_mut(&config).unwrap().prefer_ipv6 = value;
+    }
+
+    fn drop(&mut self, options: Resource<backend::DynamicBackendOptions>) -> wasmtime::Result<()> {
+        self.table().delete(options)?;
+        Ok(())
     }
 }

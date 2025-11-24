@@ -1699,6 +1699,26 @@ interface backend {
     /// to send TCP keepalive probes.
     tcp-keepalive-time-secs: func(value: u32);
 
+    /// Configures the maximum number of connections to keep in the local connection pool.
+    ///
+    /// `0` is unlimited.
+    ///
+    /// Note that this limit is best determined experimentally, since the total number of
+    /// connections to the backend will depend on POP sizes, HTTP keepalive limits, and the
+    /// traffic patterns for individual POPs.
+    max-connections: func(value: u32);
+
+    /// Configures how many times a pooled connection can be used.
+    ///
+    /// `0` is unlimited.
+    max-use: func(value: u32);
+
+    /// Configures an upper bound for how long an HTTP keepalive connection can be open before we
+    /// stop trying to reuse it.
+    ///
+    /// `0` is unlimited.
+    max-lifetime-ms: func(value: u32);
+
     /// Determines whether or not connections to the same backend should be pooled across different
     /// sessions.
     ///
@@ -1716,6 +1736,13 @@ interface backend {
     /// Warning: Setting this for backends that will not be used with gRPC may have unpredictable
     /// effects. Fastly only currently guarantees that this connection will work for gRPC traffic.
     grpc: func(value: bool);
+
+    /// Whether to prefer attempting connections to IPv6 addresses over IPv4 addresses when a
+    /// hostname has both A and AAAA records.
+    ///
+    /// The Compute platform defaults to `true`, and will attempt IPv6 first if a AAAA record
+    /// is present.
+    prefer-ipv6: func(value: bool);
   }
 
   type timeout-ms = u32;
