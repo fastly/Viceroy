@@ -544,27 +544,15 @@ impl backend::HostDynamicBackendOptions for ComponentCtx {
         config.tcp_keepalive_time_secs = value;
     }
 
-    fn max_connections(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
+    fn max_connections(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
         self.table().get_mut(&config).unwrap().max_connections = value;
     }
 
-    fn max_use(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
+    fn max_use(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
         self.table().get_mut(&config).unwrap().max_use = NonZeroUsize::new(value as _);
     }
 
-    fn max_lifetime_ms(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: u32,
-    ) {
+    fn max_lifetime_ms(&mut self, config: Resource<backend::DynamicBackendOptions>, value: u32) {
         self.table().get_mut(&config).unwrap().max_lifetime = Duration::from_millis(value as _);
     }
 
@@ -576,11 +564,7 @@ impl backend::HostDynamicBackendOptions for ComponentCtx {
         self.table().get_mut(&config).unwrap().pooling = value;
     }
 
-    fn prefer_ipv6(
-        &mut self,
-        config: Resource<backend::DynamicBackendOptions>,
-        value: bool,
-    ) {
+    fn prefer_ipv6(&mut self, config: Resource<backend::DynamicBackendOptions>, value: bool) {
         self.table().get_mut(&config).unwrap().prefer_ipv6 = value;
     }
 
