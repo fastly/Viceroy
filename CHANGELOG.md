@@ -1,5 +1,14 @@
 ## Unreleased
 
+## 0.16.1 (2025-11-25)
+
+- Fix off-by-one error in reusable sandboxes limit ([#561](https://github.com/fastly/Viceroy/pull/561))
+- Add stubs for new dynamic backend config options ([#560](https://github.com/fastly/Viceroy/pull/560))
+- Fix yaml syntax in rust.yml ([#559](https://github.com/fastly/Viceroy/pull/559))
+- Add a CI script to test different Rust versions ([#556](https://github.com/fastly/Viceroy/pull/556))
+- Return `InvalidArgument` for non-103 1xx status codes ([#557](https://github.com/fastly/Viceroy/pull/557))
+- Fix test for 103 Early Hints ([#558](https://github.com/fastly/Viceroy/pull/558))
+
 ## 0.16.0 (2025-11-10)
 
 - Add rudimentary support for 103 responses ([#550](https://github.com/fastly/Viceroy/pull/550))
