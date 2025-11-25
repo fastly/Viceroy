@@ -686,11 +686,11 @@ impl ExecuteCtx {
                 let request_duration = Instant::now().duration_since(start_timestamp);
 
                 info!(
-                    "request completed using {} of WebAssembly heap",
+                    "guest completed using {} of WebAssembly heap",
                     bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
                 );
 
-                info!("request completed in {:.0?}", request_duration);
+                info!("guest completed in {:.0?}", request_duration);
 
                 outcome
             }
@@ -873,7 +873,7 @@ impl ExecuteCtx {
     pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
         let mut pending = self.pending_reuse.lock().await;
 
-        if pending.len() > NEXT_REQ_PENDING_MAX {
+        if pending.len() >= NEXT_REQ_PENDING_MAX {
             return None;
         }
 
