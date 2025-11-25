@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.16.1 (2025-11-25)
 
 - Fix off-by-one error in reusable sandboxes limit ([#561](https://github.com/fastly/Viceroy/pull/561))
