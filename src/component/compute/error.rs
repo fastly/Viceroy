@@ -90,12 +90,6 @@ impl From<InvalidUri> for types::Error {
     }
 }
 
-impl From<http::Error> for types::Error {
-    fn from(_: http::Error) -> Self {
-        types::Error::GenericError
-    }
-}
-
 impl From<std::string::FromUtf8Error> for types::Error {
     fn from(_: std::string::FromUtf8Error) -> Self {
         types::Error::InvalidArgument

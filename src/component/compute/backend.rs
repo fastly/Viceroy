@@ -138,12 +138,15 @@ impl backend::Host for ComponentCtx {
 
         let grpc = options.grpc;
 
+        let uri = Uri::builder()
+            .scheme(scheme)
+            .authority(origin_name)
+            .path_and_query("/")
+            .build()
+            .map_err(|_e| types::Error::InvalidArgument)?;
+
         let new_backend = Backend {
-            uri: Uri::builder()
-                .scheme(scheme)
-                .authority(origin_name)
-                .path_and_query("/")
-                .build()?,
+            uri,
             override_host,
             cert_host,
             use_sni,
