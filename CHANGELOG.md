@@ -1,4 +1,8 @@
-## Unreleased
+## 0.16.2 (2025-12-10)
+
+ - Update to the latest WITs and adapter. ([#564](https://github.com/fastly/Viceroy/pull/564))
+ - fix: use original static backend host ([#549](https://github.com/fastly/Viceroy/pull/549))
+ - Return InvalidArgument for bad arguments to register_dynamic_backend ([#563](https://github.com/fastly/Viceroy/pull/563))
 
 ## 0.16.1 (2025-11-25)
 
