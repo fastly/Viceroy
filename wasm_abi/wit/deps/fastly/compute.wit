@@ -6,7 +6,7 @@
 ///
 /// [Wit]: https://component-model.bytecodealliance.org/design/wit.html
 /// [Fastly Compute platform]: https://www.fastly.com/documentation/guides/compute/
-package fastly:compute;
+package fastly:compute@0.0.0-prerelease.0;
 
 /// Types used by many interfaces in this package.
 interface types {
@@ -116,7 +116,6 @@ interface types {
 
 /// Types used by HTTP interfaces in this package.
 interface http-types {
-
   /// HTTP protocol versions.
   enum http-version {
     /// HTTP/0.9
@@ -189,7 +188,6 @@ interface http-types {
 
 /// HTTP bodies.
 interface http-body {
-
   use types.{error};
 
   /// An HTTP request or response body.
@@ -350,7 +348,26 @@ interface http-downstream {
   /// Extensibility for `next-request-options`
   resource extra-next-request-options {}
 
-  /// Starts waiting for the next request.
+  /// Prepares to accept a new downstream request.
+  ///
+  /// By default, each sandbox accepts a single downstream request,
+  /// passed in as an argument to the `http-incoming.handle` call. The
+  /// `next-request` function enables a sandbox to accept additional
+  /// downstream requests. `next-request` returns a `pending-request`, which
+  /// can be passed to `await-request` to wait for the request to become
+  /// available and return the `request`.
+  ///
+  /// When using this function, be mindful of two considerations:
+  ///
+  ///  - When a single sandbox accepts multiple requests, its state
+  ///    isn't automatically cleared between requests. Applications are
+  ///    therefore responsible for preventing sensitive data from leaking from
+  ///    one request to another.
+  ///
+  ///  - There is no guarantee that a single sandbox will receive all
+  ///    requests from a given client or from a given location. When it is
+  ///    necessary to preserve state between multiple requests, store it outside
+  ///    of the sandbox.
   next-request: func(
     options: next-request-options,
   ) -> result<pending-request, error>;
@@ -358,7 +375,7 @@ interface http-downstream {
   /// Waits until the next request is available, and then returns the resulting
   /// request and body.
   ///
-  /// Returns `ok(none)` if there are no more requests for this session.
+  /// Returns `ok(none)` if there are no more requests for this sandbox.
   await-request: func(
     pending: pending-request,
   ) -> result<option<request-with-body>, error>;
@@ -505,12 +522,12 @@ interface http-downstream {
 
 /// HTTP requests.
 interface http-req {
-
   use types.{error, ip-address};
   use http-types.{http-version, content-encodings, framing-headers-mode, tls-version};
   use http-resp.{response};
   use http-body.{body};
   use http-resp.{response-with-body};
+  use backend.{backend};
 
   /// Handle that can be used to wait for a response from a sent request.
   use async-io.{pollable as pending-response};
@@ -633,7 +650,7 @@ interface http-req {
     ///
     /// [WebSockets passthrough]: https://www.fastly.com/documentation/guides/concepts/real-time-messaging/websockets-tunnel/
     redirect-to-websocket-proxy: func(
-      backend: string,
+      backend: borrow<backend>,
     ) -> result<_, error>;
 
     /// Sets how the framing headers `Content-Length` and `Transfer-Encoding` will be determined
@@ -643,7 +660,7 @@ interface http-req {
     ) -> result<_, error>;
 
     redirect-to-grip-proxy: func(
-      backend: string,
+      backend: borrow<backend>,
     ) -> result<_, error>;
   }
 
@@ -654,7 +671,7 @@ interface http-req {
   send: func(
     request: request,
     body: body,
-    backend: string,
+    backend: borrow<backend>,
   ) -> result<response-with-body, error-with-detail>;
 
   /// Sends the request directly to the backend server without performing any
@@ -664,7 +681,7 @@ interface http-req {
   send-uncached: func(
     request: request,
     body: body,
-    backend: string,
+    backend: borrow<backend>,
   ) -> result<response-with-body, error-with-detail>;
 
   /// Begins sending the request to the given backend server, and returns a
@@ -685,7 +702,7 @@ interface http-req {
   send-async: func(
     request: request,
     body: body,
-    backend: string
+    backend: borrow<backend>
   ) -> result<pending-response, error>;
 
   /// This is to `send-async` as `send-uncached` is to `send`.
@@ -696,7 +713,7 @@ interface http-req {
   send-async-uncached: func(
     request: request,
     body: body,
-    backend: string,
+    backend: borrow<backend>,
   ) -> result<pending-response, error>;
 
   /// Begins sending the request to the given backend server, and returns a
@@ -718,7 +735,7 @@ interface http-req {
   send-async-streaming: func(
     request: request,
     body: borrow<body>,
-    backend: string,
+    backend: borrow<backend>,
   ) -> result<pending-response, error>;
 
   /// This is to `send-async-streaming` as `send-uncached` is to `send`.
@@ -729,7 +746,7 @@ interface http-req {
   send-async-uncached-streaming: func(
     request: request,
     body: borrow<body>,
-    backend: string,
+    backend: borrow<backend>,
   ) -> result<pending-response, error>;
 
   type request-with-body = tuple<request, body>;
@@ -754,7 +771,7 @@ interface http-req {
     ttl: option<u32>,
     stale-while-revalidate: option<u32>,
     pci: bool,
-    surrogate-key: option<list<u8>>,
+    surrogate-key: option<string>,
 
     /// Additional options may be added in the future via this resource type.
     extra: option<borrow<extra-cache-override-details>>,
@@ -791,7 +808,7 @@ interface http-req {
     /// certificate missing error.
     ///
     /// This error means the client does not provide a certificate
-    /// during the handshake..
+    /// during the handshake.
     certificate-missing,
     /// certificate unknown error.
     ///
@@ -890,8 +907,7 @@ interface http-req {
   /// only if you have a `request` you don't intend to use anymore.
   close: func(request: request) -> result<_, error>;
 
-  upgrade-websocket: func(backend: string) -> result<_, error>;
-
+  upgrade-websocket: func(backend: borrow<backend>) -> result<_, error>;
 }
 
 /// [Fastly Next-Gen WAF] API.
@@ -1127,58 +1143,74 @@ interface device-detection {
 ///
 /// [Edge rate limiting]: https://docs.fastly.com/products/edge-rate-limiting
 interface erl {
-  use types.{error};
+  use types.{error, open-error};
 
-  /// Increments an entry in a rate counter and check if the client has exceeded some average number
-  /// of requests per second (RPS) over the window.
-  ///
-  /// If the client is over the rps limit for the window, add to the penaltybox for ttl. Valid ttl
-  /// span is 1m to 1h and TTL value is truncated to the nearest minute.
-  check-rate: func(
-    rate-counter: string,
-    entry: string,
-    delta: u32,
-    window: u32,
-    limit: u32,
-    penalty-box: string,
-    ttl: u32,
-  ) -> result<u32, error>;
+  /// A rate counter that can be used with a edge rate limiter or
+  /// standalone for counting and rate calculations.
+  resource rate-counter {
+    /// Opens a `rate-counter` with the given name.
+    open: static func(name: string) -> result<rate-counter, open-error>;
 
-  /// Increments an entry in the ratecounter by `delta`.
-  ratecounter-increment: func(
-    rate-counter: string,
-    entry: string,
-    delta: u32,
-  ) -> result<_, error>;
+    /// Returns the name of this rate counter.
+    get-name: func() -> string;
 
-  /// Looks up the current rate for entry in the ratecounter for a window.
-  ratecounter-lookup-rate: func(
-    rate-counter: string,
-    entry: string,
-    window: u32,
-  ) -> result<u32, error>;
+    /// Increments an entry in a rate counter and check if the client has exceeded some average number
+    /// of requests per second (RPS) over the window.
+    ///
+    /// If the client is over the rps limit for the window, add to the penaltybox for ttl. Valid ttl
+    /// span is 1m to 1h and TTL value is truncated to the nearest minute.
+    ///
+    /// Returns `true` if the client is penalized (i.e. should be limited), or `false` if not.
+    check-rate: func(
+      entry: string,
+      delta: u32,
+      window: u32,
+      limit: u32,
+      penalty-box: borrow<penalty-box>,
+      ttl: u32,
+    ) -> result<bool, error>;
 
-  /// Looks up the current count for entry in the ratecounter for duration.
-  ratecounter-lookup-count: func(
-    rate-counter: string,
-    entry: string,
-    duration: u32,
-  ) -> result<u32, error>;
+    /// Increments an entry in the ratecounter by `delta`.
+    increment: func(
+      entry: string,
+      delta: u32,
+    ) -> result<_, error>;
 
-  /// Add `entry` to a the penaltybox for the duration of ttl.
-  ///
-  /// Valid ttl span is 1m to 1h and TTL value is truncated to the nearest minute.
-  penaltybox-add: func(
-    penalty-box: string,
-    entry: string,
-    ttl: u32,
-  ) -> result<_, error>;
+    /// Looks up the current rate for entry in the ratecounter for a window.
+    lookup-rate: func(
+      entry: string,
+      window: u32,
+    ) -> result<u32, error>;
 
-  /// Checks if `entry` is in the penaltybox.
-  penaltybox-has: func(
-    penalty-box: string,
-    entry: string,
-  ) -> result<bool, error>;
+    /// Looks up the current count for entry in the ratecounter for duration.
+    lookup-count: func(
+      entry: string,
+      duration: u32,
+    ) -> result<u32, error>;
+  }
+
+  /// A penaltybox that can be used with the edge rate limiter or
+  /// standalone for adding and checking if some entry is in the data set.
+  resource penalty-box {
+    /// Opens a `penalty-box` identified by the given name.
+    open: static func(name: string) -> result<penalty-box, open-error>;
+
+    /// Returns the name of this penaltybox.
+    get-name: func() -> string;
+
+    /// Adds `entry` to a the penaltybox for the duration of ttl.
+    ///
+    /// Valid ttl span is 1m to 1h and TTL value is truncated to the nearest minute.
+    add: func(
+      entry: string,
+      ttl: u32,
+    ) -> result<_, error>;
+
+    /// Checks if `entry` is in the penaltybox.
+    has: func(
+      entry: string,
+    ) -> result<bool, error>;
+  }
 }
 
 /// Interface to Fastly's [Compute KV Store].
@@ -1343,8 +1375,8 @@ interface kv-store {
 
   /// Wait on the async list of keys in the KV Store.
   ///
-  /// Returns `ok(b)` with the body `b` on success, or `err(e)` indicating the error `e`
-  /// occurred.
+  /// Returns `ok(b)` with the JSON-encoded body `b` on success, or `err(e)` indicating
+  /// the error `e` occurred.
   await-list: func(
     handle: pending-list,
   ) -> result<body, kv-error>;
@@ -1438,10 +1470,15 @@ interface kv-store {
     eventual,
   }
 
+  /// Options for `list` and `list-async`.
   record list-options {
+    /// The level of synchronization to perform.
     mode: list-mode,
+    /// The item to start the list at.
     cursor: option<string>,
+    /// The maximum number of items included the response.
     limit: option<u32>,
+    /// The prefix match for items to include in the resultset.
     prefix: option<string>,
 
     /// Additional options may be added in the future via this resource type.
@@ -1463,16 +1500,16 @@ interface secret-store {
     /// Creates a new “secret” from the given memory.
     ///
     /// This is *not* the suggested way to create `secret`s; instead, we suggest using `get`.
-    /// This secret will *NOT* be shared with other sessions.
+    /// This secret will *NOT* be shared with other sandboxes.
     ///
     /// This method can be used for data that should be secret, but is being obtained by
     /// some other means than the secret store. New “secrets” created this way use plaintext
-    /// only, and live in the session's memory unencrypted for much longer than secrets
+    /// only, and live in the sandbox's memory unencrypted for much longer than secrets
     /// generated by `get`. They should thus only be used in situations in which an API requires
     /// a `secret`, but you cannot (for whatever reason) use a `store` to store them.
     ///
-    /// As the early note says, this `secret` will be local to the current session, and
-    /// will not be shared with other sessions of this service.
+    /// As the early note says, this `secret` will be local to the current sandbox, and
+    /// will not be shared with other instances of this service.
     from-bytes: static func(bytes: list<u8>) -> result<secret, error>;
 
     /// Returns the plaintext value of this secret.
@@ -1510,6 +1547,8 @@ interface acl {
 
     /// Performs a lookup of the given IP address in the ACL.
     ///
+    /// If any matches are found, the result is a JSON-encoded HTTP body.
+    ///
     /// If no matches are found, then `ok(none)` is returned. This corresponds
     /// to an HTTP error code of 204, “No Content”.
     lookup: func(
@@ -1539,10 +1578,10 @@ interface acl {
 /// Backends come in one of two flavors:
 ///   * **Static Backends**: These backends are created using the Fastly UI or API,
 ///     and are predefined by the user. Static backends typically have short names that are
-///     usable across every session of a service.
+///     usable across every instance of a service.
 ///   * **Dynamic Backends**: These backends are created programmatically using the
 ///     `register-dynamic-backend` API. They are defined at runtime, and may or may not
-///     be shared across sessions depending on how they are configured.
+///     be shared across sandboxes depending on how they are configured.
 ///
 /// To use a backend, pass it to a `send*` function.
 ///
@@ -1551,7 +1590,7 @@ interface acl {
 ///
 /// [Backends]: https://www.fastly.com/documentation/guides/integrations/non-fastly-services/developer-guide-backends/
 interface backend {
-  use types.{error};
+  use types.{error, open-error};
   use http-types.{tls-version};
   use secret-store.{secret};
 
@@ -1566,10 +1605,10 @@ interface backend {
   /// - "<hostname>:<port>"
   ///
   /// The name can be whatever you would like, as long as it does not match the name of any of the
-  /// static service backends nor match any other dynamic backends built during this session.
-  /// (Names can overlap between different sessions of the same service—they will be treated as
-  /// completely separate entities and will not be pooled—but you cannot, for example, declare
-  /// a dynamic backend named “dynamic-backend” twice in the same session.)
+  /// static service backends nor match any other dynamic backends built during this service
+  /// instance. (Names can overlap between different instances of the same service—they will be
+  /// treated as completely separate entities and will not be pooled—but you cannot, for example,
+  /// declare a dynamic backend named “dynamic-backend” twice in the same sandbox.)
   ///
   /// Dynamic backends must be enabled for the Compute service. You can determine whether or not
   /// dynamic backends have been allowed for the current service by checking for the
@@ -1580,7 +1619,7 @@ interface backend {
     prefix: string,
     target: string,
     options: dynamic-backend-options,
-  ) -> result<_, error>;
+  ) -> result<backend, error>;
 
   /// Options for `register-dynamic-backend`.
   resource dynamic-backend-options {
@@ -1623,11 +1662,11 @@ interface backend {
     /// certificate will cause the backend connection to fail (but read on).
     ///
     /// By default, the validity check does not require that the certificate hostname matches the
-    /// hostname of your request. You can use check_certificate to request a check of the
+    /// hostname of your request. You can use `cert-hostname` to request a check of the
     /// certificate hostname.
     ///
     /// By default, certificate validity uses a set of public certificate authorities. You can
-    /// specify an alternative CA using ca_certificate.
+    /// specify an alternative CA using `ca-certificate`.
     use-tls: func(value: bool);
 
     /// Sets the minimum TLS version for connecting to the backend.
@@ -1646,7 +1685,7 @@ interface backend {
     /// You should enable this if you are using TLS, and setting this will enable TLS for the
     /// connection as a side effect.
     ///
-    /// If `check-certificate` is not provided (default), the server certificate’s hostname may
+    /// If `cert-hostname` is not provided (default), the server certificate’s hostname may
     /// have any value.
     cert-hostname: func(value: string);
 
@@ -1674,7 +1713,7 @@ interface backend {
     /// the key to use should be in standard PEM format; providing the information in another
     /// format will lead to an error. We suggest that (at least the) key should be held in
     /// something like the Fastly secret store for security, with the handle passed to this
-    /// function without unpacking it via Secret::plaintext; the certificate can be held in a less
+    /// function without unpacking it via `secret.plaintext`; the certificate can be held in a less
     /// secure medium.
     ///
     /// (If it is absolutely necessary to get the key from another source, we suggest the use of
@@ -1720,12 +1759,12 @@ interface backend {
     max-lifetime-ms: func(value: u32);
 
     /// Determines whether or not connections to the same backend should be pooled across different
-    /// sessions.
+    /// sandboxes.
     ///
     /// Fastly considers two backends “the same” if they’re registered with the same name and
-    /// the exact same settings. In those cases, when pooling is enabled, if Session 1 opens a
-    /// connection to this backend it will be left open, and can be re-used by Session 2. This can
-    /// help improve backend latency, by removing the need for the initial
+    /// the exact same settings. In those cases, when pooling is enabled, if one sandbox
+    /// opens a connection to this backend it will be left open, and can be re-used by a different
+    /// sandbox. This can help improve backend latency, by removing the need for the initial
     /// network / TLS handshake(s).
     ///
     /// By default, pooling is enabled for dynamic backends.
@@ -1749,90 +1788,84 @@ interface backend {
   type timeout-secs = u32;
   type probe-count = u32;
 
-  /// Returns `true` if a backend with this name exists.
-  exists: func(backend: string) -> result<bool, error>;
-
   enum backend-health {
     unknown,
     healthy,
     unhealthy,
   }
 
-  /// Return the health of the backend if configured and currently known.
-  ///
-  /// For backends without a configured healthcheck, this will always return
-  /// `backend-health.unknown`.
-  is-healthy: func(backend: string) -> result<backend-health, error>;
+  resource backend {
+      /// Attempts to open the named static backend.
+      open: static func(name: string) -> result<backend, open-error>;
 
-  /// Returns `true` if the backend is a “dynamic” backend.
-  is-dynamic: func(backend: string) -> result<bool, error>;
+      /// Returns the name of this backend.
+      get-name: func() -> string;
 
-  /// Gets the host of this backend.
-  get-host: func(backend: string, max-len: u64) -> result<string, error>;
+      /// Returns the health of the backend if configured and currently known.
+      ///
+      /// For backends without a configured healthcheck, this will always return
+      /// `backend-health.unknown`.
+      is-healthy: func() -> result<backend-health, error>;
 
-  /// Gets the “override host” for this backend.
-  ///
-  /// This is used to change the `Host` header sent to the backend. See
-  /// [the Fastly documentation on override hosts].
-  ///
-  /// [the Fastly documentation on override hosts]: https://docs.fastly.com/en/guides/specifying-an-override-host>
-  get-override-host: func(
-    backend: string,
-    max-len: u64,
-  ) -> result<option<list<u8>>, error>;
+      /// Returns `true` if the backend is a “dynamic” backend.
+      is-dynamic: func() -> result<bool, error>;
 
-  /// Gets the remote TCP port of the backend connection for the request.
-  get-port: func(backend: string) -> result<u16, error>;
+      /// Gets the host of this backend.
+      get-host: func(max-len: u64) -> result<string, error>;
 
-  /// Gets the connection timeout of the backend.
-  get-connect-timeout-ms: func(backend: string) -> result<timeout-ms, error>;
+      /// Gets the “override host” for this backend.
+      ///
+      /// This is used to change the `Host` header sent to the backend. See
+      /// [the Fastly documentation on override hosts].
+      ///
+      /// [the Fastly documentation on override hosts]: https://docs.fastly.com/en/guides/specifying-an-override-host
+      get-override-host: func(
+        max-len: u64,
+      ) -> result<option<list<u8>>, error>;
 
-  /// Gets the first byte timeout of the backend.
-  ///
-  /// This timeout applies between the time of connection and the time we get the first byte back.
-  get-first-byte-timeout-ms: func(backend: string) -> result<timeout-ms, error>;
+      /// Gets the remote TCP port of the backend connection for the request.
+      get-port: func() -> result<u16, error>;
 
-  /// Gets the between byte timeout of the backend.
-  ///
-  /// This timeout applies between any two bytes we receive across the wire.
-  get-between-bytes-timeout-ms: func(backend: string) -> result<timeout-ms, error>;
+      /// Gets the connection timeout of the backend.
+      get-connect-timeout-ms: func() -> result<timeout-ms, error>;
 
-  /// Returns `true` if the backend is configured to use TLS.
-  is-tls: func(backend: string) -> result<bool, error>;
+      /// Gets the first byte timeout of the backend.
+      ///
+      /// This timeout applies between the time of connection and the time we get the first byte back.
+      get-first-byte-timeout-ms: func() -> result<timeout-ms, error>;
 
-  /// Gets the minimum TLS version this backend will use.
-  get-tls-min-version: func(backend: string) -> result<option<tls-version>, error>;
+      /// Gets the between byte timeout of the backend.
+      ///
+      /// This timeout applies between any two bytes we receive across the wire.
+      get-between-bytes-timeout-ms: func() -> result<timeout-ms, error>;
 
-  /// Gets the maximum TLS version this backend will use.
-  get-tls-max-version: func(backend: string) -> result<option<tls-version>, error>;
+      /// Returns `true` if the backend is configured to use TLS.
+      is-tls: func() -> result<bool, error>;
 
-  /// Returns the time for this backend to hold onto an idle HTTP keepalive connection
-  /// after it was last used before closing it.
-  get-http-keepalive-time: func(
-    backend: string,
-  ) -> result<timeout-ms, error>;
+      /// Gets the minimum TLS version this backend will use.
+      get-tls-min-version: func() -> result<option<tls-version>, error>;
 
-  /// Returns `true` if TCP keepalives have been enabled for this backend.
-  get-tcp-keepalive-enable: func(
-    backend: string,
-  ) -> result<bool, error>;
+      /// Gets the maximum TLS version this backend will use.
+      get-tls-max-version: func() -> result<option<tls-version>, error>;
 
-  /// Returns the time to wait in between sending each TCP keepalive probe to this backend.
-  get-tcp-keepalive-interval: func(
-    backend: string,
-  ) -> result<timeout-secs, error>;
+      /// Returns the time for this backend to hold onto an idle HTTP keepalive connection
+      /// after it was last used before closing it.
+      get-http-keepalive-time: func() -> result<timeout-ms, error>;
 
-  /// Returns the time to wait after the last data was sent before starting to send TCP keepalive
-  /// probes to this backend.
-  get-tcp-keepalive-probes: func(
-    backend: string,
-  ) -> result<probe-count, error>;
+      /// Returns `true` if TCP keepalives have been enabled for this backend.
+      get-tcp-keepalive-enable: func() -> result<bool, error>;
 
-  /// Returns the time to wait after the last data was sent before starting to send TCP keepalive
-  /// probes to this backend.
-  get-tcp-keepalive-time: func(
-    backend: string,
-  ) -> result<timeout-secs, error>;
+      /// Returns the time to wait in between sending each TCP keepalive probe to this backend.
+      get-tcp-keepalive-interval: func() -> result<timeout-secs, error>;
+
+      /// Returns the time to wait after the last data was sent before starting to send TCP keepalive
+      /// probes to this backend.
+      get-tcp-keepalive-probes: func() -> result<probe-count, error>;
+
+      /// Returns the time to wait after the last data was sent before starting to send TCP keepalive
+      /// probes to this backend.
+      get-tcp-keepalive-time: func() -> result<timeout-secs, error>;
+  }
 }
 
 /// Async IO support.
@@ -1909,7 +1942,6 @@ interface async-io {
 ///
 /// [Cache Purging]: https://www.fastly.com/documentation/guides/concepts/edge-state/cache/purging/
 interface purge {
-
   use types.{error};
 
   record purge-options {
@@ -1930,10 +1962,6 @@ interface purge {
   /// A surrogate key can be a max of 1024 characters.
   /// A surrogate key must contain only printable ASCII characters (those between `0x21` and `0x7E`,
   /// inclusive).
-  ///
-  /// Returns a [JSON purge response].
-  ///
-  /// [JSON purge response]: https://developer.fastly.com/reference/api/purging/#purge-tag
   purge-surrogate-key: func(
     surrogate-keys: string,
     purge-options: purge-options,
@@ -1941,8 +1969,11 @@ interface purge {
 
   /// Purge a surrogate key for the current service, and return the purge id.
   ///
-  /// This is similar to `purge-surrogate-key`, but on success, returns an
-  /// ASCII alphanumeric string identifying a purging.
+  /// This is similar to `purge-surrogate-key`, but on success, returns a
+  /// [JSON purge response] containing an ASCII alphanumeric string identifying
+  /// a purging.
+  ///
+  /// [JSON purge response]: https://developer.fastly.com/reference/api/purging/#purge-tag
   purge-surrogate-key-verbose: func(
     surrogate-keys: string,
     purge-options: purge-options,
@@ -1954,7 +1985,6 @@ interface purge {
 ///
 /// [Core Cache]: https://www.fastly.com/documentation/guides/concepts/edge-state/cache/#core-cache
 interface cache {
-
   use types.{error};
   use http-body.{body};
   use http-req.{request};
@@ -1972,7 +2002,7 @@ interface cache {
     /// The entrypoint to the request-collapsing cache transaction API.
     ///
     /// This operation always participates in request collapsing and may return stale objects. To
-    /// bypass request collapsing, use `lookup` and `insert` instead.
+    /// bypass request collapsing, use `entry.lookup` or `insert` instead.
     transaction-lookup: static func(
       key: list<u8>,
       options: lookup-options,
@@ -1982,13 +2012,13 @@ interface cache {
     /// on busy.
     ///
     /// This operation always participates in request collapsing and may return stale objects. To
-    /// bypass request collapsing, use `lookup` and `insert` instead.
+    /// bypass request collapsing, use `entry.lookup` or `insert` instead.
     transaction-lookup-async: static func(
       key: list<u8>,
       options: lookup-options,
     ) -> result<pending-entry, error>;
 
-    /// Insert an object into the cache with the given metadata.
+    /// Inserts an object into the cache with the given metadata.
     ///
     /// Can only be used in if the cache handle state includes the `must-insert-or-update` flag.
     ///
@@ -1998,7 +2028,7 @@ interface cache {
       options: write-options,
     ) -> result<body, error>;
 
-    /// Insert an object into the cache with the given metadata, and return a readable stream of the
+    /// Inserts an object into the cache with the given metadata, and return a readable stream of the
     /// bytes as they are stored.
     ///
     /// This helps avoid the “slow reader” problem on a teed stream, for example when a program
@@ -2321,6 +2351,7 @@ interface http-cache {
   use http-body.{body};
   use http-req.{request};
   use http-resp.{response, response-with-body};
+  use backend.{backend};
   use cache.{lookup-state, object-length, duration-ns, cache-hit-count};
 
   /// An HTTP Cache transaction.
@@ -2328,8 +2359,7 @@ interface http-cache {
     /// Performs a cache lookup based on the given request.
     ///
     /// This operation always participates in request collapsing and may return an obligation to
-    /// insert or update responses, and/or stale responses. To bypass request collapsing, use
-    /// `lookup` instead.
+    /// insert or update responses, and/or stale responses.
     ///
     /// The request is not consumed.
     transaction-lookup: static func(
@@ -2523,9 +2553,11 @@ interface http-cache {
   record lookup-options {
     /// Cache key to use in lieu of the automatically-generated cache key based on the request's
     /// properties.
+    ///
+    /// The cache key must be exactly 32 bytes long.
     override-key: option<list<u8>>,
-    /// Backend name that will be used for the eventual request.
-    backend-name: option<string>,
+    /// Backend that will be used for the eventual request.
+    backend: option<borrow<backend>>,
 
     /// Additional options may be added in the future via this resource type.
     extra: option<borrow<extra-lookup-options>>,
@@ -2672,13 +2704,14 @@ interface config-store {
 /// [Shielding]: https://www.fastly.com/documentation/guides/concepts/shielding/
 interface shielding {
   use types.{error};
+  use backend.{backend};
 
   shield-info: func(
     name: string,
     max-len: u64,
   ) -> result<string, error>;
 
-  /// Extensibility for `shield-backend-options`
+  /// Options for `backend-for-shield`.
   resource shield-backend-options {
     constructor();
 
@@ -2689,19 +2722,18 @@ interface shielding {
   backend-for-shield: func(
     name: string,
     options: option<borrow<shield-backend-options>>,
-    max-len: u64,
-  ) -> result<string, error>;
+  ) -> result<backend, error>;
 }
 
 /// [Image Optimizer] API.
 ///
 /// [Image Optimizer]: https://www.fastly.com/documentation/guides/full-site-delivery/image-optimization/about-fastly-image-optimizer/
 interface image-optimizer {
-
   use http-body.{body};
   use http-req.{request};
   use http-resp.{response-with-body};
   use types.{error};
+  use backend.{backend};
 
   record image-optimizer-transform-options {
     /// Contains any Image Optimizer API parameters that were set
@@ -2718,7 +2750,7 @@ interface image-optimizer {
   transform-image-optimizer-request: func(
     origin-image-request: borrow<request>,
     origin-image-request-body: option<body>,
-    origin-image-request-backend: string,
+    origin-image-request-backend: borrow<backend>,
     io-transform-options: image-optimizer-transform-options,
   ) -> result<response-with-body, error>;
 }
@@ -2736,11 +2768,13 @@ interface http-incoming {
 
   /// Handle the given request.
   ///
-  /// Conceptually, `send` returns a response to the given request, however this isn't
-  /// modeled as a literal return value in this API. Instead, the `send-downstream`
-  /// function is used to send the response. This allows for the option of streaming the
-  /// response body, since that requires the program to continue executing after the
-  /// response has been initiated.
+  /// This function is called once per sandbox. When it returns, the
+  /// sandbox exits. To opt into receiving multiple requests in a single
+  /// sandbox, use `http-downstream.next-request`.
+  ///
+  /// To send a response for the given `request`, use `send-downstream`, or to
+  /// stream the response body after the response has been initiated, use
+  /// `send-downstream-streaming`.
   handle: func(request: request, body: body) -> result;
 }
 
@@ -2748,8 +2782,12 @@ interface http-incoming {
 interface compute-runtime {
   /// A timestamp in milliseconds.
   type vcpu-ms = u64;
+  /// An amount of memory in mebibytes (2^20 bytes).
+  type memory-mib = u32;
 
-  /// Gets the amount of vCPU time that has passed since this session was started, in milliseconds.
+
+  /// Gets the amount of vCPU time that has passed since this sandbox was started, in
+  /// milliseconds.
   ///
   /// This function returns only time spent running on a vCPU, and does not include time spent
   /// performing any I/O operations. However, it is based on clock time passing, and so will include
@@ -2757,22 +2795,35 @@ interface compute-runtime {
   /// code, and can even be influenced by the state of the CPU.
   ///
   /// As a result, this function *should not be used in benchmarking across runs*. It can be used,
-  /// with caution, to compare the runtime of different operations within the same session.
+  /// with caution, to compare the runtime of different operations within the same sandbox.
   get-vcpu-ms: func() -> vcpu-ms;
 
-  /// A UUID generated by Fastly for each session.
+  /// Get a snapshot of the current dynamic memory usage, rounded up to the nearest mebibyte (2^20).
+  ///
+  /// This includes usage from the Wasm linear memory (heap) and usage from host allocations
+  /// made on behalf of this sandbox, e.g. buffered bodies of HTTP responses.
+  /// The returned value is just a snapshot- it can change without any explicit action
+  /// by the sandbox (for instance, additional response data coming in from an HTTP response.)
+  /// It can also change over time / across runs, as the Compute platform's memory usage
+  /// changes. Consider the returned value with these uncertainties in mind.
+  get-heap-mib: func() -> memory-mib;
+
+  /// A UUID generated by Fastly for each sandbox.
   ///
   /// This is often a useful value to include in log messages, and also to send to upstream
   /// servers as an additional custom HTTP header, allowing for straightforward correlation of
-  /// which WebAssembly session processed a request to requests later processed by an origin
-  /// server. If a session is used to process multiple downstream requests, then you may wish to
-  /// use the per-request UUID associated with each individual request handle instead of this
-  /// field.
+  /// which sandbox processed a request to requests later processed by an origin server.
+  ///
+  /// By default, each sandbox handles exactly one downstream request, in which case
+  /// this sandbox UUID is unique for each request. However, by using
+  /// `http-downstream.next-request`, a single sandbox can accept multiple downstream
+  /// requests. For a UUID that reliably identifies a request, you may wish to use
+  /// `http-downstream.downstream-client-request-id`.
   ///
   /// Equivalent to the "FASTLY_TRACE_ID" environment variable.
-  get-session-id: func() -> string;
+  get-sandbox-id: func() -> string;
 
-  /// The hostname of the Fastly cache server which is executing the current session, for
+  /// The hostname of the Fastly cache server which is executing the current sandbox, for
   /// example, `cache-jfk1034`.
   ///
   /// Equivalent to the "FASTLY_HOSTNAME" environment variable and to [`server.hostname`] in VCL.
@@ -2780,8 +2831,8 @@ interface compute-runtime {
   /// [`server.hostname`]: https://www.fastly.com/documentation/reference/vcl/variables/server/server-hostname/
   get-hostname: func() -> string;
 
-  /// The three-character identifying code of the [Fastly POP] in which the current session is
-  /// running.
+  /// The three-character identifying code of the [Fastly POP] in which the current service
+  /// instance is running.
   ///
   /// Equivalent to the "FASTLY_POP" environment variable and to [`server.datacenter`] in VCL.
   ///
@@ -2790,7 +2841,7 @@ interface compute-runtime {
   get-pop: func() -> string;
 
   /// A code representing the general geographic region in which the [Fastly POP] processing the
-  /// current Compute session resides.
+  /// current Compute sandbox resides.
   ///
   /// Equivalent to the "FASTLY_REGION" environment variable and to [`server.region`] in VCL, and
   /// has the same possible values.
@@ -2822,7 +2873,7 @@ interface compute-runtime {
   ///
   /// `false` for production or `true` for staging.
   ///
-  /// Equivalent to the "FASTLY_IS_STAGING" environment variable and to [`fastly.is_staging`] in VCL. 
+  /// Equivalent to the "FASTLY_IS_STAGING" environment variable and to [`fastly.is_staging`] in VCL.
   ///
   /// [`fastly.is_staging`]: https://www.fastly.com/documentation/reference/vcl/variables/miscellaneous/fastly-is-staging/
   /// [staging environment]: https://docs.fastly.com/products/staging
