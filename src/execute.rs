@@ -596,12 +596,7 @@ impl ExecuteCtx {
                     "There was an error handling the request {}",
                     e.to_string()
                 );
-                #[allow(unused_mut)]
-                let mut response = Response::builder()
-                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::empty())
-                    .unwrap();
-                (response, Some(e))
+                (anyhow_response(&e), Some(e))
             }
             Err(e) => panic!("failed to run guest: {}", e),
         }
@@ -684,16 +679,24 @@ impl ExecuteCtx {
 
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
-                store.data_mut().session.close_downstream_response_sender();
+                let resp = outcome
+                    .as_ref()
+                    .err()
+                    .map(exec_err_to_response)
+                    .unwrap_or_default();
+                store
+                    .data_mut()
+                    .session
+                    .close_downstream_response_sender(resp);
 
                 let request_duration = Instant::now().duration_since(start_timestamp);
 
                 info!(
-                    "request completed using {} of WebAssembly heap",
+                    "guest completed using {} of WebAssembly heap",
                     bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
                 );
 
-                info!("request completed in {:.0?}", request_duration);
+                info!("guest completed in {:.0?}", request_duration);
 
                 outcome
             }
@@ -751,7 +754,12 @@ impl ExecuteCtx {
 
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
-                store.data_mut().close_downstream_response_sender();
+                let resp = outcome
+                    .as_ref()
+                    .err()
+                    .map(exec_err_to_response)
+                    .unwrap_or_default();
+                store.data_mut().close_downstream_response_sender(resp);
 
                 let request_duration = Instant::now().duration_since(start_timestamp);
 
@@ -836,7 +844,9 @@ impl ExecuteCtx {
 
         // Ensure the downstream response channel is closed, whether or not a response was
         // sent during execution.
-        store.data_mut().close_downstream_response_sender();
+        store
+            .data_mut()
+            .close_downstream_response_sender(Response::default());
 
         // We don't do anything with any response on the receiver, but
         // it's important to keep it alive until after the program has
@@ -869,7 +879,7 @@ impl ExecuteCtx {
     pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
         let mut pending = self.pending_reuse.lock().await;
 
-        if pending.len() > NEXT_REQ_PENDING_MAX {
+        if pending.len() >= NEXT_REQ_PENDING_MAX {
             return None;
         }
 
@@ -992,15 +1002,22 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
 }
 
 fn guest_result_to_response(resp: Response<Body>, err: Option<anyhow::Error>) -> Response<Body> {
-    if let Some(err) = err {
-        let body = err.root_cause().to_string();
-        Response::builder()
-            .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from(body.as_bytes()))
-            .unwrap()
+    err.as_ref().map(anyhow_response).unwrap_or(resp)
+}
+
+fn exec_err_to_response(err: &ExecutionError) -> Response<Body> {
+    if let ExecutionError::WasmTrap(e) = err {
+        anyhow_response(e)
     } else {
-        resp
+        panic!("failed to run guest: {err}")
     }
+}
+
+fn anyhow_response(err: &anyhow::Error) -> Response<Body> {
+    Response::builder()
+        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+        .body(Body::from(format!("{err:?}").into_bytes()))
+        .unwrap()
 }
 
 impl Drop for ExecuteCtx {
@@ -1030,6 +1047,15 @@ fn configure_wasmtime(
     if allow_components {
         config.wasm_component_model(true);
     }
+
+    // Wasm permits the "relaxed" instructions to be nondeterministic
+    // between runs, but requires them to be deterministic within runs.
+    // Snapshotting a program's execution to avoid redundantly running
+    // initialization code on each request is an important optimization,
+    // so we enable deterministic lowerings for relaxed SIMD to ensure
+    // that it works consistently even if the initialization runs on a
+    // different host architecture.
+    config.relaxed_simd_deterministic(true);
 
     config
 }

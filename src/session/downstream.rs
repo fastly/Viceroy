@@ -2,8 +2,14 @@
 
 use {
     crate::{
-        body::Body, downstream::DownstreamResponse, error::Error, headers::filter_outgoing_headers,
+        body::Body,
+        downstream::DownstreamResponse,
+        error::Error,
+        framing::{content_length_is_valid, transfer_encoding_is_supported},
+        headers::filter_outgoing_headers,
         pushpin::PushpinRedirectInfo,
+        session::ViceroyResponseMetadata,
+        wiggle_abi::types::FramingHeadersMode,
     },
     hyper::http::response::Response,
     std::mem,
@@ -53,7 +59,44 @@ impl DownstreamResponseState {
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
         use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
 
-        filter_outgoing_headers(response.headers_mut());
+        let mut framing_headers_mode = response
+            .extensions()
+            .get::<ViceroyResponseMetadata>()
+            .map(|metadata: &ViceroyResponseMetadata| metadata.framing_headers_mode)
+            .unwrap_or(FramingHeadersMode::Automatic);
+
+        if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
+            if !content_length_is_valid(response.headers()) {
+                tracing::warn!("Downstream response has invalid Content-Length header, falling back to automatic framing.");
+                framing_headers_mode = FramingHeadersMode::Automatic;
+            }
+            if !transfer_encoding_is_supported(response.headers()) {
+                tracing::warn!("Downstream response has unsupported Transfer-Encoding header, falling back to automatic framing.");
+                framing_headers_mode = FramingHeadersMode::Automatic;
+            }
+        }
+        if framing_headers_mode != FramingHeadersMode::ManuallyFromHeaders {
+            filter_outgoing_headers(response.headers_mut());
+        }
+
+        // Supporting 103 Early Hints responses is currently infeasible, as Hyper does not
+        // support sending multiple responses on a single connection. But we don't want
+        // to generate errors for them either. Early Hints will be dropped, but logged
+        // so that people will know they *did work*, even though they won't reach
+        // the client.
+        //
+        // Other 1xx status codes, however, are not allowed and generate an InvalidArgument
+        // error.
+        if response.status().as_u16() == 103 {
+            // We'll do these at different log levels in case someone wants to squelch some.
+            tracing::warn!(
+                "Guest returned 103 Early Hints response which will not be sent to the client"
+            );
+            tracing::info!("{:#?}", response);
+            return Ok(());
+        } else if response.status().is_informational() {
+            return Err(Error::InvalidArgument);
+        }
 
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
         match mem::replace(self, Sent) {
@@ -85,6 +128,7 @@ impl DownstreamResponseState {
     }
 
     /// Close the `DownstreamResponse`, potentially without sending any response.
+    #[allow(unused)]
     pub fn close(&mut self) {
         *self = DownstreamResponseState::Closed;
     }

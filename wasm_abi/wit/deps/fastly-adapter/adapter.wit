@@ -2,26 +2,21 @@
 /// part of the Fastly Compute platform.
 package fastly:adapter;
 
+interface adapter-abi {
+  init: func();
+}
+
 /// Adapter functions formerly of `fastly:compute/http-req`.
 ///
 /// These functions depend on the host maintaining an implicit downstream
-/// request. They were deprecated and replaced by functions in the
-/// `http-downstream` interface which do the same thing but take an explicit
-/// `request` handle.
-///
-/// We could almost polyfill these functions in the adapter, by having the
-/// adapter remember the downstream request handle passed in and calling the
-/// `http-downstream` versions with it, but not quite. Guest programs can call
-/// `send` and pass it the downstream handle, which consumes the downstream
-/// handle. If guest programs do that and later call one of these functions,
-/// the polyfill no longer has a valid handle it can pass in.
-///
-/// So instead, we moved them to be private functions, still implemented by
-/// the host, and still accessible through the component adapter, but not
-/// accessible to public Wit users.
+/// request. They were replaced by functions in the `http-downstream` interface
+/// which do the same thing but take an explicit `request` handle.
 interface adapter-http-req {
-  use fastly:compute/types.{error, ip-address};
-  use fastly:compute/http-req.{client-cert-verify-result, request};
+  use fastly:compute/types@0.0.0-prerelease.0.{error, ip-address};
+  use fastly:compute/http-req@0.0.0-prerelease.0.{
+    client-cert-verify-result, request, body, response-with-body, error-with-detail,
+    pending-response
+  };
 
   downstream-client-ip-addr: func() -> option<ip-address>;
   downstream-server-ip-addr: func() -> option<ip-address>;
@@ -49,11 +44,70 @@ interface adapter-http-req {
 
   fastly-key-is-valid: func() -> result<bool, error>;
 
-  /// Deprecated; use `redirect-to-websocket-proxy` instead.
-  redirect-to-websocket-proxy-deprecated: func(backend: string) -> result<_, error>;
+  /// Deprecated; this version doesn't take a `request`, and takes `backend`
+  /// as a string.
+  redirect-to-websocket-proxy-norequest: func(backend: string) -> result<_, error>;
 
-  /// Deprecated; use `redirect-to-grip-proxy` instead.
-  redirect-to-grip-proxy-deprecated: func(backend: string) -> result<_, error>;
+  /// Deprecated; this version doesn't take a `request`, and takes `backend`
+  /// as a string.
+  redirect-to-grip-proxy-norequest: func(backend: string) -> result<_, error>;
+
+  /// Deprecated; this version takes `backend` as a string.
+  redirect-to-websocket-proxy: func(
+    request: borrow<request>,
+    backend: string,
+  ) -> result<_, error>;
+
+  /// Deprecated; this version takes `backend` as a string.
+  redirect-to-grip-proxy: func(
+    request: borrow<request>,
+    backend: string,
+  ) -> result<_, error>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  send: func(
+    request: request,
+    body: body,
+    backend: string,
+  ) -> result<response-with-body, error-with-detail>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  send-uncached: func(
+    request: request,
+    body: body,
+    backend: string,
+  ) -> result<response-with-body, error-with-detail>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  send-async: func(
+    request: request,
+    body: body,
+    backend: string
+  ) -> result<pending-response, error>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  send-async-uncached: func(
+    request: request,
+    body: body,
+    backend: string,
+  ) -> result<pending-response, error>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  send-async-streaming: func(
+    request: request,
+    body: borrow<body>,
+    backend: string,
+  ) -> result<pending-response, error>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  send-async-uncached-streaming: func(
+    request: request,
+    body: borrow<body>,
+    backend: string,
+  ) -> result<pending-response, error>;
+
+  /// Deprecated; this function takes `backend` as a string.
+  upgrade-websocket: func(backend: string) -> result<_, error>;
 
   /// Deprecated; this function depends on per-service authority.
   on-behalf-of-deprecated: func(
@@ -62,9 +116,69 @@ interface adapter-http-req {
   ) -> result<_, error>;
 }
 
+/// Deprecated; these functions take `backend` as a string.
+interface adapter-backend {
+  use fastly:compute/backend@0.0.0-prerelease.0.{
+    backend-health, error, timeout-ms, tls-version, timeout-secs, probe-count,
+    dynamic-backend-options,
+  };
+
+  register-dynamic-backend: func(
+    prefix: string,
+    target: string,
+    options: dynamic-backend-options,
+  ) -> result<_, error>;
+
+  exists: func(backend: string) -> result<bool, error>;
+  is-healthy: func(backend: string) -> result<backend-health, error>;
+  is-dynamic: func(backend: string) -> result<bool, error>;
+  get-host: func(backend: string, max-len: u64) -> result<string, error>;
+  get-override-host: func(
+    backend: string,
+    max-len: u64,
+  ) -> result<option<list<u8>>, error>;
+  get-port: func(backend: string) -> result<u16, error>;
+  get-connect-timeout-ms: func(backend: string) -> result<timeout-ms, error>;
+  get-first-byte-timeout-ms: func(backend: string) -> result<timeout-ms, error>;
+  get-between-bytes-timeout-ms: func(backend: string) -> result<timeout-ms, error>;
+  is-tls: func(backend: string) -> result<bool, error>;
+  get-tls-min-version: func(backend: string) -> result<option<tls-version>, error>;
+  get-tls-max-version: func(backend: string) -> result<option<tls-version>, error>;
+  get-http-keepalive-time: func(
+    backend: string,
+  ) -> result<timeout-ms, error>;
+  get-tcp-keepalive-enable: func(
+    backend: string,
+  ) -> result<bool, error>;
+  get-tcp-keepalive-interval: func(
+    backend: string,
+  ) -> result<timeout-secs, error>;
+  get-tcp-keepalive-probes: func(
+    backend: string,
+  ) -> result<probe-count, error>;
+  get-tcp-keepalive-time: func(
+    backend: string,
+  ) -> result<timeout-secs, error>;
+}
+
+/// Deprecated functions formerly of `fastly:compute/image-optimizer`.
+interface adapter-image-optimizer {
+  use fastly:compute/image-optimizer@0.0.0-prerelease.0.{
+    body, request, image-optimizer-transform-options, response-with-body, error
+  };
+
+  /// Deprecated; this function takes the backend as a `string`.
+  transform-image-optimizer-request: func(
+    origin-image-request: borrow<request>,
+    origin-image-request-body: option<body>,
+    origin-image-request-backend: string,
+    io-transform-options: image-optimizer-transform-options,
+  ) -> result<response-with-body, error>;
+}
+
 interface adapter-http-downstream {
-  use fastly:compute/types.{error};
-  use fastly:compute/http-req.{request};
+  use fastly:compute/types@0.0.0-prerelease.0.{error};
+  use fastly:compute/http-req@0.0.0-prerelease.0.{request};
 
   /// Deprecated, because it doesn't return `none` on an empty certificate.
   downstream-tls-raw-client-certificate-deprecated: func(
@@ -75,21 +189,35 @@ interface adapter-http-downstream {
 
 /// Deprecated functions formerly of `fastly:compute/http-cache`.
 interface adapter-http-cache {
-  use fastly:compute/types.{error};
-  use fastly:compute/http-req.{request};
-  use fastly:compute/http-cache.{entry, lookup-options};
+  use fastly:compute/types@0.0.0-prerelease.0.{error};
+  use fastly:compute/http-req@0.0.0-prerelease.0.{request};
+  use fastly:compute/http-cache@0.0.0-prerelease.0.{entry};
 
   /// Deprecated; use `transaction-lookup` instead.
   lookup: func(
     req-handle: borrow<request>,
     options: lookup-options,
   ) -> result<entry, error>;
+
+  /// Deprecated; this function takes the backend in `lookup-options` as
+  /// a `string`.
+  transaction-lookup: func(
+    req-handle: borrow<request>,
+    options: lookup-options,
+  ) -> result<entry, error>;
+
+  record lookup-options {
+    override-key: option<list<u8>>,
+    backend-name: option<string>,
+    extra: option<borrow<extra-lookup-options>>,
+  }
+  resource extra-lookup-options {}
 }
 
 /// Adapter Core Cache functions.
 interface adapter-cache {
-  use fastly:compute/types.{error};
-  use fastly:compute/cache.{
+  use fastly:compute/types@0.0.0-prerelease.0.{error};
+  use fastly:compute/cache@0.0.0-prerelease.0.{
     extra-lookup-options, extra-write-options, extra-replace-options
   };
 
@@ -113,12 +241,8 @@ interface adapter-cache {
 }
 
 /// User-agent string parsing (deprecated).
-///
-/// This was public in the Witx ABI, but it was deprecated, so now it's a
-/// fastly-private API, available to existing code using the adapter, but
-/// not available publicly.
 interface adapter-uap {
-  use fastly:compute/types.{error};
+  use fastly:compute/types@0.0.0-prerelease.0.{error};
 
   resource user-agent {
     family: func(max-len: u64) -> result<string, error>;
@@ -131,22 +255,84 @@ interface adapter-uap {
   parse: func(user-agent: list<u8>) -> result<user-agent, error>;
 }
 
-/// A world that just imports all the deprecated APIs, split out from the main
+/// Deprecated functions formerly of `fastly:compute/erl`.
+interface adapter-erl {
+  use fastly:compute/types@0.0.0-prerelease.0.{error};
+
+  check-rate: func(
+    rate-counter: string,
+    entry: string,
+    delta: u32,
+    window: u32,
+    limit: u32,
+    penalty-box: string,
+    ttl: u32,
+  ) -> result<bool, error>;
+
+  ratecounter-increment: func(
+    rate-counter: string,
+    entry: string,
+    delta: u32,
+  ) -> result<_, error>;
+
+  ratecounter-lookup-rate: func(
+    rate-counter: string,
+    entry: string,
+    window: u32,
+  ) -> result<u32, error>;
+
+  ratecounter-lookup-count: func(
+    rate-counter: string,
+    entry: string,
+    duration: u32,
+  ) -> result<u32, error>;
+
+  penaltybox-add: func(
+    penalty-box: string,
+    entry: string,
+    ttl: u32,
+  ) -> result<_, error>;
+
+  penaltybox-has: func(
+    penalty-box: string,
+    entry: string,
+  ) -> result<bool, error>;
+}
+
+/// Deprecated functions formerly of `fastly:compute/shielding`.
+interface adapter-shielding {
+  use fastly:compute/types@0.0.0-prerelease.0.{error};
+  use fastly:compute/shielding@0.0.0-prerelease.0.{shield-backend-options};
+
+  /// Deprecated; this function returns the backend as a `string`.
+  backend-for-shield: func(
+    name: string,
+    options: option<borrow<shield-backend-options>>,
+    max-len: u64,
+  ) -> result<string, error>;
+}
+
+/// A world that just imports all the adapter-only APIs, split out from the main
 /// world below so that we can refer to it in tests.
 world adapter-imports {
+  import adapter-abi;
   import adapter-http-req;
   import adapter-http-downstream;
   import adapter-http-cache;
+  import adapter-backend;
   import adapter-cache;
+  import adapter-erl;
+  import adapter-image-optimizer;
+  import adapter-shielding;
   import adapter-uap;
 }
 
-/// The `fastly:compute/service` world plus the deprecated interfaces.
+/// The `fastly:compute/service` world plus the adapter-only interfaces.
 world adapter-service {
-  // Make this world a superset of the public `service` world.
-  include fastly:compute/service;
+  // Make this world a superset of the `service` world.
+  include fastly:compute/service@0.0.0-prerelease.0;
 
-  // And, add all the deprecated interfaces.
+  // And, add all the adapter-only interfaces.
   include adapter-imports;
 }
 
@@ -154,6 +340,6 @@ world adapter-service {
 /// exports (`http-incoming.handle`), so that it can be used by library components
 /// that don't have their own `main` function.
 world adapter-service-imports {
-    include fastly:compute/service-imports;
+    include fastly:compute/service-imports@0.0.0-prerelease.0;
     include adapter-imports;
 }

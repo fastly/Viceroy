@@ -22,6 +22,9 @@ fn main() {
     let service = std::env::var("FASTLY_SERVICE_VERSION").unwrap();
     eprintln!("Running tests; version {service}");
 
+    run_test!(test_simple_cache_expires);
+    run_test!(test_core_cache_expires);
+
     run_test!(test_non_concurrent);
     run_test!(test_concurrent);
 
@@ -1253,4 +1256,31 @@ fn test_stream_back_fixed() {
     let got = got.into_string();
 
     assert_eq!(&got, &body[6..=14]);
+}
+
+fn test_simple_cache_expires() {
+    let key = new_key();
+
+    let body = "hello beautiful world";
+
+    let _ = fastly::cache::simple::get_or_set(key.clone(), body, Duration::from_secs(1)).expect("insert into simple cache");
+    std::thread::sleep(Duration::from_secs(2));
+    let returned = fastly::cache::simple::get(key).expect("retrieve from simple cache");
+    // Stale, and simple cache doesn't support SWR
+    assert!(returned.is_none());
+}
+
+fn test_core_cache_expires() {
+    let key = new_key();
+
+    let body = "hello beautiful world";
+
+    let mut v = fastly::cache::core::insert(key.clone(), Duration::from_secs(1)).execute().expect("insert into core cache");
+    v.write_all(body.as_bytes()).expect("write body");
+    v.finish().expect("finish insert");
+
+    std::thread::sleep(Duration::from_secs(2));
+    let returned = fastly::cache::core::lookup(key).execute().expect("retrieve from core cache");
+    // Stale, no SWR
+    assert!(returned.is_none());
 }

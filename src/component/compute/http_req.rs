@@ -1,14 +1,12 @@
 use {
-    crate::component::{
-        bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
-        compute::headers::{get_names, get_values},
-    },
     crate::{
+        component::{
+            bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
+            compute::headers::{get_names, get_values},
+        },
         error::Error,
         linking::{ComponentCtx, SessionView},
-        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
-        session::{PeekableTask, ViceroyRequestMetadata},
-        upstream,
+        session::ViceroyRequestMetadata,
     },
     http::{
         header::{HeaderName, HeaderValue},
@@ -50,102 +48,73 @@ impl http_req::Host for ComponentCtx {
         &mut self,
         h: Resource<http_req::Request>,
         b: Resource<http_body::Body>,
-        backend_name: String,
+        backend_name: Resource<String>,
     ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
-        // prepare the request
-        let req_parts = self.session_mut().take_request_parts(h.into()).unwrap();
-        let req_body = self.session_mut().take_body(b.into()).unwrap();
-        let req = Request::from_parts(req_parts, req_body);
-        let backend = self
-            .session
-            .backend(&backend_name)
-            .ok_or_else(|| Error::UnknownBackend(backend_name))
-            .map_err(Into::into)
-            .map_err(types::Error::with_empty_detail)?;
+        let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        // synchronously send the request
-        // This initial implementation ignores the error detail field
-        let tls_config = self.session.tls_config();
-        let resp = upstream::send_request(req, backend, tls_config)
-            .await
-            .map_err(Into::into)
-            .map_err(types::Error::with_empty_detail)?;
-        let (resp_handle, body_handle) = self.session_mut().insert_response(resp);
-        Ok((resp_handle.into(), body_handle.into()))
+        crate::component::http_req::send(&mut self.session, h, b, backend_name).await
     }
 
     async fn send_uncached(
         &mut self,
         h: Resource<http_req::Request>,
         b: Resource<http_body::Body>,
-        backend_name: String,
+        backend_name: Resource<String>,
     ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
-        // This initial implementation ignores the error detail field
-        self.send(h, b, backend_name).await
+        let backend_name = self.wasi_table.get(&backend_name).unwrap();
+
+        crate::component::http_req::send_uncached(&mut self.session, h, b, backend_name).await
     }
 
     async fn send_async(
         &mut self,
         h: Resource<http_req::Request>,
         b: Resource<http_body::Body>,
-        backend_name: String,
+        backend_name: Resource<String>,
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        // prepare the request
-        let req_parts = self.session_mut().take_request_parts(h.into())?;
-        let req_body = self.session_mut().take_body(b.into())?;
-        let req = Request::from_parts(req_parts, req_body);
-        let backend = self
-            .session
-            .backend(&backend_name)
-            .ok_or(types::Error::GenericError)?;
+        let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        // asynchronously send the request
-        let tls_config = self.session.tls_config();
-        let task = PeekableTask::spawn(upstream::send_request(req, backend, tls_config)).await;
-
-        // return a handle to the pending request
-        Ok(self.session_mut().insert_pending_request(task).into())
+        crate::component::http_req::send_async(&mut self.session, h, b, backend_name).await
     }
 
     async fn send_async_uncached(
         &mut self,
         h: Resource<http_req::Request>,
         b: Resource<http_body::Body>,
-        backend_name: String,
+        backend_name: Resource<String>,
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        self.send_async(h, b, backend_name).await
+        let backend_name = self.wasi_table.get(&backend_name).unwrap();
+
+        crate::component::http_req::send_async_uncached(&mut self.session, h, b, backend_name).await
     }
 
     async fn send_async_uncached_streaming(
         &mut self,
         h: Resource<http_req::Request>,
         b: Resource<http_body::Body>,
-        backend_name: String,
+        backend_name: Resource<String>,
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        self.send_async_streaming(h, b, backend_name).await
+        let backend_name = self.wasi_table.get(&backend_name).unwrap();
+
+        crate::component::http_req::send_async_uncached_streaming(
+            &mut self.session,
+            h,
+            b,
+            backend_name,
+        )
+        .await
     }
 
     async fn send_async_streaming(
         &mut self,
         h: Resource<http_req::Request>,
         b: Resource<http_body::Body>,
-        backend_name: String,
+        backend_name: Resource<String>,
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        // prepare the request
-        let req_parts = self.session_mut().take_request_parts(h.into())?;
-        let req_body = self.session_mut().begin_streaming(b.into())?;
-        let req = Request::from_parts(req_parts, req_body);
-        let backend = self
-            .session
-            .backend(&backend_name)
-            .ok_or(types::Error::GenericError)?;
+        let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        // asynchronously send the request
-        let tls_config = self.session.tls_config();
-        let task = PeekableTask::spawn(upstream::send_request(req, backend, tls_config)).await;
-
-        // return a handle to the pending request
-        Ok(self.session.insert_pending_request(task).into())
+        crate::component::http_req::send_async_streaming(&mut self.session, h, b, backend_name)
+            .await
     }
 
     async fn await_response(
@@ -171,8 +140,9 @@ impl http_req::Host for ComponentCtx {
         Ok(())
     }
 
-    fn upgrade_websocket(&mut self, _backend: String) -> Result<(), types::Error> {
-        Err(Error::NotAvailable("WebSocket upgrade").into())
+    fn upgrade_websocket(&mut self, backend: Resource<String>) -> Result<(), types::Error> {
+        let backend = self.wasi_table.get(&backend).unwrap();
+        crate::component::http_req::upgrade_websocket(&mut self.session, backend)
     }
 }
 
@@ -413,11 +383,7 @@ impl http_req::HostRequest for ComponentCtx {
             None => {
                 extensions.insert(ViceroyRequestMetadata {
                     auto_decompress_encodings: encodings,
-                    // future note: at time of writing, this is the only field of
-                    // this structure, but there is an intention to add more fields.
-                    // When we do, and if/when an error appears, what you're looking
-                    // for is:
-                    // ..Default::default()
+                    ..Default::default()
                 });
             }
             Some(vrm) => {
@@ -430,48 +396,51 @@ impl http_req::HostRequest for ComponentCtx {
 
     fn redirect_to_websocket_proxy(
         &mut self,
-        _handle: Resource<http_req::Request>,
-        _backend: String,
+        handle: Resource<http_req::Request>,
+        backend: Resource<String>,
     ) -> Result<(), types::Error> {
-        Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
+        let backend = self.wasi_table.get(&backend).unwrap();
+        crate::component::http_req::redirect_to_websocket_proxy(&mut self.session, handle, &backend)
     }
 
     fn set_framing_headers_mode(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
         mode: http_types::FramingHeadersMode,
     ) -> Result<(), types::Error> {
-        match mode {
-            http_types::FramingHeadersMode::ManuallyFromHeaders => {
-                Err(Error::NotAvailable("Manual framing headers").into())
+        let normalized_mode = match mode {
+            http_types::FramingHeadersMode::Automatic => {
+                crate::wiggle_abi::types::FramingHeadersMode::Automatic
             }
-            http_types::FramingHeadersMode::Automatic => Ok(()),
+            http_types::FramingHeadersMode::ManuallyFromHeaders => {
+                crate::wiggle_abi::types::FramingHeadersMode::ManuallyFromHeaders
+            }
+        };
+
+        let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;
+
+        match extensions.get_mut::<ViceroyRequestMetadata>() {
+            None => {
+                extensions.insert(ViceroyRequestMetadata {
+                    framing_headers_mode: normalized_mode,
+                    ..Default::default()
+                });
+            }
+            Some(vrm) => {
+                vrm.framing_headers_mode = normalized_mode;
+            }
         }
+
+        Ok(())
     }
 
     fn redirect_to_grip_proxy(
         &mut self,
         req_handle: Resource<http_req::Request>,
-        backend_name: String,
+        backend: Resource<String>,
     ) -> Result<(), types::Error> {
-        let request_info = match self.session().request_parts(req_handle.into()) {
-            Ok(req) => Some(PushpinRedirectRequestInfo::from_parts(req)),
-            Err(_) => {
-                // This function can legitimately be called with an invalid request handle;
-                // this may happen when the guest uses a legacy API for pushpin redirection.
-                // The legacy behavior is equivalent to simply using None.
-                None
-            }
-        };
-
-        let redirect_info = PushpinRedirectInfo {
-            backend_name,
-            request_info,
-        };
-
-        self.session_mut()
-            .redirect_downstream_to_pushpin(redirect_info)?;
-        Ok(())
+        let backend = self.wasi_table.get(&backend).unwrap();
+        crate::component::http_req::redirect_to_grip_proxy(&mut self.session, req_handle, &backend)
     }
 
     fn drop(&mut self, _request: Resource<http_req::Request>) -> wasmtime::Result<()> {
@@ -484,12 +453,6 @@ impl http_req::HostExtraCacheOverrideDetails for ComponentCtx {
         &mut self,
         _details: Resource<http_req::ExtraCacheOverrideDetails>,
     ) -> wasmtime::Result<()> {
-        Ok(())
-    }
-}
-
-impl http_req::HostExtraInspectOptions for ComponentCtx {
-    fn drop(&mut self, _options: Resource<http_req::ExtraInspectOptions>) -> wasmtime::Result<()> {
         Ok(())
     }
 }

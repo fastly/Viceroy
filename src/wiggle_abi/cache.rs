@@ -502,13 +502,16 @@ impl FastlyCache for Session {
 
         let mut state = types::CacheLookupState::empty();
         if let Some(found) = entry.found() {
-            state |= types::CacheLookupState::FOUND;
-
-            if !found.meta().is_fresh() {
-                state |= types::CacheLookupState::STALE;
-            }
+            // At the moment, Compute only returns FOUND if the object is fresh.
+            // We adopt the same behavior here, as SDKs (including old SDK versions) do not check
+            // the USABLE bit.
             if found.meta().is_usable() {
                 state |= types::CacheLookupState::USABLE;
+                state |= types::CacheLookupState::FOUND;
+
+                if !found.meta().is_fresh() {
+                    state |= types::CacheLookupState::STALE;
+                }
             }
         }
         if entry.go_get().is_some() {

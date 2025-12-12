@@ -3,45 +3,7 @@
 use fastly::{Request, Response};
 use fastly::handle::{BodyHandle, RequestHandle};
 use fastly_shared::{FastlyStatus, INVALID_REQUEST_HANDLE};
-
-pub type RequestPromiseHandle = u32;
-
-#[derive(Default)]
-#[repr(C)]
-pub struct NextRequestOptions {
-    pub reserved: u64,
-}
-
-bitflags::bitflags! {
-    /// Request options.
-    #[derive(Default)]
-    #[repr(transparent)]
-    pub struct NextRequestOptionsMask: u32 {
-        const RESERVED = 1 << 0;
-    }
-}
-
-#[link(wasm_import_module = "fastly_http_downstream")]
-extern "C" {
-    #[link_name = "next_request"]
-    pub fn next_request(
-        options_mask: NextRequestOptionsMask,
-        options: *const NextRequestOptions,
-        handle_out: *mut RequestPromiseHandle,
-    ) -> FastlyStatus;
-
-    #[link_name = "next_request_wait"]
-    pub fn next_request_wait(
-        handle: RequestPromiseHandle,
-        req_handle_out: *mut fastly_sys::RequestHandle,
-        body_handle_out: *mut fastly_sys::BodyHandle,
-    ) -> FastlyStatus;
-
-    #[link_name = "next_request_abandon"]
-    pub fn next_request_abandon(
-        handle: RequestPromiseHandle,
-    ) -> FastlyStatus;
-}
+use fastly_sys::fastly_http_downstream::*;
 
 fn is_ready(handle: u32) -> bool {
     let mut ready_out: u32 = 0;

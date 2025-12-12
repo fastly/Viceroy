@@ -33,8 +33,14 @@ async fn trap_behavior_function_called() -> TestResult {
     // key parts that should be relatively stable across invocations and wasmtime
     // versions. Fundamentally though, we're still making assertions based on pretty-printed errors,
     // so beware of trivial breakages.
-    assert!(body.contains("error while executing at wasm backtrace"));
-    assert!(body.contains("unknown_import::main::"));
+    assert!(
+        body.contains("error while executing at wasm backtrace"),
+        "missing expected string: {body:?}"
+    );
+    assert!(
+        body.contains("unknown_import::main::"),
+        "missing expected string: {body:?}"
+    );
 
     Ok(())
 }

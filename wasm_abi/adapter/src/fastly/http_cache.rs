@@ -79,7 +79,7 @@ mod http_cache {
     fn cache_lookup_options(
         mask: HttpCacheLookupOptionsMask,
         options: *const HttpCacheLookupOptions,
-    ) -> host::LookupOptions<'static> {
+    ) -> adapter_http_cache::LookupOptions<'static> {
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
                 unsafe { crate::make_vec!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
@@ -102,7 +102,7 @@ mod http_cache {
         } else {
             None
         };
-        let options = host::LookupOptions {
+        let options = adapter_http_cache::LookupOptions {
             override_key,
             backend_name,
             extra: None,
@@ -229,7 +229,7 @@ mod http_cache {
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
         let options = cache_lookup_options(options_mask, unsafe_main_ptr!(options));
 
-        let res = host::Entry::transaction_lookup(&req_handle, &options);
+        let res = adapter_http_cache::transaction_lookup(&req_handle, &options);
 
         std::mem::forget(options);
         let cache_handle_out = unsafe_main_ptr!(cache_handle_out);

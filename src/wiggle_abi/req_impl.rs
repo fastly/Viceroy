@@ -374,15 +374,24 @@ impl FastlyHttpReq for Session {
     fn framing_headers_mode_set(
         &mut self,
         _memory: &mut GuestMemory<'_>,
-        _h: RequestHandle,
+        req_handle: RequestHandle,
         mode: FramingHeadersMode,
     ) -> Result<(), Error> {
-        match mode {
-            FramingHeadersMode::ManuallyFromHeaders => {
-                Err(Error::NotAvailable("Manual framing headers"))
+        let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
+
+        match extensions.get_mut::<ViceroyRequestMetadata>() {
+            None => {
+                extensions.insert(ViceroyRequestMetadata {
+                    framing_headers_mode: mode,
+                    ..Default::default()
+                });
             }
-            FramingHeadersMode::Automatic => Ok(()),
+            Some(vrm) => {
+                vrm.framing_headers_mode = mode;
+            }
         }
+
+        Ok(())
     }
 
     fn register_dynamic_backend(
@@ -1069,11 +1078,7 @@ impl FastlyHttpReq for Session {
             None => {
                 extensions.insert(ViceroyRequestMetadata {
                     auto_decompress_encodings: encodings,
-                    // future note: at time of writing, this is the only field of
-                    // this structure, but there is an intention to add more fields.
-                    // When we do, and if/when an error appears, what you're looking
-                    // for is:
-                    // ..Default::default()
+                    ..Default::default()
                 });
             }
             Some(vrm) => {

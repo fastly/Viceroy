@@ -10,6 +10,14 @@ pub(crate) mod bindings {
         imports: {
             default: tracing,
 
+            "fastly:adapter/adapter-backend/register-dynamic-backend": async | tracing,
+            "fastly:adapter/adapter-http-req/send": async | tracing,
+            "fastly:adapter/adapter-http-req/send-async": async | tracing,
+            "fastly:adapter/adapter-http-req/send-async-streaming": async | tracing,
+            "fastly:adapter/adapter-http-req/send-async-uncached": async | tracing,
+            "fastly:adapter/adapter-http-req/send-async-uncached-streaming": async | tracing,
+            "fastly:adapter/adapter-http-req/send-uncached": async | tracing,
+
             "fastly:compute/backend/[constructor]dynamic-backend-options": tracing | trappable,
             "fastly:compute/shielding/[constructor]shield-backend-options": tracing | trappable,
             "fastly:compute/cache/[constructor]extra-lookup-options": tracing | trappable,
@@ -29,16 +37,17 @@ pub(crate) mod bindings {
             "fastly:compute/http-downstream/await-request": async | tracing,
             "fastly:compute/http-req/await-response": async | tracing,
             "fastly:compute/cache/close-entry": async | tracing,
+            "fastly:compute/cache/close-replace-entry": async | tracing,
             "fastly:compute/cache/insert": async | tracing,
-            "fastly:compute/cache/replace": async | tracing,
-            "fastly:compute/cache/replace-get-age-ns": async | tracing,
-            "fastly:compute/cache/replace-get-body": async | tracing,
-            "fastly:compute/cache/replace-get-hits": async | tracing,
-            "fastly:compute/cache/replace-get-length": async | tracing,
-            "fastly:compute/cache/replace-get-max-age-ns": async | tracing,
-            "fastly:compute/cache/replace-get-stale-while-revalidate-ns": async | tracing,
-            "fastly:compute/cache/replace-get-state": async | tracing,
-            "fastly:compute/cache/replace-get-user-metadata": async | tracing,
+            "fastly:compute/cache/[static]replace-entry.replace": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-age-ns": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-body": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-hits": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-length": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-max-age-ns": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-stale-while-revalidate-ns": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-state": async | tracing,
+            "fastly:compute/cache/[method]replace-entry.get-user-metadata": async | tracing,
             "fastly:compute/cache/replace-insert": async | tracing,
             "fastly:compute/cache/[method]entry.get-age-ns": async | tracing,
             "fastly:compute/cache/[method]entry.get-body": async | tracing,
@@ -110,6 +119,9 @@ pub(crate) mod bindings {
             "fastly:adapter/adapter-uap/user-agent": super::adapter::uap::UserAgent,
             "fastly:compute/kv-store/entry": super::compute::kv_store::Entry,
             "fastly:compute/backend/dynamic-backend-options": super::compute::backend::BackendBuilder,
+            "fastly:compute/backend/backend": String,
+            "fastly:compute/erl/rate-counter": String,
+            "fastly:compute/erl/penalty-box": String,
         },
 
         trappable_error_type: {
@@ -153,6 +165,11 @@ pub fn link_host_functions(linker: &mut component::Linker<ComponentCtx>) -> anyh
 }
 
 pub mod adapter;
+pub mod backend;
 pub mod compute;
+pub mod erl;
 pub mod handles;
+pub mod http_req;
+pub mod image_optimizer;
+pub mod shielding;
 pub mod wasi;

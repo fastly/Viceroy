@@ -32,7 +32,7 @@ impl From<std::convert::Infallible> for types::Error {
 
 impl From<HandleError> for types::Error {
     fn from(_: HandleError) -> Self {
-        types::Error::BadHandle
+        panic!("`HandleError` should not be used in components")
     }
 }
 
@@ -90,12 +90,6 @@ impl From<InvalidUri> for types::Error {
     }
 }
 
-impl From<http::Error> for types::Error {
-    fn from(_: http::Error) -> Self {
-        types::Error::GenericError
-    }
-}
-
 impl From<std::string::FromUtf8Error> for types::Error {
     fn from(_: std::string::FromUtf8Error) -> Self {
         types::Error::InvalidArgument
@@ -129,7 +123,7 @@ impl From<ObjectStoreError> for types::Error {
     fn from(err: ObjectStoreError) -> Self {
         use ObjectStoreError::*;
         match err {
-            MissingObject => types::Error::OptionalNone,
+            MissingObject => panic!("`MissingObject` should not be used in components"),
             PoisonedLock => panic!("{}", err),
             UnknownObjectStore(_) => types::Error::InvalidArgument,
         }
@@ -182,8 +176,10 @@ impl From<SecretStoreError> for types::Error {
     fn from(err: SecretStoreError) -> Self {
         use SecretStoreError::*;
         match err {
-            UnknownSecretStore(_) => types::Error::OptionalNone,
-            UnknownSecret(_) => types::Error::OptionalNone,
+            UnknownSecretStore(_) => {
+                panic!("`UnknownSecretStore` should not be used in components")
+            }
+            UnknownSecret(_) => panic!("`UnknownSecret` should not be used in components"),
             InvalidSecretStoreHandle(_) => types::Error::InvalidArgument,
             InvalidSecretHandle(_) => types::Error::InvalidArgument,
         }
@@ -194,7 +190,9 @@ impl From<DictionaryError> for types::Error {
     fn from(err: DictionaryError) -> Self {
         use DictionaryError::*;
         match err {
-            UnknownDictionaryItem(_) => types::Error::OptionalNone,
+            UnknownDictionaryItem(_) => {
+                panic!("`UnknownDictionaryItem` should not be used in components")
+            }
             UnknownDictionary(_) => types::Error::InvalidArgument,
         }
     }
@@ -207,7 +205,7 @@ impl From<error::Error> for types::Error {
             Error::BufferLengthError { .. } => types::Error::BufferLen(0),
             Error::InvalidArgument => types::Error::InvalidArgument,
             Error::Unsupported { .. } => types::Error::Unsupported,
-            Error::HandleError { .. } => types::Error::BadHandle,
+            Error::HandleError { .. } => panic!("`HandleError` should not be used in components"),
             Error::InvalidStatusCode { .. } => types::Error::InvalidArgument,
             // Map specific kinds of `hyper::Error` into their respective error codes.
             Error::HyperError(e) if e.is_parse() => types::Error::HttpInvalid,
@@ -222,8 +220,7 @@ impl From<error::Error> for types::Error {
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::CacheError(e) => e.into(),
-            Error::NoDownstreamReqsAvailable => types::Error::OptionalNone,
-            Error::ValueAbsent => types::Error::OptionalNone,
+            Error::ValueAbsent => panic!("`ValueAbsent` should not be used in components"),
             Error::LimitExceeded { .. } => types::Error::LimitExceeded,
             // All other hostcall errors map to a generic `ERROR` value.
             Error::AbiVersionMismatch

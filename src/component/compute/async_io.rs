@@ -56,7 +56,14 @@ impl async_io::HostPollable for ComponentCtx {
             .is_some()
     }
 
-    fn drop(&mut self, _pollable: Resource<async_io::Pollable>) -> wasmtime::Result<()> {
+    fn drop(&mut self, handle: Resource<async_io::Pollable>) -> wasmtime::Result<()> {
+        let handle = wiggle_abi::types::AsyncItemHandle::from(handle).into();
+
+        // Use `.take_async_item` instead of manipulating
+        // `self.session_mut().async_items` directly, so that any extra state
+        // associated with the item is also cleared.
+        let _ = self.session_mut().take_async_item(handle).unwrap();
+
         Ok(())
     }
 }

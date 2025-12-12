@@ -2,9 +2,10 @@
 
 use {
     crate::{
-        config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint, session::Session,
-        wiggle_abi, Error,
+        body::Body, config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint,
+        session::Session, wiggle_abi, Error,
     },
+    hyper::Response,
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
     wasmtime_wasi::preview1::WasiP1Ctx,
@@ -20,17 +21,17 @@ pub struct Limiter {
 
 impl Default for Limiter {
     fn default() -> Self {
-        Limiter::new(1, 1)
+        Limiter::new(1, 1, 1)
     }
 }
 
 impl Limiter {
-    fn new(max_instances: usize, max_tables: usize) -> Self {
+    fn new(max_instances: usize, max_memories: usize, max_tables: usize) -> Self {
         Limiter {
             memory_allocated: 0,
             internal: StoreLimitsBuilder::new()
                 .instances(max_instances)
-                .memories(5)
+                .memories(max_memories)
                 .memory_size(128 * 1024 * 1024)
                 .table_elements(98765)
                 .tables(max_tables)
@@ -155,8 +156,8 @@ impl ComponentCtx {
         &self.limiter
     }
 
-    pub fn close_downstream_response_sender(&mut self) {
-        self.session.close_downstream_response_sender()
+    pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
+        self.session.close_downstream_response_sender(resp)
     }
 
     /// Initialize a new [`Store`][store], given an [`ExecuteCtx`][ctx].
@@ -179,7 +180,7 @@ impl ComponentCtx {
             wasi_random: wasmtime_wasi::random::WasiRandomCtx::default(),
             session,
             guest_profiler: guest_profiler.map(Box::new),
-            limiter: Limiter::new(100, 100),
+            limiter: Limiter::new(100, 100, 100),
             logger: Vec::new(),
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
@@ -254,8 +255,8 @@ impl WasmCtx {
 }
 
 impl WasmCtx {
-    pub fn close_downstream_response_sender(&mut self) {
-        self.session.close_downstream_response_sender()
+    pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
+        self.session.close_downstream_response_sender(resp)
     }
 }
 

@@ -3,9 +3,10 @@ use crate::{
     cache::CacheOverride,
     config::Backend,
     error::Error,
+    framing::{content_length_is_valid, transfer_encoding_is_supported},
     headers::filter_outgoing_headers,
     session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
-    wiggle_abi::types::ContentEncodings,
+    wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
 use futures::Future;
 use http::{uri, HeaderValue, Version};
@@ -228,7 +229,13 @@ fn canonical_host_header(
                 .authority()
                 .and_then(|auth| HeaderValue::from_str(auth.as_str()).ok())
         })
-        .expect("Could determine a Host header")
+        .or_else(|| {
+            backend
+                .uri
+                .host()
+                .and_then(|h| HeaderValue::from_str(h).ok())
+        })
+        .expect("Could not determine a Host header")
 }
 
 fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) -> Uri {
@@ -301,7 +308,26 @@ pub fn send_request(
         })
         .unwrap_or(false);
 
-    filter_outgoing_headers(req.headers_mut());
+    let mut framing_headers_mode = req
+        .extensions()
+        .get::<ViceroyRequestMetadata>()
+        .map(|vrm| vrm.framing_headers_mode)
+        .unwrap_or(FramingHeadersMode::Automatic);
+
+    if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
+        if !content_length_is_valid(req.headers()) {
+            warn!("Backend request has invalid Content-Length header, falling back to automatic framing.");
+            framing_headers_mode = FramingHeadersMode::Automatic;
+        }
+        if !transfer_encoding_is_supported(req.headers()) {
+            warn!("Backend request has unsupported Transfer-Encoding header, falling back to automatic framing.");
+            framing_headers_mode = FramingHeadersMode::Automatic;
+        }
+    }
+    if framing_headers_mode != FramingHeadersMode::ManuallyFromHeaders {
+        filter_outgoing_headers(req.headers_mut());
+    }
+
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
