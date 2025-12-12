@@ -1,6 +1,11 @@
 ## 0.16.2 (2025-12-10)
 
  - Update to the latest WITs and adapter. ([#564](https://github.com/fastly/Viceroy/pull/564))
+
+   This applies version "0.0.0-prerelease.0" to wasm_abi/wit/deps/fastly/compute.wit.
+   As a prerelease, this version is not guaranteed to be supported long-term, however
+   from this point forward, changes will be described by version number bumps.
+
  - fix: use original static backend host ([#549](https://github.com/fastly/Viceroy/pull/549))
  - Return InvalidArgument for bad arguments to register_dynamic_backend ([#563](https://github.com/fastly/Viceroy/pull/563))
 
