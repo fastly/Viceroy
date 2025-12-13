@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.16.2 (2025-12-10)
 
  - Update to the latest WITs and adapter. ([#564](https://github.com/fastly/Viceroy/pull/564))
