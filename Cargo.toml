@@ -105,7 +105,7 @@ opt-level = 1
 anyhow = "1.0.31"
 base64 = "0.21.2"
 clap = { version = "^4.0.18", features = ["derive"] }
-hyper = { version = "=0.14.26", features = ["full"] }
+hyper = { git = "https://github.com/ulyssa/hyper.git", rev = "326ce54", features = ["full"] }
 itertools = "0.10.5"
 pin-project = "1.0.8"
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
@@ -128,3 +128,6 @@ wat = "1.212.0"
 wasmparser = "0.236.0"
 wasm-encoder = { version = "0.236.0", features = ["wasmparser"] }
 wit-component = "0.236.0"
+
+[patch.'crates-io']
+hyper = { git = "https://github.com/ulyssa/hyper.git", rev = "326ce54" }
