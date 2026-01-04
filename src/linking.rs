@@ -92,6 +92,26 @@ impl wasmtime::ResourceLimiter for Limiter {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub(crate) enum FuncCall {
+    ExportArgs {
+        method: String,
+        args: Vec<String>,
+    },
+    ExportRet {
+        method: Option<String>,
+        ret: Option<String>,
+    },
+    ImportArgs {
+        method: Option<String>,
+        args: Vec<String>,
+    },
+    ImportRet {
+        method: Option<String>,
+        ret: Option<String>,
+    },
+}
+
 #[allow(unused)]
 pub struct ComponentCtx {
     pub wasi_ctx: wasmtime_wasi::WasiCtx,
@@ -100,6 +120,7 @@ pub struct ComponentCtx {
     pub(crate) session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
     limiter: Limiter,
+    pub(crate) logger: Vec<FuncCall>,
 }
 
 /// An extension trait for users of `ComponentCtx` to access the session.
@@ -160,6 +181,7 @@ impl ComponentCtx {
             session,
             guest_profiler: guest_profiler.map(Box::new),
             limiter: Limiter::new(100, 100, 100),
+            logger: Vec::new(),
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
