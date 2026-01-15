@@ -39,6 +39,32 @@ viceroy_test!(framing_headers_are_overridden, |is_component| {
     Ok(())
 });
 
+// Regression test: ManuallyFromHeaders mode should preserve Content-Length header.
+// Previously, the header was stripped because absent Transfer-Encoding was treated as invalid.
+viceroy_test!(manual_framing_preserves_content_length, |is_component| {
+    let test = Test::using_fixture("manual-framing-headers.wasm")
+        .adapt_component(is_component)
+        .backend("TheOrigin", "/", None, |req| {
+            // Manual mode should preserve Content-Length, not strip it
+            assert!(
+                !req.headers().contains_key(header::CONTENT_LENGTH),
+                "Content-Length was incorrectly added"
+            );
+            // Transfer-Encoding should be preserved
+            assert_eq!(
+                req.headers().get(header::TRANSFER_ENCODING),
+                Some(&hyper::header::HeaderValue::from_static("chunked")),
+                "Transfer-Encoding should have been preserved"
+            );
+            Response::new(Vec::new())
+        })
+        .await;
+
+    let resp = test.via_hyper().against_empty().await?;
+    assert_eq!(resp.status(), StatusCode::OK);
+    Ok(())
+});
+
 viceroy_test!(content_length_is_computed_correctly, |is_component| {
     // Set up the test harness
     let test = Test::using_fixture("content-length.wasm")
