@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::cache::{Cache, CacheEntry};
+use crate::linking::Limiter;
 use crate::object_store::KvStoreError;
 use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode};
 
@@ -122,6 +123,8 @@ pub struct Session {
     secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
     /// How many additional downstream requests have been receive by this Session.
     next_req_accepted: usize,
+    /// Memory usage limiter to ensure the guest doesn't use over 128mb of heap.
+    limiter: Limiter,
 }
 
 impl Session {
@@ -144,6 +147,12 @@ impl Session {
         });
         let downstream_req_body_handle = async_items.push(Some(AsyncItem::Body(body))).into();
 
+        let limiter = if ctx.is_component() {
+            Limiter::for_wasip2()
+        } else {
+            Limiter::for_wasip1()
+        };
+
         Session {
             session_id,
             downstream_req_handle,
@@ -165,6 +174,7 @@ impl Session {
             secrets_by_name: PrimaryMap::new(),
             downstream_pending_handle: None,
             next_req_accepted: 0,
+            limiter,
 
             ctx,
         }
@@ -1324,6 +1334,24 @@ impl Session {
 
     pub fn ctx(&self) -> &Arc<ExecuteCtx> {
         &self.ctx
+    }
+
+    /// Get the guest's heap usage in mebibytes.
+    ///
+    /// This rounds up to the nearest mebibyte, so that guests won't accidentally
+    /// rely on implementation details that may change over time.
+    pub fn get_heap_usage_mib(&self) -> u32 {
+        const MEBIBYTE: usize = 1024 * 1024;
+        let mb = self.limiter.memory_allocated.next_multiple_of(MEBIBYTE) / MEBIBYTE;
+        mb.try_into().unwrap_or(u32::MAX)
+    }
+
+    pub fn limiter(&self) -> &Limiter {
+        &self.limiter
+    }
+
+    pub fn limiter_mut(&mut self) -> &mut Limiter {
+        &mut self.limiter
     }
 }
 

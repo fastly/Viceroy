@@ -882,6 +882,10 @@ impl ExecuteCtx {
 
         Some(rx)
     }
+
+    pub fn is_component(&self) -> bool {
+        matches!(self.instance_pre.as_ref(), Instance::Component(_))
+    }
 }
 
 pub struct ExecuteCtxBuilder {

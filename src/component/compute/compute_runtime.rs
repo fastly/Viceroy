@@ -8,7 +8,7 @@ impl compute_runtime::Host for ComponentCtx {
     }
 
     fn get_heap_mib(&mut self) -> compute_runtime::MemoryMib {
-        0 // TODO
+        self.session().get_heap_usage_mib()
     }
 
     fn get_sandbox_id(&mut self) -> String {
