@@ -19,13 +19,15 @@ pub struct Limiter {
     internal: StoreLimits,
 }
 
-impl Default for Limiter {
-    fn default() -> Self {
-        Limiter::new(1, 1, 1)
-    }
-}
-
 impl Limiter {
+    pub fn for_wasip2() -> Self {
+        Self::new(100, 100, 100)
+    }
+
+    pub fn for_wasip1() -> Self {
+        Self::new(1, 1, 1)
+    }
+
     fn new(max_instances: usize, max_memories: usize, max_tables: usize) -> Self {
         Limiter {
             memory_allocated: 0,
@@ -99,7 +101,6 @@ pub struct ComponentCtx {
     pub wasi_random: wasmtime_wasi::random::WasiRandomCtx,
     pub(crate) session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
-    limiter: Limiter,
 }
 
 /// An extension trait for users of `ComponentCtx` to access the session.
@@ -132,7 +133,7 @@ impl ComponentCtx {
     }
 
     pub fn limiter(&self) -> &Limiter {
-        &self.limiter
+        self.session.limiter()
     }
 
     pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
@@ -159,7 +160,6 @@ impl ComponentCtx {
             wasi_random: wasmtime_wasi::random::WasiRandomCtx::default(),
             session,
             guest_profiler: guest_profiler.map(Box::new),
-            limiter: Limiter::new(100, 100, 100),
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
         store.set_epoch_deadline(1);
@@ -182,7 +182,7 @@ impl ComponentCtx {
             Ok(UpdateDeadline::Yield(1))
         });
 
-        store.limiter(|ctx| &mut ctx.limiter);
+        store.limiter(|ctx| ctx.session.limiter_mut());
         Ok(store)
     }
 }
@@ -207,7 +207,6 @@ pub struct WasmCtx {
     wasi_nn: WasiNnCtx,
     session: Session,
     guest_profiler: Option<Box<GuestProfiler>>,
-    limiter: Limiter,
 }
 
 impl WasmCtx {
@@ -228,7 +227,7 @@ impl WasmCtx {
     }
 
     pub fn limiter(&self) -> &Limiter {
-        &self.limiter
+        self.session.limiter()
     }
 }
 
@@ -260,7 +259,6 @@ pub(crate) fn create_store(
         wasi_nn,
         session,
         guest_profiler: guest_profiler.map(Box::new),
-        limiter: Limiter::default(),
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
     store.set_epoch_deadline(1);
@@ -283,7 +281,7 @@ pub(crate) fn create_store(
         Ok(UpdateDeadline::Yield(1))
     });
 
-    store.limiter(|ctx| &mut ctx.limiter);
+    store.limiter(|ctx| ctx.session.limiter_mut());
     Ok(store)
 }
 

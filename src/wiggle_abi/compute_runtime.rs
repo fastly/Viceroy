@@ -11,4 +11,8 @@ impl FastlyComputeRuntime for Session {
         // try to minimize timing attacks.
         Ok(self.active_cpu_time_us.load(Ordering::SeqCst) / 1000)
     }
+
+    fn get_heap_mib(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        Ok(self.get_heap_usage_mib())
+    }
 }

@@ -1352,6 +1352,18 @@
     (@interface func (export "get_vcpu_ms")
         (result $err (expected $vcpu_ms (error $fastly_status)))
     )
+
+    ;;; Get a snapshot of the current dynamic memory usage, rounded up to the nearest mebibyte (2^20).
+    ;;;
+    ;;; This includes usage from the Wasm linear memory (heap) and usage from host allocations
+    ;;; made on behalf of this sandbox, e.g. buffered bodies of HTTP responses.
+    ;;; The returned value is just a snapshot- it can change without any explicit action
+    ;;; by the sandbox (for instance, additional response data coming in from an HTTP response.)
+    ;;; It can also change over time / across runs, as the Compute platform's memory usage
+    ;;; changes. Consider the returned value with these uncertainties in mind.
+    (@interface func (export "get_heap_mib")
+        (result $err (expected $memory_mib (error $fastly_status)))
+    )
 )
 
 (module $fastly_acl

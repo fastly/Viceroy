@@ -491,6 +491,7 @@
 
 (typename $body_length u64)
 (typename $vcpu_ms u64)
+(typename $memory_mib u32)
 
 (typename $inspect_info_mask
     (flags (@witx repr u32)
