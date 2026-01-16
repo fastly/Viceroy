@@ -316,11 +316,15 @@ pub fn send_request(
 
     if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
         if !content_length_is_valid(req.headers()) {
-            warn!("Backend request has invalid Content-Length header, falling back to automatic framing.");
+            warn!("Backend request has malformed Content-Length header, falling back to automatic framing.");
             framing_headers_mode = FramingHeadersMode::Automatic;
-        }
-        if !transfer_encoding_is_supported(req.headers()) {
+        } else if !transfer_encoding_is_supported(req.headers()) {
             warn!("Backend request has unsupported Transfer-Encoding header, falling back to automatic framing.");
+            framing_headers_mode = FramingHeadersMode::Automatic;
+        } else if !req.headers().contains_key(header::CONTENT_LENGTH)
+            && !req.headers().contains_key(header::TRANSFER_ENCODING)
+        {
+            warn!("Backend request has neither Content-Length nor Transfer-Encoding header, falling back to automatic framing.");
             framing_headers_mode = FramingHeadersMode::Automatic;
         }
     }

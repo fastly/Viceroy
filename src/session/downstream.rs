@@ -67,11 +67,19 @@ impl DownstreamResponseState {
 
         if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
             if !content_length_is_valid(response.headers()) {
-                tracing::warn!("Downstream response has invalid Content-Length header, falling back to automatic framing.");
+                tracing::warn!("Downstream response has malformed Content-Length header, falling back to automatic framing.");
                 framing_headers_mode = FramingHeadersMode::Automatic;
-            }
-            if !transfer_encoding_is_supported(response.headers()) {
+            } else if !transfer_encoding_is_supported(response.headers()) {
                 tracing::warn!("Downstream response has unsupported Transfer-Encoding header, falling back to automatic framing.");
+                framing_headers_mode = FramingHeadersMode::Automatic;
+            } else if !response
+                .headers()
+                .contains_key(hyper::header::CONTENT_LENGTH)
+                && !response
+                    .headers()
+                    .contains_key(hyper::header::TRANSFER_ENCODING)
+            {
+                tracing::warn!("Downstream response has neither Content-Length nor Transfer-Encoding header, falling back to automatic framing.");
                 framing_headers_mode = FramingHeadersMode::Automatic;
             }
         }
