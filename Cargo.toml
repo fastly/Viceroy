@@ -23,7 +23,7 @@ include = [
     "wasm_abi/compute-at-edge-abi/**/*.witx",
     "wasm_abi/data/*.wasm",
 ]
-rust-version = "1.86"
+rust-version = "1.87"
 
 [dependencies]
 anyhow = { workspace = true }
