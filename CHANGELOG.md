@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.16.3 (2026-01-20)
 
 - Implement `fastly_compute_runtime::get_heap_mib` hostcall ([#572](https://github.com/fastly/Viceroy/pull/572)) 
