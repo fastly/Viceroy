@@ -1,15 +1,21 @@
 ## Unreleased
 
+## 0.16.3 (2026-01-20)
+
+- Implement `fastly_compute_runtime::get_heap_mib` hostcall ([#572](https://github.com/fastly/Viceroy/pull/572)) 
+- Update to latest `moka` release to fix use-after-free bug ([#569](https://github.com/fastly/Viceroy/pull/569))
+- Fix manual framing headers logic to avoid falling back to automatic framing headers ([#571](https://github.com/fastly/Viceroy/pull/571))
+
 ## 0.16.2 (2025-12-10)
 
- - Update to the latest WITs and adapter. ([#564](https://github.com/fastly/Viceroy/pull/564))
+- Update to the latest WITs and adapter. ([#564](https://github.com/fastly/Viceroy/pull/564))
 
-   This applies version "0.0.0-prerelease.0" to wasm_abi/wit/deps/fastly/compute.wit.
-   As a prerelease, this version is not guaranteed to be supported long-term, however
-   from this point forward, changes will be described by version number bumps.
+  This applies version "0.0.0-prerelease.0" to wasm_abi/wit/deps/fastly/compute.wit.
+  As a prerelease, this version is not guaranteed to be supported long-term, however
+  from this point forward, changes will be described by version number bumps.
 
- - fix: use original static backend host ([#549](https://github.com/fastly/Viceroy/pull/549))
- - Return InvalidArgument for bad arguments to register_dynamic_backend ([#563](https://github.com/fastly/Viceroy/pull/563))
+- fix: use original static backend host ([#549](https://github.com/fastly/Viceroy/pull/549))
+- Return InvalidArgument for bad arguments to register_dynamic_backend ([#563](https://github.com/fastly/Viceroy/pull/563))
 
 ## 0.16.1 (2025-11-25)
 
