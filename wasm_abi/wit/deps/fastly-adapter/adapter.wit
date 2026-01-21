@@ -9,11 +9,12 @@ interface adapter-abi {
 /// Adapter functions formerly of `fastly:compute/http-req`.
 ///
 /// These functions depend on the host maintaining an implicit downstream
-/// request. They were replaced by functions in the `http-downstream` interface
-/// which do the same thing but take an explicit `request` handle.
+/// request. They were deprecated and replaced by functions in the
+/// `http-downstream` interface which do the same thing but take an explicit
+/// `request` handle.
 interface adapter-http-req {
-  use fastly:compute/types@0.0.0-prerelease.0.{error, ip-address};
-  use fastly:compute/http-req@0.0.0-prerelease.0.{
+  use fastly:compute/types@0.0.0-prerelease.1.{error, ip-address};
+  use fastly:compute/http-req@0.0.0-prerelease.1.{
     client-cert-verify-result, request, body, response-with-body, error-with-detail,
     pending-response
   };
@@ -118,7 +119,7 @@ interface adapter-http-req {
 
 /// Deprecated; these functions take `backend` as a string.
 interface adapter-backend {
-  use fastly:compute/backend@0.0.0-prerelease.0.{
+  use fastly:compute/backend@0.0.0-prerelease.1.{
     backend-health, error, timeout-ms, tls-version, timeout-secs, probe-count,
     dynamic-backend-options,
   };
@@ -163,7 +164,7 @@ interface adapter-backend {
 
 /// Deprecated functions formerly of `fastly:compute/image-optimizer`.
 interface adapter-image-optimizer {
-  use fastly:compute/image-optimizer@0.0.0-prerelease.0.{
+  use fastly:compute/image-optimizer@0.0.0-prerelease.1.{
     body, request, image-optimizer-transform-options, response-with-body, error
   };
 
@@ -177,8 +178,8 @@ interface adapter-image-optimizer {
 }
 
 interface adapter-http-downstream {
-  use fastly:compute/types@0.0.0-prerelease.0.{error};
-  use fastly:compute/http-req@0.0.0-prerelease.0.{request};
+  use fastly:compute/types@0.0.0-prerelease.1.{error};
+  use fastly:compute/http-req@0.0.0-prerelease.1.{request};
 
   /// Deprecated, because it doesn't return `none` on an empty certificate.
   downstream-tls-raw-client-certificate-deprecated: func(
@@ -189,9 +190,9 @@ interface adapter-http-downstream {
 
 /// Deprecated functions formerly of `fastly:compute/http-cache`.
 interface adapter-http-cache {
-  use fastly:compute/types@0.0.0-prerelease.0.{error};
-  use fastly:compute/http-req@0.0.0-prerelease.0.{request};
-  use fastly:compute/http-cache@0.0.0-prerelease.0.{entry};
+  use fastly:compute/types@0.0.0-prerelease.1.{error};
+  use fastly:compute/http-req@0.0.0-prerelease.1.{request};
+  use fastly:compute/http-cache@0.0.0-prerelease.1.{entry};
 
   /// Deprecated; use `transaction-lookup` instead.
   lookup: func(
@@ -216,8 +217,8 @@ interface adapter-http-cache {
 
 /// Adapter Core Cache functions.
 interface adapter-cache {
-  use fastly:compute/types@0.0.0-prerelease.0.{error};
-  use fastly:compute/cache@0.0.0-prerelease.0.{
+  use fastly:compute/types@0.0.0-prerelease.1.{error};
+  use fastly:compute/cache@0.0.0-prerelease.1.{
     extra-lookup-options, extra-write-options, extra-replace-options
   };
 
@@ -242,7 +243,7 @@ interface adapter-cache {
 
 /// User-agent string parsing (deprecated).
 interface adapter-uap {
-  use fastly:compute/types@0.0.0-prerelease.0.{error};
+  use fastly:compute/types@0.0.0-prerelease.1.{error};
 
   resource user-agent {
     family: func(max-len: u64) -> result<string, error>;
@@ -257,7 +258,7 @@ interface adapter-uap {
 
 /// Deprecated functions formerly of `fastly:compute/erl`.
 interface adapter-erl {
-  use fastly:compute/types@0.0.0-prerelease.0.{error};
+  use fastly:compute/types@0.0.0-prerelease.1.{error};
 
   check-rate: func(
     rate-counter: string,
@@ -301,8 +302,8 @@ interface adapter-erl {
 
 /// Deprecated functions formerly of `fastly:compute/shielding`.
 interface adapter-shielding {
-  use fastly:compute/types@0.0.0-prerelease.0.{error};
-  use fastly:compute/shielding@0.0.0-prerelease.0.{shield-backend-options};
+  use fastly:compute/types@0.0.0-prerelease.1.{error};
+  use fastly:compute/shielding@0.0.0-prerelease.1.{shield-backend-options};
 
   /// Deprecated; this function returns the backend as a `string`.
   backend-for-shield: func(
@@ -312,7 +313,7 @@ interface adapter-shielding {
   ) -> result<string, error>;
 }
 
-/// A world that just imports all the adapter-only APIs, split out from the main
+/// A world that just imports all the deprecated APIs, split out from the main
 /// world below so that we can refer to it in tests.
 world adapter-imports {
   import adapter-abi;
@@ -327,12 +328,12 @@ world adapter-imports {
   import adapter-uap;
 }
 
-/// The `fastly:compute/service` world plus the adapter-only interfaces.
+/// The `fastly:compute/service` world plus the deprecated interfaces.
 world adapter-service {
-  // Make this world a superset of the `service` world.
-  include fastly:compute/service@0.0.0-prerelease.0;
+  // Make this world a superset of the public `service` world.
+  include fastly:compute/service@0.0.0-prerelease.1;
 
-  // And, add all the adapter-only interfaces.
+  // And, add all the deprecated interfaces.
   include adapter-imports;
 }
 
@@ -340,6 +341,6 @@ world adapter-service {
 /// exports (`http-incoming.handle`), so that it can be used by library components
 /// that don't have their own `main` function.
 world adapter-service-imports {
-    include fastly:compute/service-imports@0.0.0-prerelease.0;
+    include fastly:compute/service-imports@0.0.0-prerelease.1;
     include adapter-imports;
 }

@@ -460,6 +460,9 @@
         ;;; The system encountered a TLS error when communicating with the backend, either during
         ;;; the handshake or afterwards.
         $tls_protocol_error
+        ;;; The system received an HTTP/2 error code from the server. The fields $h2_error_frame and
+        ;;; $h2_error_code may be set in the $send_error_detail.
+        $h2_error
         ))
 
 ;;; Mask representing which fields are understood by the guest, and which have been set by the host.
@@ -473,6 +476,7 @@
        $dns_error_rcode
        $dns_error_info_code
        $tls_alert_id
+       $h2_error
        ))
 
 (typename $send_error_detail
@@ -482,6 +486,8 @@
     (field $dns_error_rcode u16)
     (field $dns_error_info_code u16)
     (field $tls_alert_id u8)
+    (field $h2_error_frame u8)
+    (field $h2_error_code u32)
     ))
 
 (typename $blocked u32)

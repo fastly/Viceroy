@@ -330,11 +330,15 @@ mod cache {
 
         let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
-        let request_headers = match unsafe { (*options).request_headers } {
-            INVALID_HANDLE => None,
-            request_headers => Some(ManuallyDrop::new(unsafe {
-                http_req::Request::from_handle(request_headers)
-            })),
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            match unsafe { (*options).request_headers } {
+                INVALID_HANDLE => None,
+                request_headers => Some(ManuallyDrop::new(unsafe {
+                    http_req::Request::from_handle(request_headers)
+                })),
+            }
+        } else {
+            None
         };
         let mut options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
@@ -551,11 +555,15 @@ mod cache {
         }
 
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
-        let request_headers = match unsafe { (*options).request_headers } {
-            INVALID_HANDLE => None,
-            request_headers => Some(ManuallyDrop::new(unsafe {
-                http_req::Request::from_handle(request_headers)
-            })),
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            match unsafe { (*options).request_headers } {
+                INVALID_HANDLE => None,
+                request_headers => Some(ManuallyDrop::new(unsafe {
+                    http_req::Request::from_handle(request_headers)
+                })),
+            }
+        } else {
+            None
         };
         let mut options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
@@ -610,11 +618,15 @@ mod cache {
         }
 
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
-        let request_headers = match unsafe { (*options).request_headers } {
-            INVALID_HANDLE => None,
-            request_headers => Some(ManuallyDrop::new(unsafe {
-                http_req::Request::from_handle(request_headers)
-            })),
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            match unsafe { (*options).request_headers } {
+                INVALID_HANDLE => None,
+                request_headers => Some(ManuallyDrop::new(unsafe {
+                    http_req::Request::from_handle(request_headers)
+                })),
+            }
+        } else {
+            None
         };
         let mut options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
@@ -668,11 +680,15 @@ mod cache {
         }
 
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
-        let request_headers = match unsafe { (*options).request_headers } {
-            INVALID_HANDLE => None,
-            request_headers => Some(ManuallyDrop::new(unsafe {
-                http_req::Request::from_handle(request_headers)
-            })),
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            match unsafe { (*options).request_headers } {
+                INVALID_HANDLE => None,
+                request_headers => Some(ManuallyDrop::new(unsafe {
+                    http_req::Request::from_handle(request_headers)
+                })),
+            }
+        } else {
+            None
         };
         let mut options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
@@ -950,11 +966,15 @@ mod cache {
         } else {
             None
         };
-        let request_headers = match unsafe { (*options).request_headers } {
-            INVALID_HANDLE => None,
-            request_headers => Some(ManuallyDrop::new(unsafe {
-                http_req::Request::from_handle(request_headers)
-            })),
+        let request_headers = if options_mask.contains(CacheReplaceOptionsMask::REQUEST_HEADERS) {
+            match unsafe { (*options).request_headers } {
+                INVALID_HANDLE => None,
+                request_headers => Some(ManuallyDrop::new(unsafe {
+                    http_req::Request::from_handle(request_headers)
+                })),
+            }
+        } else {
+            None
         };
         let options = cache::ReplaceOptions {
             request_headers: request_headers.as_deref(),
@@ -1005,11 +1025,15 @@ mod cache {
 
         let replace_handle = decode_replace_entry(handle);
         let replace_handle = unsafe { cache::ReplaceEntry::from_handle(replace_handle) };
-        let request_headers = match unsafe { (*options).request_headers } {
-            INVALID_HANDLE => None,
-            request_headers => Some(ManuallyDrop::new(unsafe {
-                http_req::Request::from_handle(request_headers)
-            })),
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            match unsafe { (*options).request_headers } {
+                INVALID_HANDLE => None,
+                request_headers => Some(ManuallyDrop::new(unsafe {
+                    http_req::Request::from_handle(request_headers)
+                })),
+            }
+        } else {
+            None
         };
         let mut options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {

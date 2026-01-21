@@ -6,7 +6,7 @@
 ///
 /// [Wit]: https://component-model.bytecodealliance.org/design/wit.html
 /// [Fastly Compute platform]: https://www.fastly.com/documentation/guides/compute/
-package fastly:compute@0.0.0-prerelease.0;
+package fastly:compute@0.0.0-prerelease.1;
 
 /// Types used by many interfaces in this package.
 interface types {
@@ -876,6 +876,10 @@ interface http-req {
       /// The system encountered a TLS error when communicating with the backend, either during
       /// the handshake or afterwards.
       tls-protocol-error,
+      /// The system received an HTTP/2 error frame and code from the backend.
+      h2-error(h2-error-detail),
+      /// Additional error details may be added in the future via this resource type.
+      extra(extra-send-error-detail),
   }
 
   /// Variant fields for `send-error.dns-error`.
@@ -888,6 +892,15 @@ interface http-req {
   record tls-alert-received-detail {
       id: option<u8>,
   }
+
+  /// Variant fields for `send-error.h2-error`.
+  record h2-error-detail {
+      frame-type: u8,
+      error-code: u32,
+  }
+
+  /// Extensibility for `send-error-detail`
+  resource extra-send-error-detail {}
 
   /// An `error` code, optionally with extra request error information.
   record error-with-detail {
@@ -2051,6 +2064,11 @@ interface cache {
       options: write-options,
     ) -> result<_, error>;
 
+    /// Get the state of a cache lookup, waiting for the lookup to complete if necessary.
+    ///
+    /// Note that FOUND == USABLE, and means "usable" (fresh or stale-while-revalidate).
+    /// Some SDKs were released that checked only FOUND to infer "usable";
+    /// we preserve the equivalence for backwards compatibility.
     get-state: func() -> result<lookup-state, error>;
 
     /// Gets the user metadata of the found object, returning `ok(none)` if no object
@@ -2142,6 +2160,10 @@ interface cache {
 
     /// Gets the lookup state of the existing object during replace, returning
     /// `ok(none)` if there was no object.
+    ///
+    /// Note that FOUND == USABLE, and means "usable" (fresh or stale-while-revalidate).
+    /// Some SDKs were released that checked only FOUND to infer "usable";
+    /// we preserve the equivalence for backwards compatibility.
     get-state: func() -> result<option<lookup-state>, error>;
 
     /// Gets the user metadata of the existing object during replace, returning
