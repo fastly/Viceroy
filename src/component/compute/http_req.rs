@@ -456,3 +456,9 @@ impl http_req::HostExtraCacheOverrideDetails for ComponentCtx {
         Ok(())
     }
 }
+
+impl http_req::HostExtraSendErrorDetail for ComponentCtx {
+    fn drop(&mut self, _details: Resource<http_req::ExtraSendErrorDetail>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
