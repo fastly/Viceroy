@@ -6,7 +6,7 @@
 ///
 /// [Wit]: https://component-model.bytecodealliance.org/design/wit.html
 /// [Fastly Compute platform]: https://www.fastly.com/documentation/guides/compute/
-package fastly:compute@0.0.0-prerelease.0;
+package fastly:compute@0.1.0;
 
 /// Types used by many interfaces in this package.
 interface types {
@@ -132,12 +132,45 @@ interface http-types {
 
   /// HTTP [content encoding] flags
   ///
+  /// The names of these flags correspond to
+  /// [IANA HTTP Content Coding Registry] names.
+  ///
+  /// Not all of these content encoding flags are supported in all APIs that
+  /// use this `content-encodings` type. See the documentation for individual
+  /// functions for details.
+  ///
   /// [content encoding]: https://www.rfc-editor.org/rfc/rfc9110.html#field.content-encoding
+  /// [IANA HTTP Content Coding Registry]: https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#content-coding
   flags content-encodings {
     /// [Gzip coding]
     ///
     /// [Gzip coding]: https://www.rfc-editor.org/rfc/rfc9110.html#gzip.coding
-    gzip
+    gzip,
+
+    /// [Brotli coding]
+    ///
+    /// [Brotli coding]: https://www.rfc-editor.org/rfc/rfc7932.html
+    br,
+
+    /// [Zstandard coding]
+    ///
+    /// [Zstandard coding]: https://www.rfc-editor.org/rfc/rfc8878.html
+    zstd,
+
+    /// [Dictionary-Compressed Brotli]
+    ///
+    /// [Dictionary-Compressed Brotli]: https://www.rfc-editor.org/rfc/rfc9842.html#name-dictionary-compressed-brotl
+    dcb,
+
+    /// [Dictionary-Compressed Zstandard]
+    ///
+    /// [Dictionary-Compressed Zstandard]: https://www.rfc-editor.org/rfc/rfc9842.html#name-dictionary-compressed-zstan
+    dcz,
+
+    /// [AES-GCM encryption with a 128-bit content encryption key]
+    ///
+    /// [AES-GCM encryption with a 128-bit content encryption key]: https://www.rfc-editor.org/rfc/rfc8188.html
+    aes128gcm,
   }
 
   /// Determines how the framing headers (`Content-Length`/`Transfer-Encoding`) are set for a
@@ -168,17 +201,19 @@ interface http-types {
 
   /// [Transport Layer Security] (TLS) version
   ///
+  /// This corresponds to the `ProtocolVersion` type in the RFC, which gives
+  /// the following values the following meanings:
+  ///
+  /// | Value  | Meaning | Notes |
+  /// | ------ | ------- | ----- |
+  /// | 0x0300 | SSL 3.0 | Not supported in this API |
+  /// | 0x0301 | TLS 1.0 |       |
+  /// | 0x0302 | TLS 1.1 | Not explicitly defined in the RFC |
+  /// | 0x0303 | TLS 1.2 |       |
+  /// | 0x0304 | TLS 1.3 |       |
+  ///
   /// [Transport Layer Security]: https://www.rfc-editor.org/rfc/rfc8446.html
-  enum tls-version {
-    /// TLS 1.0
-    tls1,
-    /// TLS 1.1
-    tls11,
-    /// TLS 1.2
-    tls12,
-    /// TLS 1.3
-    tls13
-  }
+  type tls-version = u16;
 
   /// HTTP [status codes].
   ///
@@ -523,7 +558,7 @@ interface http-downstream {
 /// HTTP requests.
 interface http-req {
   use types.{error, ip-address};
-  use http-types.{http-version, content-encodings, framing-headers-mode, tls-version};
+  use http-types.{http-version, content-encodings, framing-headers-mode};
   use http-resp.{response};
   use http-body.{body};
   use http-resp.{response-with-body};
@@ -634,6 +669,9 @@ interface http-req {
     /// If the response to this request is encoded by one of the encodings set by this method, the
     /// response will be presented to the Compute program in decompressed form with the
     /// `Content-Encoding` and `Content-Length` headers removed.
+    ///
+    /// Not all of the flags defined in `content-encodings` are supported. Currently the only
+    /// supported flag is `content-encodings.gzip`.
     set-auto-decompress-response: func(
       encodings: content-encodings,
     ) -> result<_, error>;
@@ -876,6 +914,10 @@ interface http-req {
       /// The system encountered a TLS error when communicating with the backend, either during
       /// the handshake or afterwards.
       tls-protocol-error,
+      /// The system received an HTTP/2 error frame and code from the backend.
+      h2-error(h2-error-detail),
+      /// Additional error details may be added in the future via this resource type.
+      extra(extra-send-error-detail),
   }
 
   /// Variant fields for `send-error.dns-error`.
@@ -888,6 +930,15 @@ interface http-req {
   record tls-alert-received-detail {
       id: option<u8>,
   }
+
+  /// Variant fields for `send-error.h2-error`.
+  record h2-error-detail {
+      frame-type: u8,
+      error-code: u32,
+  }
+
+  /// Extensibility for `send-error-detail`
+  resource extra-send-error-detail {}
 
   /// An `error` code, optionally with extra request error information.
   record error-with-detail {
@@ -1321,7 +1372,7 @@ interface kv-store {
   use async-io.{pollable as pending-list};
 
   /// A value indicating the status of a KV store operation.
-  enum kv-error {
+  variant kv-error {
     /// KV store cannot or will not process the request due to something that is perceived to be a
     /// client error.
     ///
@@ -1348,7 +1399,12 @@ interface kv-store {
     ///
     /// This means that some unexpected error occurred.
     generic-error,
+    /// Additional error information may be added in the future via this resource type.
+    extra(extra-kv-error),
   }
+
+  /// Extensibility for `kv-error`
+  resource extra-kv-error {}
 
   /// Wait on the async lookup of a value in the KV Store.
   ///
@@ -2051,6 +2107,11 @@ interface cache {
       options: write-options,
     ) -> result<_, error>;
 
+    /// Get the state of a cache lookup, waiting for the lookup to complete if necessary.
+    ///
+    /// Note that FOUND == USABLE, and means "usable" (fresh or stale-while-revalidate).
+    /// Some SDKs were released that checked only FOUND to infer "usable";
+    /// we preserve the equivalence for backwards compatibility.
     get-state: func() -> result<lookup-state, error>;
 
     /// Gets the user metadata of the found object, returning `ok(none)` if no object
@@ -2142,6 +2203,10 @@ interface cache {
 
     /// Gets the lookup state of the existing object during replace, returning
     /// `ok(none)` if there was no object.
+    ///
+    /// Note that FOUND == USABLE, and means "usable" (fresh or stale-while-revalidate).
+    /// Some SDKs were released that checked only FOUND to infer "usable";
+    /// we preserve the equivalence for backwards compatibility.
     get-state: func() -> result<option<lookup-state>, error>;
 
     /// Gets the user metadata of the existing object during replace, returning
@@ -2235,6 +2300,7 @@ interface cache {
     stale,
     /// this client is requested to insert or revalidate an object
     must-insert-or-update,
+    usable-if-error,
   }
 
   /// Performs a non-request-collapsing cache insertion (or update).
@@ -2591,6 +2657,8 @@ interface http-cache {
     ///
     /// If this field is not set, the default value is zero.
     stale-while-revalidate-ns: option<duration-ns>,
+
+    stale-if-error-ns: option<duration-ns>,
 
     /// A list of surrogate keys that may be used to purge this response.
     ///

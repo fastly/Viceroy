@@ -213,6 +213,10 @@
 
     ;;; Gets the lookup state of the existing object during replace, returning
     ;;; the `$none` error if there was no object.
+    ;;;
+    ;;; Note that FOUND == USABLE, and means "usable" (fresh or stale-while-revalidate).
+    ;;; Some SDKs were released that checked only FOUND to infer "usable";
+    ;;; we preserve the equivalence for backwards compatibility.
     (@interface func (export "replace_get_state")
         (param $handle $cache_replace_handle)
         (result $err (expected $cache_lookup_state (error $fastly_status)))
@@ -322,6 +326,11 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;;; Get the state of a cache lookup, waiting for the lookup to complete if necessary.
+    ;;;
+    ;;; Note that FOUND == USABLE, and means "usable" (fresh or stale-while-revalidate).
+    ;;; Some SDKs were released that checked only FOUND to infer "usable";
+    ;;; we preserve the equivalence for backwards compatibility.
     (@interface func (export "get_state")
         (param $handle $cache_handle)
         (result $err (expected $cache_lookup_state (error $fastly_status)))

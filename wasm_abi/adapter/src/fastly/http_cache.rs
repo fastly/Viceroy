@@ -150,6 +150,7 @@ mod http_cache {
                 STALE_WHILE_REVALIDATE_NS,
                 (*options).stale_while_revalidate_ns
             ),
+            stale_if_error_ns: None,
             surrogate_keys,
             length: when_enabled!(LENGTH, (*options).length),
             sensitive_data: mask.contains(HttpCacheWriteOptionsMask::SENSITIVE_DATA),

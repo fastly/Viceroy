@@ -271,6 +271,15 @@ pub mod fastly_compute_runtime {
         }
         FastlyStatus::OK
     }
+
+    #[export_name = "fastly_compute_runtime#get_heap_mib"]
+    pub fn get_heap_mib(heap_mb_out: *mut u32) -> FastlyStatus {
+        let heap = crate::bindings::fastly::compute::compute_runtime::get_heap_mib();
+        unsafe {
+            *main_ptr!(heap_mb_out) = heap;
+        }
+        FastlyStatus::OK
+    }
 }
 
 pub mod fastly_http_body {
@@ -1067,6 +1076,7 @@ pub mod fastly_http_req {
             const DNS_ERROR_RCODE = 1 << 1;
             const DNS_ERROR_INFO_CODE = 1 << 2;
             const TLS_ALERT_ID = 1 << 3;
+            const H2_ERROR = 1 << 4;
         }
     }
 
@@ -1098,6 +1108,7 @@ pub mod fastly_http_req {
         InternalError,
         TlsAlertReceived,
         TlsProtocolError,
+        H2Error,
     }
 
     #[repr(C)]
@@ -1108,6 +1119,8 @@ pub mod fastly_http_req {
         pub dns_error_rcode: u16,
         pub dns_error_info_code: u16,
         pub tls_alert_id: u8,
+        pub h2_error_frame: u8,
+        pub h2_error_code: u32,
     }
 
     /// Convert from witx ABI values to a `CacheOverride`.
@@ -1216,6 +1229,8 @@ pub mod fastly_http_req {
                 http_req::SendErrorDetail::TlsProtocolError => {
                     SendErrorDetailTag::TlsProtocolError.into()
                 }
+                http_req::SendErrorDetail::H2Error(h2_error) => h2_error.into(),
+                http_req::SendErrorDetail::Extra(extra) => extra.into(),
             }
         }
     }
@@ -1239,6 +1254,8 @@ pub mod fastly_http_req {
                 dns_error_rcode,
                 dns_error_info_code,
                 tls_alert_id: Default::default(),
+                h2_error_frame: Default::default(),
+                h2_error_code: Default::default(),
             }
         }
     }
@@ -1257,6 +1274,42 @@ pub mod fastly_http_req {
                 dns_error_rcode: Default::default(),
                 dns_error_info_code: Default::default(),
                 tls_alert_id,
+                h2_error_frame: Default::default(),
+                h2_error_code: Default::default(),
+            }
+        }
+    }
+
+    impl From<http_req::H2ErrorDetail> for SendErrorDetail {
+        fn from(h2_err: http_req::H2ErrorDetail) -> Self {
+            let mut mask = SendErrorDetailMask::empty();
+            mask |= SendErrorDetailMask::H2_ERROR;
+
+            Self {
+                tag: SendErrorDetailTag::H2Error,
+                mask,
+                dns_error_rcode: Default::default(),
+                dns_error_info_code: Default::default(),
+                tls_alert_id: Default::default(),
+                h2_error_code: h2_err.error_code,
+                h2_error_frame: h2_err.frame_type,
+            }
+        }
+    }
+
+    impl From<http_req::ExtraSendErrorDetail> for SendErrorDetail {
+        fn from(_: http_req::ExtraSendErrorDetail) -> Self {
+            // We haven't implemented any extra send error types yet, so for now
+            // we just always claim that it's an internal error, since any
+            // occurrences of it would be an adapter bug.
+            Self {
+                tag: SendErrorDetailTag::InternalError,
+                mask: SendErrorDetailMask::empty(),
+                dns_error_rcode: Default::default(),
+                dns_error_info_code: Default::default(),
+                tls_alert_id: Default::default(),
+                h2_error_code: Default::default(),
+                h2_error_frame: Default::default(),
             }
         }
     }
@@ -1269,7 +1322,19 @@ pub mod fastly_http_req {
                 dns_error_rcode: Default::default(),
                 dns_error_info_code: Default::default(),
                 tls_alert_id: Default::default(),
+                h2_error_frame: Default::default(),
+                h2_error_code: Default::default(),
             }
+        }
+    }
+
+    fn encode_tls_version(val: u32) -> Result<http_types::TlsVersion, ()> {
+        match val {
+            0 => Ok(0x0301), // TLS 1.0
+            1 => Ok(0x0302), // TLS 1.1
+            2 => Ok(0x0303), // TLS 1.2
+            3 => Ok(0x0304), // TLS 1.3
+            _ => Err(()),
         }
     }
 
@@ -2050,11 +2115,11 @@ pub mod fastly_http_req {
         let sni_hostname = make_str!(sni_hostname, sni_hostname_len);
         let client_cert = make_str!(client_certificate, client_certificate_len);
 
-        let tls_version_min = match unsafe { (*config).ssl_min_version }.try_into() {
+        let tls_version_min = match encode_tls_version(unsafe { (*config).ssl_min_version }) {
             Ok(tls_version_min) => tls_version_min,
             Err(_) => return FastlyStatus::INVALID_ARGUMENT,
         };
-        let tls_version_max = match unsafe { (*config).ssl_max_version }.try_into() {
+        let tls_version_max = match encode_tls_version(unsafe { (*config).ssl_max_version }) {
             Ok(tls_version_max) => tls_version_max,
             Err(_) => return FastlyStatus::INVALID_ARGUMENT,
         };
@@ -3005,6 +3070,12 @@ pub mod fastly_object_store {
                 }
                 FastlyStatus::OK
             }
+            Err(kv_store::OpenError::NotFound) => {
+                unsafe {
+                    *main_ptr!(object_store_handle_out) = INVALID_HANDLE;
+                }
+                FastlyStatus::INVALID_ARGUMENT
+            }
             Err(e) => {
                 unsafe {
                     *main_ptr!(object_store_handle_out) = INVALID_HANDLE;
@@ -3024,16 +3095,27 @@ pub mod fastly_object_store {
         let key = crate::make_str!(unsafe_main_ptr!(key_ptr), key_len);
         let object_store_handle =
             ManuallyDrop::new(unsafe { kv_store::Store::from_handle(object_store_handle) });
-        match object_store_handle.lookup(key) {
-            Ok(res) => {
-                unsafe {
-                    *main_ptr!(body_handle_out) =
-                        res.map(|res| res.take_handle()).unwrap_or(INVALID_HANDLE);
-                }
-                FastlyStatus::OK
-            }
-            Err(e) => e.into(),
+        // initialize out handle, in case of Err
+        unsafe {
+            *main_ptr!(body_handle_out) = INVALID_HANDLE;
         }
+        let handle = match object_store_handle.lookup(key) {
+            // 200, unless the body take fails
+            Ok(Some(entry)) => entry
+                .take_body()
+                .map(|body| body.take_handle())
+                .unwrap_or(INVALID_HANDLE),
+            // 404
+            Ok(None) => INVALID_HANDLE,
+            // 400, reproducing old weird behavior of the original hostcall
+            Err(kv_store::KvError::BadRequest) => INVALID_HANDLE,
+            Err(e) => return e.into(),
+        };
+        // set true handle if we didn't early return error
+        unsafe {
+            *main_ptr!(body_handle_out) = handle;
+        }
+        FastlyStatus::OK
     }
 
     #[export_name = "fastly_object_store#lookup_async"]
@@ -3064,16 +3146,27 @@ pub mod fastly_object_store {
     ) -> FastlyStatus {
         let pending_body_handle =
             unsafe { kv_store::PendingLookup::from_handle(pending_body_handle) };
-        match kv_store::await_lookup(pending_body_handle) {
-            Ok(res) => {
-                unsafe {
-                    *main_ptr!(body_handle_out) =
-                        res.map(|res| res.take_handle()).unwrap_or(INVALID_HANDLE);
-                }
-                FastlyStatus::OK
-            }
-            Err(e) => e.into(),
+        // initialize out handle, in case of Err
+        unsafe {
+            *main_ptr!(body_handle_out) = INVALID_HANDLE;
         }
+        let handle = match kv_store::await_lookup(pending_body_handle) {
+            // 200, unless the body take fails
+            Ok(Some(entry)) => entry
+                .take_body()
+                .map(|body| body.take_handle())
+                .unwrap_or(INVALID_HANDLE),
+            // 404
+            Ok(None) => INVALID_HANDLE,
+            // 400, reproducing old weird behavior of the original hostcall
+            Err(kv_store::KvError::BadRequest) => INVALID_HANDLE,
+            Err(e) => return e.into(),
+        };
+        // set true handle if we didn't early return error
+        unsafe {
+            *main_ptr!(body_handle_out) = handle;
+        }
+        FastlyStatus::OK
     }
 
     #[export_name = "fastly_object_store#insert"]
@@ -3360,7 +3453,7 @@ pub mod fastly_kv_store {
                 PayloadTooLarge => Self::PayloadTooLarge,
                 InternalError => Self::InternalError,
                 TooManyRequests => Self::TooManyRequests,
-                GenericError => Self::Uninitialized,
+                GenericError | Extra(_) => Self::Uninitialized,
             }
         }
     }
@@ -3927,28 +4020,13 @@ pub mod fastly_backend {
         }
     }
 
-    impl From<http_types::TlsVersion> for u32 {
-        fn from(val: http_types::TlsVersion) -> Self {
-            match val {
-                http_types::TlsVersion::Tls1 => 0,
-                http_types::TlsVersion::Tls11 => 1,
-                http_types::TlsVersion::Tls12 => 2,
-                http_types::TlsVersion::Tls13 => 3,
-            }
-        }
-    }
-
-    impl TryFrom<u32> for http_types::TlsVersion {
-        type Error = u32;
-
-        fn try_from(val: u32) -> Result<Self, Self::Error> {
-            match val {
-                0 => Ok(http_types::TlsVersion::Tls1),
-                1 => Ok(http_types::TlsVersion::Tls11),
-                2 => Ok(http_types::TlsVersion::Tls12),
-                3 => Ok(http_types::TlsVersion::Tls13),
-                _ => Err(val),
-            }
+    fn decode_tls_version(val: http_types::TlsVersion) -> Result<u32, ()> {
+        match val {
+            0x0301 => Ok(0), // TLS 1.0
+            0x0302 => Ok(1), // TLS 1.1
+            0x0303 => Ok(2), // TLS 1.2
+            0x0304 => Ok(3), // TLS 1.3
+            _ => Err(()),
         }
     }
 
@@ -4131,12 +4209,15 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
         match adapter_backend::get_tls_min_version(backend) {
-            Ok(Some(res)) => {
-                unsafe {
-                    *main_ptr!(value) = u32::from(res);
+            Ok(Some(res)) => match decode_tls_version(res) {
+                Ok(decoded) => {
+                    unsafe {
+                        *main_ptr!(value) = decoded;
+                    }
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
-            }
+                Err(()) => FastlyStatus::UNSUPPORTED,
+            },
             Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
@@ -4150,12 +4231,15 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
         match adapter_backend::get_tls_max_version(backend) {
-            Ok(Some(res)) => {
-                unsafe {
-                    *main_ptr!(value) = u32::from(res);
+            Ok(Some(res)) => match decode_tls_version(res) {
+                Ok(decoded) => {
+                    unsafe {
+                        *main_ptr!(value) = decoded;
+                    }
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
-            }
+                Err(()) => FastlyStatus::UNSUPPORTED,
+            },
             Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
@@ -4745,7 +4829,7 @@ mod fastly_image_optimizer {
 /// allocation to convert a `&[Resource]` to a `&[u32]`.
 fn select_wrapper(hs: &[u32]) -> u32 {
     unsafe {
-        #[link(wasm_import_module = "fastly:compute/async-io@0.0.0-prerelease.0")]
+        #[link(wasm_import_module = "fastly:compute/async-io@0.1.0")]
         extern "C" {
             #[link_name = "select"]
             fn wit_import(_: *const u32, _: usize) -> u32;
@@ -4764,7 +4848,7 @@ fn select_with_timeout_wrapper(hs: &[u32], timeout_ms: u32) -> Option<u32> {
         struct RetArea([::core::mem::MaybeUninit<u8>; 8]);
         let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 8]);
         let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-        #[link(wasm_import_module = "fastly:compute/async-io@0.0.0-prerelease.0")]
+        #[link(wasm_import_module = "fastly:compute/async-io@0.1.0")]
         extern "C" {
             #[link_name = "select-with-timeout"]
             fn wit_import(_: *const u32, _: usize, _: u32, _: *mut u8);

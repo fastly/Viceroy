@@ -73,7 +73,9 @@ impl From<crate::bindings::fastly::compute::kv_store::KvError> for FastlyStatus 
             KvError::BadRequest | KvError::PreconditionFailed | KvError::PayloadTooLarge => {
                 std::hint::black_box(FastlyStatus::INVALID_ARGUMENT)
             }
-            KvError::GenericError | KvError::InternalError => FastlyStatus::UNKNOWN_ERROR,
+            KvError::GenericError | KvError::InternalError | KvError::Extra(_) => {
+                FastlyStatus::UNKNOWN_ERROR
+            }
             KvError::TooManyRequests => FastlyStatus::LIMITEXCEEDED,
         }
     }
