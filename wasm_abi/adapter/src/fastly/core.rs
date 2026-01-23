@@ -1328,6 +1328,16 @@ pub mod fastly_http_req {
         }
     }
 
+    fn encode_tls_version(val: u32) -> Result<http_types::TlsVersion, ()> {
+        match val {
+            0 => Ok(0x0301), // TLS 1.0
+            1 => Ok(0x0302), // TLS 1.1
+            2 => Ok(0x0303), // TLS 1.2
+            3 => Ok(0x0304), // TLS 1.3
+            _ => Err(()),
+        }
+    }
+
     #[export_name = "fastly_http_req#body_downstream_get"]
     pub fn body_downstream_get(
         req_handle_out: *mut RequestHandle,
@@ -2105,11 +2115,11 @@ pub mod fastly_http_req {
         let sni_hostname = make_str!(sni_hostname, sni_hostname_len);
         let client_cert = make_str!(client_certificate, client_certificate_len);
 
-        let tls_version_min = match unsafe { (*config).ssl_min_version }.try_into() {
+        let tls_version_min = match encode_tls_version(unsafe { (*config).ssl_min_version }) {
             Ok(tls_version_min) => tls_version_min,
             Err(_) => return FastlyStatus::INVALID_ARGUMENT,
         };
-        let tls_version_max = match unsafe { (*config).ssl_max_version }.try_into() {
+        let tls_version_max = match encode_tls_version(unsafe { (*config).ssl_max_version }) {
             Ok(tls_version_max) => tls_version_max,
             Err(_) => return FastlyStatus::INVALID_ARGUMENT,
         };
@@ -3443,7 +3453,7 @@ pub mod fastly_kv_store {
                 PayloadTooLarge => Self::PayloadTooLarge,
                 InternalError => Self::InternalError,
                 TooManyRequests => Self::TooManyRequests,
-                GenericError => Self::Uninitialized,
+                GenericError | Extra(_) => Self::Uninitialized,
             }
         }
     }
@@ -4010,28 +4020,13 @@ pub mod fastly_backend {
         }
     }
 
-    impl From<http_types::TlsVersion> for u32 {
-        fn from(val: http_types::TlsVersion) -> Self {
-            match val {
-                http_types::TlsVersion::Tls1 => 0,
-                http_types::TlsVersion::Tls11 => 1,
-                http_types::TlsVersion::Tls12 => 2,
-                http_types::TlsVersion::Tls13 => 3,
-            }
-        }
-    }
-
-    impl TryFrom<u32> for http_types::TlsVersion {
-        type Error = u32;
-
-        fn try_from(val: u32) -> Result<Self, Self::Error> {
-            match val {
-                0 => Ok(http_types::TlsVersion::Tls1),
-                1 => Ok(http_types::TlsVersion::Tls11),
-                2 => Ok(http_types::TlsVersion::Tls12),
-                3 => Ok(http_types::TlsVersion::Tls13),
-                _ => Err(val),
-            }
+    fn decode_tls_version(val: http_types::TlsVersion) -> Result<u32, ()> {
+        match val {
+            0x0301 => Ok(0), // TLS 1.0
+            0x0302 => Ok(1), // TLS 1.1
+            0x0303 => Ok(2), // TLS 1.2
+            0x0304 => Ok(3), // TLS 1.3
+            _ => Err(()),
         }
     }
 
@@ -4214,12 +4209,15 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
         match adapter_backend::get_tls_min_version(backend) {
-            Ok(Some(res)) => {
-                unsafe {
-                    *main_ptr!(value) = u32::from(res);
+            Ok(Some(res)) => match decode_tls_version(res) {
+                Ok(decoded) => {
+                    unsafe {
+                        *main_ptr!(value) = decoded;
+                    }
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
-            }
+                Err(()) => FastlyStatus::UNSUPPORTED,
+            },
             Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
@@ -4233,12 +4231,15 @@ pub mod fastly_backend {
     ) -> FastlyStatus {
         let backend = crate::make_str!(unsafe_main_ptr!(backend_ptr), backend_len);
         match adapter_backend::get_tls_max_version(backend) {
-            Ok(Some(res)) => {
-                unsafe {
-                    *main_ptr!(value) = u32::from(res);
+            Ok(Some(res)) => match decode_tls_version(res) {
+                Ok(decoded) => {
+                    unsafe {
+                        *main_ptr!(value) = decoded;
+                    }
+                    FastlyStatus::OK
                 }
-                FastlyStatus::OK
-            }
+                Err(()) => FastlyStatus::UNSUPPORTED,
+            },
             Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
@@ -4828,7 +4829,7 @@ mod fastly_image_optimizer {
 /// allocation to convert a `&[Resource]` to a `&[u32]`.
 fn select_wrapper(hs: &[u32]) -> u32 {
     unsafe {
-        #[link(wasm_import_module = "fastly:compute/async-io@0.0.0-prerelease.1")]
+        #[link(wasm_import_module = "fastly:compute/async-io@0.1.0")]
         extern "C" {
             #[link_name = "select"]
             fn wit_import(_: *const u32, _: usize) -> u32;
@@ -4847,7 +4848,7 @@ fn select_with_timeout_wrapper(hs: &[u32], timeout_ms: u32) -> Option<u32> {
         struct RetArea([::core::mem::MaybeUninit<u8>; 8]);
         let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 8]);
         let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-        #[link(wasm_import_module = "fastly:compute/async-io@0.0.0-prerelease.1")]
+        #[link(wasm_import_module = "fastly:compute/async-io@0.1.0")]
         extern "C" {
             #[link_name = "select-with-timeout"]
             fn wit_import(_: *const u32, _: usize, _: u32, _: *mut u8);

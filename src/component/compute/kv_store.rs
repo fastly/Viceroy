@@ -331,3 +331,9 @@ impl kv_store::HostExtraListOptions for ComponentCtx {
         Ok(())
     }
 }
+
+impl kv_store::HostExtraKvError for ComponentCtx {
+    fn drop(&mut self, _options: Resource<kv_store::ExtraKvError>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
