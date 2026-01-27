@@ -1,6 +1,6 @@
 [package]
 name = "viceroy-lib"
-version = "0.16.4"
+version = "0.16.5"
 description = "Viceroy implementation details."
 authors = ["Fastly"]
 edition = "2021"
@@ -23,7 +23,7 @@ include = [
     "wasm_abi/compute-at-edge-abi/**/*.witx",
     "wasm_abi/data/*.wasm",
 ]
-rust-version = "1.87"
+rust-version = "1.88"
 
 [dependencies]
 anyhow = { workspace = true }

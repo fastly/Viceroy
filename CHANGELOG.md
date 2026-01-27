@@ -1,5 +1,9 @@
 ## Unreleased
 
+## 0.16.4 (2026-01-26)
+
+- Update to the latest WITs (0.1.0—no more "prerelease") and adapter. ([#574](https://github.com/fastly/Viceroy/pull/574))
+
 ## 0.16.3 (2026-01-20)
 
 - Implement `fastly_compute_runtime::get_heap_mib` hostcall ([#572](https://github.com/fastly/Viceroy/pull/572)) 

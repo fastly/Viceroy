@@ -14,7 +14,7 @@ Below are the steps needed to do a Viceroy release:
    branch contain the Changelog commit.
 1. Run `make ci` locally to make sure that everything will pass before pushing
    the branch and opening up a PR.
-1. After you get approval, run `git tag vx.y.z HEAD && git push origin --tags`.
+1. After you get approval, run `git tag vx.y.z HEAD && git push origin vx.y.z`.
    Pushing this tag will kick off a build for all of the release artifacts.
 1. After CI completes, we should publish each crate in the workspace to the
    crates.io registry. Note that we must do this in order of dependencies:
