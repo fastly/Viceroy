@@ -17,7 +17,7 @@ jobs:
         run: |
           if [[ "${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}" == "true" ]]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "PR has 'skip-changelog' label - skipping validation"
+            echo "Skipping changelog validation due to skip-changelog label"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
@@ -25,11 +25,10 @@ jobs:
       - name: Validate changelog entry
         if: steps.check-skip.outputs.skip == 'false'
         run: |
-          # Check if CHANGELOG.md has been modified
           CHANGELOG_MODIFIED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^CHANGELOG\.md$' || echo "")
           
           if [ -z "$CHANGELOG_MODIFIED" ]; then
-            echo "::error::No changelog entry found. Please add an entry to CHANGELOG.md or add the 'skip-changelog' label if this change doesn't require a changelog entry."
+            echo "::error::No changelog entry found. Please add an entry to CHANGELOG.md or add the 'skip-changelog' label if this change does not require a changelog entry."
             exit 1
           else
             echo "Changelog has been updated"
