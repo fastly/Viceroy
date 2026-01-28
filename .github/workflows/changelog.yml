@@ -8,8 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
+          # We want to check modified files from base_ref (merge target) to the current commit,
+          # so we need the full history of the current branch.
           fetch-depth: 0
 
       - name: Check for skip label
@@ -25,9 +27,11 @@ jobs:
       - name: Validate changelog entry
         if: steps.check-skip.outputs.skip == 'false'
         run: |
-          CHANGELOG_MODIFIED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^CHANGELOG\.md$' || echo "")
-          
-          if [ -z "$CHANGELOG_MODIFIED" ]; then
+          # --quiet implies --exit-code (but doesn't produce output).
+          # --exit-code exits 1 if there are differences, or 0 if there are no differences.
+          # So: this command exits 1 if CHANGELOG.md was changed between the base and HEAD,
+          # or 0 if there are no diffs.
+          if git diff --quiet origin/"${{ github.base_ref }}"...HEAD -- CHANGELOG.md; then
             echo "::error::No changelog entry found. Please add an entry to CHANGELOG.md or add the 'skip-changelog' label if this change does not require a changelog entry."
             exit 1
           else
