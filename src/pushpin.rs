@@ -68,8 +68,8 @@ const PROTECTED_REQ_HEADERS: &[&str] = &[
 /// If Pushpin responds with `101 Switching Protocols`, then use the provided `OnUpgrade` future
 /// to take over the incoming request connection and wire it up with the Pushpin connection.
 ///
-/// To distinguish backends, `"/"` + `backend_name` is prepended to the request path.
-/// Pushpin routes should be configured with `path_beg=` and `path_rem=`.
+/// To distinguish backends, the HTTP request header `pushpin-route: <backend_name>` is sent with
+/// the request. Pushpin routes should be configured with `id=<backend_name>`.
 pub async fn proxy_through_pushpin(
     pushpin_addr: SocketAddr,
     backend_name: String,
