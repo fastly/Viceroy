@@ -1,1 +1,36 @@
+name: Changelog
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Check for skip label
+        id: check-skip
+        run: |
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}" == "true" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "PR has 'skip-changelog' label - skipping validation"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate changelog entry
+        if: steps.check-skip.outputs.skip == 'false'
+        run: |
+          # Check if CHANGELOG.md has been modified
+          CHANGELOG_MODIFIED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^CHANGELOG\.md$' || echo "")
+          
+          if [ -z "$CHANGELOG_MODIFIED" ]; then
+            echo "::error::No changelog entry found. Please add an entry to CHANGELOG.md or add the 'skip-changelog' label if this change doesn't require a changelog entry."
+            exit 1
+          else
+            echo "Changelog has been updated"
+          fi
