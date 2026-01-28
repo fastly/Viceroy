@@ -168,6 +168,7 @@ impl FastlyHttpResp for Session {
             };
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
+        tracing::info!("wiggle_abi::send_downstream()");
         self.send_downstream_response(resp)
     }
 

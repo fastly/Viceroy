@@ -78,10 +78,18 @@ pub async fn proxy_through_pushpin(
     original_request_body: Body,
     original_request_on_upgrade: OnUpgrade,
 ) -> Response<Body> {
-    debug!("Proxying through Pushpin backend '{}'.", backend_name);
+    info!(
+        "proxy_through_pushpin(): Proxying through Pushpin backend '{}'.",
+        backend_name
+    );
+
+    debug!("TcpStream connect() to '{}'.", pushpin_addr);
 
     let pushpin_stream = match TcpStream::connect(pushpin_addr).await {
-        Ok(str) => str,
+        Ok(str) => {
+            debug!("Connected to Pushpin.");
+            str
+        }
         Err(e) => {
             error!("Could not connect to Pushpin: {e}.");
             return build_error_response(
@@ -105,6 +113,9 @@ pub async fn proxy_through_pushpin(
             original_request_info.method.as_str(),
         )
     };
+
+    debug!("Building request '{}' '{}'.", method, path_and_query);
+
     let mut req = Request::builder().method(method).uri(path_and_query);
 
     if let Some(redirect_request_info) = redirect_request_info {
@@ -114,6 +125,7 @@ pub async fn proxy_through_pushpin(
                 .iter()
                 .any(|h| h.eq_ignore_ascii_case(name.as_str()))
             {
+                debug!("Add header '{}' '{:?}'.", name.as_str(), value);
                 req = req.header(name, value);
             }
         }
@@ -123,19 +135,26 @@ pub async fn proxy_through_pushpin(
                 .iter()
                 .any(|h| h.eq_ignore_ascii_case(name.as_str()))
             {
+                debug!("Add header '{}' '{:?}'.", name.as_str(), value);
                 req = req.header(name, value);
             }
         }
     } else {
         for (name, value) in &original_request_info.headers {
+            debug!("Add header '{}' '{:?}'.", name.as_str(), value);
             req = req.header(name, value);
         }
     }
     req = req.header("host", pushpin_addr.to_string());
     req = req.header("pushpin-route", backend_name.to_string());
 
+    debug!("Add body");
+
     let req = match req.body(original_request_body) {
-        Ok(req) => req,
+        Ok(req) => {
+            debug!("Created Pushpin proxy request");
+            req
+        }
         Err(e) => {
             error!("Failed to build Pushpin proxy request: {}", e);
             return build_error_response(
@@ -145,11 +164,16 @@ pub async fn proxy_through_pushpin(
         }
     };
 
+    debug!("Constructing connection");
+
     let (mut sender, conn) = match hyper::client::conn::Builder::new()
         .handshake(pushpin_stream)
         .await
     {
-        Ok(res) => res,
+        Ok(res) => {
+            debug!("Pushpin handshake success");
+            res
+        }
         Err(e) => {
             error!("Pushpin handshake failed: {}", e);
             return build_error_response(
@@ -163,6 +187,7 @@ pub async fn proxy_through_pushpin(
     // We need this future to complete so we can get the raw IO stream back after the HTTP response is parsed.
     // `without_shutdown` prevents hyper from trying to gracefully close the connection,
     // which is what we want when taking it over for a WebSocket.
+    debug!("Spawning connection driver");
     let conn_fut = tokio::spawn(conn.without_shutdown());
 
     let upstream_resp = match sender.send_request(req).await {
@@ -192,6 +217,8 @@ pub async fn proxy_through_pushpin(
         ));
     }
 
+    info!("proxy_through_pushpin(): Returning upstream response");
+
     upstream_resp
 }
 
@@ -200,21 +227,27 @@ async fn proxy_upgraded_connection(
     downstream_req_on_upgrade: OnUpgrade,
     upstream_conn_fut: JoinHandle<Result<ConnParts<TcpStream>, hyper::Error>>,
 ) {
+    info!("proxy_upgraded_connection(): Background task upgrading connection");
+
     // Await the client-side upgrade. This future will not resolve until
     // the `101` response is sent to the client by the main service.
     let mut downstream_upgraded = match downstream_req_on_upgrade.await {
-        Ok(upgraded) => upgraded,
+        Ok(upgraded) => {
+            debug!("Downstream client connection upgraded.");
+            upgraded
+        }
         Err(e) => {
             error!("Downstream client upgrade failed: {}", e);
             return;
         }
     };
 
-    debug!("Downstream client connection upgraded.");
-
     // Await the server-side connection driver to get the raw IO back.
     let mut upstream_parts = match upstream_conn_fut.await {
-        Ok(Ok(parts)) => parts,
+        Ok(Ok(parts)) => {
+            debug!("Upstream connection IO stream obtained.");
+            parts
+        }
         Ok(Err(e)) => {
             error!("Upstream connection error: {}", e);
             return;
@@ -225,12 +258,12 @@ async fn proxy_upgraded_connection(
         }
     };
 
-    debug!("Upstream connection IO stream obtained.");
+    info!("proxy_upgraded_connection(): Background task starting bidirectional copy...");
 
     match copy_bidirectional(&mut downstream_upgraded, &mut upstream_parts.io).await {
         Ok((from_client, from_server)) => {
             info!(
-                "Upgraded proxy connection finished gracefully. Bytes transferred: client->server: {}, server->client: {}",
+                "proxy_upgraded_connection(): Upgraded proxy connection finished gracefully. Bytes transferred: client->server: {}, server->client: {}",
                 from_client, from_server
             );
         }

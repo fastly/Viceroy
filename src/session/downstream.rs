@@ -106,6 +106,8 @@ impl DownstreamResponseState {
             return Err(Error::InvalidArgument);
         }
 
+        tracing::info!("send()");
+
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
         match mem::replace(self, Sent) {
             Closed => panic!("downstream response channel was closed"),
@@ -121,6 +123,8 @@ impl DownstreamResponseState {
 
     pub fn redirect_to_pushpin(&mut self, redirect_info: PushpinRedirectInfo) -> Result<(), Error> {
         use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
+
+        tracing::info!("redirect_to_pushpin()");
 
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
         match mem::replace(self, RedirectingToPushpin) {

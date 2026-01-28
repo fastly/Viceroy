@@ -454,8 +454,6 @@ impl ExecuteCtx {
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
 
-        info!("response status: {:?}", resp.status());
-
         if let Some(e) = err {
             match e.downcast::<NonHttpResponse>() {
                 Ok(NonHttpResponse::PushpinRedirect(redirect_info)) => {
@@ -495,6 +493,8 @@ impl ExecuteCtx {
                 }
             }
         }
+
+        info!("response status: {:?}", resp.status());
 
         Ok((resp, err))
     }
@@ -731,6 +731,7 @@ impl ExecuteCtx {
                     Err(e) => {
                         if let Some(exit) = e.downcast_ref::<I32Exit>() {
                             if exit.0 == 0 {
+                                event!(Level::DEBUG, "WebAssembly exited with code 0 (I32Exit). Treating as success.");
                                 Ok(())
                             } else {
                                 event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);

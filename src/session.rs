@@ -259,6 +259,8 @@ impl Session {
     /// This method must only be called once per downstream request, after which attempting
     /// to send another response will trigger a panic.
     pub fn send_downstream_response(&mut self, resp: Response<Body>) -> Result<(), Error> {
+        tracing::info!("send_downstream_response()");
+
         self.downstream_resp.send(resp)
     }
 
@@ -280,6 +282,7 @@ impl Session {
     /// Ensure the downstream response sender is closed, and send the provided response if it
     /// isn't.
     pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
+        tracing::info!("close_downstream_response_sender()");
         let _ = self.downstream_resp.send(resp);
     }
 

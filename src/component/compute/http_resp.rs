@@ -30,6 +30,7 @@ impl http_resp::Host for ComponentCtx {
             let body = self.session_mut().take_body(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
+        tracing::info!("component/compute/http_resp::send_downstream()");
         self.session_mut().send_downstream_response(resp)?;
         Ok(())
     }
@@ -46,6 +47,7 @@ impl http_resp::Host for ComponentCtx {
             let body = self.session_mut().begin_streaming(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
+        tracing::info!("component/compute/http_resp::send_downstream_streaming()");
         self.session_mut().send_downstream_response(resp)?;
         Ok(())
     }
