@@ -1,0 +1,167 @@
+name: Debug Pre-release
+
+on:
+  push:
+    tags:
+      - "debug-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. debug-feature-20260128-1)"
+        required: true
+      ref:
+        description: "Git ref (branch/sha) to build from (optional; defaults to the tag's commit or default branch)"
+        required: false
+      publish:
+        description: "If true, undraft the release after uploading assets"
+        required: false
+        default: "true"
+
+concurrency:
+  group: debug-prerelease-${{ github.event_name }}-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-toolchain: ["1.88"]
+        os: [ubuntu-24.04, macos-14, windows-2022]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows-2022
+            arch: arm64
+        include:
+          - os: ubuntu-24.04
+            name: linux
+            rust_abi: unknown-linux-gnu
+          - os: macos-14
+            name: darwin
+            rust_abi: apple-darwin
+          - os: windows-2022
+            name: windows
+            rust_abi: pc-windows-msvc
+            extension: .exe
+          - arch: arm64
+            rust_arch: aarch64
+          - arch: amd64
+            rust_arch: x86_64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Resolve tag name
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          # For workflow_dispatch, allow building from a specified ref (branch/sha).
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || '' }}
+
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install ${{ matrix.rust-toolchain }} --profile minimal --target ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+
+      - name: Install C cross-compilation toolchain (linux aarch64)
+        if: ${{ matrix.name == 'linux' && matrix.arch != 'amd64' }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-${{ matrix.rust_arch }}-linux-gnu
+          echo "CC=${{ matrix.rust_arch }}-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C linker=${{ matrix.rust_arch }}-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --release --workspace --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+
+      - name: Strip symbols (linux)
+        if: ${{ matrix.name == 'linux' }}
+        shell: bash
+        run: |
+          ${{ matrix.rust_arch }}-linux-gnu-strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+
+      - name: Strip symbols (non-linux)
+        if: ${{ matrix.name != 'linux' }}
+        shell: bash
+        run: |
+          strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+
+      - name: Package
+        shell: bash
+        run: |
+          cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release
+          tar czf viceroy_${{ steps.meta.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
+
+      - name: Generate SHA256
+        shell: bash
+        run: |
+          cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release
+          FILE="viceroy_${{ steps.meta.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$FILE" > "${FILE}.sha256"
+          else
+            shasum -a 256 "$FILE" > "${FILE}.sha256"
+          fi
+
+      - name: Create/Update GitHub Release (draft prerelease) + upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          draft: true
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.meta.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
+            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.meta.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == 'true') }}
+
+    steps:
+      - name: Resolve tag name
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Undraft release (lookup by tag)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = "${{ steps.meta.outputs.tag }}";
+            const { data: rel } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag
+            });
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: rel.id,
+              draft: false,
+              prerelease: true
+            });
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
