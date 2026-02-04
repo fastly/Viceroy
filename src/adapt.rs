@@ -29,9 +29,14 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     // Determine if we have a main module or a library module.
     let library = !has_export(bytes, "_start");
+    let needs_no_shift_adapter = has_wit_bindgen_imports(bytes);
 
-    let bytes = crate::shift_mem::shift_main_module(bytes)?;
-    let (module, needs_no_shift_adapter) = mangle_imports(&bytes)?;
+    let bytes = if needs_no_shift_adapter {
+        bytes.to_vec()
+    } else {
+        crate::shift_mem::shift_main_module(bytes)?
+    };
+    let module = mangle_imports(&bytes)?;
 
     let adapter_bytes = match (library, needs_no_shift_adapter) {
         (true, true) => LIBRARY_ADAPTER_NOSHIFT_BYTES,
@@ -59,9 +64,8 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
 /// adapter's implementation. To accomplish this, we change imports to all come from the
 /// `wasi_snapshot_preview1` module, and mangle the function name to
 /// `original_module#original_name`.
-fn mangle_imports(bytes: &[u8]) -> anyhow::Result<(wasm_encoder::Module, bool)> {
+fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
     let mut module = wasm_encoder::Module::new();
-    let mut needs_no_shift_adapter = false;
 
     for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
         let payload = payload?;
@@ -96,13 +100,11 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<(wasm_encoder::Module, bool)> 
                         let module = "wasi_snapshot_preview1";
                         let name = format!("{}#{}", import.module, import.name);
                         imports.import(module, &name, entity);
-                    } else if import.module == "wasi_snapshot_preview1" {
-                        // Leave wasi_snapshot_preview1 imports as-is.
-                        imports.import(import.module, import.name, entity);
                     } else {
-                        // It's a wit-bindgen-generated import which doesn't need
+                        // It's not a "fastly_" module, so it may be
+                        // "wasi_snapshot_preview1" which we should leave as-is,
+                        // or a wit-bindgen-generated import which doesn't need
                         // adapting.
-                        needs_no_shift_adapter = true;
                         imports.import(import.module, import.name, entity);
                     }
                 }
@@ -121,7 +123,7 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<(wasm_encoder::Module, bool)> 
         }
     }
 
-    Ok((module, needs_no_shift_adapter))
+    Ok(module)
 }
 
 /// Test whether `bytes` holds a wasm binary with an export named `wanted`.
@@ -147,7 +149,29 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
 
     false
 }
-
 fn is_fastly_module(module: &str) -> bool {
     module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
+}
+fn has_wit_bindgen_imports(bytes: &[u8]) -> bool {
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+        let Ok(payload) = payload else {
+            return false;
+        };
+        match payload {
+            wasmparser::Payload::ImportSection(section) => {
+                for import in section {
+                    let Ok(import) = import else {
+                        return false;
+                    };
+                    if !is_fastly_module(import.module) && import.module != "wasi_snapshot_preview1"
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    false
 }
