@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Remove unused WIT files from the source tree.
+
 ## 0.16.4 (2026-01-26)
 
 - Update to the latest WITs (0.1.0—no more "prerelease") and adapter. ([#574](https://github.com/fastly/Viceroy/pull/574))
