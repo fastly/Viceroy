@@ -44,6 +44,7 @@ mod descriptors;
 
 use crate::descriptors::{Descriptor, Descriptors, StreamType};
 
+#[cfg(not(feature = "noshift"))]
 // This const should always equal to the OFFSET defined in crates/xqd-codegen/src/shift_mem.rs
 pub const OFFSET: usize = 2 * PAGE_SIZE;
 
@@ -1651,6 +1652,17 @@ impl State {
 
     #[cold]
     fn new() -> *mut State {
+        #[cfg(feature = "noshift")]
+        #[link(wasm_import_module = "__main_module__")]
+        extern "C" {
+            fn cabi_realloc(
+                old_ptr: *mut u8,
+                old_len: usize,
+                align: usize,
+                new_len: usize,
+            ) -> *mut u8;
+        }
+
         assert!(matches!(
             unsafe { get_allocation_state() },
             AllocationState::StackAllocated
@@ -1658,6 +1670,16 @@ impl State {
 
         unsafe { set_allocation_state(AllocationState::StateAllocating) };
 
+        #[cfg(feature = "noshift")]
+        let ret = unsafe {
+            cabi_realloc(
+                std::ptr::null_mut(),
+                0,
+                mem::align_of::<UnsafeCell<State>>(),
+                mem::size_of::<UnsafeCell<State>>(),
+            ) as *mut State
+        };
+        #[cfg(not(feature = "noshift"))]
         // Use the second page of memory to store state
         let ret = (OFFSET - PAGE_SIZE) as *mut State;
 

@@ -1,5 +1,7 @@
 /// The full adapter.
 const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
+const ADAPTER_NOSHIFT_BYTES: &[u8] =
+    include_bytes!("../wasm_abi/data/viceroy-component-adapter.noshift.wasm");
 
 /// A version of the adapter that doesn't provide the `http_incoming` export.
 ///
@@ -7,6 +9,8 @@ const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-
 /// that does provide the `http_incoming` export.
 const LIBRARY_ADAPTER_BYTES: &[u8] =
     include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.wasm");
+const LIBRARY_ADAPTER_NOSHIFT_BYTES: &[u8] =
+    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.noshift.wasm");
 
 /// Check if the bytes represent a core wasm module, or a component.
 pub fn is_component(bytes: &[u8]) -> bool {
@@ -27,12 +31,13 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     let library = !has_export(bytes, "_start");
 
     let bytes = crate::shift_mem::shift_main_module(bytes)?;
-    let module = mangle_imports(&bytes)?;
+    let (module, needs_no_shift_adapter) = mangle_imports(&bytes)?;
 
-    let adapter_bytes = if library {
-        LIBRARY_ADAPTER_BYTES
-    } else {
-        ADAPTER_BYTES
+    let adapter_bytes = match (library, needs_no_shift_adapter) {
+        (true, true) => LIBRARY_ADAPTER_NOSHIFT_BYTES,
+        (true, false) => LIBRARY_ADAPTER_BYTES,
+        (false, true) => ADAPTER_NOSHIFT_BYTES,
+        (false, false) => ADAPTER_BYTES,
     };
 
     let component = wit_component::ComponentEncoder::default()
@@ -54,8 +59,9 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
 /// adapter's implementation. To accomplish this, we change imports to all come from the
 /// `wasi_snapshot_preview1` module, and mangle the function name to
 /// `original_module#original_name`.
-fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
+fn mangle_imports(bytes: &[u8]) -> anyhow::Result<(wasm_encoder::Module, bool)> {
     let mut module = wasm_encoder::Module::new();
+    let mut needs_no_shift_adapter = false;
 
     for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
         let payload = payload?;
@@ -80,13 +86,24 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
                         )
                     })?;
 
-                    // Leave the existing preview1 imports alone
-                    if import.module == "wasi_snapshot_preview1" {
-                        imports.import(import.module, import.name, entity);
-                    } else {
+                    if is_fastly_module(import.module) {
+                        // In order to build a single module that can serve as
+                        // the adapter for the many "fastly_*" modules we have,
+                        // as well as the "env" module we have, as well as for
+                        // the "wasi_snapshot_preview1" module, we mangle
+                        // "fastly_*" and "env" names and put them into the
+                        // "wasi_snapshot_preview1" module.
                         let module = "wasi_snapshot_preview1";
                         let name = format!("{}#{}", import.module, import.name);
                         imports.import(module, &name, entity);
+                    } else if import.module == "wasi_snapshot_preview1" {
+                        // Leave wasi_snapshot_preview1 imports as-is.
+                        imports.import(import.module, import.name, entity);
+                    } else {
+                        // It's a wit-bindgen-generated import which doesn't need
+                        // adapting.
+                        needs_no_shift_adapter = true;
+                        imports.import(import.module, import.name, entity);
                     }
                 }
 
@@ -104,7 +121,7 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
         }
     }
 
-    Ok(module)
+    Ok((module, needs_no_shift_adapter))
 }
 
 /// Test whether `bytes` holds a wasm binary with an export named `wanted`.
@@ -129,4 +146,8 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
     }
 
     false
+}
+
+fn is_fastly_module(module: &str) -> bool {
+    module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
 }

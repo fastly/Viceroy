@@ -39,6 +39,12 @@ strip = 'debuginfo'
 [profile.release-library]
 inherits = "release"
 
+[profile.release-library-noshift]
+inherits = "release"
+
+[profile.release-noshift]
+inherits = "release"
+
 [profile.dev.package.viceroy-component-adapter]
 # Make dev look like a release build since this adapter module won't work with
 # a debug build that uses data segments and such.
@@ -57,6 +63,10 @@ default = ["exports"]
 # imports-only "library" adapter, which is useful for building libraries that
 # don't have their own `main` function.
 exports = []
+# Build an adapter that doesn't shift the memory address, which falls back
+# to rely on `cabi_realloc` or `memory.grow` to maintain WASI state.
+# This is only needed when using wit-bindgen and wac locally.
+noshift = []
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
