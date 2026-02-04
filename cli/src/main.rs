@@ -134,7 +134,7 @@ pub async fn main() -> ExitCode {
                     }
                 };
 
-                match viceroy_lib::adapt::adapt_wat(&text, adapt_args.library) {
+                match viceroy_lib::adapt::adapt_wat(&text) {
                     Ok(module) => module,
                     Err(e) => {
                         event!(Level::ERROR, "Failed to adapt wat: {e}");
@@ -142,7 +142,7 @@ pub async fn main() -> ExitCode {
                     }
                 }
             } else {
-                match viceroy_lib::adapt::adapt_bytes(&bytes, adapt_args.library) {
+                match viceroy_lib::adapt::adapt_bytes(&bytes) {
                     Ok(module) => module,
                     Err(e) => {
                         event!(Level::ERROR, "Failed to adapt module: {e}");

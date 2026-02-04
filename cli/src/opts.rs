@@ -249,10 +249,6 @@ pub struct AdaptArgs {
     /// effect if you set RUST_LOG to a value before starting Viceroy
     #[arg(short = 'v', action = clap::ArgAction::Count)]
     verbosity: u8,
-
-    /// Apply the "library" adapter, which only supports imports, and not
-    /// exports.
-    library: bool,
 }
 
 impl AdaptArgs {

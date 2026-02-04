@@ -1,5 +1,10 @@
+/// The full adapter.
 const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
 
+/// A version of the adapter that doesn't provide the `http_incoming` export.
+///
+/// This is used by "library" components meant to be linked to a main component
+/// that does provide the `http_incoming` export.
 const LIBRARY_ADAPTER_BYTES: &[u8] =
     include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.wasm");
 
@@ -10,18 +15,20 @@ pub fn is_component(bytes: &[u8]) -> bool {
 
 /// Given bytes that represent a core wasm module in the wat format, adapt it to a component using
 /// the viceroy adapter.
-pub fn adapt_wat(wat: &str, library: bool) -> anyhow::Result<Vec<u8>> {
+pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
     let bytes = wat::parse_str(wat)?;
-    adapt_bytes(&bytes, library)
+    adapt_bytes(&bytes)
 }
 
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
-pub fn adapt_bytes(bytes: &[u8], library: bool) -> anyhow::Result<Vec<u8>> {
+pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    // Determine if we have a main module or a library module.
+    let library = !has_export(bytes, "_start");
+
     let bytes = crate::shift_mem::shift_main_module(bytes)?;
     let module = mangle_imports(&bytes)?;
 
-    // If the user has requested a library adapter, use the imports-only "library" adapter.
     let adapter_bytes = if library {
         LIBRARY_ADAPTER_BYTES
     } else {
@@ -98,4 +105,28 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
     }
 
     Ok(module)
+}
+
+/// Test whether `bytes` holds a wasm binary with an export named `wanted`.
+fn has_export(bytes: &[u8], wanted: &str) -> bool {
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+        let Ok(payload) = payload else {
+            return false;
+        };
+        match payload {
+            wasmparser::Payload::ExportSection(section) => {
+                for export in section {
+                    let Ok(export) = export else {
+                        return false;
+                    };
+                    if export.name == wanted {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    false
 }
