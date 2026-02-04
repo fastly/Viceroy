@@ -1,6 +1,7 @@
 ## Unreleased
 
-- Add support for "library" components which don't export `http_incoming`.
+- Add support for "library" components which don't export `http_incoming`. ([#529](https://github.com/fastly/Viceroy/pull/529))
+- Refactor the CLI, with each subcommand in its own file. ([#581](https://github.com/fastly/Viceroy/pull/581))
 
 ## 0.16.4 (2026-01-26)
 
