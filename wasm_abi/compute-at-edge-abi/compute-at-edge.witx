@@ -11,7 +11,9 @@
     )
 )
 
+;; DEPRECATED
 (module $fastly_uap
+    ;; DEPRECATED
     (@interface func (export "parse")
         (param $user_agent string)
 
@@ -551,11 +553,13 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use redirect_to_websocket_proxy_v2
     (@interface func (export "redirect_to_websocket_proxy")
         (param $backend_name string)
         (result $err (expected (error $fastly_status)))
     )
 
+    ;; DEPRECATED: use redirect_to_grip_proxy_v2
     (@interface func (export "redirect_to_grip_proxy")
         (param $backend_name string)
         (result $err (expected (error $fastly_status)))

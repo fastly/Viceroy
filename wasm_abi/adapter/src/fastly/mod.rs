@@ -1,4 +1,3 @@
-mod adapter;
 mod cache;
 mod config_store;
 mod core;

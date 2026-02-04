@@ -10,14 +10,6 @@ pub(crate) mod bindings {
         imports: {
             default: tracing,
 
-            "fastly:adapter/adapter-backend/register-dynamic-backend": async | tracing,
-            "fastly:adapter/adapter-http-req/send": async | tracing,
-            "fastly:adapter/adapter-http-req/send-async": async | tracing,
-            "fastly:adapter/adapter-http-req/send-async-streaming": async | tracing,
-            "fastly:adapter/adapter-http-req/send-async-uncached": async | tracing,
-            "fastly:adapter/adapter-http-req/send-async-uncached-streaming": async | tracing,
-            "fastly:adapter/adapter-http-req/send-uncached": async | tracing,
-
             "fastly:compute/backend/[constructor]dynamic-backend-options": tracing | trappable,
             "fastly:compute/shielding/[constructor]shield-backend-options": tracing | trappable,
             "fastly:compute/cache/[constructor]extra-lookup-options": tracing | trappable,
@@ -116,7 +108,6 @@ pub(crate) mod bindings {
             "wasi:io/streams/output-stream": wasmtime_wasi::p2::DynOutputStream,
             "wasi:io/error/error": wasmtime_wasi_io::streams::Error,
 
-            "fastly:adapter/adapter-uap/user-agent": super::adapter::uap::UserAgent,
             "fastly:compute/kv-store/entry": super::compute::kv_store::Entry,
             "fastly:compute/backend/dynamic-backend-options": super::compute::backend::BackendBuilder,
             "fastly:compute/backend/backend": String,
