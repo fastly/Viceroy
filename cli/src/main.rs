@@ -129,7 +129,7 @@ pub async fn main() -> ExitCode {
                 let text = match String::from_utf8(bytes) {
                     Ok(module) => module,
                     Err(e) => {
-                        event!(Level::ERROR, "Failed to parse wat: {e}");
+                        event!(Level::ERROR, "Failed to parse wat: {e:?}");
                         return ExitCode::FAILURE;
                     }
                 };
@@ -137,7 +137,7 @@ pub async fn main() -> ExitCode {
                 match viceroy_lib::adapt::adapt_wat(&text) {
                     Ok(module) => module,
                     Err(e) => {
-                        event!(Level::ERROR, "Failed to adapt wat: {e}");
+                        event!(Level::ERROR, "Failed to adapt wat: {e:?}");
                         return ExitCode::FAILURE;
                     }
                 }
@@ -145,7 +145,7 @@ pub async fn main() -> ExitCode {
                 match viceroy_lib::adapt::adapt_bytes(&bytes) {
                     Ok(module) => module,
                     Err(e) => {
-                        event!(Level::ERROR, "Failed to adapt module: {e}");
+                        event!(Level::ERROR, "Failed to adapt module: {e:?}");
                         return ExitCode::FAILURE;
                     }
                 }
@@ -155,7 +155,7 @@ pub async fn main() -> ExitCode {
             match std::fs::write(output, module) {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(e) => {
-                    event!(Level::ERROR, "Failed to write component: {e}");
+                    event!(Level::ERROR, "Failed to write component: {e:?}");
                     return ExitCode::FAILURE;
                 }
             }
