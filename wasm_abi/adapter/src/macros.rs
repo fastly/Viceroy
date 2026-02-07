@@ -5,7 +5,6 @@
 
 use crate::bindings::wasi::cli::stderr::get_stderr;
 
-#[cfg(not(feature = "noshift"))]
 /// Used to annotate the address that comes from the main module.
 /// The annotation is needed because the main module has a different view
 /// of the memory address. With the current implementation, the main module
@@ -13,6 +12,7 @@ use crate::bindings::wasi::cli::stderr::get_stderr;
 /// starts two Wasm pages later. When accessing the main module memory from
 /// the adapter, we need this annotation to map the pointer to the correct
 /// memory address.
+#[cfg(not(feature = "noshift"))]
 macro_rules! main_ptr {
     ($ptr:expr) => {{
         $ptr.byte_add(crate::OFFSET)
@@ -24,9 +24,9 @@ macro_rules! unsafe_main_ptr {
         unsafe { main_ptr!($ptr) }
     }};
 }
-#[cfg(not(feature = "noshift"))]
 /// Used to annotate the address sending back to the main module.
 /// This macro does exactly the opposite of `main_ptr`.
+#[cfg(not(feature = "noshift"))]
 macro_rules! unshift_ptr {
     ($ptr:expr) => {{
         $ptr.byte_sub(crate::OFFSET)

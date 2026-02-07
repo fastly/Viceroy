@@ -44,8 +44,8 @@ mod descriptors;
 
 use crate::descriptors::{Descriptor, Descriptors, StreamType};
 
-#[cfg(not(feature = "noshift"))]
 // This const should always equal to the OFFSET defined in crates/xqd-codegen/src/shift_mem.rs
+#[cfg(not(feature = "noshift"))]
 pub const OFFSET: usize = 2 * PAGE_SIZE;
 
 pub mod bindings {
@@ -1679,8 +1679,9 @@ impl State {
                 mem::size_of::<UnsafeCell<State>>(),
             ) as *mut State
         };
-        #[cfg(not(feature = "noshift"))]
+
         // Use the second page of memory to store state
+        #[cfg(not(feature = "noshift"))]
         let ret = (OFFSET - PAGE_SIZE) as *mut State;
 
         unsafe { set_allocation_state(AllocationState::StateAllocated) };
