@@ -1,5 +1,7 @@
 /// The full adapter.
 const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
+const ADAPTER_NOSHIFT_BYTES: &[u8] =
+    include_bytes!("../wasm_abi/data/viceroy-component-adapter.noshift.wasm");
 
 /// A version of the adapter that doesn't provide the `http_incoming` export.
 ///
@@ -7,6 +9,8 @@ const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-
 /// that does provide the `http_incoming` export.
 const LIBRARY_ADAPTER_BYTES: &[u8] =
     include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.wasm");
+const LIBRARY_ADAPTER_NOSHIFT_BYTES: &[u8] =
+    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.noshift.wasm");
 
 /// Check if the bytes represent a core wasm module, or a component.
 pub fn is_component(bytes: &[u8]) -> bool {
@@ -25,14 +29,20 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     // Determine if we have a main module or a library module.
     let library = !has_export(bytes, "_start");
+    let needs_no_shift_adapter = has_wit_bindgen_imports(bytes);
 
-    let bytes = crate::shift_mem::shift_main_module(bytes)?;
+    let bytes = if needs_no_shift_adapter {
+        bytes.to_vec()
+    } else {
+        crate::shift_mem::shift_main_module(bytes)?
+    };
     let module = mangle_imports(&bytes)?;
 
-    let adapter_bytes = if library {
-        LIBRARY_ADAPTER_BYTES
-    } else {
-        ADAPTER_BYTES
+    let adapter_bytes = match (library, needs_no_shift_adapter) {
+        (true, true) => LIBRARY_ADAPTER_NOSHIFT_BYTES,
+        (true, false) => LIBRARY_ADAPTER_BYTES,
+        (false, true) => ADAPTER_NOSHIFT_BYTES,
+        (false, false) => ADAPTER_BYTES,
     };
 
     let component = wit_component::ComponentEncoder::default()
@@ -80,13 +90,22 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
                         )
                     })?;
 
-                    // Leave the existing preview1 imports alone
-                    if import.module == "wasi_snapshot_preview1" {
-                        imports.import(import.module, import.name, entity);
-                    } else {
+                    if is_fastly_module(import.module) {
+                        // In order to build a single module that can serve as
+                        // the adapter for the many "fastly_*" modules we have,
+                        // as well as the "env" module we have, as well as for
+                        // the "wasi_snapshot_preview1" module, we mangle
+                        // "fastly_*" and "env" names and put them into the
+                        // "wasi_snapshot_preview1" module.
                         let module = "wasi_snapshot_preview1";
                         let name = format!("{}#{}", import.module, import.name);
                         imports.import(module, &name, entity);
+                    } else {
+                        // It's not a "fastly_" module, so it may be
+                        // "wasi_snapshot_preview1" which we should leave as-is,
+                        // or a wit-bindgen-generated import which doesn't need
+                        // adapting.
+                        imports.import(import.module, import.name, entity);
                     }
                 }
 
@@ -120,6 +139,32 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
                         return false;
                     };
                     if export.name == wanted {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    false
+}
+fn is_fastly_module(module: &str) -> bool {
+    module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
+}
+fn has_wit_bindgen_imports(bytes: &[u8]) -> bool {
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+        let Ok(payload) = payload else {
+            return false;
+        };
+        match payload {
+            wasmparser::Payload::ImportSection(section) => {
+                for import in section {
+                    let Ok(import) = import else {
+                        return false;
+                    };
+                    if !is_fastly_module(import.module) && import.module != "wasi_snapshot_preview1"
+                    {
                         return true;
                     }
                 }
