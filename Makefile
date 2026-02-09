@@ -78,6 +78,16 @@ build-adapter:
 			--no-default-features \
 			--profile release-library \
 	)
+	# Build the non-shift "library" version of the adapter.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--no-default-features \
+			--profile release-library-noshift \
+			--features noshift \
+	)
 
 	# Build the component adapter for adapting the host-call abi to the
 	# component model. This is the normal version that includes the exports.
@@ -89,7 +99,21 @@ build-adapter:
 			--release \
 	)
 
+	# Build the non-shift normal version of the adapter.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--profile release-noshift \
+			--features noshift \
+	)
+
 	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
 		wasm_abi/data/viceroy-component-adapter.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-noshift/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.noshift.wasm
 	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library/viceroy_component_adapter.wasm \
 		wasm_abi/data/viceroy-component-adapter.library.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library-noshift/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.library.noshift.wasm

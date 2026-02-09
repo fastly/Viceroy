@@ -4520,7 +4520,7 @@ pub mod fastly_purge {
                 |res| {
                     let res = handle_buffer_len!(res, main_ptr!((*options).ret_buf_nwritten_out));
                     unsafe {
-                        *main_ptr!(((*options).ret_buf_nwritten_out)) = res.len();
+                        *main_ptr!((*options).ret_buf_nwritten_out) = res.len();
                     }
                     std::mem::forget(res);
                 }

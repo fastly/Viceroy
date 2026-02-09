@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Add support for "library" components which don't export `http_incoming`.
+- Add non-shift adapter when user module is using wit-bindgen.
 
 ## 0.16.4 (2026-01-26)
 
