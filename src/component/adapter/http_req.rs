@@ -2,12 +2,9 @@ use {
     crate::component::bindings::{
         fastly::adapter::adapter_http_req,
         fastly::compute::http_downstream::Host as HttpDownstream,
-        fastly::compute::{http_body, http_req, http_resp, types},
+        fastly::compute::{http_req, types},
     },
-    crate::{
-        error::Error,
-        linking::{ComponentCtx, SessionView},
-    },
+    crate::linking::{ComponentCtx, SessionView},
     wasmtime::component::Resource,
 };
 
