@@ -124,7 +124,6 @@ bitflags::bitflags! {
 
 mod cache {
     use super::*;
-    use crate::bindings::fastly::adapter::adapter_cache;
     use crate::bindings::fastly::compute::{cache, http_req};
     use core::slice;
 
@@ -183,12 +182,11 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheLookupOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
@@ -206,22 +204,6 @@ mod cache {
                 })),
             };
             new_options.request_headers = request_headers.as_deref();
-        }
-
-        let extra;
-        if options_mask.contains(CacheLookupOptionsMask::SERVICE) {
-            extra = cache::ExtraLookupOptions::new();
-            match adapter_cache::set_lookup_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(new_options);
-                    return err.into();
-                }
-            }
-            new_options.extra = Some(&extra);
         }
 
         let options = new_options;
@@ -321,12 +303,11 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
@@ -340,27 +321,12 @@ mod cache {
         } else {
             None
         };
-        let mut options =
+
+        let options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
                 Ok(options) => options,
                 Err(err) => return err,
             };
-
-        let extra;
-        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
-            extra = cache::ExtraWriteOptions::new();
-            match adapter_cache::set_write_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(options);
-                    return err.into();
-                }
-            }
-            options.extra = Some(&extra);
-        }
 
         let res = cache::insert(cache_key, &options);
 
@@ -385,12 +351,11 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheLookupOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
         let mut new_options = match unsafe { convert_lookup_options(options_mask) } {
@@ -406,22 +371,6 @@ mod cache {
                 })),
             };
             new_options.request_headers = request_headers.as_deref();
-        }
-
-        let extra;
-        if options_mask.contains(CacheLookupOptionsMask::SERVICE) {
-            extra = cache::ExtraLookupOptions::new();
-            match adapter_cache::set_lookup_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(new_options);
-                    return err.into();
-                }
-            }
-            new_options.extra = Some(&extra);
         }
 
         let options = new_options;
@@ -449,12 +398,11 @@ mod cache {
         options: *const CacheLookupOptions,
         cache_handle_out: *mut CacheBusyHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheLookupOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
         let mut new_options = match unsafe { convert_lookup_options(options_mask) } {
@@ -470,22 +418,6 @@ mod cache {
                 })),
             };
             new_options.request_headers = request_headers.as_deref();
-        }
-
-        let extra;
-        if options_mask.contains(CacheLookupOptionsMask::SERVICE) {
-            extra = cache::ExtraLookupOptions::new();
-            match adapter_cache::set_lookup_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(new_options);
-                    return err.into();
-                }
-            }
-            new_options.extra = Some(&extra);
         }
 
         let options = new_options;
@@ -547,12 +479,11 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
@@ -565,27 +496,11 @@ mod cache {
         } else {
             None
         };
-        let mut options =
+        let options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
                 Ok(options) => options,
                 Err(err) => return err,
             };
-
-        let extra;
-        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
-            extra = cache::ExtraWriteOptions::new();
-            match adapter_cache::set_write_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(options);
-                    return err.into();
-                }
-            }
-            options.extra = Some(&extra);
-        }
 
         let res = handle.transaction_insert(&options);
 
@@ -610,12 +525,11 @@ mod cache {
         body_handle_out: *mut BodyHandle,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
@@ -628,27 +542,11 @@ mod cache {
         } else {
             None
         };
-        let mut options =
+        let options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
                 Ok(options) => options,
                 Err(err) => return err,
             };
-
-        let extra;
-        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
-            extra = cache::ExtraWriteOptions::new();
-            match adapter_cache::set_write_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(options);
-                    return err.into();
-                }
-            }
-            options.extra = Some(&extra);
-        }
 
         let res = handle.transaction_insert_and_stream_back(&options);
 
@@ -672,12 +570,11 @@ mod cache {
         options_mask: CacheWriteOptionsMask,
         options: *const CacheWriteOptions,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
@@ -690,27 +587,11 @@ mod cache {
         } else {
             None
         };
-        let mut options =
+        let options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
                 Ok(options) => options,
                 Err(err) => return err,
             };
-
-        let extra;
-        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
-            extra = cache::ExtraWriteOptions::new();
-            match adapter_cache::set_write_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(options);
-                    return err.into();
-                }
-            }
-            options.extra = Some(&extra);
-        }
 
         let res = handle.transaction_update(&options);
 
@@ -935,6 +816,10 @@ mod cache {
         options: *const CacheReplaceOptions,
         cache_handle_out: *mut CacheHandle,
     ) -> FastlyStatus {
+        if options_mask.contains(CacheReplaceOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
+        }
+
         let options = unsafe_main_ptr!(options);
         let cache_key = unsafe { slice::from_raw_parts(main_ptr!(cache_key_ptr), cache_key_len) };
 
@@ -947,25 +832,6 @@ mod cache {
             None
         };
 
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
-        }
-
-        let extra = if options_mask.contains(CacheReplaceOptionsMask::SERVICE) {
-            let extra_options = cache::ExtraReplaceOptions::new();
-            match adapter_cache::set_replace_service_id_deprecated(
-                &extra_options,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => return err.into(),
-            }
-            Some(extra_options)
-        } else {
-            None
-        };
         let request_headers = if options_mask.contains(CacheReplaceOptionsMask::REQUEST_HEADERS) {
             match unsafe { (*options).request_headers } {
                 INVALID_HANDLE => None,
@@ -981,7 +847,7 @@ mod cache {
             replace_strategy,
             always_use_requested_range: options_mask
                 .contains(CacheReplaceOptionsMask::ALWAYS_USE_REQUESTED_RANGE),
-            extra: extra.as_ref(),
+            extra: None,
         };
 
         let res = cache::ReplaceEntry::replace(cache_key, &options);
@@ -1016,12 +882,11 @@ mod cache {
         options: *const CacheWriteOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let options = unsafe_main_ptr!(options);
-        macro_rules! make_str {
-            ($ptr_field:ident, $len_field:ident) => {
-                unsafe { crate::make_str!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
-            };
+        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
+            return FastlyStatus::UNSUPPORTED;
         }
+
+        let options = unsafe_main_ptr!(options);
 
         let replace_handle = decode_replace_entry(handle);
         let replace_handle = unsafe { cache::ReplaceEntry::from_handle(replace_handle) };
@@ -1035,27 +900,11 @@ mod cache {
         } else {
             None
         };
-        let mut options =
+        let options =
             match unsafe { write_options(options_mask, options, request_headers.as_ref()) } {
                 Ok(options) => options,
                 Err(err) => return err,
             };
-
-        let extra;
-        if options_mask.contains(CacheWriteOptionsMask::SERVICE) {
-            extra = cache::ExtraWriteOptions::new();
-            match adapter_cache::set_write_service_id_deprecated(
-                &extra,
-                make_str!(service, service_len),
-            ) {
-                Ok(()) => {}
-                Err(err) => {
-                    std::mem::forget(options);
-                    return err.into();
-                }
-            }
-            options.extra = Some(&extra);
-        }
 
         let res = cache::replace_insert(replace_handle, &options);
 

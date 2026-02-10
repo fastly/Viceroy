@@ -2,13 +2,9 @@ use {
     crate::component::bindings::{
         fastly::adapter::adapter_http_req,
         fastly::compute::http_downstream::Host as HttpDownstream,
-        fastly::compute::{http_body, http_req, http_resp, types},
+        fastly::compute::{http_req, types},
     },
-    crate::{
-        error::Error,
-        linking::{ComponentCtx, SessionView},
-        pushpin::PushpinRedirectInfo,
-    },
+    crate::linking::{ComponentCtx, SessionView},
     wasmtime::component::Resource,
 };
 
@@ -24,55 +20,6 @@ impl DsView for ComponentCtx {
 }
 
 impl adapter_http_req::Host for ComponentCtx {
-    fn fastly_key_is_valid(&mut self) -> Result<bool, types::Error> {
-        HttpDownstream::fastly_key_is_valid(self, self.ds_req_handle())
-    }
-
-    fn redirect_to_websocket_proxy_norequest(
-        &mut self,
-        _backend: String,
-    ) -> Result<(), types::Error> {
-        Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
-    }
-
-    fn redirect_to_grip_proxy_norequest(
-        &mut self,
-        backend_name: String,
-    ) -> Result<(), types::Error> {
-        let redirect_info = PushpinRedirectInfo {
-            backend_name,
-            request_info: None,
-        };
-
-        self.session_mut()
-            .redirect_downstream_to_pushpin(redirect_info)?;
-        Ok(())
-    }
-
-    fn downstream_client_request_id(&mut self, max_len: u64) -> Result<String, types::Error> {
-        HttpDownstream::downstream_client_request_id(self, self.ds_req_handle(), max_len)
-    }
-
-    fn downstream_client_h2_fingerprint(&mut self, max_len: u64) -> Result<String, types::Error> {
-        HttpDownstream::downstream_client_h2_fingerprint(self, self.ds_req_handle(), max_len)
-    }
-
-    fn downstream_client_oh_fingerprint(&mut self, max_len: u64) -> Result<String, types::Error> {
-        let h = self.ds_req_handle();
-        HttpDownstream::downstream_client_oh_fingerprint(self, h, max_len)
-    }
-
-    fn downstream_tls_ja4(&mut self, max_len: u64) -> Result<Option<String>, types::Error> {
-        HttpDownstream::downstream_tls_ja4(self, self.ds_req_handle(), max_len)
-    }
-
-    fn downstream_compliance_region(
-        &mut self,
-        region_max_len: u64,
-    ) -> Result<Option<String>, types::Error> {
-        HttpDownstream::downstream_compliance_region(self, self.ds_req_handle(), region_max_len)
-    }
-
     fn get_original_header_names(
         &mut self,
         max_len: u64,
@@ -91,21 +38,6 @@ impl adapter_http_req::Host for ComponentCtx {
         HttpDownstream::downstream_original_header_count(self, h)
     }
 
-    fn downstream_client_ip_addr(&mut self) -> Option<types::IpAddress> {
-        let h = self.ds_req_handle();
-        HttpDownstream::downstream_client_ip_addr(self, h)
-    }
-
-    fn downstream_server_ip_addr(&mut self) -> Option<types::IpAddress> {
-        let h = self.ds_req_handle();
-        HttpDownstream::downstream_server_ip_addr(self, h)
-    }
-
-    fn downstream_client_ddos_detected(&mut self) -> Result<bool, types::Error> {
-        let h = self.ds_req_handle();
-        HttpDownstream::downstream_client_ddos_detected(self, h)
-    }
-
     fn downstream_tls_cipher_openssl_name(
         &mut self,
         max_len: u64,
@@ -119,126 +51,11 @@ impl adapter_http_req::Host for ComponentCtx {
         HttpDownstream::downstream_tls_protocol(self, h, max_len)
     }
 
-    fn downstream_tls_client_hello(
-        &mut self,
-        max_len: u64,
-    ) -> Result<Option<Vec<u8>>, types::Error> {
-        let h = self.ds_req_handle();
-        HttpDownstream::downstream_tls_client_hello(self, h, max_len)
-    }
-
     fn downstream_tls_raw_client_certificate_deprecated(
         &mut self,
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         let h = self.ds_req_handle();
         HttpDownstream::downstream_tls_raw_client_certificate(self, h, max_len)
-    }
-
-    fn downstream_tls_client_cert_verify_result(
-        &mut self,
-    ) -> Result<Option<http_req::ClientCertVerifyResult>, types::Error> {
-        HttpDownstream::downstream_tls_client_cert_verify_result(self, self.ds_req_handle())
-    }
-
-    fn downstream_tls_ja3_md5(&mut self) -> Result<Option<Vec<u8>>, types::Error> {
-        HttpDownstream::downstream_tls_ja3_md5(self, self.ds_req_handle())
-    }
-
-    fn on_behalf_of_deprecated(
-        &mut self,
-        _: Resource<http_req::Request>,
-        _: String,
-    ) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "http-req.on-behalf-of is not supported in Viceroy",
-        }
-        .into())
-    }
-
-    fn redirect_to_websocket_proxy(
-        &mut self,
-        handle: Resource<http_req::Request>,
-        backend: String,
-    ) -> Result<(), types::Error> {
-        crate::component::http_req::redirect_to_websocket_proxy(&mut self.session, handle, &backend)
-    }
-
-    fn redirect_to_grip_proxy(
-        &mut self,
-        req_handle: Resource<http_req::Request>,
-        backend_name: String,
-    ) -> Result<(), types::Error> {
-        crate::component::http_req::redirect_to_grip_proxy(
-            &mut self.session,
-            req_handle,
-            &backend_name,
-        )
-    }
-
-    fn upgrade_websocket(&mut self, backend: String) -> Result<(), types::Error> {
-        crate::component::http_req::upgrade_websocket(&mut self.session, &backend)
-    }
-
-    async fn send(
-        &mut self,
-        h: Resource<http_req::Request>,
-        b: Resource<http_body::Body>,
-        backend_name: String,
-    ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
-        crate::component::http_req::send(&mut self.session, h, b, &backend_name).await
-    }
-
-    async fn send_uncached(
-        &mut self,
-        h: Resource<http_req::Request>,
-        b: Resource<http_body::Body>,
-        backend_name: String,
-    ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
-        crate::component::http_req::send_uncached(&mut self.session, h, b, &backend_name).await
-    }
-
-    async fn send_async(
-        &mut self,
-        h: Resource<http_req::Request>,
-        b: Resource<http_body::Body>,
-        backend_name: String,
-    ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        crate::component::http_req::send_async(&mut self.session, h, b, &backend_name).await
-    }
-
-    async fn send_async_uncached(
-        &mut self,
-        h: Resource<http_req::Request>,
-        b: Resource<http_body::Body>,
-        backend_name: String,
-    ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        crate::component::http_req::send_async_uncached(&mut self.session, h, b, &backend_name)
-            .await
-    }
-
-    async fn send_async_uncached_streaming(
-        &mut self,
-        h: Resource<http_req::Request>,
-        b: Resource<http_body::Body>,
-        backend_name: String,
-    ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        crate::component::http_req::send_async_uncached_streaming(
-            &mut self.session,
-            h,
-            b,
-            &backend_name,
-        )
-        .await
-    }
-
-    async fn send_async_streaming(
-        &mut self,
-        h: Resource<http_req::Request>,
-        b: Resource<http_body::Body>,
-        backend_name: String,
-    ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
-        crate::component::http_req::send_async_streaming(&mut self.session, h, b, &backend_name)
-            .await
     }
 }

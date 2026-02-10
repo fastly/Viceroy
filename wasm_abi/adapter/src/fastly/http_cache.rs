@@ -71,7 +71,7 @@ bitflags::bitflags! {
 
 mod http_cache {
     use super::*;
-    use crate::bindings::fastly::adapter::adapter_http_cache;
+    use crate::bindings::fastly::compute::backend;
     use crate::bindings::fastly::compute::http_cache as host;
     use crate::bindings::fastly::compute::http_req as host_http_req;
     use crate::bindings::fastly::compute::http_resp as host_http_resp;
@@ -79,7 +79,7 @@ mod http_cache {
     fn cache_lookup_options(
         mask: HttpCacheLookupOptionsMask,
         options: *const HttpCacheLookupOptions,
-    ) -> adapter_http_cache::LookupOptions<'static> {
+    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), FastlyStatus> {
         macro_rules! make_vec {
             ($ptr_field:ident, $len_field:ident) => {
                 unsafe { crate::make_vec!(main_ptr!((*options).$ptr_field), (*options).$len_field) }
@@ -102,13 +102,8 @@ mod http_cache {
         } else {
             None
         };
-        let options = adapter_http_cache::LookupOptions {
-            override_key,
-            backend_name,
-            extra: None,
-        };
 
-        options
+        Ok((override_key, backend_name))
     }
 
     fn cache_write_options(
@@ -210,9 +205,33 @@ mod http_cache {
     ) -> FastlyStatus {
         let req_handle =
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
-        let options = cache_lookup_options(options_mask, unsafe_main_ptr!(options));
+        let (override_key, backend_name) =
+            match cache_lookup_options(options_mask, unsafe_main_ptr!(options)) {
+                Ok(options) => options,
+                Err(err) => return convert_result(Err(err)),
+            };
 
-        let res = adapter_http_cache::lookup(&req_handle, &options);
+        let backend = if let Some(backend_name) = backend_name {
+            let res = backend::Backend::open(&backend_name);
+            std::mem::forget(backend_name);
+            let backend = match res {
+                Ok(backend) => backend,
+                Err(err) => {
+                    std::mem::forget(override_key);
+                    return convert_result(Err(err));
+                }
+            };
+            Some(backend)
+        } else {
+            None
+        };
+        let options = host::LookupOptions {
+            override_key,
+            backend: backend.as_ref(),
+            extra: None,
+        };
+
+        let res = host::Entry::transaction_lookup(&req_handle, &options);
 
         std::mem::forget(options);
         let cache_handle_out = unsafe_main_ptr!(cache_handle_out);
@@ -228,9 +247,33 @@ mod http_cache {
     ) -> FastlyStatus {
         let req_handle =
             ManuallyDrop::new(unsafe { host_http_req::Request::from_handle(req_handle) });
-        let options = cache_lookup_options(options_mask, unsafe_main_ptr!(options));
+        let (override_key, backend_name) =
+            match cache_lookup_options(options_mask, unsafe_main_ptr!(options)) {
+                Ok(options) => options,
+                Err(err) => return convert_result(Err(err)),
+            };
 
-        let res = adapter_http_cache::transaction_lookup(&req_handle, &options);
+        let backend = if let Some(backend_name) = backend_name {
+            let res = backend::Backend::open(&backend_name);
+            std::mem::forget(backend_name);
+            let backend = match res {
+                Ok(backend) => backend,
+                Err(err) => {
+                    std::mem::forget(override_key);
+                    return convert_result(Err(err));
+                }
+            };
+            Some(backend)
+        } else {
+            None
+        };
+        let options = host::LookupOptions {
+            override_key,
+            backend: backend.as_ref(),
+            extra: None,
+        };
+
+        let res = host::Entry::transaction_lookup(&req_handle, &options);
 
         std::mem::forget(options);
         let cache_handle_out = unsafe_main_ptr!(cache_handle_out);
