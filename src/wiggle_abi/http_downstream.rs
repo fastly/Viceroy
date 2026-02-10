@@ -12,7 +12,6 @@ use crate::wiggle_abi::types::{
 
 use wiggle::{GuestMemory, GuestPtr};
 
-#[wiggle::async_trait]
 impl FastlyHttpDownstream for Session {
     async fn next_request(
         &mut self,

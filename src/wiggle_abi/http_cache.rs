@@ -6,7 +6,6 @@ use super::{types, Error};
 use wiggle::{GuestMemory, GuestPtr};
 
 #[allow(unused_variables)]
-#[wiggle::async_trait]
 impl FastlyHttpCache for Session {
     async fn lookup(
         &mut self,

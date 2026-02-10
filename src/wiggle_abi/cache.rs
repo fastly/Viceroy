@@ -178,7 +178,6 @@ fn load_lookup_options(
 }
 
 #[allow(unused_variables)]
-#[wiggle::async_trait]
 impl FastlyCache for Session {
     async fn lookup(
         &mut self,

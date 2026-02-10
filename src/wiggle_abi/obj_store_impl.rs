@@ -18,7 +18,6 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-#[wiggle::async_trait]
 impl FastlyObjectStore for Session {
     fn open(
         &mut self,

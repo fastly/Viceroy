@@ -1,4 +1,4 @@
 [toolchain]
-channel = "1.88"
+channel = "1.90"
 components = [ "rustfmt" ]
 targets = [ "wasm32-wasip1", "wasm32-wasip2" ]

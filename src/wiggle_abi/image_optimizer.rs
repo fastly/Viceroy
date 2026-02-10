@@ -3,7 +3,6 @@ use crate::session::Session;
 use crate::wiggle_abi::{fastly_image_optimizer, types};
 use wiggle::{GuestMemory, GuestPtr};
 
-#[wiggle::async_trait]
 impl fastly_image_optimizer::FastlyImageOptimizer for Session {
     async fn transform_image_optimizer_request(
         &mut self,

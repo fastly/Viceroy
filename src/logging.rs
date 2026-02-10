@@ -82,7 +82,7 @@ impl wasmtime_wasi::cli::StdoutStream for LogEndpoint {
     }
 }
 
-#[wiggle::async_trait]
+#[wasmtime_wasi::async_trait]
 impl wasmtime_wasi::p2::Pollable for LogEndpoint {
     async fn ready(&mut self) {}
 }

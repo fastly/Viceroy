@@ -43,7 +43,6 @@ impl From<&SecretStoreError> for FastlyStatus {
     }
 }
 
-#[wiggle::async_trait]
 impl FastlySecretStore for Session {
     fn open(
         &mut self,
