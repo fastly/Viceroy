@@ -10,7 +10,6 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-#[wiggle::async_trait]
 impl FastlyAsyncIo for Session {
     async fn select(
         &mut self,

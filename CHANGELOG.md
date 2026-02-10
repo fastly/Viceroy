@@ -3,6 +3,7 @@
 - Remove most adapter-only interfaces from the Viceroy component adapter. ([#583](https://github.com/fastly/Viceroy/pull/583))
 - Add support for "library" components which don't export `http_incoming`.
 - Add non-shift adapter when user module is using wit-bindgen.
+- Update to Wasmtime 39 ([#584](https://github.com/fastly/Viceroy/pull/584))
 
 ## 0.16.4 (2026-01-26)
 

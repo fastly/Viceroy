@@ -24,7 +24,6 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-#[wiggle::async_trait]
 impl FastlyKvStore for Session {
     fn open(
         &mut self,

@@ -23,7 +23,7 @@ include = [
     "wasm_abi/compute-at-edge-abi/**/*.witx",
     "wasm_abi/data/*.wasm",
 ]
-rust-version = "1.88"
+rust-version = "1.90"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -111,7 +111,7 @@ pin-project = "1.0.8"
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.3"
 serde_json = "1.0.59"
-tokio = { version = "1.21.2", features = ["full"] }
+tokio = { version = "1.49.0", features = ["full"] }
 tokio-rustls = "0.24.1"
 tracing = "0.1.37"
 tracing-futures = "0.2.5"
@@ -119,12 +119,12 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "36.0.2", features = ["call-hook"] }
-wasmtime-wasi = "36.0.2"
-wasmtime-wasi-io = "36.0.2"
-wasmtime-wasi-nn = "36.0.2"
-wiggle = "36.0.2"
-wat = "1.212.0"
-wasmparser = "0.236.0"
-wasm-encoder = { version = "0.236.0", features = ["wasmparser"] }
-wit-component = "0.236.0"
+wasmtime = { version =  "39.0.2", features = ["call-hook"] }
+wasmtime-wasi = "39.0.2"
+wasmtime-wasi-io = "39.0.2"
+wasmtime-wasi-nn = "39.0.2"
+wiggle = "39.0.2"
+wat = "1.240.0"
+wasmparser = "0.240.0"
+wasm-encoder = { version = "0.240.0", features = ["wasmparser"] }
+wit-component = "0.240.0"

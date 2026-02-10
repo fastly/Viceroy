@@ -32,7 +32,6 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-#[wiggle::async_trait]
 impl FastlyHttpReq for Session {
     fn body_downstream_get(
         &mut self,

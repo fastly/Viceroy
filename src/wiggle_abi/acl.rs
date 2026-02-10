@@ -3,7 +3,6 @@ use crate::session::Session;
 use crate::wiggle_abi::{fastly_acl, types};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-#[wiggle::async_trait]
 impl fastly_acl::FastlyAcl for Session {
     /// Open a handle to an ACL by its linked name.
     fn open(

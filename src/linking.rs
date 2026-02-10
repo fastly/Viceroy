@@ -8,7 +8,7 @@ use {
     hyper::Response,
     std::collections::HashSet,
     wasmtime::{GuestProfiler, Linker, Store, StoreLimits, StoreLimitsBuilder, UpdateDeadline},
-    wasmtime_wasi::preview1::WasiP1Ctx,
+    wasmtime_wasi::p1::WasiP1Ctx,
     wasmtime_wasi_nn::witx::WasiNnCtx,
 };
 
@@ -334,7 +334,7 @@ pub fn link_host_functions(
             }
         })?;
 
-    wasmtime_wasi::preview1::add_to_linker_async(linker, WasmCtx::wasi)?;
+    wasmtime_wasi::p1::add_to_linker_async(linker, WasmCtx::wasi)?;
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_acl::add_to_linker(linker, WasmCtx::session)?;
     wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::session)?;
