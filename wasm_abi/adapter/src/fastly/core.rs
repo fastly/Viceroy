@@ -1738,7 +1738,12 @@ pub mod fastly_http_req {
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
         let backend = match backend::Backend::open(backend) {
             Ok(backend) => backend,
-            Err(err) => return convert_result(Err(err)),
+            Err(err) => {
+                unsafe {
+                    *main_ptr!(error_detail) = SendErrorDetailTag::DestinationNotFound.into();
+                }
+                return convert_result(Err(err));
+            }
         };
         match http_req::send(req_handle, body_handle, &backend) {
             Ok((resp_handle, resp_body_handle)) => {
@@ -1780,7 +1785,12 @@ pub mod fastly_http_req {
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
         let backend = match backend::Backend::open(backend) {
             Ok(backend) => backend,
-            Err(err) => return convert_result(Err(err)),
+            Err(err) => {
+                unsafe {
+                    *main_ptr!(error_detail) = SendErrorDetailTag::DestinationNotFound.into();
+                }
+                return convert_result(Err(err));
+            }
         };
         match http_req::send_uncached(req_handle, body_handle, &backend) {
             Ok((resp_handle, resp_body_handle)) => {
