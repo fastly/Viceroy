@@ -1741,6 +1741,8 @@ pub mod fastly_http_req {
             Err(err) => {
                 unsafe {
                     *main_ptr!(error_detail) = SendErrorDetailTag::DestinationNotFound.into();
+                    *main_ptr!(resp_handle_out) = INVALID_HANDLE;
+                    *main_ptr!(resp_body_handle_out) = INVALID_HANDLE;
                 }
                 return convert_result(Err(err));
             }
@@ -1788,6 +1790,8 @@ pub mod fastly_http_req {
             Err(err) => {
                 unsafe {
                     *main_ptr!(error_detail) = SendErrorDetailTag::DestinationNotFound.into();
+                    *main_ptr!(resp_handle_out) = INVALID_HANDLE;
+                    *main_ptr!(resp_body_handle_out) = INVALID_HANDLE;
                 }
                 return convert_result(Err(err));
             }
