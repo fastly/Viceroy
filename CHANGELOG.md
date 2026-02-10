@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Remove most adapter-only interfaces from the Viceroy component adapter. ([#583](https://github.com/fastly/Viceroy/pull/583))
 - Add support for "library" components which don't export `http_incoming`.
 - Add non-shift adapter when user module is using wit-bindgen.
 
