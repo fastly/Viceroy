@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 /// The full adapter.
 const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
 const ADAPTER_NOSHIFT_BYTES: &[u8] =
@@ -45,7 +47,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         (false, false) => ADAPTER_BYTES,
     };
 
-    let component = wit_component::ComponentEncoder::default()
+    let mut component = wit_component::ComponentEncoder::default()
         .module(module.as_slice())?
         // NOTE: the adapter uses the module name `wasi_snapshot_preview1` as it was originally a
         // fork of the wasi_snapshot_preview1 adapter. The wasm has a different name to make the
@@ -55,6 +57,24 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         .adapter("wasi_snapshot_preview1", adapter_bytes)?
         .validate(true)
         .encode()?;
+
+    // Add "viceroy" to the producers section.
+    let mut producers = wasm_metadata::Producers::empty();
+    let mut flags = Vec::with_capacity(2);
+    if library {
+        flags.push("library");
+    }
+    if needs_no_shift_adapter {
+        flags.push("noshift");
+    }
+    producers.add(
+        "processed-by",
+        "viceroy adapt",
+        &format!("{} ({})", env!("CARGO_PKG_VERSION"), flags.join(", ")),
+    );
+    let component = producers
+        .add_to_wasm(&component)
+        .context("failed to add viceroy producer metadata to wasm")?;
 
     Ok(component)
 }
