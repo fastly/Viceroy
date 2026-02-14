@@ -47,7 +47,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         (false, false) => ADAPTER_BYTES,
     };
 
-    let mut component = wit_component::ComponentEncoder::default()
+    let component = wit_component::ComponentEncoder::default()
         .module(module.as_slice())?
         // NOTE: the adapter uses the module name `wasi_snapshot_preview1` as it was originally a
         // fork of the wasi_snapshot_preview1 adapter. The wasm has a different name to make the
