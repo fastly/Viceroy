@@ -2433,6 +2433,23 @@ interface http-cache {
       options: lookup-options,
     ) -> result<entry, error>;
 
+    /// Fulfill an obligation to provide a response to the cache by selecting a stale-if-error response.
+    ///
+    /// A guest that is obligated to insert/update the cache may not be able to produce an acceptable
+    /// response (e.g. unreachable backend, 5xx response). If the cache contains a response in the
+    /// stale-if-error period, the guest may prefer to use that response rather than returning an error.
+    /// If so, they can call transaction-choose-stale, after which the cache handle will reflect the stale
+    /// response (via get-found-response, get-state, etc).
+    ///
+    /// `transaction-choose-stale` is an alternative to `transaction-update-and-return-fresh` or 
+    /// `transaction-insert-and-stream-back`. Like those methods, it completes a request collapse,
+    /// providing the stale response to all collapsed transactions; and, after calling
+    /// `transaction-choose-stale`, the cache handle provides the (stale) response to send to the client.
+    ///
+    /// However, `transaction-choose-stale` does not change the cached item. The next lookup will again
+    /// collapse and/or get an obligation to revalidate.
+    transaction-choose-stale: func() -> result<_, error>;
+
     /// Inserts a response into the cache with the given options, returning a streaming body handle
     /// that is ready for writing or appending.
     ///
@@ -2548,6 +2565,10 @@ interface http-cache {
     /// returning `ok(none)` if there was no response found.
     get-stale-while-revalidate-ns: func(
     ) -> result<option<duration-ns>, error>;
+
+    get-stale-if-error-ns: func(
+    ) -> result<option<duration-ns>, error>;
+
 
     /// Gets the age of the found response in nanoseconds, returning `ok(none)`
     /// if there was no response found.

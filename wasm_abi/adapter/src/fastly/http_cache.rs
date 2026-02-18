@@ -280,6 +280,16 @@ mod http_cache {
         write_handle_result!(res, cache_handle_out)
     }
 
+    #[export_name = "fastly_http_cache#transaction_choose_stale"]
+    pub fn transaction_choose_stale(handle: HttpCacheHandle) -> FastlyStatus {
+        let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+
+        match handle.transaction_choose_stale() {
+        Ok(()) => FastlyStatus::OK,
+        Err(e) => e.into(),
+    }
+    }
+
     #[export_name = "fastly_http_cache#transaction_insert"]
     pub fn transaction_insert(
         handle: HttpCacheHandle,
@@ -637,6 +647,17 @@ mod http_cache {
         let duration_out = unsafe_main_ptr!(duration_out);
         write_result_opt!(handle.get_stale_while_revalidate_ns(), duration_out)
     }
+
+    #[export_name = "fastly_http_cache#get_stale_if_error_ns"]
+    pub fn get_stale_if_error_ns(
+        handle: HttpCacheHandle,
+        duration_out: *mut CacheDurationNs,
+    ) -> FastlyStatus {
+        let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let duration_out = unsafe_main_ptr!(duration_out);
+        write_result_opt!(handle.get_stale_if_error_ns(), duration_out)
+    }
+
 
     #[export_name = "fastly_http_cache#get_age_ns"]
     pub fn get_age_ns(handle: HttpCacheHandle, duration_out: *mut CacheDurationNs) -> FastlyStatus {

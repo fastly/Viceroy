@@ -130,6 +130,16 @@ impl http_cache::HostEntry for ComponentCtx {
         .into())
     }
 
+    fn transaction_choose_stale(
+        &mut self,
+        _handle: Resource<http_cache::Entry>,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "HTTP Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
     fn transaction_insert_and_stream_back(
         &mut self,
         _handle: Resource<http_cache::Entry>,
@@ -260,6 +270,17 @@ impl http_cache::HostEntry for ComponentCtx {
         }
         .into())
     }
+
+    fn get_stale_if_error_ns(
+        &mut self,
+        _handle: Resource<http_cache::Entry>,
+    ) -> Result<Option<http_cache::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "HTTP Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
 
     fn get_age_ns(
         &mut self,
