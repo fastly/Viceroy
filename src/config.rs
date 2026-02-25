@@ -163,6 +163,7 @@ impl FromStr for FastlyConfig {
 /// [fromt-str]: https://docs.rs/toml/latest/toml/de/fn.from_str.html
 #[derive(Deserialize)]
 struct TomlFastlyConfig {
+    manifest_version: Option<u32>,
     local_server: Option<RawLocalServerConfig>,
     // AJT 2020.03.10: the following fields are marked as optional because, for the time being,
     // we are not expecting to actually use the fastly.toml manifest, but instead use a separate
@@ -175,16 +176,30 @@ struct TomlFastlyConfig {
     language: Option<String>,
 }
 
+/// Manifest versions greater than this are not yet supported.
+const MAX_MANIFEST_VERSION: u32 = 3;
+
 impl TryInto<FastlyConfig> for TomlFastlyConfig {
     type Error = FastlyConfigError;
     fn try_into(self) -> Result<FastlyConfig, Self::Error> {
         let Self {
+            manifest_version,
             name,
             description,
             authors,
             language,
             local_server,
         } = self;
+
+        if let Some(manifest_version) = manifest_version {
+            if manifest_version > MAX_MANIFEST_VERSION {
+                return Err(FastlyConfigError::UnsupportedManifestVersion(
+                    manifest_version,
+                    MAX_MANIFEST_VERSION,
+                ));
+            }
+        }
+
         let local_server = local_server
             .map(TryInto::try_into)
             .transpose()?
