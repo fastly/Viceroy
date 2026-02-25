@@ -1,7 +1,7 @@
 //! fastly_device_detection` hostcall implementations.
 
 use crate::error::Error;
-use crate::wiggle_abi::{fastly_device_detection::FastlyDeviceDetection, FastlyStatus, Session};
+use crate::wiggle_abi::{FastlyStatus, Session, fastly_device_detection::FastlyDeviceDetection};
 use std::convert::TryFrom;
 use wiggle::{GuestMemory, GuestPtr};
 

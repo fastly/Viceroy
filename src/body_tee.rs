@@ -230,7 +230,7 @@ fn drain_buffer(state: &mut SharedState) {
 mod tests {
     use super::*;
     use futures::stream::{self, StreamExt};
-    use hyper::{body::Bytes, Body};
+    use hyper::{Body, body::Bytes};
     use std::convert::Infallible;
 
     #[tokio::test]

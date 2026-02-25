@@ -2,10 +2,10 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::{body::HttpBody, Body, Request, Response, StatusCode};
+use hyper::{Body, Request, Response, StatusCode, body::HttpBody};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 use tokio::sync::Barrier;
 

@@ -9,8 +9,8 @@ use crate::{
     wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
 use futures::Future;
-use http::{uri, HeaderValue, Version};
-use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
+use http::{HeaderValue, Version, uri};
+use hyper::{Client, HeaderMap, Request, Response, Uri, client::HttpConnector, header};
 use rustls::client::ServerName;
 use std::{
     io,
@@ -24,7 +24,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpStream,
 };
-use tokio_rustls::{client::TlsStream, TlsConnector};
+use tokio_rustls::{TlsConnector, client::TlsStream};
 use tracing::warn;
 
 static GZIP_VALUES: [HeaderValue; 2] = [
@@ -200,7 +200,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
                                 "h2",
                                 String::from_utf8_lossy(other_value).to_string(),
                             )
-                            .into())
+                            .into());
                         }
                     }
                 }
@@ -289,7 +289,7 @@ pub fn send_request(
     mut req: Request<Body>,
     backend: &Arc<Backend>,
     tls_config: &TlsConfig,
-) -> impl Future<Output = Result<Response<Body>, Error>> {
+) -> impl Future<Output = Result<Response<Body>, Error>> + use<> {
     let connector = BackendConnector::new(backend.clone(), tls_config.clone());
 
     let host = canonical_host_header(req.headers(), req.uri(), backend);
@@ -316,15 +316,21 @@ pub fn send_request(
 
     if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
         if !content_length_is_valid(req.headers()) {
-            warn!("Backend request has malformed Content-Length header, falling back to automatic framing.");
+            warn!(
+                "Backend request has malformed Content-Length header, falling back to automatic framing."
+            );
             framing_headers_mode = FramingHeadersMode::Automatic;
         } else if !transfer_encoding_is_supported(req.headers()) {
-            warn!("Backend request has unsupported Transfer-Encoding header, falling back to automatic framing.");
+            warn!(
+                "Backend request has unsupported Transfer-Encoding header, falling back to automatic framing."
+            );
             framing_headers_mode = FramingHeadersMode::Automatic;
         } else if !req.headers().contains_key(header::CONTENT_LENGTH)
             && !req.headers().contains_key(header::TRANSFER_ENCODING)
         {
-            warn!("Backend request has neither Content-Length nor Transfer-Encoding header, falling back to automatic framing.");
+            warn!(
+                "Backend request has neither Content-Length nor Transfer-Encoding header, falling back to automatic framing."
+            );
             framing_headers_mode = FramingHeadersMode::Automatic;
         }
     }

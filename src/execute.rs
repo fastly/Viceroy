@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        Error,
         acl::Acls,
         adapt,
         body::Body,
@@ -12,20 +13,19 @@ use {
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
             UnknownImportBehavior,
         },
-        downstream::{prepare_request, DownstreamMetadata, DownstreamRequest, DownstreamResponse},
+        downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
-        linking::{create_store, link_host_functions, ComponentCtx, WasmCtx},
+        linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
-        pushpin::{proxy_through_pushpin, PushpinRedirectRequestInfo},
+        pushpin::{PushpinRedirectRequestInfo, proxy_through_pushpin},
         secret_store::SecretStores,
         session::Session,
         shielding_site::ShieldingSites,
         upstream::TlsConfig,
-        Error,
     },
     futures::{
-        task::{Context, Poll},
         Future,
+        task::{Context, Poll},
     },
     http::StatusCode,
     hyper::{Request, Response},
@@ -38,18 +38,18 @@ use {
         path::{Path, PathBuf},
         pin::Pin,
         sync::{
-            atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, Mutex,
+            atomic::{AtomicBool, AtomicU64, Ordering},
         },
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
-    tokio::sync::oneshot::{self, Sender},
     tokio::sync::Mutex as AsyncMutex,
-    tracing::{error, event, info, info_span, warn, Instrument, Level},
+    tokio::sync::oneshot::{self, Sender},
+    tracing::{Instrument, Level, error, event, info, info_span, warn},
     wasmtime::{
-        component::{self, Component},
         Engine, GuestProfiler, InstancePre, Linker, Module, ProfilingStrategy,
+        component::{self, Component},
     },
     wasmtime_wasi::I32Exit,
 };
@@ -980,21 +980,24 @@ fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Optio
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
     {
-        if let Err(e) = std::fs::File::create(path)
+        match std::fs::File::create(path)
             .map_err(anyhow::Error::new)
             .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
         {
-            event!(
-                Level::ERROR,
-                "failed writing profile at {}: {e:#}",
-                path.display()
-            );
-        } else {
-            event!(
-                Level::INFO,
-                "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
-                path.display()
-            );
+            Err(e) => {
+                event!(
+                    Level::ERROR,
+                    "failed writing profile at {}: {e:#}",
+                    path.display()
+                );
+            }
+            _ => {
+                event!(
+                    Level::INFO,
+                    "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
+                    path.display()
+                );
+            }
         }
     }
 }

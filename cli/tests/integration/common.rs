@@ -1,7 +1,7 @@
 //! Common values and types used by test fixtures
 
 use futures::stream::StreamExt;
-use hyper::{service, Body as HyperBody, Request, Response, Server, Uri};
+use hyper::{Body as HyperBody, Request, Response, Server, Uri, service};
 use std::{
     collections::HashSet,
     convert::Infallible,
@@ -14,12 +14,12 @@ use std::{
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
+    ExecuteCtx, ProfilingStrategy, ViceroyService,
     body::Body,
     config::{
         Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
         ShieldingSites,
     },
-    ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
 pub use self::backends::TestBackends;
@@ -535,7 +535,7 @@ impl TestService {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
                         let mut body = Box::new(body); // for pinning
-                                                       // read out all of the bytes from the body into a vector, then re-assemble the request
+                        // read out all of the bytes from the body into a vector, then re-assemble the request
                         let mut body_bytes = Vec::new();
                         while let Some(chunk) = body.next().await {
                             body_bytes.extend_from_slice(&chunk.unwrap());

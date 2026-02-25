@@ -22,7 +22,7 @@ fn main() {
 }
 
 #[link(wasm_import_module = "unknown_module")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "unknown_function"]
     pub fn unknown_function(arg1: c_int, arg2: c_float) -> c_int;
 }

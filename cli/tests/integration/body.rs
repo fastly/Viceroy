@@ -5,7 +5,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{body, HeaderMap, Response, StatusCode},
+    hyper::{HeaderMap, Response, StatusCode, body},
 };
 
 viceroy_test!(bodies_can_be_written_and_appended, |is_component| {

@@ -11,7 +11,7 @@ use crate::session::{PeekableTask, PendingCacheTask, Session};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
 use super::fastly_cache::FastlyCache;
-use super::{types, Error};
+use super::{Error, types};
 
 fn load_cache_key(
     memory: &wiggle::GuestMemory<'_>,

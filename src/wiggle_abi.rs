@@ -21,7 +21,7 @@ use {
         types::{FastlyStatus, UserErrorConversion},
     },
     crate::{error::Error, session::Session},
-    tracing::{event, Level},
+    tracing::{Level, event},
     wiggle::{GuestErrorType, GuestMemory, GuestPtr},
 };
 

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
-use hyper::http::uri::PathAndQuery;
 use hyper::http::HeaderValue;
+use hyper::http::uri::PathAndQuery;
 use hyper::{Body as HyperBody, Request, Response, Uri};
 use tokio::sync::Mutex;
 

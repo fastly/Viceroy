@@ -23,8 +23,8 @@ use {
     clap::Parser,
     std::env,
     std::process::ExitCode,
-    tracing::{event, Level},
-    tracing_subscriber::{filter::EnvFilter, FmtSubscriber},
+    tracing::{Level, event},
+    tracing_subscriber::{FmtSubscriber, filter::EnvFilter},
 };
 
 #[tokio::main]
@@ -43,11 +43,15 @@ fn install_tracing_subscriber(verbosity: u8) {
     // Default to whatever a user provides, but if not set logging to work for
     // viceroy and viceroy-lib so that they can have output in the terminal
     if env::var("RUST_LOG").ok().is_none() {
-        match verbosity {
-            0 => env::set_var("RUST_LOG", "viceroy=error,viceroy-lib=error"),
-            1 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
-            2 => env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug"),
-            _ => env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace"),
+        // SAFETY: We are called early in `main` when there are no other
+        // threads created yet.
+        unsafe {
+            match verbosity {
+                0 => env::set_var("RUST_LOG", "viceroy=error,viceroy-lib=error"),
+                1 => env::set_var("RUST_LOG", "viceroy=info,viceroy-lib=info"),
+                2 => env::set_var("RUST_LOG", "viceroy=debug,viceroy-lib=debug"),
+                _ => env::set_var("RUST_LOG", "viceroy=trace,viceroy-lib=trace"),
+            }
         }
     }
 

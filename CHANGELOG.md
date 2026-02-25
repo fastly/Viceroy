@@ -6,6 +6,7 @@
 - Update to Wasmtime 39 ([#584](https://github.com/fastly/Viceroy/pull/584))
 - Remove unused WIT files from the source tree.
 - Refactor the CLI, with each subcommand in its own file. ([#581](https://github.com/fastly/Viceroy/pull/581))
+- Update to Rust 2024 Edition. ([#588](https://github.com/fastly/Viceroy/pull/588))
 
 ## 0.16.4 (2026-01-26)
 

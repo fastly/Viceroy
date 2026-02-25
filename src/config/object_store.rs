@@ -141,13 +141,13 @@ impl TryFrom<Table> for ObjectStoreConfig {
                         return Err(FastlyConfigError::InvalidObjectStoreDefinition {
                             name: store.to_string(),
                             err: ObjectStoreConfigError::NoFileOrData(key.to_string()),
-                        })
+                        });
                     }
                     (Some(_), Some(_)) => {
                         return Err(FastlyConfigError::InvalidObjectStoreDefinition {
                             name: store.to_string(),
                             err: ObjectStoreConfigError::FileAndData(key.to_string()),
-                        })
+                        });
                     }
                     (Some(path), None) => {
                         let path = path.as_str().ok_or_else(|| {

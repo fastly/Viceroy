@@ -528,7 +528,9 @@ pub enum DictionaryConfigError {
     #[error("'name' field was not a string")]
     InvalidNameEntry,
 
-    #[error("'{0}' is not a valid format for the dictionary. Supported format(s) are: 'inline-toml', 'json'.")]
+    #[error(
+        "'{0}' is not a valid format for the dictionary. Supported format(s) are: 'inline-toml', 'json'."
+    )]
     InvalidDictionaryFormat(String),
 
     #[error("'file' field is empty")]
@@ -567,7 +569,9 @@ pub enum DictionaryConfigError {
     #[error("too many items, max amount is {size}")]
     DictionaryCountTooLong { size: i32 },
 
-    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    #[error(
+        "Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String"
+    )]
     DictionaryItemValueWrongFormat { key: String },
 
     #[error("Item value named '{key}' is too long, max size is {size}")]
@@ -616,7 +620,9 @@ pub enum DeviceDetectionConfigError {
     #[error("'format' field was not a string")]
     InvalidFormatEntry,
 
-    #[error("'{0}' is not a valid format for the device detection mapping. Supported format(s) are: 'inline-toml', 'json'.")]
+    #[error(
+        "'{0}' is not a valid format for the device detection mapping. Supported format(s) are: 'inline-toml', 'json'."
+    )]
     InvalidDeviceDetectionMappingFormat(String),
 
     #[error(
@@ -627,7 +633,9 @@ pub enum DeviceDetectionConfigError {
     #[error("'format' field is empty")]
     EmptyFormatEntry,
 
-    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    #[error(
+        "Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String"
+    )]
     DeviceDetectionItemValueWrongFormat { key: String },
 }
 
@@ -671,7 +679,9 @@ pub enum GeolocationConfigError {
     #[error("IP address not valid: '{0}'")]
     InvalidAddressEntry(String),
 
-    #[error("'{0}' is not a valid format for the geolocation mapping. Supported format(s) are: 'inline-toml', 'json'.")]
+    #[error(
+        "'{0}' is not a valid format for the geolocation mapping. Supported format(s) are: 'inline-toml', 'json'."
+    )]
     InvalidGeolocationMappingFormat(String),
 
     #[error(
@@ -682,7 +692,9 @@ pub enum GeolocationConfigError {
     #[error("'format' field is empty")]
     EmptyFormatEntry,
 
-    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String")]
+    #[error(
+        "Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String"
+    )]
     GeolocationItemValueWrongFormat { key: String },
 }
 
@@ -724,11 +736,17 @@ pub enum ObjectStoreConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON Object."
     )]
     FileWrongFormat,
-    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String.")]
+    #[error(
+        "Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String."
+    )]
     FileValueWrongFormat { key: String },
-    #[error("Item value under key named '{key}' is of the wrong format. 'data' and 'file' are mutually exclusive.")]
+    #[error(
+        "Item value under key named '{key}' is of the wrong format. 'data' and 'file' are mutually exclusive."
+    )]
     BothDataAndFilePresent { key: String },
-    #[error("Item value under key named '{key}' is of the wrong format. One of 'data' or 'file' must be present.")]
+    #[error(
+        "Item value under key named '{key}' is of the wrong format. One of 'data' or 'file' must be present."
+    )]
     MissingDataOrFile { key: String },
 }
 
@@ -747,11 +765,11 @@ pub enum SecretStoreConfigError {
         "The file is of the wrong format. The file is expected to contain a single JSON object."
     )]
     FileWrongFormat,
-    #[error("More than one of `file`, `data`, or `env` keys for the object `{0}` are set. Only one can be used.")]
-    FileDataEnvExclusive(String),
     #[error(
-        "None of `file`, `data`, or `env` keys for the object `{0}` is set. One must be used."
+        "More than one of `file`, `data`, or `env` keys for the object `{0}` are set. Only one can be used."
     )]
+    FileDataEnvExclusive(String),
+    #[error("None of `file`, `data`, or `env` keys for the object `{0}` is set. One must be used.")]
     FileDataEnvNotSet(String),
     #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
@@ -780,13 +798,17 @@ pub enum SecretStoreConfigError {
 /// Errors that may occur while validating shielding site configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum ShieldingSiteConfigError {
-    #[error("Illegal TOML value for shielding site; must be either the string 'local' or a table containin an encrypted and unencrypted URL.")]
+    #[error(
+        "Illegal TOML value for shielding site; must be either the string 'local' or a table containin an encrypted and unencrypted URL."
+    )]
     IllegalSiteValue,
 
     #[error("Illegal TOML string for shielding site; must be 'local'")]
     IllegalSiteString,
 
-    #[error("Illegal table for shielding site; must have exactly one key named 'encrypted', and one named 'unencrypted'")]
+    #[error(
+        "Illegal table for shielding site; must have exactly one key named 'encrypted', and one named 'unencrypted'"
+    )]
     IllegalSiteDefinition,
 
     #[error("Illegal URL ({url}): {error}")]
