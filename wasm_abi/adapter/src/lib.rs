@@ -26,7 +26,7 @@ use crate::bindings::wasi::random::random;
 use crate::fastly::INVALID_HANDLE;
 use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
 use core::ffi::c_void;
-use core::mem::{self, MaybeUninit, align_of, forget, size_of};
+use core::mem::{self, align_of, forget, size_of, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::ptr::null_mut;
 use core::slice;
@@ -1447,7 +1447,7 @@ impl BlockingMode {
                         Ok(()) => {}
                         Err(streams::StreamError::Closed) => return Err(ERRNO_IO),
                         Err(streams::StreamError::LastOperationFailed(e)) => {
-                            return Err(stream_error_to_errno(e));
+                            return Err(stream_error_to_errno(e))
                         }
                     }
                 }
@@ -1459,7 +1459,7 @@ impl BlockingMode {
                     Ok(n) => n,
                     Err(streams::StreamError::Closed) => 0,
                     Err(streams::StreamError::LastOperationFailed(e)) => {
-                        return Err(stream_error_to_errno(e));
+                        return Err(stream_error_to_errno(e))
                     }
                 };
 
@@ -1472,7 +1472,7 @@ impl BlockingMode {
                     Ok(_) => {}
                     Err(streams::StreamError::Closed) => return Ok(0),
                     Err(streams::StreamError::LastOperationFailed(e)) => {
-                        return Err(stream_error_to_errno(e));
+                        return Err(stream_error_to_errno(e))
                     }
                 }
 
@@ -1480,7 +1480,7 @@ impl BlockingMode {
                     Ok(_) => {}
                     Err(streams::StreamError::Closed) => return Ok(0),
                     Err(streams::StreamError::LastOperationFailed(e)) => {
-                        return Err(stream_error_to_errno(e));
+                        return Err(stream_error_to_errno(e))
                     }
                 }
 

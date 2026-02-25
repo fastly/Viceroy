@@ -1,5 +1,5 @@
 use super::FastlyStatus;
-use crate::{TrappingUnwrap, alloc_result_opt, bindings::fastly::compute::config_store};
+use crate::{alloc_result_opt, bindings::fastly::compute::config_store, TrappingUnwrap};
 use core::mem::ManuallyDrop;
 
 pub type ConfigStoreHandle = u32;

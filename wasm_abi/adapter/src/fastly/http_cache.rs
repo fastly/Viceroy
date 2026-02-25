@@ -1,11 +1,11 @@
 use super::{
-    BodyHandle, CacheDurationNs, CacheHitCount, CacheLookupState, CacheObjectLength, FastlyStatus,
-    RequestHandle, ResponseHandle, convert_result,
+    convert_result, BodyHandle, CacheDurationNs, CacheHitCount, CacheLookupState,
+    CacheObjectLength, FastlyStatus, RequestHandle, ResponseHandle,
 };
 
 use crate::{
-    TrappingUnwrap, alloc_result, alloc_result_opt, with_buffer, write_bool_result,
-    write_bool_result_opt, write_handle_result, write_result_opt,
+    alloc_result, alloc_result_opt, with_buffer, write_bool_result, write_bool_result_opt,
+    write_handle_result, write_result_opt, TrappingUnwrap,
 };
 use core::mem::ManuallyDrop;
 

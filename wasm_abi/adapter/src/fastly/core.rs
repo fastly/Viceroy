@@ -2,11 +2,11 @@
 // not be confused with types of similar names in the `fastly` crate which are used to provide safe
 // wrappers around these definitions.
 
-use super::{FastlyStatus, convert_result};
+use super::{convert_result, FastlyStatus};
 use crate::fastly::decode_ip_address;
 use crate::{
-    TrappingUnwrap, alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer,
-    write_bool_result,
+    alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer, write_bool_result,
+    TrappingUnwrap,
 };
 use core::mem::ManuallyDrop;
 
@@ -399,7 +399,7 @@ pub mod fastly_http_body {
                 let res = match res {
                     Ok(value) => Ok(value),
                     Err(http_body::TrailerError::NotAvailableYet) => {
-                        return Err(FastlyStatus::AGAIN);
+                        return Err(FastlyStatus::AGAIN)
                     }
                     Err(http_body::TrailerError::Error(err)) => Err(err),
                 };
@@ -446,7 +446,7 @@ pub mod fastly_http_body {
                 let res = match res {
                     Ok(value) => Ok(value),
                     Err(http_body::TrailerError::NotAvailableYet) => {
-                        return Err(FastlyStatus::AGAIN);
+                        return Err(FastlyStatus::AGAIN)
                     }
                     Err(http_body::TrailerError::Error(err)) => Err(err),
                 };
@@ -491,7 +491,7 @@ pub mod fastly_http_body {
                 let res = match res {
                     Ok(value) => Ok(value),
                     Err(http_body::TrailerError::NotAvailableYet) => {
-                        return Err(FastlyStatus::AGAIN);
+                        return Err(FastlyStatus::AGAIN)
                     }
                     Err(http_body::TrailerError::Error(err)) => Err(err),
                 };
@@ -577,9 +577,9 @@ pub mod fastly_log {
 pub mod fastly_http_downstream {
     use super::*;
     use crate::{
-        TrappingUnwrap,
         bindings::fastly::compute::{http_downstream, http_req},
         fastly::encode_ip_address,
+        TrappingUnwrap,
     };
 
     bitflags::bitflags! {
@@ -1055,12 +1055,12 @@ pub mod fastly_http_req {
 
     use super::*;
     use crate::{
-        TrappingUnwrap,
         bindings::fastly::{
             self,
             adapter::adapter_http_req,
             compute::{backend, http_req, http_types, security},
         },
+        TrappingUnwrap,
     };
 
     bitflags::bitflags! {

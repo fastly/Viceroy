@@ -1,6 +1,6 @@
-use super::{BodyHandle, FastlyStatus, RequestHandle, convert_result};
+use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle};
 use crate::fastly::INVALID_HANDLE;
-use crate::{TrappingUnwrap, alloc_result_opt};
+use crate::{alloc_result_opt, TrappingUnwrap};
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
