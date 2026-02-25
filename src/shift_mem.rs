@@ -16,7 +16,7 @@ use walrus::*;
 const OFFSET_PAGES: i32 = 2;
 // This const should always equal to the OFFSET defined in wasm_abi/adapter/src/lib.rs
 const OFFSET: i32 = OFFSET_PAGES * 64 * 1024;
-fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
+fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
     let start = func.entry_block();
     let mut locals = vec![];
     let mut stack = vec![start];
@@ -55,8 +55,8 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     ));
                 }
                 Instr::MemoryInit(_) | Instr::MemoryFill(_) => {
-                    let local1 = get_local(gen, &mut locals, 0);
-                    let local2 = get_local(gen, &mut locals, 1);
+                    let local1 = get_local(r#gen, &mut locals, 0);
+                    let local2 = get_local(r#gen, &mut locals, 1);
                     instrs.push((
                         Instr::LocalSet(LocalSet { local: local1 }),
                         Default::default(),
@@ -88,8 +88,8 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     instrs.push((instr, loc));
                 }
                 Instr::MemoryCopy(_) => {
-                    let local1 = get_local(gen, &mut locals, 0);
-                    let local2 = get_local(gen, &mut locals, 1);
+                    let local1 = get_local(r#gen, &mut locals, 0);
+                    let local2 = get_local(r#gen, &mut locals, 1);
                     instrs.push((
                         Instr::LocalSet(LocalSet { local: local1 }),
                         Default::default(),
@@ -170,12 +170,12 @@ fn shift_func(gen: &mut ModuleLocals, func: &mut LocalFunction) {
         seq.instrs = instrs;
     }
 }
-fn get_local(gen: &mut ModuleLocals, locals: &mut Vec<LocalId>, idx: usize) -> LocalId {
+fn get_local(r#gen: &mut ModuleLocals, locals: &mut Vec<LocalId>, idx: usize) -> LocalId {
     if idx < locals.len() {
         locals[idx]
     } else {
         for _ in locals.len()..=idx {
-            locals.push(gen.add(ValType::I32));
+            locals.push(r#gen.add(ValType::I32));
         }
         locals[idx]
     }

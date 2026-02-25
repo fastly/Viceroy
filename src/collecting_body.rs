@@ -7,10 +7,10 @@ use http_body::Body as HttpBody;
 use tokio::sync::watch;
 
 use crate::{
+    Error,
     body::{Body, Chunk},
     error,
     streaming_body::StreamingBody,
-    Error,
 };
 
 /// CollectingBody is a body for caching and request collapsing.
@@ -132,7 +132,7 @@ impl CollectingBody {
             match chunk {
                 Ok(data) => {
                     tx.send_modify(|state| {
-                        if let CollectingBodyInner::Streaming(ref mut chunks) = state {
+                        if let CollectingBodyInner::Streaming(chunks) = state {
                             length += data.len();
                             chunks.push(data);
                         } else {
@@ -348,10 +348,10 @@ mod tests {
     use tokio::{sync::oneshot, task::JoinSet};
 
     use crate::{
+        Error,
         body::{Body, Chunk},
         collecting_body::CollectingBody,
         streaming_body::StreamingBody,
-        Error,
     };
     use proptest::prelude::*;
 

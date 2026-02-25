@@ -11,9 +11,10 @@ async fn default_behavior_link_failure() -> TestResult {
         .await;
 
     let err = res.expect_err("should be a link failure");
-    assert!(err
-        .to_string()
-        .contains("unknown import: `unknown_module::unknown_function` has not been defined"));
+    assert!(
+        err.to_string()
+            .contains("unknown import: `unknown_module::unknown_function` has not been defined")
+    );
 
     Ok(())
 }

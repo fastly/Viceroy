@@ -2,7 +2,7 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::{body::to_bytes, StatusCode};
+use hyper::{StatusCode, body::to_bytes};
 
 viceroy_test!(json_device_detection_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
@@ -23,11 +23,13 @@ viceroy_test!(json_device_detection_lookup_works, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 
     Ok(())
 });
@@ -59,11 +61,13 @@ viceroy_test!(inline_toml_device_detection_lookup_works, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 
     Ok(())
 });

@@ -64,7 +64,7 @@ mod deserialization {
                                 DeviceDetectionConfigError::InvalidDeviceDetectionMappingFormat(
                                     format.to_string(),
                                 ),
-                            )
+                            );
                         }
                     },
                     Some(_) => return Err(DeviceDetectionConfigError::InvalidFormatEntry),

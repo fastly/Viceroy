@@ -3,7 +3,7 @@
 use futures::FutureExt;
 
 use {
-    crate::{error, streaming_body::StreamingBodyItem, Error},
+    crate::{Error, error, streaming_body::StreamingBodyItem},
     bytes::{BufMut, BytesMut},
     flate2::write::GzDecoder,
     futures::pin_mut,

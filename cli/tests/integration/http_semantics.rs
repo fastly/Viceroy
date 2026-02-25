@@ -5,7 +5,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{header, Request, Response, StatusCode},
+    hyper::{Request, Response, StatusCode, header},
 };
 
 viceroy_test!(framing_headers_are_overridden, |is_component| {

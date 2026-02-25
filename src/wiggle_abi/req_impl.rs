@@ -1,8 +1,8 @@
 //! fastly_req` hostcall implementations.
 use std::net::IpAddr;
 
-use super::types::SendErrorDetail;
 use super::SecretStoreError;
+use super::types::SendErrorDetail;
 use crate::cache::CacheOverride;
 use crate::config::ClientCertInfo;
 use crate::secret_store::SecretLookup;

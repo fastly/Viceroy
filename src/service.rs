@@ -1,7 +1,7 @@
 //! Service types.
 
 use {
-    crate::{body::Body, execute::ExecuteCtx, Error},
+    crate::{Error, body::Body, execute::ExecuteCtx},
     futures::future::{self, Ready},
     hyper::{
         http::{Request, Response},
@@ -16,7 +16,7 @@ use {
         sync::Arc,
         task::{self, Poll},
     },
-    tracing::{event, Level},
+    tracing::{Level, event},
 };
 
 /// A Viceroy service uses a Wasm module and a handler function to respond to HTTP requests.

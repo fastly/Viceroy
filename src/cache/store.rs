@@ -1,11 +1,11 @@
 //! Data structures & implementation details for the Viceroy cache.
 
-use crate::cache::{variance::VaryRule, Error};
+use crate::cache::{Error, variance::VaryRule};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
     future::Future,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
@@ -14,7 +14,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{variance::Variant, Found, SurrogateKeySet, WriteOptions};
+use super::{Found, SurrogateKeySet, WriteOptions, variance::Variant};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -792,31 +792,37 @@ mod tests {
             },
             make_body("object 1"),
         );
-        if let (Some(found), None) = busy1.await {
-            let s = found
-                .body()
-                .build()
-                .await
-                .unwrap()
-                .read_into_string()
-                .await
-                .unwrap();
-            assert_eq!(&s, "object 1");
-        } else {
-            panic!("expected to block on object 1")
+        match busy1.await {
+            (Some(found), None) => {
+                let s = found
+                    .body()
+                    .build()
+                    .await
+                    .unwrap()
+                    .read_into_string()
+                    .await
+                    .unwrap();
+                assert_eq!(&s, "object 1");
+            }
+            _ => {
+                panic!("expected to block on object 1")
+            }
         }
-        if let (Some(found), None) = busy2.await {
-            let s = found
-                .body()
-                .build()
-                .await
-                .unwrap()
-                .read_into_string()
-                .await
-                .unwrap();
-            assert_eq!(&s, "object 2");
-        } else {
-            panic!("expected to block on object 2")
+        match busy2.await {
+            (Some(found), None) => {
+                let s = found
+                    .body()
+                    .build()
+                    .await
+                    .unwrap()
+                    .read_into_string()
+                    .await
+                    .unwrap();
+                assert_eq!(&s, "object 2");
+            }
+            _ => {
+                panic!("expected to block on object 2")
+            }
         }
     }
 

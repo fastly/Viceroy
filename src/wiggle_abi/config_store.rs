@@ -3,7 +3,7 @@ use super::{
     fastly_dictionary::FastlyDictionary,
     types::{ConfigStoreHandle, DictionaryHandle},
 };
-use crate::{session::Session, Error};
+use crate::{Error, session::Session};
 use wiggle::{GuestMemory, GuestPtr};
 
 impl FastlyConfigStore for Session {

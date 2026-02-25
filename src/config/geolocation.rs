@@ -88,7 +88,7 @@ mod deserialization {
                         format => {
                             return Err(GeolocationConfigError::InvalidGeolocationMappingFormat(
                                 format.to_string(),
-                            ))
+                            ));
                         }
                     },
                     Some(_) => return Err(GeolocationConfigError::InvalidFormatEntry),

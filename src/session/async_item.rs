@@ -208,11 +208,14 @@ impl AsyncItem {
         }
 
         let (streaming, receiver) = StreamingBody::new();
-        if let Self::Body(mut body) = std::mem::replace(self, Self::StreamingBody(streaming)) {
-            body.push_back(receiver);
-            Some(body)
-        } else {
-            unreachable!("!self.is_streaming, but was actually streaming");
+        match std::mem::replace(self, Self::StreamingBody(streaming)) {
+            Self::Body(mut body) => {
+                body.push_back(receiver);
+                Some(body)
+            }
+            _ => {
+                unreachable!("!self.is_streaming, but was actually streaming");
+            }
         }
     }
 
@@ -410,14 +413,15 @@ impl<T: Send + 'static> PeekableTask<T> {
     /// Block until a response is ready.
     pub async fn await_ready(&mut self) {
         if let PeekableTask::Waiting(rx) = self {
-            if let Ok(v) = rx.await {
-                *self = PeekableTask::Complete(v)
-            } else {
-                // todo, not the correct error type
-                *self = PeekableTask::Complete(Err(anyhow!(
-                    "peekable task sender unexpectedly dropped"
-                )
-                .into()));
+            match rx.await {
+                Ok(v) => *self = PeekableTask::Complete(v),
+                _ => {
+                    // todo, not the correct error type
+                    *self = PeekableTask::Complete(Err(anyhow!(
+                        "peekable task sender unexpectedly dropped"
+                    )
+                    .into()));
+                }
             }
         }
     }

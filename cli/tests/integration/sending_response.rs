@@ -6,8 +6,8 @@ use {
         viceroy_test,
     },
     hyper::{
-        body::{to_bytes, HttpBody},
         StatusCode,
+        body::{HttpBody, to_bytes},
     },
 };
 
@@ -40,11 +40,13 @@ viceroy_test!(empty_ok_response_by_default, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 
     Ok(())
 });
@@ -71,9 +73,10 @@ viceroy_test!(responses_can_be_streamed_downstream, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(resp
-        .headers()
-        .contains_key(hyper::header::TRANSFER_ENCODING));
+    assert!(
+        resp.headers()
+            .contains_key(hyper::header::TRANSFER_ENCODING)
+    );
     assert!(!resp.headers().contains_key(hyper::header::CONTENT_LENGTH));
 
     // accumulate the entire body to a vector

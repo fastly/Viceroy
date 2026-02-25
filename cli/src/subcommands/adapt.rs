@@ -1,7 +1,7 @@
 use crate::install_tracing_subscriber;
 use crate::opts::AdaptArgs;
 use std::process::ExitCode;
-use tracing::{event, Level};
+use tracing::{Level, event};
 
 pub(crate) fn exec(adapt_args: AdaptArgs) -> ExitCode {
     install_tracing_subscriber(adapt_args.verbosity());

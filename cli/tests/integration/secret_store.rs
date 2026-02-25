@@ -2,12 +2,14 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::{body::to_bytes, StatusCode};
+use hyper::{StatusCode, body::to_bytes};
 use viceroy_lib::config::FastlyConfig;
 use viceroy_lib::error::{FastlyConfigError, SecretStoreConfigError};
 
 viceroy_test!(secret_store_works, |is_component| {
-    std::env::set_var("ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A", "my-env-value");
+    // SAFETY: This isn't actually safe, but this is just a test and we haven't
+    // seen problems so far.
+    unsafe { std::env::set_var("ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A", "my-env-value") };
 
     const FASTLY_TOML: &str = r#"
         name = "secret-store"
@@ -26,13 +28,16 @@ viceroy_test!(secret_store_works, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 
-    std::env::remove_var("ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A");
+    // SAFETY: See the comment above about `set_var`.
+    unsafe { std::env::remove_var("ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A") };
 
     Ok(())
 });
@@ -62,7 +67,9 @@ async fn bad_config_store_not_array() -> TestResult {
             err: SecretStoreConfigError::NotAnArray,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotAnArray"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotAnArray"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -76,7 +83,9 @@ async fn bad_config_store_not_table() -> TestResult {
             err: SecretStoreConfigError::NotATable,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotATable"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotATable"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -90,7 +99,9 @@ async fn bad_config_no_key() -> TestResult {
             err: SecretStoreConfigError::NoKey,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoKey"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoKey"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -105,7 +116,9 @@ async fn bad_config_key_not_string() -> TestResult {
             err: SecretStoreConfigError::KeyNotAString,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::KeyNotAString"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::KeyNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -119,7 +132,9 @@ async fn bad_config_no_store_field() -> TestResult {
             err: SecretStoreConfigError::FileDataEnvNotSet(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoFileOrData"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoFileOrData"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -156,11 +171,13 @@ async fn bad_config_store_fields_not_exclusive() -> TestResult {
 
                 match bad_config_test(&toml) {
                     Err(FastlyConfigError::InvalidSecretStoreDefinition {
-                                    err: SecretStoreConfigError::FileDataEnvExclusive(_),
-                                    ..
-                                }) => {},
-                    Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileDataEnvExclusive"),
-                    Ok(_) => panic!("Expected an error, but got Ok")
+                        err: SecretStoreConfigError::FileDataEnvExclusive(_),
+                        ..
+                    }) => {}
+                    Err(_) => panic!(
+                        "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileDataEnvExclusive"
+                    ),
+                    Ok(_) => panic!("Expected an error, but got Ok"),
                 }
             }
         }
@@ -176,7 +193,9 @@ async fn bad_config_data_not_string() -> TestResult {
             err: SecretStoreConfigError::DataNotAString(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::DataNotAString"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::DataNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -190,7 +209,9 @@ async fn bad_config_file_not_string() -> TestResult {
             err: SecretStoreConfigError::FileNotAString(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileNotAString"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -201,10 +222,12 @@ async fn bad_config_env_not_string() -> TestResult {
     const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first", env = 1}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
-                err: SecretStoreConfigError::EnvNotAString(_),
-                ..
-            }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::EnvNotAString"),
+            err: SecretStoreConfigError::EnvNotAString(_),
+            ..
+        }) => (),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::EnvNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -219,7 +242,9 @@ async fn bad_config_file_nonexistent() -> TestResult {
             err: SecretStoreConfigError::IoError(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::IoError"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::IoError"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -246,7 +271,9 @@ async fn bad_config_invalid_secret_name() -> TestResult {
             err: SecretStoreConfigError::InvalidSecretName(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -260,7 +287,9 @@ async fn bad_config_secret_name_too_long() -> TestResult {
             err: SecretStoreConfigError::InvalidSecretName(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())

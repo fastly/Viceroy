@@ -155,9 +155,7 @@ macro_rules! make_vec {
 /// Construct a `&str` containing the given pointer and length.
 #[macro_export]
 macro_rules! make_str {
-    ($ptr:expr, $len:expr) => {{
-        $crate::make_slice!($ptr, $len)
-    }};
+    ($ptr:expr, $len:expr) => {{ $crate::make_slice!($ptr, $len) }};
 }
 
 /// Construct a `ManuallyDrop<Vec<u8>>` containing the given pointer and length.
@@ -167,9 +165,7 @@ macro_rules! make_str {
 /// validity.
 #[macro_export]
 macro_rules! make_string {
-    ($ptr:expr, $len:expr) => {{
-        $crate::make_vec!($ptr, $len)
-    }};
+    ($ptr:expr, $len:expr) => {{ $crate::make_vec!($ptr, $len) }};
 }
 
 #[macro_export]

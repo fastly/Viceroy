@@ -359,9 +359,13 @@ impl From<&ObjectStoreError> for FastlyStatus {
 pub enum KvStoreError {
     #[error("The error was not set")]
     Uninitialized,
-    #[error("KV store cannot or will not process the request due to something that is perceived to be a client error")]
+    #[error(
+        "KV store cannot or will not process the request due to something that is perceived to be a client error"
+    )]
     BadRequest,
-    #[error("KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)")]
+    #[error(
+        "KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)"
+    )]
     PreconditionFailed,
     #[error("The size limit for a KV store key was exceeded")]
     PayloadTooLarge,
