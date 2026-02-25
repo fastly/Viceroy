@@ -5,6 +5,7 @@
 - Add non-shift adapter when user module is using wit-bindgen.
 - Update to Wasmtime 39 ([#584](https://github.com/fastly/Viceroy/pull/584))
 - Remove unused WIT files from the source tree.
+- Make "viceroy adapt" add "produced-by" metadata to its output. ([#586](https://github.com/fastly/Viceroy/pull/586))
 
 ## 0.16.4 (2026-01-26)
 
