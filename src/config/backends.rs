@@ -1,7 +1,7 @@
 mod client_cert_info;
 
 use {
-    hyper::{header::HeaderValue, Uri},
+    hyper::{Uri, header::HeaderValue},
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -32,7 +32,7 @@ mod deserialization {
     use {
         super::{Backend, BackendsConfig},
         crate::error::{BackendConfigError, FastlyConfigError},
-        hyper::{header::HeaderValue, Uri},
+        hyper::{Uri, header::HeaderValue},
         std::sync::Arc,
         toml::value::{Table, Value},
     };

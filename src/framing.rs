@@ -1,6 +1,6 @@
 //! Utilities for validating "framing headers" (Content-Length and Transfer-Encoding) for HTTP messages.
 
-use http::{header, HeaderMap};
+use http::{HeaderMap, header};
 
 pub fn content_length_is_valid(headers: &HeaderMap) -> bool {
     let mut values = headers.get_all(header::CONTENT_LENGTH).iter();

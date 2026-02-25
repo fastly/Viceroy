@@ -3,10 +3,10 @@
 use tracing::debug;
 use {
     http::{
-        request::{Parts, Request},
         HeaderMap, Response, StatusCode,
+        request::{Parts, Request},
     },
-    hyper::{client::conn::Parts as ConnParts, upgrade::OnUpgrade, Body},
+    hyper::{Body, client::conn::Parts as ConnParts, upgrade::OnUpgrade},
     std::net::SocketAddr,
     tokio::{io::copy_bidirectional, net::TcpStream, task::JoinHandle},
     tracing::{error, info, warn},

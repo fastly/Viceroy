@@ -1,7 +1,7 @@
 use {
+    crate::Error,
     crate::component::bindings::fastly::compute::{purge, types},
     crate::linking::ComponentCtx,
-    crate::Error,
     wasmtime::component::Resource,
 };
 

@@ -25,6 +25,7 @@ use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode}
 use {
     self::downstream::DownstreamResponseState,
     crate::{
+        ExecuteCtx,
         acl::Acl,
         body::Body,
         config::{Backend, Backends, Dictionaries, LoadedDictionary},
@@ -44,11 +45,10 @@ use {
             PendingKvListHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
             RequestPromiseHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
         },
-        ExecuteCtx,
     },
-    cranelift_entity::{entity_impl, PrimaryMap},
+    cranelift_entity::{PrimaryMap, entity_impl},
     futures::future::{self, FutureExt},
-    http::{request, response, HeaderMap, Response},
+    http::{HeaderMap, Response, request, response},
 };
 
 const NEXT_REQ_ACCEPT_MAX: usize = 5;
@@ -1149,11 +1149,14 @@ impl Session {
         // put back all the targets we've extracted so far
         let mut targets = vec![];
         for handle in handles {
-            if let Ok(item) = self.take_async_item(handle) {
-                targets.push(SelectTarget { handle, item });
-            } else {
-                self.reinsert_select_targets(targets);
-                return Err(HandleError::InvalidPendingRequestHandle(handle.into()));
+            match self.take_async_item(handle) {
+                Ok(item) => {
+                    targets.push(SelectTarget { handle, item });
+                }
+                _ => {
+                    self.reinsert_select_targets(targets);
+                    return Err(HandleError::InvalidPendingRequestHandle(handle.into()));
+                }
             }
         }
         Ok(targets)

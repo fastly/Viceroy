@@ -1,6 +1,6 @@
 use {
-    crate::{error::Error, wiggle_abi::types, wiggle_abi::MultiValueWriter},
-    http::{header::HeaderName, HeaderMap, HeaderValue},
+    crate::{error::Error, wiggle_abi::MultiValueWriter, wiggle_abi::types},
+    http::{HeaderMap, HeaderValue, header::HeaderName},
     wiggle::{GuestMemory, GuestPtr},
 };
 
