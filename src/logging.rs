@@ -11,6 +11,7 @@ use tokio::io::AsyncWrite;
 pub struct LogEndpoint {
     name: Vec<u8>,
     writer: Arc<Mutex<dyn Write + Send>>,
+    channel_sender: Option<tokio::sync::mpsc::Sender<Vec<u8>>>,
 }
 
 impl LogEndpoint {
@@ -20,7 +21,14 @@ impl LogEndpoint {
         LogEndpoint {
             name: name.to_owned(),
             writer,
+            channel_sender: None,
         }
+    }
+
+    /// Attach a channel sender to this endpoint for monitoring.
+    pub fn with_channel(mut self, sender: tokio::sync::mpsc::Sender<Vec<u8>>) -> Self {
+        self.channel_sender = Some(sender);
+        self
     }
 
     /// Write a log entry to this endpoint.
@@ -39,6 +47,12 @@ impl LogEndpoint {
         }
 
         if msg.is_empty() {
+            return Ok(());
+        }
+
+        // If a channel sender is present, send the raw message bytes via the channel
+        if let Some(sender) = &self.channel_sender {
+            let _ = sender.try_send(msg.to_vec());
             return Ok(());
         }
 

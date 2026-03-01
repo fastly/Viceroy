@@ -6,7 +6,7 @@ use {
         adapt,
         body::Body,
         body_tee::tee,
-        cache::Cache,
+        cache::{Cache, InMemoryCache},
         component as compute,
         config::{
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
@@ -54,6 +54,9 @@ use {
     wasmtime_wasi::I32Exit,
 };
 
+use std::collections::BTreeMap;
+use tokio::sync::RwLock;
+
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
 const NEXT_REQ_PENDING_MAX: usize = 5;
@@ -81,6 +84,55 @@ pub struct GuestProfileConfig {
     pub path: PathBuf,
     /// Period at which the guest should be profiled.
     pub sample_period: Duration,
+}
+
+/// A handle to a running guest computation.
+pub struct GuestHandle {
+    pub(crate) handle: tokio::task::JoinHandle<Result<(), ExecutionError>>,
+}
+
+/// Wait for a guest to complete and return any error.
+pub async fn run_to_completion(guest: GuestHandle) -> Option<anyhow::Error> {
+    match guest.handle.await {
+        Ok(Ok(())) => None,
+        Ok(Err(ExecutionError::WasmTrap(e))) => Some(e),
+        Ok(Err(e)) => Some(anyhow::anyhow!("guest execution failed: {}", e)),
+        Err(e) => Some(anyhow::anyhow!("guest task panicked: {}", e)),
+    }
+}
+
+/// Monitors logging endpoints by name, routing messages to registered listeners.
+#[derive(Clone, Default)]
+pub struct EndpointsMonitor {
+    pub endpoints: Arc<RwLock<BTreeMap<Vec<u8>, tokio::sync::mpsc::Sender<Vec<u8>>>>>,
+}
+
+impl EndpointsMonitor {
+    /// Register a listener for the given endpoint name.
+    pub fn register_listener(&self, name: impl Into<Vec<u8>>) -> EndpointListener {
+        let (tx, rx) = tokio::sync::mpsc::channel(1024);
+        let name = name.into();
+        let endpoints = self.endpoints.clone();
+        // Use blocking_write since this is typically called from sync context during setup
+        endpoints.blocking_write().insert(name, tx);
+        EndpointListener { receiver: rx }
+    }
+}
+
+/// Receives messages from a monitored logging endpoint.
+pub struct EndpointListener {
+    receiver: tokio::sync::mpsc::Receiver<Vec<u8>>,
+}
+
+impl EndpointListener {
+    /// Drain all currently available messages without blocking.
+    pub fn messages(&mut self) -> Vec<Vec<u8>> {
+        let mut msgs = Vec::new();
+        while let Ok(msg) = self.receiver.try_recv() {
+            msgs.push(msg);
+        }
+        msgs
+    }
 }
 
 pub struct NextRequest(Option<(DownstreamRequest, Arc<ExecuteCtx>)>);
@@ -151,7 +203,7 @@ pub struct ExecuteCtx {
     /// The shielding sites for this execution.
     shielding_sites: ShieldingSites,
     /// The cache for this service.
-    cache: Arc<Cache>,
+    cache: InMemoryCache,
     /// Senders waiting for new requests for reusable sessions.
     pending_reuse: Arc<AsyncMutex<Vec<Sender<NextRequest>>>>,
     epoch_increment_thread: Option<JoinHandle<()>>,
@@ -159,6 +211,11 @@ pub struct ExecuteCtx {
     epoch_increment_stop: Arc<AtomicBool>,
     /// Configuration for guest profiling if enabled
     guest_profile_config: Option<Arc<GuestProfileConfig>>,
+    /// Monitor for logging endpoints.
+    endpoints_monitor: EndpointsMonitor,
+    /// Optional interceptor for dynamic backend registration.
+    dynamic_backend_interceptor:
+        Option<Arc<dyn crate::config::DynamicBackendRegistrationInterceptor>>,
 }
 
 impl ExecuteCtx {
@@ -304,8 +361,10 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
-            cache: Arc::new(Cache::default()),
+            cache: InMemoryCache::default(),
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
+            endpoints_monitor: EndpointsMonitor::default(),
+            dynamic_backend_interceptor: None,
         };
 
         Ok(ExecuteCtxBuilder { inner })
@@ -425,7 +484,7 @@ impl ExecuteCtx {
         mut incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
+    ) -> Result<(Response<Body>, Option<anyhow::Error>, Option<GuestHandle>), Error> {
         let orig_req_on_upgrade = hyper::upgrade::on(&mut incoming_req);
         let (incoming_req_parts, incoming_req_body) = incoming_req.into_parts();
         let local_pushpin_proxy_port = self.local_pushpin_proxy_port;
@@ -449,7 +508,7 @@ impl ExecuteCtx {
             original_headers,
         };
 
-        let (resp, mut err) = self.reuse_or_spawn_guest(req, metadata).await;
+        let (resp, mut err, guest_handle) = self.reuse_or_spawn_guest(req, metadata).await;
 
         let span = info_span!("request", id = req_id);
         let _span = span.enter();
@@ -472,7 +531,7 @@ impl ExecuteCtx {
                             let resp = Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                                 .body(Body::from(hyper::Body::from(err.to_string())))?;
-                            return Ok((resp, Some(err)));
+                            return Ok((resp, Some(err), None));
                         }
                         Some(port) => port,
                     };
@@ -488,7 +547,7 @@ impl ExecuteCtx {
                     .await;
 
                     let (p, hyper_body) = proxy_resp.into_parts();
-                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None, None));
                 }
                 Err(e) => {
                     err = Some(e);
@@ -496,7 +555,7 @@ impl ExecuteCtx {
             }
         }
 
-        Ok((resp, err))
+        Ok((resp, err, guest_handle))
     }
 
     /// Spawn a new guest to process a request whose processing was never attempted by
@@ -509,7 +568,7 @@ impl ExecuteCtx {
         tokio::task::spawn(async move {
             let (sender, receiver) = oneshot::channel();
             let original = std::mem::replace(&mut downstream.sender, sender);
-            let (resp, err) = self.spawn_guest(downstream, receiver).await;
+            let (resp, err, _guest_handle) = self.spawn_guest(downstream, receiver).await;
             let resp = guest_result_to_response(resp, err);
             let _ = original.send(DownstreamResponse::Http(resp));
         });
@@ -531,7 +590,7 @@ impl ExecuteCtx {
         self: Arc<Self>,
         req: Request<Body>,
         metadata: DownstreamMetadata,
-    ) -> (Response<Body>, Option<anyhow::Error>) {
+    ) -> (Response<Body>, Option<anyhow::Error>, Option<GuestHandle>) {
         let (sender, receiver) = oneshot::channel();
         let downstream = DownstreamRequest {
             req,
@@ -549,9 +608,9 @@ impl ExecuteCtx {
                     drop(reusable);
 
                     if let Some(response) = Self::maybe_receive_response(receiver).await {
-                        return response;
+                        return (response.0, response.1, None);
                     }
-                    return (Response::default(), None);
+                    return (Response::default(), None, None);
                 }
                 Err(nr) => next_req = nr,
             }
@@ -569,7 +628,7 @@ impl ExecuteCtx {
         self: Arc<Self>,
         downstream: DownstreamRequest,
         receiver: oneshot::Receiver<DownstreamResponse>,
-    ) -> (Response<Body>, Option<anyhow::Error>) {
+    ) -> (Response<Body>, Option<anyhow::Error>, Option<GuestHandle>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
@@ -582,21 +641,21 @@ impl ExecuteCtx {
         ));
 
         if let Some(response) = Self::maybe_receive_response(receiver).await {
-            return response;
+            return (response.0, response.1, Some(GuestHandle { handle: guest_handle }));
         }
 
         match guest_handle
             .await
             .expect("guest worker finished without panicking")
         {
-            Ok(_) => (Response::new(Body::empty()), None),
+            Ok(_) => (Response::new(Body::empty()), None, None),
             Err(ExecutionError::WasmTrap(e)) => {
                 event!(
                     Level::ERROR,
                     "There was an error handling the request {}",
                     e.to_string()
                 );
-                (anyhow_response(&e), Some(e))
+                (anyhow_response(&e), Some(e), None)
             }
             Err(e) => panic!("failed to run guest: {}", e),
         }
@@ -850,8 +909,58 @@ impl ExecuteCtx {
         result
     }
 
+    /// Create a fork of this execution context, sharing the engine and compiled module
+    /// but with fresh per-test state (cache, request IDs, pending reuse).
+    pub fn fork(self: &Arc<Self>) -> ExecuteCtxBuilder {
+        ExecuteCtxBuilder {
+            inner: ExecuteCtx {
+                engine: self.engine.clone(),
+                instance_pre: self.instance_pre.clone(),
+                acls: self.acls.clone(),
+                backends: self.backends.clone(),
+                device_detection: self.device_detection.clone(),
+                geolocation: self.geolocation.clone(),
+                tls_config: self.tls_config.clone(),
+                dictionaries: self.dictionaries.clone(),
+                config_path: self.config_path.clone(),
+                capture_logs: self.capture_logs.clone(),
+                log_stdout: self.log_stdout,
+                log_stderr: self.log_stderr,
+                local_pushpin_proxy_port: self.local_pushpin_proxy_port,
+                object_store: self.object_store.clone(),
+                secret_stores: self.secret_stores.clone(),
+                shielding_sites: self.shielding_sites.clone(),
+                guest_profile_config: self.guest_profile_config.clone(),
+                // Fresh per-test state:
+                cache: InMemoryCache::new(),
+                next_req_id: Arc::new(AtomicU64::new(0)),
+                pending_reuse: Arc::new(AsyncMutex::new(vec![])),
+                // Don't own the epoch thread (parent owns it)
+                epoch_increment_thread: None,
+                epoch_increment_stop: self.epoch_increment_stop.clone(),
+                // New fields default:
+                dynamic_backend_interceptor: None,
+                endpoints_monitor: EndpointsMonitor::default(),
+            },
+        }
+    }
+
     pub fn cache(&self) -> &Arc<Cache> {
+        &self.cache.0
+    }
+
+    pub fn in_memory_cache(&self) -> &InMemoryCache {
         &self.cache
+    }
+
+    pub fn endpoints_monitor(&self) -> &EndpointsMonitor {
+        &self.endpoints_monitor
+    }
+
+    pub fn dynamic_backend_interceptor(
+        &self,
+    ) -> Option<&dyn crate::config::DynamicBackendRegistrationInterceptor> {
+        self.dynamic_backend_interceptor.as_deref()
     }
 
     pub fn config_path(&self) -> Option<&Path> {
@@ -941,6 +1050,27 @@ impl ExecuteCtxBuilder {
     /// Set the shielding sites for this execution context.
     pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
         self.inner.shielding_sites = shielding_sites;
+        self
+    }
+
+    /// Set the dynamic backend registration interceptor.
+    pub fn with_dynamic_backend_interceptor(
+        mut self,
+        interceptor: Arc<dyn crate::config::DynamicBackendRegistrationInterceptor>,
+    ) -> Self {
+        self.inner.dynamic_backend_interceptor = Some(interceptor);
+        self
+    }
+
+    /// Set the endpoints monitor for this execution context.
+    pub fn with_endpoints(mut self, endpoints_monitor: EndpointsMonitor) -> Self {
+        self.inner.endpoints_monitor = endpoints_monitor;
+        self
+    }
+
+    /// Set the cache for this execution context.
+    pub fn with_cache(mut self, cache: InMemoryCache) -> Self {
+        self.inner.cache = cache;
         self
     }
 

@@ -95,6 +95,7 @@ impl fastly_shielding::FastlyShielding for Session {
             grpc: false,
             client_cert: None,
             ca_certs: Vec::new(),
+            handler: None,
         };
 
         if !self.add_backend(&new_name, new_backend) {
