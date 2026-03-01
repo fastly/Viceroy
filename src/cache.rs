@@ -557,6 +557,37 @@ impl std::str::FromStr for SurrogateKey {
     }
 }
 
+/// A thin public wrapper around `Cache` that provides a convenient API for integration testing.
+#[derive(Clone)]
+pub struct InMemoryCache(pub(crate) Arc<Cache>);
+
+impl Default for InMemoryCache {
+    fn default() -> Self {
+        Self(Arc::new(Cache::default()))
+    }
+}
+
+impl InMemoryCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Purge cache entries matching the given surrogate key strings.
+    pub fn purge(&self, surrogates: Vec<String>) {
+        for s in surrogates {
+            if let Ok(key) = s.parse::<SurrogateKey>() {
+                self.0.purge(key, false);
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for InMemoryCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "InMemoryCache")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
