@@ -1230,6 +1230,6 @@ fn fastly_toml_files_with_unsupported_manifest_version() {
 
     assert!(matches!(
         err,
-        FastlyConfigError::UnsupportedManifestVersion(4)
+        FastlyConfigError::UnsupportedManifestVersion(4, 3)
     ));
 }
