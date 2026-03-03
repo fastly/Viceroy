@@ -59,6 +59,8 @@ tracing-futures = { workspace = true }
 url = { workspace = true }
 wasmparser = { workspace = true }
 wasm-encoder = { workspace = true }
+# Disable the "serde" feature which we don't need.
+wasm-metadata = { version = "0.244.0", default-features = false }
 wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
