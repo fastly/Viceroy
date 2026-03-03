@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use viceroy_lib::{config::UnknownImportBehavior, GuestProfileConfig};
+use viceroy_lib::{GuestProfileConfig, config::UnknownImportBehavior};
 
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
@@ -12,7 +12,7 @@ use {
         net::SocketAddr,
         path::{Path, PathBuf},
     },
-    viceroy_lib::{config::ExperimentalModule, Error, ProfilingStrategy},
+    viceroy_lib::{Error, ProfilingStrategy, config::ExperimentalModule},
 };
 
 // Command-line arguments for the Viceroy CLI.
@@ -394,7 +394,7 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
 mod opts_tests {
     use {
         super::{Commands, Opts},
-        clap::{error::ErrorKind, Parser},
+        clap::{Parser, error::ErrorKind},
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         std::path::PathBuf,
     };

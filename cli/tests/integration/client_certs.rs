@@ -2,7 +2,7 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use base64::engine::{general_purpose, Engine};
+use base64::engine::{Engine, general_purpose};
 use hyper::http::response;
 use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
@@ -13,8 +13,8 @@ use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tls_listener::TlsListener;
-use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 
 // So, let's say you want to regenerate some of the keys used in these tests,
 // because they've expired or you want to try different algorithms. To do so,
@@ -202,10 +202,14 @@ viceroy_test!(custom_ca_works, |is_component| {
 
 viceroy_test!(client_certs_work, |is_component| {
     // Set up the test harness
-    std::env::set_var(
-        "SSL_CERT_FILE",
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem"),
-    );
+    // SAFETY: This isn't actually safe, but this is just a test and we haven't
+    // seen problems so far.
+    unsafe {
+        std::env::set_var(
+            "SSL_CERT_FILE",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/data/ca.pem"),
+        )
+    };
     let test = Test::using_fixture("mutual-tls.wasm").adapt_component(is_component);
 
     let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
@@ -258,7 +262,8 @@ viceroy_test!(client_certs_work, |is_component| {
         "Hello, Viceroy!"
     );
 
-    std::env::remove_var("SSL_CERT_FILE");
+    // SAFETY: See the comment above about `set_var`.
+    unsafe { std::env::remove_var("SSL_CERT_FILE") };
 
     Ok(())
 });

@@ -3,7 +3,7 @@ use fastly_shared::FastlyStatus;
 use std::net::IpAddr;
 
 #[link(wasm_import_module = "fastly_http_downstream")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "downstream_compliance_region"]
     pub fn downstream_compliance_region(
         req_handle: fastly_sys::RequestHandle,

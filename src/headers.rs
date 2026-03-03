@@ -1,4 +1,4 @@
-use hyper::{header, HeaderMap};
+use hyper::{HeaderMap, header};
 
 pub fn filter_outgoing_headers(headers: &mut HeaderMap) {
     // Remove framing-related headers; we rely on Hyper to insert the appropriate

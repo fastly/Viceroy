@@ -2,8 +2,8 @@
 
 use {
     crate::{
-        body::Body, config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint,
-        session::Session, wiggle_abi, Error,
+        Error, body::Body, config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint,
+        session::Session, wiggle_abi,
     },
     hyper::Response,
     std::collections::HashSet,

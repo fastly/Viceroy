@@ -2,7 +2,7 @@ use crate::execute_ctx::create_execution_context;
 use crate::install_tracing_subscriber;
 use crate::opts::RunArgs;
 use std::process::ExitCode;
-use tracing::{event, Level};
+use tracing::{Level, event};
 use wasmtime_wasi::I32Exit;
 
 pub(crate) async fn exec(run_args: RunArgs) -> ExitCode {

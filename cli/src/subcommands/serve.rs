@@ -1,7 +1,7 @@
 use crate::opts::ServeArgs;
 use crate::{create_execution_context, install_tracing_subscriber};
 use std::process::ExitCode;
-use tracing::{event, Level};
+use tracing::{Level, event};
 use viceroy_lib::{Error, ViceroyService};
 
 pub(crate) async fn exec(serve_args: ServeArgs) -> ExitCode {

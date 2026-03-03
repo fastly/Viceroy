@@ -9,9 +9,9 @@ use {
         session::ViceroyRequestMetadata,
     },
     http::{
+        Method, Uri,
         header::{HeaderName, HeaderValue},
         request::Request,
-        Method, Uri,
     },
     wasmtime::component::Resource,
 };

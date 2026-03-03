@@ -1,7 +1,7 @@
 use crate::session::Session;
 
 use super::fastly_http_cache::FastlyHttpCache;
-use super::{types, Error};
+use super::{Error, types};
 
 use wiggle::{GuestMemory, GuestPtr};
 

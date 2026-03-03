@@ -1,7 +1,7 @@
 use crate::common::{Test, TestResult};
 use crate::viceroy_test;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{body, Body, Request, Response, Server, StatusCode};
+use hyper::{Body, Request, Response, Server, StatusCode, body};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 

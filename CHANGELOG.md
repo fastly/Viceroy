@@ -7,6 +7,7 @@
 - Remove unused WIT files from the source tree.
 - Refactor the CLI, with each subcommand in its own file. ([#581](https://github.com/fastly/Viceroy/pull/581))
 - Make "viceroy adapt" add "produced-by" metadata to its output. ([#586](https://github.com/fastly/Viceroy/pull/586))
+- Update to Rust 2024 Edition. ([#588](https://github.com/fastly/Viceroy/pull/588))
 - Add no-op implementations for stale-if-error hostcalls ([#591](https://github.com/fastly/Viceroy/pull/591))
 
 ## 0.16.4 (2026-01-26)
