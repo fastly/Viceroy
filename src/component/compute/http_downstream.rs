@@ -7,6 +7,7 @@ use crate::linking::{ComponentCtx, SessionView};
 use crate::session::Session;
 use crate::wiggle_abi::types::RequestPromiseHandle;
 use wasmtime::component::Resource;
+use wasmtime_wasi_io::IoView;
 
 impl http_downstream::Host for ComponentCtx {
     async fn next_request(
@@ -217,6 +218,50 @@ impl http_downstream::Host for ComponentCtx {
     ) -> Result<bool, types::Error> {
         Ok(false)
     }
+
+    fn downstream_bot_analyzed(
+        &mut self,
+        _h: Resource<http_req::Request>,
+    ) -> Result<bool, types::Error> {
+        Ok(false)
+    }
+
+    fn downstream_bot_detected(
+        &mut self,
+        _h: Resource<http_req::Request>,
+    ) -> Result<bool, types::Error> {
+        Ok(false)
+    }
+
+    fn downstream_bot_name(
+        &mut self,
+        _h: Resource<http_req::Request>,
+        _max_len: u64,
+    ) -> Result<Option<String>, types::Error> {
+        Ok(None)
+    }
+
+    fn downstream_bot_category(
+        &mut self,
+        _h: Resource<http_req::Request>,
+        _max_len: u64,
+    ) -> Result<Option<String>, types::Error> {
+        Ok(None)
+    }
+
+    fn downstream_bot_category_kind(
+        &mut self,
+        _h: Resource<http_req::Request>,
+    ) -> Result<Option<http_downstream::BotCategory>, types::Error> {
+        Ok(None)
+    }
+
+    fn downstream_bot_verified(
+        &mut self,
+        _h: Resource<http_req::Request>,
+    ) -> Result<Option<bool>, types::Error> {
+        Ok(None)
+    }
 }
 
 impl http_downstream::HostExtraNextRequestOptions for ComponentCtx {
@@ -224,6 +269,21 @@ impl http_downstream::HostExtraNextRequestOptions for ComponentCtx {
         &mut self,
         _options: Resource<http_downstream::ExtraNextRequestOptions>,
     ) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+pub struct ExtraBotCategory {
+    raw: u32,
+}
+
+impl http_downstream::HostExtraBotCategory for ComponentCtx {
+    fn as_raw(&mut self, h: wasmtime::component::Resource<ExtraBotCategory>) -> u32 {
+        self.table().get(&h).map(|r| r.raw).unwrap_or_default()
+    }
+
+    fn drop(&mut self, h: wasmtime::component::Resource<ExtraBotCategory>) -> wasmtime::Result<()> {
+        self.table().delete(h)?;
         Ok(())
     }
 }

@@ -326,6 +326,60 @@ impl FastlyHttpDownstream for Session {
         // Since there are no keys to compare against, just return false.
         Ok(0)
     }
+
+    fn downstream_bot_analyzed(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        _handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        Ok(0)
+    }
+
+    fn downstream_bot_detected(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        _handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        Ok(0)
+    }
+
+    fn downstream_bot_name(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+        _bot_name_out: GuestPtr<u8>,
+        _bot_name_max_len: u32,
+        _nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_bot_category(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+        _bot_category_out: GuestPtr<u8>,
+        _bot_category_max_len: u32,
+        _nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_bot_category_kind(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_bot_verified(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
 }
 
 trait MetadataView {
