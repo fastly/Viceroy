@@ -89,6 +89,14 @@ impl FastlyHttpCache for Session {
         Err(Error::NotAvailable("HTTP Cache API primitives"))
     }
 
+    async fn transaction_choose_stale(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        cache_handle: types::HttpCacheHandle,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("HTTP Cache API primitives"))
+    }
+
     async fn close(
         &mut self,
         _memory: &mut GuestMemory<'_>,
@@ -180,6 +188,14 @@ impl FastlyHttpCache for Session {
     }
 
     async fn get_stale_while_revalidate_ns(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        cache_handle: types::HttpCacheHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("HTTP Cache API primitives"))
+    }
+
+    async fn get_stale_if_error_ns(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         cache_handle: types::HttpCacheHandle,

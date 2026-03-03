@@ -67,6 +67,13 @@ impl http_cache::HostSuggestedWriteOptions for ComponentCtx {
         panic!("HTTP Cache API primitives not yet supported")
     }
 
+    fn get_stale_if_error_ns(
+        &mut self,
+        _rep: Resource<http_cache::SuggestedWriteOptions>,
+    ) -> http_cache::DurationNs {
+        panic!("HTTP Cache API primitives not yet supported")
+    }
+
     fn get_surrogate_keys(
         &mut self,
         _rep: Resource<http_cache::SuggestedWriteOptions>,
@@ -261,6 +268,16 @@ impl http_cache::HostEntry for ComponentCtx {
         .into())
     }
 
+    fn get_stale_if_error_ns(
+        &mut self,
+        _rep: Resource<http_cache::Entry>,
+    ) -> Result<Option<http_cache::DurationNs>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "HTTP Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
     fn get_age_ns(
         &mut self,
         _handle: Resource<http_cache::Entry>,
@@ -314,6 +331,16 @@ impl http_cache::HostEntry for ComponentCtx {
     }
 
     fn transaction_abandon(
+        &mut self,
+        _handle: Resource<http_cache::Entry>,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "HTTP Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    fn transaction_choose_stale(
         &mut self,
         _handle: Resource<http_cache::Entry>,
     ) -> Result<(), types::Error> {

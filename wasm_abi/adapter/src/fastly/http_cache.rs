@@ -66,6 +66,7 @@ bitflags::bitflags! {
         const SURROGATE_KEYS = 1 << 4;
         const LENGTH = 1 << 5;
         const SENSITIVE_DATA = 1 << 6;
+        const STALE_IF_ERROR_NS = 1 << 7;
     }
 }
 
@@ -145,7 +146,10 @@ mod http_cache {
                 STALE_WHILE_REVALIDATE_NS,
                 (*options).stale_while_revalidate_ns
             ),
-            stale_if_error_ns: None,
+            stale_if_error_ns: when_enabled!(
+                STALE_IF_ERROR_NS,
+                (*options).stale_if_error_ns
+            ),
             surrogate_keys,
             length: when_enabled!(LENGTH, (*options).length),
             sensitive_data: mask.contains(HttpCacheWriteOptionsMask::SENSITIVE_DATA),
@@ -398,6 +402,12 @@ mod http_cache {
         convert_result(res)
     }
 
+    #[export_name = "fastly_http_cache#transaction_choose_stale"]
+    pub fn transaction_choose_stale(handle: HttpCacheHandle) -> FastlyStatus {
+        let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        convert_result(handle.transaction_choose_stale())
+    }
+
     #[export_name = "fastly_http_cache#transaction_abandon"]
     pub fn transaction_abandon(handle: HttpCacheHandle) -> FastlyStatus {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
@@ -523,6 +533,12 @@ mod http_cache {
                 (*options_out).stale_while_revalidate_ns = res.get_stale_while_revalidate_ns();
             }
         }
+        if requested.contains(HttpCacheWriteOptionsMask::STALE_IF_ERROR_NS) {
+            options_mask_out.insert(HttpCacheWriteOptionsMask::STALE_IF_ERROR_NS);
+            unsafe {
+                (*options_out).stale_if_error_ns = res.get_stale_if_error_ns();
+            }
+        }
 
         if requested.contains(HttpCacheWriteOptionsMask::LENGTH) {
             if let Some(len) = res.get_length() {
@@ -636,6 +652,16 @@ mod http_cache {
         let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
         let duration_out = unsafe_main_ptr!(duration_out);
         write_result_opt!(handle.get_stale_while_revalidate_ns(), duration_out)
+    }
+
+    #[export_name = "fastly_http_cache#get_stale_if_error_ns"]
+    pub fn get_stale_if_error_ns(
+        handle: HttpCacheHandle,
+        duration_out: *mut CacheDurationNs,
+    ) -> FastlyStatus {
+        let handle = ManuallyDrop::new(unsafe { host::Entry::from_handle(handle) });
+        let duration_out = unsafe_main_ptr!(duration_out);
+        write_result_opt!(handle.get_stale_if_error_ns(), duration_out)
     }
 
     #[export_name = "fastly_http_cache#get_age_ns"]

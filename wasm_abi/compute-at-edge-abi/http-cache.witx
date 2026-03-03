@@ -122,6 +122,12 @@
         ;; body have enough information to synthesize a `content-length` even before the complete
         ;; body is inserted to the cache.
         (field $length $cache_object_length)
+
+        ;; The maximum duration after `max_age` during which the response may be delivered stale
+        ;; if synchronous revalidation produces an error.
+        ;;
+        ;; If this field is not set, the default value is zero.
+        (field $stale_if_error_ns $cache_duration_ns)
     )
 )
 
@@ -135,6 +141,7 @@
         $surrogate_keys
         $length
         $sensitive_data
+        $stale_if_error_ns
     )
 )
 
@@ -252,7 +259,26 @@
         (result $err (expected $http_cache_handle (error $fastly_status)))
     )
 
-    ;;; Disable request collapsing and response caching for this cache entry.
+    ;;; Fulfill an obligation to provide a response to the cache by selecting a stale-if-error response.
+    ;;;
+    ;;; A guest that is obligated to insert/update the cache may not be able to produce an acceptable
+    ;;; response (e.g. unreachable backend, 5xx response). If the cache contains a response in the
+    ;;; stale-if-error period, the guest may prefer to use that response rather than returning an error.
+    ;;;
+    ;;; `transaction_choose_stale` is an alternative to `transaction_update_and_return_fresh` or 
+    ;;; `transaction_insert_and_stream_back`. Like those methods, it completes a request collapse,
+    ;;; providing the stale response to all collapsed transactions; and, after calling
+    ;;; `transaction_choose_stale`, the cache handle provides the (stale) response to send to the client.
+    ;;;
+    ;;; However, `transaction_choose_stale` does not change the cached state. The next lookup will again
+    ;;; collapse and/or get an obligation to revalidate.
+    (@interface func (export "transaction_choose_stale")
+        (param $handle $http_cache_handle)
+        (result $err (expected (error $fastly_status)))
+    )
+
+    ;;; Fulfill an obligation to provide a response to the cache by disabling request collapsing and
+    ;;; response caching for this cache entry.
     ;;;
     ;;; In Varnish terms, this function stores a hit-for-pass object.
     ;;;
@@ -384,6 +410,13 @@
     ;;; Get the configured stale-while-revalidate period of the found response in nanoseconds,
     ;;; returning the `$none` error if there was no response found.
     (@interface func (export "get_stale_while_revalidate_ns")
+        (param $handle $http_cache_handle)
+        (result $err (expected $cache_duration_ns (error $fastly_status)))
+    )
+
+    ;;; Get the configured stale-if-error period of the found response in nanoseconds,
+    ;;; returning the `$none` error if there was no response found.
+    (@interface func (export "get_stale_if_error_ns")
         (param $handle $http_cache_handle)
         (result $err (expected $cache_duration_ns (error $fastly_status)))
     )
