@@ -1,12 +1,12 @@
 use crate::opts::SharedArgs;
-use hyper::{client::Client, Body, Request};
+use hyper::{Body, Request, client::Client};
 use std::io::{self, Stderr, Stdout};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{event, Level, Metadata};
+use tracing::{Level, Metadata, event};
 use tracing_subscriber::fmt::writer::MakeWriter;
-use viceroy_lib::{config::FastlyConfig, BackendConnector, ExecuteCtx, GuestProfileConfig};
+use viceroy_lib::{BackendConnector, ExecuteCtx, GuestProfileConfig, config::FastlyConfig};
 
 pub(crate) enum Stdio {
     Stdout(Stdout),

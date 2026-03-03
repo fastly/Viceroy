@@ -13,7 +13,7 @@ use std::{collections::HashSet, str::FromStr};
 
 use bytes::{Bytes, BytesMut};
 pub use http::HeaderName;
-use http::{header::InvalidHeaderName, HeaderMap};
+use http::{HeaderMap, header::InvalidHeaderName};
 
 use crate::Error;
 

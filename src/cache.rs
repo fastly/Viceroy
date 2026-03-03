@@ -423,11 +423,7 @@ pub enum CacheOverride {
 
 impl CacheOverride {
     pub fn is_pass(&self) -> bool {
-        if let Self::Pass = self {
-            true
-        } else {
-            false
-        }
+        if let Self::Pass = self { true } else { false }
     }
 
     /// Convert from the representation suitable for passing across the ABI boundary.

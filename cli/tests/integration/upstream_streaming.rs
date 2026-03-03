@@ -3,7 +3,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{body::HttpBody, Response, StatusCode},
+    hyper::{Response, StatusCode, body::HttpBody},
 };
 
 // Test that guests can stream a body into an upstream request.

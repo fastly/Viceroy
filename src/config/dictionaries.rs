@@ -149,7 +149,7 @@ mod deserialization {
                     _ => {
                         return Err(DictionaryConfigError::InvalidDictionaryFormat(
                             format.to_owned(),
-                        ))
+                        ));
                     }
                 };
 
