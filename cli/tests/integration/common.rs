@@ -418,8 +418,8 @@ impl Test {
                     .await
                     .map(|result| {
                         match result {
-                            (resp, None) => resp,
-                            (_, Some(err)) => {
+                            (resp, None, _) => resp,
+                            (_, Some(err), _) => {
                                 // Splat the string representation of the runtime error into a synthetic
                                 // 500. This is a bit of a hack, but good enough to check for expected error
                                 // strings.

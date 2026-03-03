@@ -1,11 +1,47 @@
 mod client_cert_info;
 
 use {
-    hyper::{header::HeaderValue, Uri},
-    std::{collections::HashMap, sync::Arc},
+    crate::body::Body,
+    async_trait::async_trait,
+    hyper::{header::HeaderValue, Request, Response, Uri},
+    std::{collections::HashMap, fmt, ops::Deref, sync::Arc},
 };
 
 pub use self::client_cert_info::{ClientCertError, ClientCertInfo};
+
+/// A trait for handling backend requests in-memory, without making real HTTP calls.
+#[async_trait]
+pub trait InMemoryBackendHandler: Send + Sync + 'static {
+    async fn handle(&self, req: Request<Body>) -> Response<hyper::Body>;
+}
+
+/// A wrapper around an `InMemoryBackendHandler` trait object.
+#[derive(Clone)]
+pub struct Handler(Arc<Box<dyn InMemoryBackendHandler>>);
+
+impl Handler {
+    pub fn new(handler: Box<dyn InMemoryBackendHandler>) -> Self {
+        Handler(Arc::new(handler))
+    }
+}
+
+impl Deref for Handler {
+    type Target = dyn InMemoryBackendHandler;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().as_ref()
+    }
+}
+
+impl fmt::Debug for Handler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Handler").finish_non_exhaustive()
+    }
+}
+
+/// A trait for intercepting dynamic backend registration.
+pub trait DynamicBackendRegistrationInterceptor: Send + Sync + 'static {
+    fn register(&self, backend: Backend) -> Backend;
+}
 
 /// A single backend definition.
 #[derive(Clone, Debug)]
@@ -17,6 +53,7 @@ pub struct Backend {
     pub grpc: bool,
     pub client_cert: Option<ClientCertInfo>,
     pub ca_certs: Vec<rustls::Certificate>,
+    pub handler: Option<Handler>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -159,6 +196,7 @@ mod deserialization {
                 client_cert,
                 grpc,
                 ca_certs,
+                handler: None,
             })
         }
     }

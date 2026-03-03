@@ -564,6 +564,7 @@ impl FastlyHttpReq for Session {
             grpc,
             client_cert,
             ca_certs,
+            handler: None,
         };
 
         if !self.add_backend(&name, new_backend) {

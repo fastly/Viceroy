@@ -144,6 +144,7 @@ pub(crate) async fn register_dynamic_backend(
         grpc,
         client_cert,
         ca_certs,
+        handler: None,
     };
 
     if !session.add_backend(name, new_backend) {

@@ -336,34 +336,40 @@ pub fn send_request(
     *req.uri_mut() = uri;
 
     let h2only = backend.grpc;
+    let handler = backend.handler.clone();
     async move {
-        let mut builder = Client::builder();
+        let basic_response = if let Some(handler) = &handler {
+            handler.handle(req).await
+        } else {
+            let mut builder = Client::builder();
 
-        if req.version() == Version::HTTP_2 {
-            builder.http2_only(true);
-        }
+            if req.version() == Version::HTTP_2 {
+                builder.http2_only(true);
+            }
 
-        let is_pass = req
-            .extensions()
-            .get::<CacheOverride>()
-            .map(CacheOverride::is_pass)
-            .unwrap_or_default();
+            let is_pass = req
+                .extensions()
+                .get::<CacheOverride>()
+                .map(CacheOverride::is_pass)
+                .unwrap_or_default();
 
-        let mut basic_response = builder
-            .set_host(false)
-            .http2_only(h2only)
-            .build(connector)
-            .request(req)
-            .await
-            .map_err(|e| {
-                eprintln!("Error: {:?}", e);
-                e
-            })?;
+            let mut resp = builder
+                .set_host(false)
+                .http2_only(h2only)
+                .build(connector)
+                .request(req)
+                .await
+                .map_err(|e| {
+                    eprintln!("Error: {:?}", e);
+                    e
+                })?;
 
-        if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
-            // This is used later to create similar behaviour between Compute and Viceroy.
-            md.direct_pass = is_pass;
-        }
+            if let Some(md) = resp.extensions_mut().get_mut::<ConnMetadata>() {
+                md.direct_pass = is_pass;
+            }
+
+            resp
+        };
 
         if try_decompression
             && basic_response
