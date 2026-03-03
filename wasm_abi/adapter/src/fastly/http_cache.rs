@@ -54,6 +54,7 @@ pub struct HttpCacheWriteOptions {
     pub surrogate_keys_ptr: *const u8,
     pub surrogate_keys_len: usize,
     pub length: CacheObjectLength,
+    pub stale_if_error_ns: CacheDurationNs,
 }
 
 bitflags::bitflags! {
