@@ -2374,14 +2374,18 @@ interface cache {
 
   /// The status of this lookup (and potential transaction)
   flags lookup-state {
-    /// a cached object was found
+    /// A cached object was found
     found,
-    /// the cached object is valid to use (implies found)
+    /// The cached object is valid to use (implies found)
     usable,
-    /// the cached object is stale (but may or may not be valid to use)
+    /// The cached object is stale (but may or may not be valid to use)
     stale,
-    /// this client is requested to insert or revalidate an object
+    /// This client is requested to insert or revalidate an object
     must-insert-or-update,
+    /// The cached object is only usable if revalidation has failed.
+    /// If usable-if-error is set, either must-insert-or-update will be set
+    /// (in which case the client must revalidate before use)
+    /// or usable will be set (in which case revalidation has already failed).
     usable-if-error,
   }
 
@@ -2566,12 +2570,29 @@ interface http-cache {
       options: write-options,
     ) -> result<entry, error>;
 
-    /// Disables request collapsing and response caching for this cache entry.
+    /// Fulfill an obligation to provide a response to the cache by selecting a stale-if-error response.
+    ///
+    /// A guest that is obligated to insert/update the cache may not be able to produce an acceptable
+    /// response (e.g. unreachable backend, 5xx response). If the cache contains a response in the
+    /// stale-if-error period, the guest may prefer to use that response rather than returning an error.
+    /// If so, they can call transaction-choose-stale, after which the cache handle will reflect the stale
+    /// response (via get-found-response, get-state, etc).
+    ///
+    /// `transaction-choose-stale` is an alternative to `transaction-update-and-return-fresh` or 
+    /// `transaction-insert-and-stream-back`. Like those methods, it completes a request collapse,
+    /// providing the stale response to all collapsed transactions; and, after calling
+    /// `transaction-choose-stale`, the cache handle provides the (stale) response to send to the client.
+    ///
+    /// However, `transaction-choose-stale` does not change the cached item. The next lookup will again
+    /// collapse and/or get an obligation to revalidate.
+    transaction-choose-stale: func() -> result<_, error>;
+
+    /// Fulfill an obligation to provide a response to the cache by disabling request collapsing and
+    /// response caching for this cache entry.
     ///
     /// In Varnish terms, this function stores a hit-for-pass object.
     ///
-    /// Only the max age and, optionally, the vary rule are read from the `options`
-    /// for this function.
+    /// Only the max age and, optionally, the vary rule are read from the `options` argument.
     transaction-record-not-cacheable: func(
       options: write-options,
     ) -> result<_, error>;
@@ -2628,8 +2649,11 @@ interface http-cache {
 
     /// Gets the configured stale-while-revalidate period of the found response in nanoseconds,
     /// returning `ok(none)` if there was no response found.
-    get-stale-while-revalidate-ns: func(
-    ) -> result<option<duration-ns>, error>;
+    get-stale-while-revalidate-ns: func() -> result<option<duration-ns>, error>;
+
+    /// Gets the configured stale-if-error period of the found response in nanoseconds,
+    /// returning `ok(none)` if there was no response found.
+    get-stale-if-error-ns: func() -> result<option<duration-ns>, error>;
 
     /// Gets the age of the found response in nanoseconds, returning `ok(none)`
     /// if there was no response found.
@@ -2740,6 +2764,10 @@ interface http-cache {
     /// If this field is not set, the default value is zero.
     stale-while-revalidate-ns: option<duration-ns>,
 
+    /// The maximum duration after `max-age` during which the response may be delivered stale
+    /// if synchronous revalidation produces an error.
+    ///
+    /// If this field is not set, the default value is zero.
     stale-if-error-ns: option<duration-ns>,
 
     /// A list of surrogate keys that may be used to purge this response.
@@ -2819,6 +2847,8 @@ interface http-cache {
     get-initial-age-ns: func() -> duration-ns;
     /// Returns the suggested value for the `write-options.stale-while-revalidate-ns` field.
     get-stale-while-revalidate-ns: func() -> duration-ns;
+    /// Returns the suggested value for the `write-options.stale-if-error-ns` field.
+    get-stale-if-error-ns: func() -> duration-ns;
     /// Returns the suggested value for the `write-options.surrogate-keys` field.
     get-surrogate-keys: func(max-len: u64) -> result<string, error>;
     /// Returns the suggested value for the `write-options.length` field.

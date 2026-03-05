@@ -119,6 +119,7 @@ bitflags::bitflags! {
         const USABLE = 1 << 1;
         const STALE = 1 << 2;
         const MUST_INSERT_OR_UPDATE = 1 << 3;
+        const USABLE_IF_ERROR = 1 << 4;
     }
 }
 
@@ -136,6 +137,10 @@ mod cache {
             flags.set(
                 Self::MUST_INSERT_OR_UPDATE,
                 value.contains(cache::LookupState::MUST_INSERT_OR_UPDATE),
+            );
+            flags.set(
+                Self::USABLE_IF_ERROR,
+                value.contains(cache::LookupState::USABLE_IF_ERROR),
             );
             flags
         }
