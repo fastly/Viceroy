@@ -113,6 +113,7 @@ pub(crate) mod bindings {
             "fastly:compute/backend.backend": String,
             "fastly:compute/erl.rate-counter": String,
             "fastly:compute/erl.penalty-box": String,
+            "fastly:compute/http-downstream.extra-bot-category": super::compute::http_downstream::ExtraBotCategory,
         },
 
         trappable_error_type: {

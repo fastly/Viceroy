@@ -383,6 +383,46 @@ interface http-downstream {
   /// Extensibility for `next-request-options`
   resource extra-next-request-options {}
 
+  /// Categories of detected bots.
+  variant bot-category {
+    /// No bot was detected.
+    none,
+    /// A suspected bot.
+    suspected,
+    /// Tools that make content accessible (e.g., screen readers).
+    accessibility,
+    /// Crawlers used for training AIs and LLMs, generally used for building AI models or indexes.
+    ai-crawler,
+    /// Fetchers used by AIs and LLMs for enriching results in response to a user query.
+    ai-fetcher,
+    /// Tools that extract content from websites to be used elsewhere.
+    content-fetcher,
+    /// Tools that access your website to monitor things like performance, uptime, and proving domain control.
+    monitoring-site-tools,
+    /// Crawlers from online marketing platforms (e.g., Facebook, Pinterest).
+    online-marketing,
+    /// Tools that access your website to show a preview of the page in other online services and social media platforms.
+    page-preview,
+    /// Integration with other platforms by accessing the website's API, notably Webhooks.
+    platform-integrations,
+    /// Commercial and academic tools that collect and analyze data for research purposes.
+    research,
+    /// Crawlers that index your website for search engines.
+    search-engine-crawler,
+    /// Tools that support search engine optimization tasks (e.g., link analysis, ranking).
+    search-engine-optimization,
+    /// Security analysis tools that inspect your website for vulnerabilities, misconfigurations and other security features.
+    security-tools,
+    /// Additional bot kinds may be added in the future via this resource type.
+    extra(extra-bot-category),
+  }
+
+  /// Extensibility for `bot-category`.
+  resource extra-bot-category {
+    /// Returns an opaque value representing a bot category added in a future interface version.
+    as-raw: func() -> u32;
+  }
+
   /// Prepares to accept a new downstream request.
   ///
   /// By default, each sandbox accepts a single downstream request,
@@ -553,6 +593,48 @@ interface http-downstream {
   fastly-key-is-valid: func(
     ds-request: borrow<request>,
   ) -> result<bool, error>;
+
+  /// Whether bot detection analysis was performed for this request.
+  downstream-bot-analyzed: func(
+    ds-request: borrow<request>,
+  ) -> result<bool, error>;
+
+  /// Whether a bot was detected in the request.
+  downstream-bot-detected: func(
+    ds-request: borrow<request>,
+  ) -> result<bool, error>;
+
+  /// A string identifying the specific bot detected (e.g., `GoogleBot`, `GPTBot`, `Bingbot`).
+  /// Returns `ok(none)` if bot detection was not executed or no bot was detected.
+  ///
+  /// **Warning:** String values may change over time. Use this for logging or informational purposes.
+  /// For conditional logic, use the `downstream-bot-category-kind` value.
+  downstream-bot-name: func(
+    ds-request: borrow<request>,
+    max-len: u64
+  ) -> result<option<string>, error>;
+
+  /// A string indicating the type of bot detected (e.g., `SEARCH-ENGINE-CRAWLER`, `AI-CRAWLER`, `SUSPECTED-BOT`).
+  /// Returns `ok(none)` if bot detection was not executed.
+  ///
+  /// **Warning:** String values may change over time. Use this for logging or informational purposes.
+  /// For conditional logic, use the `downstream-bot-category-kind` value.
+  downstream-bot-category: func(
+    ds-request: borrow<request>,
+    max-len: u64
+  ) -> result<option<string>, error>;
+
+  /// A value uniquely identifying the type of bot detected.
+  /// Returns `ok(none)` if bot detection was not executed.
+  downstream-bot-category-kind: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bot-category>, error>;
+
+  /// Whether the detected bot is a verified bot.
+  /// Returns `ok(none)` if bot detection was not executed or no bot was detected.
+  downstream-bot-verified: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
 }
 
 /// HTTP requests.

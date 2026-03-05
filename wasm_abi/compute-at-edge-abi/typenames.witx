@@ -173,6 +173,11 @@
         $healthy
         $unhealthy))
 
+(typename $bot_analyzed u32)
+(typename $bot_detected u32)
+(typename $bot_category_kind u32)
+(typename $bot_verified u32)
+
 (typename $content_encodings
     (flags (@witx repr u32)
         $gzip))

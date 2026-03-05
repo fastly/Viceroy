@@ -766,6 +766,42 @@
         (param $req $request_handle)
         (result $err (expected $is_valid (error $fastly_status)))
     )
+
+    (@interface func (export "downstream_bot_analyzed")
+        (param $req $request_handle)
+        (result $err (expected $bot_analyzed (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_bot_detected")
+        (param $req $request_handle)
+        (result $err (expected $bot_detected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_bot_name")
+        (param $req $request_handle)
+        (param $bot_name_out (@witx pointer (@witx char8)))
+        (param $bot_name_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_bot_category")
+        (param $req $request_handle)
+        (param $bot_category_out (@witx pointer (@witx char8)))
+        (param $bot_category_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_bot_category_kind")
+        (param $req $request_handle)
+        (result $err (expected $bot_category_kind (error $fastly_status)))
+    )
+
+    (@interface func (export "downstream_bot_verified")
+        (param $req $request_handle)
+        (result $err (expected $bot_verified (error $fastly_status)))
+    )
 )
 
 (module $fastly_http_resp

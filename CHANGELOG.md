@@ -8,6 +8,7 @@
 - Refactor the CLI, with each subcommand in its own file. ([#581](https://github.com/fastly/Viceroy/pull/581))
 - Make "viceroy adapt" add "produced-by" metadata to its output. ([#586](https://github.com/fastly/Viceroy/pull/586))
 - Update to Rust 2024 Edition. ([#588](https://github.com/fastly/Viceroy/pull/588))
+- Add stub implementations for bot detection hostcalls.
 - Add no-op implementations for stale-if-error hostcalls ([#591](https://github.com/fastly/Viceroy/pull/591))
 
 ## 0.16.4 (2026-01-26)
@@ -16,7 +17,7 @@
 
 ## 0.16.3 (2026-01-20)
 
-- Implement `fastly_compute_runtime::get_heap_mib` hostcall ([#572](https://github.com/fastly/Viceroy/pull/572)) 
+- Implement `fastly_compute_runtime::get_heap_mib` hostcall ([#572](https://github.com/fastly/Viceroy/pull/572))
 - Update to latest `moka` release to fix use-after-free bug ([#569](https://github.com/fastly/Viceroy/pull/569))
 - Fix manual framing headers logic to avoid falling back to automatic framing headers ([#571](https://github.com/fastly/Viceroy/pull/571))
 

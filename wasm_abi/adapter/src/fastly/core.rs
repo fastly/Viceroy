@@ -91,6 +91,29 @@ pub enum HttpKeepaliveMode {
     NoKeepalive = 1,
 }
 
+impl From<crate::bindings::fastly::compute::http_downstream::BotCategory> for u32 {
+    fn from(value: crate::bindings::fastly::compute::http_downstream::BotCategory) -> Self {
+        use crate::bindings::fastly::compute::http_downstream::BotCategory::*;
+        match value {
+            None => 0,
+            Suspected => 1,
+            Accessibility => 2,
+            AiCrawler => 3,
+            AiFetcher => 4,
+            ContentFetcher => 5,
+            MonitoringSiteTools => 6,
+            OnlineMarketing => 7,
+            PagePreview => 8,
+            PlatformIntegrations => 9,
+            Research => 10,
+            SearchEngineCrawler => 11,
+            SearchEngineOptimization => 12,
+            SecurityTools => 13,
+            Extra(resource) => resource.as_raw(),
+        }
+    }
+}
+
 pub type AclHandle = u32;
 pub type AsyncItemHandle = u32;
 pub type BodyHandle = u32;
@@ -399,7 +422,7 @@ pub mod fastly_http_body {
                 let res = match res {
                     Ok(value) => Ok(value),
                     Err(http_body::TrailerError::NotAvailableYet) => {
-                        return Err(FastlyStatus::AGAIN)
+                        return Err(FastlyStatus::AGAIN);
                     }
                     Err(http_body::TrailerError::Error(err)) => Err(err),
                 };
@@ -446,7 +469,7 @@ pub mod fastly_http_body {
                 let res = match res {
                     Ok(value) => Ok(value),
                     Err(http_body::TrailerError::NotAvailableYet) => {
-                        return Err(FastlyStatus::AGAIN)
+                        return Err(FastlyStatus::AGAIN);
                     }
                     Err(http_body::TrailerError::Error(err)) => Err(err),
                 };
@@ -491,7 +514,7 @@ pub mod fastly_http_body {
                 let res = match res {
                     Ok(value) => Ok(value),
                     Err(http_body::TrailerError::NotAvailableYet) => {
-                        return Err(FastlyStatus::AGAIN)
+                        return Err(FastlyStatus::AGAIN);
                     }
                     Err(http_body::TrailerError::Error(err)) => Err(err),
                 };
@@ -1045,6 +1068,118 @@ pub mod fastly_http_downstream {
                 }
                 FastlyStatus::OK
             }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_bot_analyzed"]
+    pub fn downstream_bot_analyzed(
+        req_handle: RequestHandle,
+        bot_analyzed_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_bot_analyzed(&req_handle) {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(bot_analyzed_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_bot_detected"]
+    pub fn downstream_bot_detected(
+        req_handle: RequestHandle,
+        bot_analyzed_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_bot_detected(&req_handle) {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(bot_analyzed_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_bot_name"]
+    pub fn downstream_bot_name(
+        req_handle: RequestHandle,
+        bot_name_out: *mut u8,
+        bot_name_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        alloc_result_opt!(
+            unsafe_main_ptr!(bot_name_out),
+            bot_name_max_len,
+            main_ptr!(nwritten),
+            {
+                http_downstream::downstream_bot_name(
+                    &req_handle,
+                    u64::try_from(bot_name_max_len).trapping_unwrap(),
+                )
+            }
+        )
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_bot_category"]
+    pub fn downstream_bot_category(
+        req_handle: RequestHandle,
+        bot_category_out: *mut u8,
+        bot_category_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        alloc_result_opt!(
+            unsafe_main_ptr!(bot_category_out),
+            bot_category_max_len,
+            main_ptr!(nwritten),
+            {
+                http_downstream::downstream_bot_category(
+                    &req_handle,
+                    u64::try_from(bot_category_max_len).trapping_unwrap(),
+                )
+            }
+        )
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_bot_category_kind"]
+    pub fn downstream_bot_category_kind(
+        req_handle: RequestHandle,
+        category_kind_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_bot_category_kind(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(category_kind_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_bot_verified"]
+    pub fn downstream_bot_verified(
+        req_handle: RequestHandle,
+        bot_verified_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_bot_verified(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(bot_verified_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
             Err(e) => e.into(),
         }
     }
