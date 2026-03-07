@@ -429,14 +429,10 @@ pub enum FastlyConfigError {
     #[error("error parsing `fastly.toml`: {0}")]
     InvalidFastlyToml(#[from] toml::de::Error),
 
-    /// An error caused by an invalid manifest version.
-    ///
-    /// This means that the provided version is not compliant with the semver spec. See the
-    /// documentation of [`semver::Version::parse`][parse-errors] for more information.
-    ///
-    /// [parse-errors]: https://docs.rs/semver/latest/semver/struct.Version.html#errors
-    #[error("invalid manifest version: {0}")]
-    InvalidManifestVersion(#[from] semver::SemVerError),
+    /// The `manifest_version` field contained a value greater than is
+    /// currently supported.
+    #[error("unsupported manifest version {0}; max supported version is {1}")]
+    UnsupportedManifestVersion(u32, u32),
 }
 
 /// Errors that may occur while validating acl configurations.
