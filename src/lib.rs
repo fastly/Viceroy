@@ -48,6 +48,7 @@ pub use {
         run_to_completion, EndpointListener, EndpointsMonitor, ExecuteCtx, ExecuteCtxBuilder,
         GuestHandle, GuestProfileConfig,
     },
+    object_store::{ObjectKey, ObjectStoreKey},
     service::ViceroyService,
     upstream::BackendConnector,
     wasmtime::ProfilingStrategy,

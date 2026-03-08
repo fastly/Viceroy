@@ -585,15 +585,10 @@ impl Session {
         }
         let mut endpoint = LogEndpoint::new(name, self.capture_logs.clone());
         // Check if the endpoints monitor has a registered sender for this name
-        if let Some(sender) = self
-            .ctx
-            .endpoints_monitor()
-            .endpoints
-            .blocking_read()
-            .get(name)
-            .cloned()
-        {
-            endpoint = endpoint.with_channel(sender);
+        if let Ok(endpoints) = self.ctx.endpoints_monitor().endpoints.try_read() {
+            if let Some(sender) = endpoints.get(name).cloned() {
+                endpoint = endpoint.with_channel(sender);
+            }
         }
         let handle = self.log_endpoints.push(endpoint);
         self.log_endpoints_by_name.insert(name.to_owned(), handle);
