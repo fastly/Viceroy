@@ -6,7 +6,7 @@ use {
         adapt,
         body::Body,
         body_tee::tee,
-        cache::{Cache, InMemoryCache},
+        cache::Cache,
         component as compute,
         config::{
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
@@ -203,7 +203,7 @@ pub struct ExecuteCtx {
     /// The shielding sites for this execution.
     shielding_sites: ShieldingSites,
     /// The cache for this service.
-    cache: InMemoryCache,
+    cache: Arc<Cache>,
     /// Senders waiting for new requests for reusable sessions.
     pending_reuse: Arc<AsyncMutex<Vec<Sender<NextRequest>>>>,
     epoch_increment_thread: Option<JoinHandle<()>>,
@@ -361,7 +361,7 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
-            cache: InMemoryCache::default(),
+            cache: Arc::new(Cache::default()),
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
             endpoints_monitor: EndpointsMonitor::default(),
             dynamic_backend_interceptor: None,
@@ -388,57 +388,6 @@ impl ExecuteCtx {
             adapt_components,
         )?
         .finish()
-    }
-
-    /// Create a new builder that reuses the compiled wasm module from this context.
-    ///
-    /// This is much cheaper than calling `build()` again, as it skips wasm compilation.
-    /// All configuration (backends, dictionaries, object stores, etc.) starts at defaults
-    /// and must be set on the returned builder.
-    pub fn to_builder(&self) -> Result<ExecuteCtxBuilder, Error> {
-        let epoch_increment_stop = Arc::new(AtomicBool::new(false));
-        let engine_clone = self.engine.clone();
-        let epoch_increment_stop_clone = epoch_increment_stop.clone();
-        let sample_period = self
-            .guest_profile_config
-            .as_ref()
-            .map(|c| c.sample_period)
-            .unwrap_or(DEFAULT_EPOCH_INTERRUPTION_PERIOD);
-        let epoch_increment_thread = Some(thread::spawn(move || {
-            while !epoch_increment_stop_clone.load(Ordering::Relaxed) {
-                thread::sleep(sample_period);
-                engine_clone.increment_epoch();
-            }
-        }));
-
-        Ok(ExecuteCtxBuilder {
-            inner: Self {
-                engine: self.engine.clone(),
-                instance_pre: self.instance_pre.clone(),
-                acls: Acls::new(),
-                backends: Backends::default(),
-                device_detection: DeviceDetection::default(),
-                geolocation: Geolocation::default(),
-                tls_config: TlsConfig::new()?,
-                dictionaries: Dictionaries::default(),
-                config_path: None,
-                capture_logs: Arc::new(Mutex::new(std::io::stdout())),
-                log_stdout: false,
-                log_stderr: false,
-                local_pushpin_proxy_port: None,
-                next_req_id: Arc::new(AtomicU64::new(0)),
-                object_store: ObjectStores::new(),
-                secret_stores: SecretStores::new(),
-                shielding_sites: ShieldingSites::new(),
-                epoch_increment_thread,
-                epoch_increment_stop,
-                guest_profile_config: self.guest_profile_config.clone(),
-                cache: InMemoryCache::default(),
-                pending_reuse: Arc::new(AsyncMutex::new(vec![])),
-                endpoints_monitor: EndpointsMonitor::default(),
-                dynamic_backend_interceptor: None,
-            },
-        })
     }
 
     /// Get the engine for this execution context.
@@ -692,7 +641,13 @@ impl ExecuteCtx {
         ));
 
         if let Some(response) = Self::maybe_receive_response(receiver).await {
-            return (response.0, response.1, Some(GuestHandle { handle: guest_handle }));
+            return (
+                response.0,
+                response.1,
+                Some(GuestHandle {
+                    handle: guest_handle,
+                }),
+            );
         }
 
         match guest_handle
@@ -983,24 +938,21 @@ impl ExecuteCtx {
                 shielding_sites: self.shielding_sites.clone(),
                 guest_profile_config: self.guest_profile_config.clone(),
                 // Fresh per-test state:
-                cache: InMemoryCache::new(),
+                cache: Arc::new(Cache::default()),
                 next_req_id: Arc::new(AtomicU64::new(0)),
                 pending_reuse: Arc::new(AsyncMutex::new(vec![])),
                 // Don't own the epoch thread (parent owns it)
                 epoch_increment_thread: None,
                 epoch_increment_stop: self.epoch_increment_stop.clone(),
-                // New fields default:
+                // New interceptor.
                 dynamic_backend_interceptor: None,
+                // New endpoints monitor.
                 endpoints_monitor: EndpointsMonitor::default(),
             },
         }
     }
 
     pub fn cache(&self) -> &Arc<Cache> {
-        &self.cache.0
-    }
-
-    pub fn in_memory_cache(&self) -> &InMemoryCache {
         &self.cache
     }
 
@@ -1120,7 +1072,7 @@ impl ExecuteCtxBuilder {
     }
 
     /// Set the cache for this execution context.
-    pub fn with_cache(mut self, cache: InMemoryCache) -> Self {
+    pub fn with_cache(mut self, cache: Arc<Cache>) -> Self {
         self.inner.cache = cache;
         self
     }

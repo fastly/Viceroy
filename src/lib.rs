@@ -41,8 +41,11 @@ mod streaming_body;
 mod upstream;
 pub mod wiggle_abi;
 
+pub use async_trait;
+pub use http;
+pub use hyper;
 pub use {
-    cache::InMemoryCache,
+    cache::Cache,
     error::Error,
     execute::{
         run_to_completion, EndpointListener, EndpointsMonitor, ExecuteCtx, ExecuteCtxBuilder,
@@ -53,6 +56,3 @@ pub use {
     upstream::BackendConnector,
     wasmtime::ProfilingStrategy,
 };
-pub use async_trait;
-pub use http;
-pub use hyper;
