@@ -370,6 +370,17 @@ impl Cache {
             .map(|(_, entry)| entry.purge(&key, soft_purge))
             .sum()
     }
+
+    /// Purge/soft-purge all cache entries corresponding to the given surrogate key.
+    /// Returns the number of entries (variants) purged.
+    ///
+    /// Note: this does not block concurrent reads _or inserts_; an insertion can race with the
+    /// purge.
+    pub fn purge_all(&self, keys: Vec<SurrogateKey>, soft_purge: bool) -> usize {
+        keys.into_iter()
+            .map(|key| self.purge(key, soft_purge))
+            .sum()
+    }
 }
 
 /// Options that can be applied to a write, e.g. insert or transaction_insert.
