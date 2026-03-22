@@ -4,6 +4,7 @@ use crate::cache::{variance::VaryRule, Error};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
+    fmt,
     future::Future,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
@@ -120,6 +121,44 @@ impl ObjectMeta {
             surrogate_keys,
             soft_purge: AtomicBool::new(false),
         }
+    }
+}
+
+impl fmt::Display for ObjectMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let indent = f.width().unwrap_or(0);
+        let i = " ".repeat(indent);
+
+        writeln!(f, "{i}ObjectMeta:")?;
+        writeln!(f, "{i}  age: {:?}", self.age())?;
+        writeln!(f, "{i}  max_age: {:?}", self.max_age)?;
+        writeln!(f, "{i}  stale_while_revalidate: {:?}", self.stale_while_revalidate)?;
+        writeln!(f, "{i}  fresh: {}", self.is_fresh())?;
+        writeln!(f, "{i}  usable: {}", self.is_usable())?;
+        writeln!(f, "{i}  vary_rule: {}", self.vary_rule)?;
+        writeln!(f, "{i}  surrogate_keys: {}", self.surrogate_keys)?;
+        writeln!(f, "{i}  length: {:?}", self.length)?;
+        writeln!(
+            f,
+            "{i}  soft_purge: {}",
+            self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)
+        )?;
+
+        // Show request headers
+        writeln!(f, "{i}  request_headers:")?;
+        for (name, value) in self.request_headers.iter() {
+            writeln!(f, "{i}    {}: {}", name, value.to_str().unwrap_or("<binary>"))?;
+        }
+
+        // Show user_metadata as UTF-8 if possible
+        if !self.user_metadata.is_empty() {
+            match std::str::from_utf8(&self.user_metadata) {
+                Ok(s) => writeln!(f, "{i}  user_metadata: {s}")?,
+                Err(_) => writeln!(f, "{i}  user_metadata: ({} bytes)", self.user_metadata.len())?,
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -479,6 +518,57 @@ struct CacheValue {
 
     /// Whether there is an outstanding Obligation to freshen this entry.
     obligated: bool,
+}
+
+impl fmt::Display for CacheKeyObjects {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let indent = f.width().unwrap_or(0);
+        let inner = self.0.borrow();
+        fmt::Display::fmt(&IndentWrapper(&*inner, indent), f)
+    }
+}
+
+/// Helper to pass indent through Display since CacheKeyObjectsInner is private.
+struct IndentWrapper<'a>(&'a CacheKeyObjectsInner, usize);
+
+impl fmt::Display for IndentWrapper<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inner = self.0;
+        let indent = self.1;
+        let i = " ".repeat(indent);
+
+        // Vary rules
+        writeln!(f, "{i}vary_rules:")?;
+        for rule in inner.vary_rules.iter() {
+            writeln!(f, "{i}  - {rule}")?;
+        }
+
+        // Objects (variants)
+        writeln!(f, "{i}variants:")?;
+        for (variant, value) in inner.objects.iter() {
+            writeln!(f, "{i}  {variant}:")?;
+            if let Some(data) = &value.present {
+                write!(f, "{:indent$}", data, indent = indent + 4)?;
+            } else {
+                writeln!(f, "{i}    (empty)")?;
+            }
+            writeln!(f, "{i}    obligated: {}", value.obligated)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for CacheData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let indent = f.width().unwrap_or(0);
+        write!(f, "{:indent$}", self.meta, indent = indent)?;
+        let i = " ".repeat(indent);
+        if let Some(len) = self.length() {
+            writeln!(f, "{i}body_length: {len}")?;
+        }
+        Ok(())
+    }
 }
 
 /// An obligation to fetch & update the cache.

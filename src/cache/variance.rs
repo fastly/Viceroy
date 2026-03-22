@@ -9,7 +9,7 @@
 //! The core cache API provides the bones of this.
 //!
 
-use std::{collections::HashSet, str::FromStr};
+use std::{collections::HashSet, fmt, str::FromStr};
 
 use bytes::{Bytes, BytesMut};
 pub use http::HeaderName;
@@ -82,6 +82,26 @@ pub struct Variant {
     /// sequence. However, since header values may contain arbitrary bytes, this is a Bytes rather
     /// than a String.
     signature: Bytes,
+}
+
+impl fmt::Display for VaryRule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.headers.is_empty() {
+            write!(f, "VaryRule([])")
+        } else {
+            let headers: Vec<&str> = self.headers.iter().map(|h| h.as_str()).collect();
+            write!(f, "VaryRule([{}])", headers.join(", "))
+        }
+    }
+}
+
+impl fmt::Display for Variant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match std::str::from_utf8(&self.signature) {
+            Ok(s) => write!(f, "Variant({s})"),
+            Err(_) => write!(f, "Variant({:?})", self.signature),
+        }
+    }
 }
 
 #[cfg(test)]

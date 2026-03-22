@@ -1,5 +1,5 @@
 use core::str;
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, fmt, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 #[cfg(test)]
@@ -126,6 +126,20 @@ impl TryFrom<&str> for CacheKey {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.as_bytes().try_into()
+    }
+}
+
+impl fmt::Display for CacheKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match str::from_utf8(&self.0) {
+            Ok(s) => write!(f, "{s}"),
+            Err(_) => {
+                for byte in &self.0 {
+                    write!(f, "{byte:02x}")?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -381,6 +395,17 @@ impl Cache {
         keys.into_iter()
             .map(|key| self.purge(key, soft_purge))
             .sum()
+    }
+}
+
+impl fmt::Display for Cache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Cache {{")?;
+        for (key, objects) in self.inner.iter() {
+            writeln!(f, "  key: {key}")?;
+            write!(f, "{:4}", &*objects)?;
+        }
+        write!(f, "}}")
     }
 }
 
