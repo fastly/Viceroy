@@ -285,6 +285,7 @@ impl Found {
 // Explain some about how this works:
 // - Request collapsing
 // - Stale-while-revalidate
+#[derive(Debug)]
 pub struct Cache {
     inner: moka::future::Cache<CacheKey, Arc<CacheKeyObjects>>,
 }
