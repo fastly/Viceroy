@@ -92,6 +92,8 @@ pub struct Test {
     via_hyper: bool,
     unknown_import_behavior: UnknownImportBehavior,
     adapt_component: bool,
+    profiling_strategy: ProfilingStrategy,
+    guest_profile_config: Option<viceroy_lib::GuestProfileConfig>,
 }
 
 impl Test {
@@ -116,6 +118,8 @@ impl Test {
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
+            profiling_strategy: ProfilingStrategy::None,
+            guest_profile_config: None,
         }
     }
 
@@ -140,6 +144,8 @@ impl Test {
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
+            profiling_strategy: ProfilingStrategy::None,
+            guest_profile_config: None,
         }
     }
 
@@ -287,6 +293,12 @@ impl Test {
         self
     }
 
+    /// Enable guest profiling with the specified configuration.
+    pub fn with_guest_profiling(mut self, config: viceroy_lib::GuestProfileConfig) -> Self {
+        self.guest_profile_config = Some(config);
+        self
+    }
+
     /// Pass the given requests through this test, returning the associated responses.
     ///
     /// A `Test` can be used repeatedly against different requests, either individually (as with
@@ -331,9 +343,9 @@ impl Test {
 
         let ctx = ExecuteCtx::build(
             &self.module_path,
-            ProfilingStrategy::None,
+            self.profiling_strategy.clone(),
             HashSet::new(),
-            None,
+            self.guest_profile_config.clone(),
             self.unknown_import_behavior,
             self.adapt_component,
         )?

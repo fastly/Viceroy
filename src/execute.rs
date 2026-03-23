@@ -61,14 +61,17 @@ const REGION_NONE: &str = "none";
 
 enum Instance {
     Module(Module, InstancePre<WasmCtx>),
-    Component(compute::bindings::AdapterServicePre<ComponentCtx>),
+    Component(
+        Component,
+        compute::bindings::AdapterServicePre<ComponentCtx>,
+    ),
 }
 
 impl Instance {
     fn unwrap_module(&self) -> (&Module, &InstancePre<WasmCtx>) {
         match self {
             Instance::Module(m, i) => (m, i),
-            Instance::Component(_) => panic!("unwrap_module called on a component"),
+            Instance::Component(_, _) => panic!("unwrap_module called on a component"),
         }
     }
 }
@@ -245,7 +248,10 @@ impl ExecuteCtx {
             }
 
             let instance_pre = linker.instantiate_pre(&component)?;
-            Instance::Component(compute::bindings::AdapterServicePre::new(instance_pre)?)
+            Instance::Component(
+                component,
+                compute::bindings::AdapterServicePre::new(instance_pre)?,
+            )
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
@@ -625,15 +631,21 @@ impl ExecuteCtx {
         });
 
         match self.instance_pre.as_ref() {
-            Instance::Component(instance_pre) => {
-                if self.guest_profile_config.is_some() {
-                    warn!("Components do not currently support the guest profiler");
-                }
+            Instance::Component(component, instance_pre) => {
+                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
+                    let program_name = "main";
+                    GuestProfiler::new_component(
+                        program_name,
+                        pcfg.sample_period,
+                        component.clone(),
+                        std::iter::empty(),
+                    )
+                });
 
                 let req = session.downstream_request();
                 let body = session.downstream_request_body();
 
-                let mut store = ComponentCtx::create_store(&self, session, None, |ctx| {
+                let mut store = ComponentCtx::create_store(&self, session, profiler, |ctx| {
                     ctx.arg("compute-app");
                 })
                 .map_err(ExecutionError::Context)?;
@@ -670,6 +682,9 @@ impl ExecuteCtx {
                         }
                     }
                 };
+
+                // If we collected a profile, write it to the file
+                write_profile_component(&mut store, guest_profile_path.as_ref());
 
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
@@ -793,7 +808,7 @@ impl ExecuteCtx {
 
         let session = Session::new(downstream, active_cpu_time_us.clone(), self.clone());
 
-        if let Instance::Component(_) = self.instance_pre.as_ref() {
+        if let Instance::Component(_, _) = self.instance_pre.as_ref() {
             panic!("components not currently supported with `run`");
         }
 
@@ -884,7 +899,7 @@ impl ExecuteCtx {
     }
 
     pub fn is_component(&self) -> bool {
-        matches!(self.instance_pre.as_ref(), Instance::Component(_))
+        matches!(self.instance_pre.as_ref(), Instance::Component(_, _))
     }
 }
 
@@ -976,29 +991,44 @@ impl ExecuteCtxBuilder {
     }
 }
 
+fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {
+    match std::fs::File::create(path)
+        .map_err(anyhow::Error::new)
+        .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
+    {
+        Err(e) => {
+            event!(
+                Level::ERROR,
+                "failed writing profile at {}: {e:#}",
+                path.display()
+            );
+        }
+        _ => {
+            event!(
+                Level::INFO,
+                "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
+                path.display()
+            );
+        }
+    }
+}
+
 fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Option<&PathBuf>) {
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
     {
-        match std::fs::File::create(path)
-            .map_err(anyhow::Error::new)
-            .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
-        {
-            Err(e) => {
-                event!(
-                    Level::ERROR,
-                    "failed writing profile at {}: {e:#}",
-                    path.display()
-                );
-            }
-            _ => {
-                event!(
-                    Level::INFO,
-                    "\nProfile written to: {}\nView this profile at https://profiler.firefox.com/.",
-                    path.display()
-                );
-            }
-        }
+        write_profile_to_file(profile, path);
+    }
+}
+
+fn write_profile_component(
+    store: &mut wasmtime::Store<ComponentCtx>,
+    guest_profile_path: Option<&PathBuf>,
+) {
+    if let (Some(profile), Some(path)) =
+        (store.data_mut().take_guest_profiler(), guest_profile_path)
+    {
+        write_profile_to_file(profile, path);
     }
 }
 

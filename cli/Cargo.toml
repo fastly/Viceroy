@@ -54,3 +54,5 @@ anyhow = { workspace = true }
 futures = { workspace = true }
 url = { workspace = true }
 tls-listener = { version = "^0.7.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
+tempfile = "3"
+serde_json = { workspace = true }
