@@ -380,6 +380,97 @@ impl FastlyHttpDownstream for Session {
     ) -> Result<u32, Error> {
         self.absent_metadata_value(handle)
     }
+
+    fn downstream_resvpnproxy_is_anonymous(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_anonymous_vpn(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_hosting_provider(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_proxy_over_vpn(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_public_proxy(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_relay_proxy(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_residential_proxy(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_smart_dns_proxy(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_tor_exit_node(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_is_vpn_datacenter(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+    ) -> Result<u32, Error> {
+        self.absent_metadata_value(handle)
+    }
+
+    fn downstream_resvpnproxy_vpn_service_name(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        handle: RequestHandle,
+        _name_out: GuestPtr<u8>,
+        _name_max_len: u32,
+        _nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        self.absent_metadata_value(handle)
+    }
 }
 
 trait MetadataView {

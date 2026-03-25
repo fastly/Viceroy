@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add stub implementations for resvpnproxy hostcalls.
+
 ## 0.16.5 (2026-03-23)
 
 - Remove most adapter-only interfaces from the Viceroy component adapter. ([#583](https://github.com/fastly/Viceroy/pull/583))

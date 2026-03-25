@@ -2,11 +2,11 @@
 // not be confused with types of similar names in the `fastly` crate which are used to provide safe
 // wrappers around these definitions.
 
-use super::{convert_result, FastlyStatus};
+use super::{FastlyStatus, convert_result};
 use crate::fastly::decode_ip_address;
 use crate::{
-    alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer, write_bool_result,
-    TrappingUnwrap,
+    TrappingUnwrap, alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer,
+    write_bool_result,
 };
 use core::mem::ManuallyDrop;
 
@@ -600,9 +600,9 @@ pub mod fastly_log {
 pub mod fastly_http_downstream {
     use super::*;
     use crate::{
+        TrappingUnwrap,
         bindings::fastly::compute::{http_downstream, http_req},
         fastly::encode_ip_address,
-        TrappingUnwrap,
     };
 
     bitflags::bitflags! {
@@ -1183,6 +1183,207 @@ pub mod fastly_http_downstream {
             Err(e) => e.into(),
         }
     }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_anonymous"]
+    pub fn downstream_resvpnproxy_is_anonymous(
+        req_handle: RequestHandle,
+        is_anonymous_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_anonymous(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_anonymous_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_anonymous_vpn"]
+    pub fn downstream_resvpnproxy_is_anonymous_vpn(
+        req_handle: RequestHandle,
+        is_anonymous_vpn_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_anonymous_vpn(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_anonymous_vpn_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_hosting_provider"]
+    pub fn downstream_resvpnproxy_is_hosting_provider(
+        req_handle: RequestHandle,
+        is_hosting_provider_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_hosting_provider(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_hosting_provider_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_proxy_over_vpn"]
+    pub fn downstream_resvpnproxy_is_proxy_over_vpn(
+        req_handle: RequestHandle,
+        is_proxy_over_vpn_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_proxy_over_vpn(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_proxy_over_vpn_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_public_proxy"]
+    pub fn downstream_resvpnproxy_is_public_proxy(
+        req_handle: RequestHandle,
+        is_public_proxy_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_public_proxy(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_public_proxy_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_relay_proxy"]
+    pub fn downstream_resvpnproxy_is_relay_proxy(
+        req_handle: RequestHandle,
+        is_relay_proxy_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_relay_proxy(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_relay_proxy_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_residential_proxy"]
+    pub fn downstream_resvpnproxy_is_residential_proxy(
+        req_handle: RequestHandle,
+        is_residential_proxy_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_residential_proxy(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_residential_proxy_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_smart_dns_proxy"]
+    pub fn downstream_resvpnproxy_is_smart_dns_proxy(
+        req_handle: RequestHandle,
+        is_smart_dns_proxy_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_smart_dns_proxy(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_smart_dns_proxy_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_tor_exit_node"]
+    pub fn downstream_resvpnproxy_is_tor_exit_node(
+        req_handle: RequestHandle,
+        is_tor_exit_node_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_tor_exit_node(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_tor_exit_node_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_is_vpn_datacenter"]
+    pub fn downstream_resvpnproxy_is_vpn_datacenter(
+        req_handle: RequestHandle,
+        is_vpn_datacenter_out: *mut u32,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        match http_downstream::downstream_resvpnproxy_is_vpn_datacenter(&req_handle) {
+            Ok(Some(res)) => {
+                unsafe {
+                    *main_ptr!(is_vpn_datacenter_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Ok(None) => FastlyStatus::NONE,
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_resvpnproxy_vpn_service_name"]
+    pub fn downstream_resvpnproxy_vpn_service_name(
+        req_handle: RequestHandle,
+        vpn_service_name_out: *mut u8,
+        vpn_service_name_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        alloc_result_opt!(
+            unsafe_main_ptr!(vpn_service_name_out),
+            vpn_service_name_max_len,
+            main_ptr!(nwritten),
+            {
+                http_downstream::downstream_resvpnproxy_vpn_service_name(
+                    &req_handle,
+                    u64::try_from(vpn_service_name_max_len).trapping_unwrap(),
+                )
+            }
+        )
+    }
 }
 
 pub mod fastly_http_req {
@@ -1190,12 +1391,12 @@ pub mod fastly_http_req {
 
     use super::*;
     use crate::{
+        TrappingUnwrap,
         bindings::fastly::{
             self,
             adapter::adapter_http_req,
             compute::{backend, http_req, http_types, security},
         },
-        TrappingUnwrap,
     };
 
     bitflags::bitflags! {
