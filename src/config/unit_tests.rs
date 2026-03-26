@@ -57,7 +57,7 @@ fn fastly_toml_files_can_be_read() {
 fn fastly_toml_files_with_simple_backend_configurations_can_be_read() {
     let config = FastlyConfig::from_str(
         r#"
-            manifest_version = "1.2.3"
+            manifest_version = 3
             name = "backend-config-example"
             description = "a toml example with backend configuration"
             authors = [
@@ -111,7 +111,7 @@ fn fastly_toml_files_with_simple_dictionary_configurations_can_be_read() {
     writeln!(file, "{{}}").unwrap();
     let config = FastlyConfig::from_str(format!(
         r#"
-            manifest_version = "1.2.3"
+            manifest_version = 3
             name = "dictionary-config-example"
             description = "a toml example with dictionary configuration"
             authors = [
@@ -150,7 +150,7 @@ fn fastly_toml_files_with_simple_config_store_configurations_can_be_read() {
     writeln!(file, "{{}}").unwrap();
     let config = FastlyConfig::from_str(format!(
         r#"
-            manifest_version = "1.2.3"
+            manifest_version = 3
             name = "dictionary-config-example"
             description = "a toml example with config store configuration"
             authors = [
@@ -1215,4 +1215,21 @@ Qq7tJAMLnPnAdAUousI0RDcLpB8adGkhZH66lL4oV9U+aQ0dA0oiqSKZtMoHeWbr
             .expect("no blåhaj :(");
         assert_eq!(3, shark_backend.ca_certs.len());
     }
+}
+
+#[test]
+fn fastly_toml_files_with_unsupported_manifest_version() {
+    let err = FastlyConfig::from_str(
+        r#"
+            manifest_version = 4
+            name = "backend-config-example"
+            language = "rust"
+    "#,
+    )
+    .expect_err("an unsupported manifest_version should have evoked an error");
+
+    assert!(matches!(
+        err,
+        FastlyConfigError::UnsupportedManifestVersion(4, 3)
+    ));
 }
