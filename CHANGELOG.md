@@ -1,16 +1,19 @@
 ## Unreleased
 
+## 0.16.5 (2026-03-23)
+
 - Remove most adapter-only interfaces from the Viceroy component adapter. ([#583](https://github.com/fastly/Viceroy/pull/583))
-- Add support for "library" components which don't export `http_incoming`.
-- Add non-shift adapter when user module is using wit-bindgen.
+- Add support for "library" components which don't export `http_incoming`. ([#529](https://github.com/fastly/Viceroy/pull/529))
+- Add non-shift adapter when user module is using wit-bindgen. ([#582](https://github.com/fastly/Viceroy/pull/582))
 - Update to Wasmtime 39 ([#584](https://github.com/fastly/Viceroy/pull/584))
-- Remove unused WIT files from the source tree.
+- Remove unused WIT files from the source tree. ([#580](https://github.com/fastly/Viceroy/pull/580))
 - Refactor the CLI, with each subcommand in its own file. ([#581](https://github.com/fastly/Viceroy/pull/581))
 - Make "viceroy adapt" add "produced-by" metadata to its output. ([#586](https://github.com/fastly/Viceroy/pull/586))
 - Update to Rust 2024 Edition. ([#588](https://github.com/fastly/Viceroy/pull/588))
-- Add stub implementations for bot detection hostcalls.
+- Add stub implementations for bot detection hostcalls. ([#592](https://github.com/fastly/Viceroy/pull/592))
 - Add no-op implementations for stale-if-error hostcalls ([#591](https://github.com/fastly/Viceroy/pull/591))
 - Guest profiling support added for components. ([#593](https://github.com/fastly/Viceroy/pull/593))
+- Add `manifest_version` validation to fastly.toml parsing. ([#590](https://github.com/fastly/Viceroy/pull/590))
 
 ## 0.16.4 (2026-01-26)
 
