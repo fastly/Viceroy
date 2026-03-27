@@ -580,3 +580,14 @@
         ;; A maximum amount of time to wait for a downstream request to appear, in milliseconds.
         (field $timeout_ms u64)
     ))
+
+(typename $resvpnproxy_is_anonymous u32)
+(typename $resvpnproxy_is_anonymous_vpn u32)
+(typename $resvpnproxy_is_hosting_provider u32)
+(typename $resvpnproxy_is_proxy_over_vpn u32)
+(typename $resvpnproxy_is_public_proxy u32)
+(typename $resvpnproxy_is_relay_proxy u32)
+(typename $resvpnproxy_is_residential_proxy u32)
+(typename $resvpnproxy_is_smart_dns_proxy u32)
+(typename $resvpnproxy_is_tor_exit_node u32)
+(typename $resvpnproxy_is_vpn_datacenter u32)

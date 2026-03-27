@@ -635,6 +635,62 @@ interface http-downstream {
   downstream-bot-verified: func(
     ds-request: borrow<request>,
   ) -> result<option<bool>, error>;
+
+  /// True if the IP range belongs to any kind of anonymous network.
+  downstream-resvpnproxy-is-anonymous: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is identified as a VPN system.
+  downstream-resvpnproxy-is-anonymous-vpn: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is identified as a hosting provider.
+  downstream-resvpnproxy-is-hosting-provider: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is detected with a proxy over VPN technique.
+  downstream-resvpnproxy-is-proxy-over-vpn: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is identified as a public proxy.
+  downstream-resvpnproxy-is-public-proxy: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP belongs to relay service provider.
+  downstream-resvpnproxy-is-relay-proxy: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is detected with residential proxy over VPN technique.
+  downstream-resvpnproxy-is-residential-proxy: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is identified as a Smart DNS Proxy.
+  downstream-resvpnproxy-is-smart-dns-proxy: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is identified as a Tor exit node.
+  downstream-resvpnproxy-is-tor-exit-node: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// True if the IP range is identified as a VPN datacenter.
+  downstream-resvpnproxy-is-vpn-datacenter: func(
+    ds-request: borrow<request>,
+  ) -> result<option<bool>, error>;
+
+  /// VPN service name. Available only if the range is identified as a VPN system.
+  downstream-resvpnproxy-vpn-service-name: func(
+    ds-request: borrow<request>,
+    max-len: u64,
+  ) -> result<option<string>, error>;
 }
 
 /// HTTP requests.
@@ -2578,7 +2634,7 @@ interface http-cache {
     /// If so, they can call transaction-choose-stale, after which the cache handle will reflect the stale
     /// response (via get-found-response, get-state, etc).
     ///
-    /// `transaction-choose-stale` is an alternative to `transaction-update-and-return-fresh` or 
+    /// `transaction-choose-stale` is an alternative to `transaction-update-and-return-fresh` or
     /// `transaction-insert-and-stream-back`. Like those methods, it completes a request collapse,
     /// providing the stale response to all collapsed transactions; and, after calling
     /// `transaction-choose-stale`, the cache handle provides the (stale) response to send to the client.
