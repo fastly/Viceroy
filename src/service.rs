@@ -42,10 +42,11 @@ impl ViceroyService {
     ///
     /// ```no_run
     /// # use std::collections::HashSet;
-    /// use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
+    /// use viceroy_lib::{Error, ExecuteCtx, ProfilingConfig, ViceroyService};
+    /// # use viceroy_lib::config::UnknownImportBehavior;
     /// # fn f() -> Result<(), Error> {
     /// let adapt_core_wasm = false;
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingConfig::None, HashSet::new(), UnknownImportBehavior::LinkError, adapt_core_wasm)?;
     /// let svc = ViceroyService::new(ctx);
     /// # Ok(())
     /// # }

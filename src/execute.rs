@@ -76,14 +76,56 @@ impl Instance {
     }
 }
 
+/// Configuration for profiling Wasm execution.
+///
+/// Viceroy supports two types of profiling:
+/// - **Guest profiling**: Profiles the WebAssembly guest code itself, producing Firefox profiler compatible JSON.
+/// - **Native profiling**: Profiles wasmtime's JIT compiler for debugging across guest, viceroy and wasmtime.
 #[derive(Clone)]
-pub struct GuestProfileConfig {
-    /// Path to write profiling results from the guest. In serve mode,
-    /// this must refer to a directory, while in run mode it names
-    /// a file.
-    pub path: PathBuf,
-    /// Period at which the guest should be profiled.
-    pub sample_period: Duration,
+pub enum ProfilingConfig {
+    /// No profiling enabled
+    None,
+    /// Profile the WebAssembly guest code
+    Guest {
+        /// Path to write profiling results. In serve mode, this should be a directory
+        /// where per-request profiles are written. In run mode, this is a single file.
+        path: PathBuf,
+        /// Period at which the guest should be sampled (default: 50μs)
+        sample_period: Duration,
+    },
+    /// Profile wasmtime's JIT compiler using native profiling tools
+    Native(wasmtime::ProfilingStrategy),
+}
+
+impl ProfilingConfig {
+    /// Get the native profiling strategy for wasmtime
+    pub fn native_strategy(&self) -> wasmtime::ProfilingStrategy {
+        match self {
+            ProfilingConfig::Native(strategy) => *strategy,
+            _ => wasmtime::ProfilingStrategy::None,
+        }
+    }
+
+    /// Get the guest profile configuration if guest profiling is enabled
+    fn guest_config(&self) -> Option<GuestProfileConfig> {
+        match self {
+            ProfilingConfig::Guest {
+                path,
+                sample_period,
+            } => Some(GuestProfileConfig {
+                path: path.clone(),
+                sample_period: *sample_period,
+            }),
+            _ => None,
+        }
+    }
+}
+
+// Keep GuestProfileConfig internal for now to maintain backwards compatibility
+#[derive(Clone)]
+struct GuestProfileConfig {
+    path: PathBuf,
+    sample_period: Duration,
 }
 
 pub struct NextRequest(Option<(DownstreamRequest, Arc<ExecuteCtx>)>);
@@ -165,12 +207,11 @@ pub struct ExecuteCtx {
 }
 
 impl ExecuteCtx {
-    /// Build a new execution context, given the path to a module and a set of experimental wasi modules.
+    /// Build a new execution context with unified profiling configuration.
     pub fn build(
         module_path: impl AsRef<Path>,
-        profiling_strategy: ProfilingStrategy,
+        profiling: ProfilingConfig,
         wasi_modules: HashSet<ExperimentalModule>,
-        guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
     ) -> Result<ExecuteCtxBuilder, Error> {
@@ -200,7 +241,7 @@ impl ExecuteCtx {
             (is_wat, is_component, input)
         };
 
-        let config = &configure_wasmtime(is_component, profiling_strategy);
+        let config = &configure_wasmtime(is_component, profiling.native_strategy());
         let engine = Engine::new(config)?;
         let instance_pre = if is_component {
             warn!(
@@ -278,7 +319,8 @@ impl ExecuteCtx {
         let epoch_increment_stop = Arc::new(AtomicBool::new(false));
         let engine_clone = engine.clone();
         let epoch_increment_stop_clone = epoch_increment_stop.clone();
-        let sample_period = guest_profile_config
+        let sample_period = profiling
+            .guest_config()
             .as_ref()
             .map(|c| c.sample_period)
             .unwrap_or(DEFAULT_EPOCH_INTERRUPTION_PERIOD);
@@ -309,7 +351,7 @@ impl ExecuteCtx {
             shielding_sites: ShieldingSites::new(),
             epoch_increment_thread,
             epoch_increment_stop,
-            guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
+            guest_profile_config: profiling.guest_config().map(Arc::new),
             cache: Arc::new(Cache::default()),
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };
@@ -317,20 +359,20 @@ impl ExecuteCtx {
         Ok(ExecuteCtxBuilder { inner })
     }
 
-    /// Create a new execution context, given the path to a module and a set of experimental wasi modules.
+    /// Create a new execution context with unified profiling configuration.
+    ///
+    /// This is a convenience wrapper around `build().finish()`.
     pub fn new(
         module_path: impl AsRef<Path>,
-        profiling_strategy: ProfilingStrategy,
+        profiling: ProfilingConfig,
         wasi_modules: HashSet<ExperimentalModule>,
-        guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
     ) -> Result<Arc<Self>, Error> {
         ExecuteCtx::build(
             module_path,
-            profiling_strategy,
+            profiling,
             wasi_modules,
-            guest_profile_config,
             unknown_import_behavior,
             adapt_components,
         )?
@@ -415,11 +457,12 @@ impl ExecuteCtx {
     /// ```no_run
     /// # use std::collections::HashSet;
     /// use hyper::{Body, http::Request};
-    /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
+    /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingConfig, ViceroyService};
+    /// # use viceroy_lib::config::UnknownImportBehavior;
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
     /// let adapt_core_wasm = false;
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
+    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingConfig::None, HashSet::new(), UnknownImportBehavior::LinkError, adapt_core_wasm)?;
     /// let local = "127.0.0.1:80".parse().unwrap();
     /// let remote = "127.0.0.1:0".parse().unwrap();
     /// let resp = ctx.handle_request(req, local, remote).await?;

@@ -14,7 +14,7 @@ use std::{
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
-    ExecuteCtx, ProfilingStrategy, ViceroyService,
+    ExecuteCtx, ProfilingConfig, ViceroyService,
     body::Body,
     config::{
         Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
@@ -92,8 +92,7 @@ pub struct Test {
     via_hyper: bool,
     unknown_import_behavior: UnknownImportBehavior,
     adapt_component: bool,
-    profiling_strategy: ProfilingStrategy,
-    guest_profile_config: Option<viceroy_lib::GuestProfileConfig>,
+    profiling: ProfilingConfig,
 }
 
 impl Test {
@@ -118,8 +117,7 @@ impl Test {
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
-            profiling_strategy: ProfilingStrategy::None,
-            guest_profile_config: None,
+            profiling: ProfilingConfig::None,
         }
     }
 
@@ -144,8 +142,7 @@ impl Test {
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
-            profiling_strategy: ProfilingStrategy::None,
-            guest_profile_config: None,
+            profiling: ProfilingConfig::None,
         }
     }
 
@@ -293,9 +290,9 @@ impl Test {
         self
     }
 
-    /// Enable guest profiling with the specified configuration.
-    pub fn with_guest_profiling(mut self, config: viceroy_lib::GuestProfileConfig) -> Self {
-        self.guest_profile_config = Some(config);
+    /// Set the profiling configuration for this test.
+    pub fn with_profiling(mut self, profiling: ProfilingConfig) -> Self {
+        self.profiling = profiling;
         self
     }
 
@@ -343,9 +340,8 @@ impl Test {
 
         let ctx = ExecuteCtx::build(
             &self.module_path,
-            self.profiling_strategy.clone(),
+            self.profiling.clone(),
             HashSet::new(),
-            self.guest_profile_config.clone(),
             self.unknown_import_behavior,
             self.adapt_component,
         )?

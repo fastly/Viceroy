@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Level, Metadata, event};
 use tracing_subscriber::fmt::writer::MakeWriter;
-use viceroy_lib::{BackendConnector, ExecuteCtx, GuestProfileConfig, config::FastlyConfig};
+use viceroy_lib::{BackendConnector, ExecuteCtx, config::FastlyConfig};
 
 pub(crate) enum Stdio {
     Stdout(Stdout),
@@ -67,14 +67,12 @@ impl<'a> MakeWriter<'a> for StdWriter {
 pub(crate) async fn create_execution_context(
     args: &SharedArgs,
     check_backends: bool,
-    guest_profile_config: Option<GuestProfileConfig>,
 ) -> Result<Arc<ExecuteCtx>, anyhow::Error> {
     let input = args.input();
     let ctx = ExecuteCtx::build(
         input,
-        args.profiling_strategy(),
+        args.profiling_config(),
         args.wasi_modules(),
-        guest_profile_config,
         args.unknown_import_behavior(),
         args.adapt(),
     )?
