@@ -14,6 +14,7 @@
 - Update to Rust 2024 Edition. ([#588](https://github.com/fastly/Viceroy/pull/588))
 - Add stub implementations for bot detection hostcalls. ([#592](https://github.com/fastly/Viceroy/pull/592))
 - Add no-op implementations for stale-if-error hostcalls ([#591](https://github.com/fastly/Viceroy/pull/591))
+- Guest profiling support added for components. ([#593](https://github.com/fastly/Viceroy/pull/593))
 - Add `manifest_version` validation to fastly.toml parsing. ([#590](https://github.com/fastly/Viceroy/pull/590))
 
 ## 0.16.4 (2026-01-26)
