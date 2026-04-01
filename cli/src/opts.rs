@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use viceroy_lib::{GuestProfileConfig, config::UnknownImportBehavior};
+use viceroy_lib::config::UnknownImportBehavior;
 
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
@@ -12,7 +12,7 @@ use {
         net::SocketAddr,
         path::{Path, PathBuf},
     },
-    viceroy_lib::{Error, ProfilingStrategy, config::ExperimentalModule},
+    viceroy_lib::{Error, ProfilingConfig, ProfilingStrategy, config::ExperimentalModule},
     wasmtime::WasmFeatures,
 };
 
@@ -189,37 +189,28 @@ impl SharedArgs {
         self.log_stderr
     }
 
-    /// Whether to enable wasmtime's builtin profiler.
-    pub fn profiling_strategy(&self) -> ProfilingStrategy {
-        match self.profile {
-            Some(Profile::Native(s)) => s,
-            _ => ProfilingStrategy::None,
+    /// Get the unified profiling configuration
+    pub fn profiling_config(&self) -> ProfilingConfig {
+        match &self.profile {
+            Some(Profile::Native(strategy)) => ProfilingConfig::Native(*strategy),
+            Some(Profile::Guest {
+                path,
+                sample_period,
+            }) => ProfilingConfig::Guest {
+                path: PathBuf::from(
+                    path.as_ref()
+                        .map(|p| p.as_str())
+                        .unwrap_or("guest-profiles"),
+                ),
+                sample_period: sample_period.unwrap_or(Duration::from_micros(50)),
+            },
+            None => ProfilingConfig::None,
         }
     }
 
     /// Port running local Pushpin proxy.
     pub fn local_pushpin_proxy_port(&self) -> Option<u16> {
         self.local_pushpin_proxy_port
-    }
-
-    /// Configuration for guest profiling if enabled
-    pub fn guest_profile_config(&self) -> Option<GuestProfileConfig> {
-        if let Some(Profile::Guest {
-            path,
-            sample_period,
-        }) = &self.profile
-        {
-            Some(GuestProfileConfig {
-                path: PathBuf::from(
-                    path.as_ref()
-                        .map(|p| p.as_str())
-                        .unwrap_or("guest-profiles"),
-                ),
-                sample_period: sample_period.unwrap_or_else(|| Duration::from_micros(50)),
-            })
-        } else {
-            None
-        }
     }
 
     /// Set of experimental wasi modules to link against.

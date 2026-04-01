@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use {
     hyper::{Body, Request, StatusCode},
-    viceroy_lib::{ExecuteCtx, ProfilingStrategy, WasmFeatures},
+    viceroy_lib::{ExecuteCtx, ProfilingConfig, WasmFeatures},
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
@@ -17,9 +17,8 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
     let module_path = format!("{RUST_FIXTURE_PATH}/response.wasm");
     let ctx = ExecuteCtx::new(
         module_path,
-        ProfilingStrategy::None,
+        ProfilingConfig::None,
         HashSet::new(),
-        None,
         viceroy_lib::config::UnknownImportBehavior::LinkError,
         adapt_core_wasm,
         WasmFeatures::default(),
