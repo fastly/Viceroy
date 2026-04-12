@@ -2542,15 +2542,15 @@ pub mod fastly_http_req {
             let reqs =
                 slice::from_raw_parts(main_ptr!(pending_req_handles), pending_req_handles_len);
             let idx = select_wrapper(reqs);
-            pending_req_wait_v2(
+            let status = pending_req_wait_v2(
                 *main_ptr!(pending_req_handles.add(idx as usize)),
                 error_detail,
                 resp_handle_out,
                 resp_body_handle_out,
             );
             *main_ptr!(done_index_out) = idx as i32;
+            status
         }
-        FastlyStatus::OK
     }
 
     #[export_name = "fastly_http_req#pending_req_wait"]
