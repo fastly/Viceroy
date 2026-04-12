@@ -8,7 +8,7 @@ use crate::session::{
 
 use {
     crate::{
-        error::Error,
+        error::{Error, HandleError},
         object_store::{ObjectKey, ObjectStoreError},
         session::Session,
         wiggle_abi::{
@@ -49,7 +49,9 @@ impl FastlyKvStore for Session {
         _lookup_configuration: GuestPtr<KvLookupConfig>,
         handle_out: GuestPtr<KvStoreLookupHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store).unwrap();
+        let store = self
+            .get_kv_store_key(store)
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store.into())))?;
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
             .map_err(|_| KvStoreError::BadRequest)?;
         // just create a future that's already ready
@@ -183,7 +185,10 @@ impl FastlyKvStore for Session {
         insert_configuration: GuestPtr<KvInsertConfig>,
         pending_handle_out: GuestPtr<KvStoreInsertHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store).unwrap().clone();
+        let store = self
+            .get_kv_store_key(store)
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store.into())))?
+            .clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
             .map_err(|_| KvStoreError::BadRequest)?;
         let body = self.take_body(body_handle)?.read_into_vec().await?;
@@ -275,7 +280,10 @@ impl FastlyKvStore for Session {
         _delete_configuration: GuestPtr<KvDeleteConfig>,
         pending_handle_out: GuestPtr<KvStoreDeleteHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store).unwrap().clone();
+        let store = self
+            .get_kv_store_key(store)
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store.into())))?
+            .clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())
             .map_err(|_| KvStoreError::BadRequest)?;
         let fut = futures::future::ok(self.kv_delete(store, key));
@@ -320,7 +328,10 @@ impl FastlyKvStore for Session {
         list_configuration: GuestPtr<KvListConfig>,
         pending_handle_out: GuestPtr<KvStoreListHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store).unwrap().clone();
+        let store = self
+            .get_kv_store_key(store)
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store.into())))?
+            .clone();
 
         let config = memory.read(list_configuration)?;
 

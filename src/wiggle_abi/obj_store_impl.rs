@@ -7,7 +7,7 @@ use crate::session::{PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTa
 use {
     crate::{
         body::Body,
-        error::Error,
+        error::{Error, HandleError},
         object_store::{ObjectKey, ObjectStoreError},
         session::Session,
         wiggle_abi::{
@@ -41,7 +41,9 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         opt_body_handle_out: GuestPtr<BodyHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store.into()).unwrap();
+        let store = self
+            .get_kv_store_key(store.into())
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store)))?;
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         match self.obj_lookup(store.clone(), key) {
             Ok(Some(obj)) => {
@@ -64,7 +66,9 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         opt_pending_body_handle_out: GuestPtr<PendingKvLookupHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store.into()).unwrap();
+        let store = self
+            .get_kv_store_key(store.into())
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store)))?;
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         // just create a future that's already ready
         let fut = futures::future::ok(self.obj_lookup(store.clone(), key));
@@ -106,7 +110,10 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         body_handle: BodyHandle,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store.into()).unwrap().clone();
+        let store = self
+            .get_kv_store_key(store.into())
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store)))?
+            .clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
         self.kv_insert(store, key, bytes, None, None, None, None)?;
@@ -122,7 +129,10 @@ impl FastlyObjectStore for Session {
         body_handle: BodyHandle,
         opt_pending_body_handle_out: GuestPtr<PendingKvInsertHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store.into()).unwrap().clone();
+        let store = self
+            .get_kv_store_key(store.into())
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store)))?
+            .clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let bytes = self.take_body(body_handle)?.read_into_vec().await?;
         let fut = futures::future::ok(self.kv_insert(store, key, bytes, None, None, None, None));
@@ -154,7 +164,10 @@ impl FastlyObjectStore for Session {
         key: GuestPtr<str>,
         opt_pending_delete_handle_out: GuestPtr<PendingKvDeleteHandle>,
     ) -> Result<(), Error> {
-        let store = self.get_kv_store_key(store.into()).unwrap().clone();
+        let store = self
+            .get_kv_store_key(store.into())
+            .ok_or(Error::HandleError(HandleError::InvalidObjectStoreHandle(store)))?
+            .clone();
         let key = ObjectKey::new(memory.as_str(key)?.ok_or(Error::SharedMemory)?.to_string())?;
         let fut = futures::future::ok(self.kv_delete(store, key));
         let task = PeekableTask::spawn(fut).await;
