@@ -56,7 +56,7 @@ pub fn prepare_request(req: Request<hyper::Body>) -> Result<Request<Body>, Downs
             .authority
             .as_ref()
             .ok_or(DownstreamRequestError::InvalidHost)?
-            .host()
+            .as_str()
     };
 
     // rebuild the request URI, replacing the authority with only the host and ensuring there is
