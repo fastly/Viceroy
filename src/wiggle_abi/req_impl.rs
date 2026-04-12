@@ -950,7 +950,7 @@ impl FastlyHttpReq for Session {
             let (resp_handle, resp_body_handle) = self.insert_response(resp);
             Ok((1, resp_handle, resp_body_handle))
         } else {
-            Ok((0, INVALID_REQUEST_HANDLE.into(), INVALID_BODY_HANDLE.into()))
+            Ok((0, INVALID_RESPONSE_HANDLE.into(), INVALID_BODY_HANDLE.into()))
         }
     }
 
