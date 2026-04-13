@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Add stub implementations for resvpnproxy hostcalls.
+- Add `valid_mock_fastly_api_keys` config parameter to allow testing `fastly_key_is_valid` hostcall with mock API keys.
 
 ## 0.16.5 (2026-03-23)
 
