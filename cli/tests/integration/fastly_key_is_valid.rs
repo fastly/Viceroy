@@ -28,7 +28,10 @@ viceroy_test!(fastly_key_is_valid_with_valid_key, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.into_body().read_into_string().await?;
-    assert!(body.contains("is_valid=true"), "expected valid key, got: {body}");
+    assert!(
+        body.contains("is_valid=true"),
+        "expected valid key, got: {body}"
+    );
     Ok(())
 });
 
@@ -54,7 +57,10 @@ viceroy_test!(fastly_key_is_valid_with_invalid_key, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.into_body().read_into_string().await?;
-    assert!(body.contains("is_valid=false"), "expected invalid key, got: {body}");
+    assert!(
+        body.contains("is_valid=false"),
+        "expected invalid key, got: {body}"
+    );
     Ok(())
 });
 
@@ -76,22 +82,27 @@ viceroy_test!(fastly_key_is_valid_with_no_header, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp.into_body().read_into_string().await?;
-    assert!(body.contains("is_valid=false"), "expected invalid without header, got: {body}");
+    assert!(
+        body.contains("is_valid=false"),
+        "expected invalid without header, got: {body}"
+    );
     Ok(())
 });
 
-viceroy_test!(fastly_key_is_valid_with_no_keys_configured, |is_component| {
-    let resp = Test::using_fixture("fastly-key-is-valid.wasm")
-        .adapt_component(is_component)
-        .against(
-            Request::get("/")
-                .header("fastly-key", "any-key")
-                .body("")?,
-        )
-        .await?;
+viceroy_test!(
+    fastly_key_is_valid_with_no_keys_configured,
+    |is_component| {
+        let resp = Test::using_fixture("fastly-key-is-valid.wasm")
+            .adapt_component(is_component)
+            .against(Request::get("/").header("fastly-key", "any-key").body("")?)
+            .await?;
 
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = resp.into_body().read_into_string().await?;
-    assert!(body.contains("is_valid=false"), "expected invalid when no keys configured, got: {body}");
-    Ok(())
-});
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().read_into_string().await?;
+        assert!(
+            body.contains("is_valid=false"),
+            "expected invalid when no keys configured, got: {body}"
+        );
+        Ok(())
+    }
+);

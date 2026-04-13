@@ -10,8 +10,8 @@ use {
         cache::Cache,
         component as compute,
         config::{
-            Backends, DeviceDetection, Dictionaries, ExperimentalModule,
-            Geolocation, UnknownImportBehavior, ValidMockFastlyApiKeys,
+            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
+            UnknownImportBehavior, ValidMockFastlyApiKeys,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},

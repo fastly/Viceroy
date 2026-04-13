@@ -17,8 +17,8 @@ use viceroy_lib::{
     ExecuteCtx, ProfilingStrategy, ViceroyService,
     body::Body,
     config::{
-        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores,
-        SecretStores, ShieldingSites, ValidMockFastlyApiKeys,
+        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
+        ShieldingSites, ValidMockFastlyApiKeys,
     },
 };
 
