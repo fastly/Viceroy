@@ -16,7 +16,7 @@ viceroy_test!(fastly_key_is_valid_with_valid_key, |is_component| {
             language = "rust"
 
             [local_server]
-            fastly_api_keys = ["test-key-123", "another-key"]
+            valid_mock_fastly_api_keys = ["test-key-123", "another-key"]
         "#,
         )?
         .against(
@@ -42,7 +42,7 @@ viceroy_test!(fastly_key_is_valid_with_invalid_key, |is_component| {
             language = "rust"
 
             [local_server]
-            fastly_api_keys = ["test-key-123", "another-key"]
+            valid_mock_fastly_api_keys = ["test-key-123", "another-key"]
         "#,
         )?
         .against(
@@ -68,7 +68,7 @@ viceroy_test!(fastly_key_is_valid_with_no_header, |is_component| {
             language = "rust"
 
             [local_server]
-            fastly_api_keys = ["test-key-123"]
+            valid_mock_fastly_api_keys = ["test-key-123"]
         "#,
         )?
         .against(Request::get("/").body("")?)

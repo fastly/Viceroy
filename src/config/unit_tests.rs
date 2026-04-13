@@ -1235,7 +1235,7 @@ fn fastly_toml_files_with_unsupported_manifest_version() {
 }
 
 #[test]
-fn fastly_toml_with_fastly_api_keys() {
+fn fastly_toml_with_valid_mock_fastly_api_keys() {
     let config = FastlyConfig::from_str(
         r#"
             manifest_version = 3
@@ -1243,19 +1243,19 @@ fn fastly_toml_with_fastly_api_keys() {
             language = "rust"
 
             [local_server]
-            fastly_api_keys = ["test-key-1", "test-key-2"]
+            valid_mock_fastly_api_keys = ["test-key-1", "test-key-2"]
     "#,
     )
     .expect("can read toml data");
 
-    let keys = config.fastly_api_keys();
+    let keys = config.valid_mock_fastly_api_keys();
     assert_eq!(keys.len(), 2);
     assert!(keys.contains("test-key-1"));
     assert!(keys.contains("test-key-2"));
 }
 
 #[test]
-fn fastly_toml_without_fastly_api_keys_defaults_to_empty() {
+fn fastly_toml_without_valid_mock_fastly_api_keys_defaults_to_empty() {
     let config = FastlyConfig::from_str(
         r#"
             manifest_version = 3
@@ -1265,11 +1265,11 @@ fn fastly_toml_without_fastly_api_keys_defaults_to_empty() {
     )
     .expect("can read toml data");
 
-    assert!(config.fastly_api_keys().is_empty());
+    assert!(config.valid_mock_fastly_api_keys().is_empty());
 }
 
 #[test]
-fn fastly_toml_with_empty_fastly_api_keys() {
+fn fastly_toml_with_empty_valid_mock_fastly_api_keys() {
     let config = FastlyConfig::from_str(
         r#"
             manifest_version = 3
@@ -1277,10 +1277,10 @@ fn fastly_toml_with_empty_fastly_api_keys() {
             language = "rust"
 
             [local_server]
-            fastly_api_keys = []
+            valid_mock_fastly_api_keys = []
     "#,
     )
     .expect("can read toml data");
 
-    assert!(config.fastly_api_keys().is_empty());
+    assert!(config.valid_mock_fastly_api_keys().is_empty());
 }

@@ -217,8 +217,8 @@ impl http_downstream::Host for ComponentCtx {
         h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
         let session = &self.session;
-        let fastly_api_keys = session.fastly_api_keys();
-        if fastly_api_keys.is_empty() {
+        let valid_mock_fastly_api_keys = session.valid_mock_fastly_api_keys();
+        if valid_mock_fastly_api_keys.is_empty() {
             return Ok(false);
         }
         let parts = session.request_parts(h.into())?;
@@ -226,7 +226,7 @@ impl http_downstream::Host for ComponentCtx {
             .headers
             .get("fastly-key")
             .and_then(|v| v.to_str().ok())
-            .is_some_and(|key| fastly_api_keys.contains(key));
+            .is_some_and(|key| valid_mock_fastly_api_keys.contains(key));
         Ok(is_valid)
     }
 
