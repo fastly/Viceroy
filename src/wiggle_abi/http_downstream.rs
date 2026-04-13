@@ -321,10 +321,19 @@ impl FastlyHttpDownstream for Session {
     fn fastly_key_is_valid(
         &mut self,
         _memory: &mut GuestMemory<'_>,
-        _handle: RequestHandle,
+        handle: RequestHandle,
     ) -> Result<u32, Error> {
-        // Since there are no keys to compare against, just return false.
-        Ok(0)
+        let fastly_api_keys = self.fastly_api_keys();
+        if fastly_api_keys.is_empty() {
+            return Ok(0);
+        }
+        let parts = self.request_parts(handle)?;
+        let is_valid = parts
+            .headers
+            .get("fastly-key")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|key| fastly_api_keys.contains(key));
+        Ok(u32::from(is_valid))
     }
 
     fn downstream_bot_analyzed(

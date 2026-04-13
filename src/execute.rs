@@ -10,7 +10,7 @@ use {
         cache::Cache,
         component as compute,
         config::{
-            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
+            Backends, DeviceDetection, Dictionaries, ExperimentalModule, FastlyApiKeys, Geolocation,
             UnknownImportBehavior,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
@@ -153,6 +153,8 @@ pub struct ExecuteCtx {
     secret_stores: SecretStores,
     /// The shielding sites for this execution.
     shielding_sites: ShieldingSites,
+    /// The Fastly API keys that should be considered valid.
+    fastly_api_keys: FastlyApiKeys,
     /// The cache for this service.
     cache: Arc<Cache>,
     /// Senders waiting for new requests for reusable sessions.
@@ -307,6 +309,7 @@ impl ExecuteCtx {
             object_store: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fastly_api_keys: FastlyApiKeys::new(),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
@@ -885,6 +888,11 @@ impl ExecuteCtx {
         &self.shielding_sites
     }
 
+    /// Get the Fastly API keys for this execution context.
+    pub fn fastly_api_keys(&self) -> &FastlyApiKeys {
+        &self.fastly_api_keys
+    }
+
     pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
         let mut pending = self.pending_reuse.lock().await;
 
@@ -956,6 +964,12 @@ impl ExecuteCtxBuilder {
     /// Set the shielding sites for this execution context.
     pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
         self.inner.shielding_sites = shielding_sites;
+        self
+    }
+
+    /// Set the Fastly API keys for this execution context.
+    pub fn with_fastly_api_keys(mut self, fastly_api_keys: FastlyApiKeys) -> Self {
+        self.inner.fastly_api_keys = fastly_api_keys;
         self
     }
 

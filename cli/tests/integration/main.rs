@@ -10,6 +10,7 @@ mod device_detection_lookup;
 mod dictionary_lookup;
 mod downstream_req;
 mod early_hints;
+mod fastly_key_is_valid;
 mod edge_rate_limiting;
 mod env_vars;
 mod geolocation_lookup;

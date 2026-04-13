@@ -1233,3 +1233,54 @@ fn fastly_toml_files_with_unsupported_manifest_version() {
         FastlyConfigError::UnsupportedManifestVersion(4, 3)
     ));
 }
+
+#[test]
+fn fastly_toml_with_fastly_api_keys() {
+    let config = FastlyConfig::from_str(
+        r#"
+            manifest_version = 3
+            name = "api-keys-example"
+            language = "rust"
+
+            [local_server]
+            fastly_api_keys = ["test-key-1", "test-key-2"]
+    "#,
+    )
+    .expect("can read toml data");
+
+    let keys = config.fastly_api_keys();
+    assert_eq!(keys.len(), 2);
+    assert!(keys.contains("test-key-1"));
+    assert!(keys.contains("test-key-2"));
+}
+
+#[test]
+fn fastly_toml_without_fastly_api_keys_defaults_to_empty() {
+    let config = FastlyConfig::from_str(
+        r#"
+            manifest_version = 3
+            name = "no-api-keys-example"
+            language = "rust"
+    "#,
+    )
+    .expect("can read toml data");
+
+    assert!(config.fastly_api_keys().is_empty());
+}
+
+#[test]
+fn fastly_toml_with_empty_fastly_api_keys() {
+    let config = FastlyConfig::from_str(
+        r#"
+            manifest_version = 3
+            name = "empty-api-keys-example"
+            language = "rust"
+
+            [local_server]
+            fastly_api_keys = []
+    "#,
+    )
+    .expect("can read toml data");
+
+    assert!(config.fastly_api_keys().is_empty());
+}

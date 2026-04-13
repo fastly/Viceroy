@@ -7,7 +7,14 @@ use {
     },
     crate::error::FastlyConfigError,
     serde_derive::Deserialize,
-    std::{collections::HashMap, convert::TryInto, fs, path::Path, str::FromStr, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        convert::TryInto,
+        fs,
+        path::Path,
+        str::FromStr,
+        sync::Arc,
+    },
     toml::value::Table,
 };
 
@@ -56,6 +63,9 @@ mod secret_store;
 pub use crate::secret_store::{SecretStore, SecretStores};
 
 pub use crate::shielding_site::ShieldingSites;
+
+/// A set of API keys that should be considered valid for `fastly_key_is_valid`.
+pub type FastlyApiKeys = HashSet<String>;
 
 /// Fastly-specific configuration information.
 ///
@@ -127,6 +137,11 @@ impl FastlyConfig {
     /// Get the shielding site configuration.
     pub fn shielding_sites(&self) -> &ShieldingSites {
         &self.local_server.shielding_sites
+    }
+
+    /// Get the Fastly API keys configuration.
+    pub fn fastly_api_keys(&self) -> &FastlyApiKeys {
+        &self.local_server.fastly_api_keys
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -229,6 +244,7 @@ pub struct LocalServerConfig {
     object_stores: ObjectStoreConfig,
     secret_stores: SecretStoreConfig,
     shielding_sites: ShieldingSites,
+    fastly_api_keys: FastlyApiKeys,
 }
 
 /// Enum of available (experimental) wasi modules
@@ -253,6 +269,7 @@ struct RawLocalServerConfig {
     object_stores: Option<Table>,
     secret_stores: Option<Table>,
     shielding_sites: Option<Table>,
+    fastly_api_keys: Option<Vec<String>>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
@@ -267,6 +284,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             object_stores,
             secret_stores,
             shielding_sites,
+            fastly_api_keys,
         } = self;
         let acls = if let Some(acls) = acls {
             acls.try_into()?
@@ -309,6 +327,11 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             ShieldingSites::default()
         };
 
+        let fastly_api_keys = fastly_api_keys
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<FastlyApiKeys>();
+
         Ok(LocalServerConfig {
             acls,
             backends,
@@ -318,6 +341,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             object_stores,
             secret_stores,
             shielding_sites,
+            fastly_api_keys,
         })
     }
 }

@@ -1241,6 +1241,10 @@ impl Session {
         self.ctx.shielding_sites()
     }
 
+    pub fn fastly_api_keys(&self) -> &crate::config::FastlyApiKeys {
+        self.ctx.fastly_api_keys()
+    }
+
     pub async fn register_pending_downstream_req(
         &mut self,
         timeout: Option<Duration>,

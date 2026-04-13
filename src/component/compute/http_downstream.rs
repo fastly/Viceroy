@@ -214,9 +214,20 @@ impl http_downstream::Host for ComponentCtx {
 
     fn fastly_key_is_valid(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
-        Ok(false)
+        let session = &self.session;
+        let fastly_api_keys = session.fastly_api_keys();
+        if fastly_api_keys.is_empty() {
+            return Ok(false);
+        }
+        let parts = session.request_parts(h.into())?;
+        let is_valid = parts
+            .headers
+            .get("fastly-key")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|key| fastly_api_keys.contains(key));
+        Ok(is_valid)
     }
 
     fn downstream_bot_analyzed(
