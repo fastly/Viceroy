@@ -1,5 +1,5 @@
 use {
-    crate::component::bindings::fastly::compute::{http_body, http_cache, types},
+    crate::component::bindings::fastly::compute::{async_io, http_body, http_cache, types},
     crate::{error::Error, linking::ComponentCtx},
     wasmtime::component::Resource,
 };
@@ -344,6 +344,16 @@ impl http_cache::HostEntry for ComponentCtx {
         &mut self,
         _handle: Resource<http_cache::Entry>,
     ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "HTTP Cache API primitives not yet supported",
+        }
+        .into())
+    }
+
+    fn subscribe(
+        &mut self,
+        _handle: Resource<http_cache::Entry>,
+    ) -> Result<Resource<async_io::Pollable>, anyhow::Error> {
         Err(Error::Unsupported {
             msg: "HTTP Cache API primitives not yet supported",
         }

@@ -61,6 +61,7 @@ pub(crate) mod bindings {
             "fastly:compute/kv-store.[method]store.list-async": async | tracing,
             "fastly:compute/kv-store.[method]store.lookup": async | tracing,
             "fastly:compute/kv-store.[method]store.lookup-async": async | tracing,
+            "fastly:compute/http-cache.[method]entry.subscribe": tracing | trappable,
             "fastly:compute/http-downstream.next-request": async | tracing,
             "fastly:compute/http-body.read": async | tracing,
             "fastly:compute/backend.register-dynamic-backend": async | tracing,

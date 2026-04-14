@@ -1,12 +1,12 @@
 use {
-    crate::component::bindings::fastly::compute::{cache as api, http_body, types},
     crate::{
         body::Body,
         cache::{self, CacheKey, SurrogateKeySet, VaryRule, WriteOptions},
+        component::bindings::fastly::compute::{cache as api, http_body, types},
         error::Error,
         linking::{ComponentCtx, SessionView},
         session::{PeekableTask, PendingCacheTask, Session},
-        wiggle_abi::types::{CacheBusyHandle, CacheHandle},
+        wiggle_abi::types::{CacheBusyHandle, CacheHandle, CacheReplaceHandle},
     },
     bytes::Bytes,
     http::HeaderMap,
@@ -292,6 +292,12 @@ impl api::HostReplaceEntry for ComponentCtx {
             msg: "Cache API primitives not yet supported",
         }
         .into())
+    }
+
+    fn subscribe(&mut self, handle: Resource<api::ReplaceEntry>) -> Resource<api::Pollable> {
+        let host_handle = crate::session::AsyncItemHandle::from(CacheReplaceHandle::from(handle));
+        let guest_handle = crate::wiggle_abi::types::AsyncItemHandle::from(host_handle);
+        guest_handle.into()
     }
 
     fn drop(&mut self, _entry: Resource<api::ReplaceEntry>) -> wasmtime::Result<()> {
@@ -592,6 +598,12 @@ impl api::HostEntry for ComponentCtx {
             msg: "Cache API primitives not yet supported",
         }
         .into())
+    }
+
+    fn subscribe(&mut self, handle: Resource<api::Entry>) -> Resource<api::Pollable> {
+        let host_handle = crate::session::AsyncItemHandle::from(CacheHandle::from(handle));
+        let guest_handle = crate::wiggle_abi::types::AsyncItemHandle::from(host_handle);
+        guest_handle.into()
     }
 
     fn drop(&mut self, _entry: Resource<api::Entry>) -> wasmtime::Result<()> {
