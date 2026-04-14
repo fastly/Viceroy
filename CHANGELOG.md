@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add adapter shim for `async-io.select`-incompatible handles. ([#600](https://github.com/fastly/Viceroy/pull/600))
 - Add stub implementations for resvpnproxy hostcalls.
 
 ## 0.16.5 (2026-03-23)
