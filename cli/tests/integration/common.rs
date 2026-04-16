@@ -21,6 +21,7 @@ use viceroy_lib::{
         ObjectStores, SecretStores, ShieldingSites,
     },
 };
+use wasmtime::WasmFeatures;
 
 pub use self::backends::TestBackends;
 
@@ -352,6 +353,7 @@ impl Test {
             self.guest_profile_config.clone(),
             self.unknown_import_behavior,
             self.adapt_component,
+            WasmFeatures::default(),
         )?
         .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)

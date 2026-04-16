@@ -77,6 +77,7 @@ pub(crate) async fn create_execution_context(
         guest_profile_config,
         args.unknown_import_behavior(),
         args.adapt(),
+        args.wasm_features(),
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout())
