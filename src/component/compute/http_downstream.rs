@@ -216,7 +216,9 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
-        self.session().check_fastly_key(h.into()).map_err(Into::into)
+        self.session()
+            .check_fastly_key(h.into())
+            .map_err(Into::into)
     }
 
     fn downstream_bot_analyzed(

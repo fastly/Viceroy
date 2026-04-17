@@ -10,8 +10,8 @@ use {
         cache::Cache,
         component as compute,
         config::{
-            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
-            UnknownImportBehavior, FakeValidFastlyKeys,
+            Backends, DeviceDetection, Dictionaries, ExperimentalModule, FakeValidFastlyKeys,
+            Geolocation, UnknownImportBehavior,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
