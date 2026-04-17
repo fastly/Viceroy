@@ -1245,6 +1245,21 @@ impl Session {
         self.ctx.fake_valid_fastly_keys()
     }
 
+    /// Check if a Fastly API key in the request is valid.
+    ///
+    /// Returns `true` if the request contains a `fastly-key` header whose value
+    /// matches one of the configured fake valid keys, `false` otherwise.
+    pub fn check_fastly_key(&self, handle: RequestHandle) -> Result<bool, Error> {
+        let fake_valid_fastly_keys = self.fake_valid_fastly_keys();
+        let parts = self.request_parts(handle)?;
+        let is_valid = parts
+            .headers
+            .get("fastly-key")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|key| fake_valid_fastly_keys.contains(key));
+        Ok(is_valid)
+    }
+
     pub async fn register_pending_downstream_req(
         &mut self,
         timeout: Option<Duration>,

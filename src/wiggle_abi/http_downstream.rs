@@ -323,14 +323,7 @@ impl FastlyHttpDownstream for Session {
         _memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
     ) -> Result<u32, Error> {
-        let fake_valid_fastly_keys = self.fake_valid_fastly_keys();
-        let parts = self.request_parts(handle)?;
-        let is_valid = parts
-            .headers
-            .get("fastly-key")
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|key| fake_valid_fastly_keys.contains(key));
-        Ok(u32::from(is_valid))
+        self.check_fastly_key(handle).map(u32::from)
     }
 
     fn downstream_bot_analyzed(

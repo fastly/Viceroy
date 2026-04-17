@@ -216,15 +216,7 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
-        let session = &self.session;
-        let fake_valid_fastly_keys = session.fake_valid_fastly_keys();
-        let parts = session.request_parts(h.into())?;
-        let is_valid = parts
-            .headers
-            .get("fastly-key")
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|key| fake_valid_fastly_keys.contains(key));
-        Ok(is_valid)
+        self.session().check_fastly_key(h.into()).map_err(Into::into)
     }
 
     fn downstream_bot_analyzed(
