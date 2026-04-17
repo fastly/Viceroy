@@ -324,9 +324,6 @@ impl FastlyHttpDownstream for Session {
         handle: RequestHandle,
     ) -> Result<u32, Error> {
         let valid_mock_fastly_api_keys = self.valid_mock_fastly_api_keys();
-        if valid_mock_fastly_api_keys.is_empty() {
-            return Ok(0);
-        }
         let parts = self.request_parts(handle)?;
         let is_valid = parts
             .headers

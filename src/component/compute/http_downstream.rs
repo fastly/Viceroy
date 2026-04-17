@@ -218,9 +218,6 @@ impl http_downstream::Host for ComponentCtx {
     ) -> Result<bool, types::Error> {
         let session = &self.session;
         let valid_mock_fastly_api_keys = session.valid_mock_fastly_api_keys();
-        if valid_mock_fastly_api_keys.is_empty() {
-            return Ok(false);
-        }
         let parts = session.request_parts(h.into())?;
         let is_valid = parts
             .headers
