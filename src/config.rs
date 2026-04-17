@@ -64,11 +64,11 @@ pub use crate::secret_store::{SecretStore, SecretStores};
 
 pub use crate::shielding_site::ShieldingSites;
 
-/// A set of mock API keys that should be considered valid for `fastly_key_is_valid`.
+/// A set of fake valid Fastly keys for testing `fastly_key_is_valid`.
 ///
-/// Real Fastly API keys should never be used in local testing. These are mock
+/// Real Fastly API keys should never be used in local testing. These are fake
 /// values used solely to exercise the `fastly_key_is_valid` hostcall in Viceroy.
-pub type ValidMockFastlyApiKeys = HashSet<String>;
+pub type FakeValidFastlyKeys = HashSet<String>;
 
 /// Fastly-specific configuration information.
 ///
@@ -143,8 +143,8 @@ impl FastlyConfig {
     }
 
     /// Get the valid mock Fastly API keys configuration.
-    pub fn valid_mock_fastly_api_keys(&self) -> &ValidMockFastlyApiKeys {
-        &self.local_server.valid_mock_fastly_api_keys
+    pub fn fake_valid_fastly_keys(&self) -> &FakeValidFastlyKeys {
+        &self.local_server.fake_valid_fastly_keys
     }
 
     /// Parse a `fastly.toml` file into a `FastlyConfig`.
@@ -247,7 +247,7 @@ pub struct LocalServerConfig {
     object_stores: ObjectStoreConfig,
     secret_stores: SecretStoreConfig,
     shielding_sites: ShieldingSites,
-    valid_mock_fastly_api_keys: ValidMockFastlyApiKeys,
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
 }
 
 /// Enum of available (experimental) wasi modules
@@ -272,7 +272,7 @@ struct RawLocalServerConfig {
     object_stores: Option<Table>,
     secret_stores: Option<Table>,
     shielding_sites: Option<Table>,
-    valid_mock_fastly_api_keys: Option<Vec<String>>,
+    fake_valid_fastly_keys: Option<Vec<String>>,
 }
 
 impl TryInto<LocalServerConfig> for RawLocalServerConfig {
@@ -287,7 +287,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             object_stores,
             secret_stores,
             shielding_sites,
-            valid_mock_fastly_api_keys,
+            fake_valid_fastly_keys,
         } = self;
         let acls = if let Some(acls) = acls {
             acls.try_into()?
@@ -330,10 +330,10 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             ShieldingSites::default()
         };
 
-        let valid_mock_fastly_api_keys = valid_mock_fastly_api_keys
+        let fake_valid_fastly_keys = fake_valid_fastly_keys
             .unwrap_or_default()
             .into_iter()
-            .collect::<ValidMockFastlyApiKeys>();
+            .collect::<FakeValidFastlyKeys>();
 
         Ok(LocalServerConfig {
             acls,
@@ -344,7 +344,7 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             object_stores,
             secret_stores,
             shielding_sites,
-            valid_mock_fastly_api_keys,
+            fake_valid_fastly_keys,
         })
     }
 }

@@ -18,7 +18,7 @@ use viceroy_lib::{
     body::Body,
     config::{
         Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
-        ShieldingSites, ValidMockFastlyApiKeys,
+        ShieldingSites, FakeValidFastlyKeys,
     },
 };
 
@@ -86,7 +86,7 @@ pub struct Test {
     object_stores: ObjectStores,
     secret_stores: SecretStores,
     shielding_sites: ShieldingSites,
-    valid_mock_fastly_api_keys: ValidMockFastlyApiKeys,
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
     capture_logs: Arc<Mutex<dyn Write + Send>>,
     log_stdout: bool,
     log_stderr: bool,
@@ -113,7 +113,7 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
-            valid_mock_fastly_api_keys: ValidMockFastlyApiKeys::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
@@ -140,7 +140,7 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
-            valid_mock_fastly_api_keys: ValidMockFastlyApiKeys::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
@@ -164,7 +164,7 @@ impl Test {
             object_stores: config.object_stores().to_owned(),
             secret_stores: config.secret_stores().to_owned(),
             shielding_sites: config.shielding_sites().to_owned(),
-            valid_mock_fastly_api_keys: config.valid_mock_fastly_api_keys().to_owned(),
+            fake_valid_fastly_keys: config.fake_valid_fastly_keys().to_owned(),
             ..self
         })
     }
@@ -361,7 +361,7 @@ impl Test {
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())
         .with_shielding_sites(self.shielding_sites.clone())
-        .with_valid_mock_fastly_api_keys(self.valid_mock_fastly_api_keys.clone())
+        .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
         .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
         .with_log_stdout(self.log_stdout)

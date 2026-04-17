@@ -100,7 +100,7 @@ pub(crate) async fn create_execution_context(
     let object_stores = config.object_stores();
     let secret_stores = config.secret_stores();
     let shielding_sites = config.shielding_sites();
-    let valid_mock_fastly_api_keys = config.valid_mock_fastly_api_keys();
+    let fake_valid_fastly_keys = config.fake_valid_fastly_keys();
     let backend_names = itertools::join(backends.keys(), ", ");
 
     let ctx = ctx
@@ -112,7 +112,7 @@ pub(crate) async fn create_execution_context(
         .with_object_stores(object_stores.clone())
         .with_secret_stores(secret_stores.clone())
         .with_shielding_sites(shielding_sites.clone())
-        .with_valid_mock_fastly_api_keys(valid_mock_fastly_api_keys.clone())
+        .with_fake_valid_fastly_keys(fake_valid_fastly_keys.clone())
         .with_config_path(config_path.into())
         .finish()?;
 

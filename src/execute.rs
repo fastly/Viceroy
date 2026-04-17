@@ -11,7 +11,7 @@ use {
         component as compute,
         config::{
             Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
-            UnknownImportBehavior, ValidMockFastlyApiKeys,
+            UnknownImportBehavior, FakeValidFastlyKeys,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
@@ -154,7 +154,7 @@ pub struct ExecuteCtx {
     /// The shielding sites for this execution.
     shielding_sites: ShieldingSites,
     /// The valid mock Fastly API keys that should be considered valid.
-    valid_mock_fastly_api_keys: ValidMockFastlyApiKeys,
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
     /// The cache for this service.
     cache: Arc<Cache>,
     /// Senders waiting for new requests for reusable sessions.
@@ -309,7 +309,7 @@ impl ExecuteCtx {
             object_store: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
-            valid_mock_fastly_api_keys: ValidMockFastlyApiKeys::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
@@ -889,8 +889,8 @@ impl ExecuteCtx {
     }
 
     /// Get the valid mock Fastly API keys for this execution context.
-    pub fn valid_mock_fastly_api_keys(&self) -> &ValidMockFastlyApiKeys {
-        &self.valid_mock_fastly_api_keys
+    pub fn fake_valid_fastly_keys(&self) -> &FakeValidFastlyKeys {
+        &self.fake_valid_fastly_keys
     }
 
     pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
@@ -968,11 +968,11 @@ impl ExecuteCtxBuilder {
     }
 
     /// Set the valid mock Fastly API keys for this execution context.
-    pub fn with_valid_mock_fastly_api_keys(
+    pub fn with_fake_valid_fastly_keys(
         mut self,
-        valid_mock_fastly_api_keys: ValidMockFastlyApiKeys,
+        fake_valid_fastly_keys: FakeValidFastlyKeys,
     ) -> Self {
-        self.inner.valid_mock_fastly_api_keys = valid_mock_fastly_api_keys;
+        self.inner.fake_valid_fastly_keys = fake_valid_fastly_keys;
         self
     }
 

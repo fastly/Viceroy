@@ -323,13 +323,13 @@ impl FastlyHttpDownstream for Session {
         _memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
     ) -> Result<u32, Error> {
-        let valid_mock_fastly_api_keys = self.valid_mock_fastly_api_keys();
+        let fake_valid_fastly_keys = self.fake_valid_fastly_keys();
         let parts = self.request_parts(handle)?;
         let is_valid = parts
             .headers
             .get("fastly-key")
             .and_then(|v| v.to_str().ok())
-            .is_some_and(|key| valid_mock_fastly_api_keys.contains(key));
+            .is_some_and(|key| fake_valid_fastly_keys.contains(key));
         Ok(u32::from(is_valid))
     }
 

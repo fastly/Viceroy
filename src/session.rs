@@ -1241,8 +1241,8 @@ impl Session {
         self.ctx.shielding_sites()
     }
 
-    pub fn valid_mock_fastly_api_keys(&self) -> &crate::config::ValidMockFastlyApiKeys {
-        self.ctx.valid_mock_fastly_api_keys()
+    pub fn fake_valid_fastly_keys(&self) -> &crate::config::FakeValidFastlyKeys {
+        self.ctx.fake_valid_fastly_keys()
     }
 
     pub async fn register_pending_downstream_req(
