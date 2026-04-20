@@ -2,6 +2,7 @@
 
 - Add stub implementations for resvpnproxy hostcalls.
 - Add `fake_valid_fastly_keys` config parameter to allow testing `fastly_key_is_valid` hostcall with fake valid keys. ([#599](https://github.com/fastly/Viceroy/pull/599))
+- Improve TLS certificate loading, handling and validation ([#478](https://github.com/fastly/Viceroy/pull/478))
 
 ## 0.16.5 (2026-03-23)
 
