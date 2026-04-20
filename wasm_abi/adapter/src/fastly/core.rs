@@ -4695,7 +4695,10 @@ pub mod fastly_acl {
 
 pub mod fastly_async_io {
     use super::*;
-    use crate::bindings::fastly::compute::async_io;
+    use crate::{
+        bindings::fastly::compute::async_io,
+        fastly::dynamic_types::{self, DynamicType},
+    };
     use core::slice;
 
     #[export_name = "fastly_async_io#select"]
@@ -4708,12 +4711,15 @@ pub mod fastly_async_io {
         unsafe {
             let refs = slice::from_raw_parts(main_ptr!(async_item_handles), async_item_handles_len);
 
-            // In the witx ABI, a `timeout_ms` value of 0 means no timeout.
-            *main_ptr!(done_index_out) = if timeout_ms == 0 {
-                select_wrapper(refs)
-            } else {
-                select_with_timeout_wrapper(refs, timeout_ms).unwrap_or(u32::MAX)
-            };
+            // If we have any handles that require dynamic typing, handle them
+            // specially.
+            for handle in refs {
+                if !dynamic_types::is_other(*handle) {
+                    return select_with_dynamic_types(refs, timeout_ms, done_index_out);
+                }
+            }
+
+            *main_ptr!(done_index_out) = select_with_maybe_timeout_wrapper(refs, timeout_ms);
 
             FastlyStatus::OK
         }
@@ -4722,10 +4728,91 @@ pub mod fastly_async_io {
     #[export_name = "fastly_async_io#is_ready"]
     pub fn is_ready(async_item_handle: AsyncItemHandle, ready_out: *mut u32) -> FastlyStatus {
         unsafe {
-            let async_item_handle =
-                ManuallyDrop::new(async_io::Pollable::from_handle(async_item_handle));
-            *main_ptr!(ready_out) = async_item_handle.is_ready().into();
+            let is_ready: bool = if dynamic_types::is_other(async_item_handle) {
+                let async_item_handle =
+                    ManuallyDrop::new(async_io::Pollable::from_handle(async_item_handle));
+                async_item_handle.is_ready()
+            } else {
+                let pollable = get_pollable(async_item_handle);
+                let async_item_handle =
+                    ManuallyDrop::new(async_io::Pollable::from_handle(pollable));
+                let is_ready = async_item_handle.is_ready();
+                drop_pollable(async_item_handle.take_handle(), pollable);
+                is_ready
+            };
+
+            *main_ptr!(ready_out) = is_ready.into();
             FastlyStatus::OK
+        }
+    }
+
+    #[cold]
+    fn select_with_dynamic_types(
+        refs: &[u32],
+        timeout_ms: u32,
+        done_index_out: *mut u32,
+    ) -> FastlyStatus {
+        crate::State::with::<FastlyStatus>(|state| {
+            unsafe {
+                // Allocate a new handle array.
+                let mut alloc = state.temporary_alloc();
+                let buf = alloc.alloc(
+                    core::mem::align_of::<u32>(),
+                    core::mem::size_of::<u32>() * refs.len(),
+                );
+                let buf = core::slice::from_raw_parts_mut(buf.cast::<u32>(), refs.len());
+
+                // For each handle with a dynamic type that isn't a `pollable`,
+                // call `.subscribe()` to obtain a `pollable`.
+                for i in 0..refs.len() {
+                    let new = get_pollable(refs[i]);
+                    buf[i] = new;
+                }
+
+                *main_ptr!(done_index_out) = select_with_maybe_timeout_wrapper(buf, timeout_ms);
+
+                // Free the `pollable`s we created.
+                for i in 0..refs.len() {
+                    drop_pollable(refs[i], buf[i]);
+                }
+
+                Ok(())
+            }
+        })
+    }
+
+    fn select_with_maybe_timeout_wrapper(hs: &[u32], timeout_ms: u32) -> u32 {
+        // In the witx ABI, a `timeout_ms` value of 0 means no timeout.
+        if timeout_ms == 0 {
+            select_wrapper(hs)
+        } else {
+            select_with_timeout_wrapper(hs, timeout_ms).unwrap_or(u32::MAX)
+        }
+    }
+
+    unsafe fn get_pollable(handle: AsyncItemHandle) -> AsyncItemHandle {
+        use crate::bindings::fastly::compute::{cache, http_cache};
+
+        match dynamic_types::parts(handle) {
+            (DynamicType::Other, _) => handle,
+            (DynamicType::CacheEntry, raw) => {
+                let cache_entry = ManuallyDrop::new(cache::Entry::from_handle(raw));
+                cache_entry.subscribe().take_handle()
+            }
+            (DynamicType::CacheReplaceEntry, raw) => {
+                let cache_replace_entry = ManuallyDrop::new(cache::ReplaceEntry::from_handle(raw));
+                cache_replace_entry.subscribe().take_handle()
+            }
+            (DynamicType::HttpCacheEntry, raw) => {
+                let http_cache_entry = ManuallyDrop::new(http_cache::Entry::from_handle(raw));
+                http_cache_entry.subscribe().take_handle()
+            }
+        }
+    }
+
+    unsafe fn drop_pollable(handle: AsyncItemHandle, pollable: AsyncItemHandle) {
+        if !dynamic_types::is_other(handle) {
+            drop(async_io::Pollable::from_handle(pollable));
         }
     }
 }

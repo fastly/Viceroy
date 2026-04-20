@@ -1,7 +1,8 @@
 use {
-    crate::component::bindings::fastly::compute::async_io,
     crate::{
+        component::bindings::fastly::compute::async_io,
         linking::{ComponentCtx, SessionView},
+        session::AsyncItem,
         wiggle_abi,
     },
     anyhow::bail,
@@ -56,13 +57,33 @@ impl async_io::HostPollable for ComponentCtx {
             .is_some()
     }
 
-    fn drop(&mut self, handle: Resource<async_io::Pollable>) -> wasmtime::Result<()> {
-        let handle = wiggle_abi::types::AsyncItemHandle::from(handle).into();
+    fn drop(&mut self, h: Resource<async_io::Pollable>) -> wasmtime::Result<()> {
+        let handle: wiggle_abi::types::AsyncItemHandle = h.into();
+
+        {
+            let it = self.session_mut().async_item_mut(handle.into())?;
+
+            // In the WIT ABI, CacheEntry, CacheReplace, and HttpCacheEntry AsyncItems are not
+            // async_io::Pollables. Insteady, their primary handles "own" the AsyncItem,
+            // and the Pollable "borrows" from it.
+            //
+            // But! Those handles have the same ID when presented to the host.
+            // So if we encounter a Pollable to one of those types here, we need to keep
+            // the AsyncItem in the table, and just let drop() clean up the Resource.
+            //
+            // Note that we don't cover HTTP cache items here; we don't support the HTTP caching
+            // API, so the guest won't have a valid handle to an HTTP cache item.
+            if matches!(*it, AsyncItem::PendingCache(_)) {
+                // Don't remove from the session.async_items set; this is "just" the Pollable for the
+                // item, not the real thing.
+                return Ok(());
+            };
+        }
 
         // Use `.take_async_item` instead of manipulating
         // `self.session_mut().async_items` directly, so that any extra state
         // associated with the item is also cleared.
-        let _ = self.session_mut().take_async_item(handle).unwrap();
+        let _ = self.session_mut().take_async_item(handle.into())?;
 
         Ok(())
     }

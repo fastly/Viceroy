@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add adapter shim for `async-io.select`-incompatible handles. ([#600](https://github.com/fastly/Viceroy/pull/600))
 - Add stub implementations for resvpnproxy hostcalls.
 - Add `fake_valid_fastly_keys` config parameter to allow testing `fastly_key_is_valid` hostcall with fake valid keys. ([#599](https://github.com/fastly/Viceroy/pull/599))
 

@@ -1,6 +1,7 @@
 mod cache;
 mod config_store;
 mod core;
+mod dynamic_types;
 mod error;
 mod http_cache;
 mod macros;

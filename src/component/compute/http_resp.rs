@@ -2,7 +2,7 @@ use {
     crate::{
         component::{
             bindings::fastly::compute::{http_body, http_resp, http_types, types},
-            compute::headers::{get_names, get_values},
+            compute::headers::get_names,
         },
         error::Error,
         linking::{ComponentCtx, SessionView},
@@ -14,6 +14,9 @@ use {
     hyper::http::response::Response,
     wasmtime::component::Resource,
 };
+
+#[allow(unused)] // Conditionally unused in the trap test. Quiet the warning.
+use crate::component::compute::headers::get_values;
 
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 

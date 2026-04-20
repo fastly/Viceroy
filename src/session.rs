@@ -20,7 +20,9 @@ use std::time::Duration;
 use crate::cache::{Cache, CacheEntry};
 use crate::linking::Limiter;
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode};
+use crate::wiggle_abi::types::{
+    CacheBusyHandle, CacheHandle, CacheReplaceHandle, FramingHeadersMode,
+};
 
 use {
     self::downstream::DownstreamResponseState,
@@ -1592,6 +1594,18 @@ impl From<AsyncItemHandle> for CacheHandle {
 
 impl From<CacheHandle> for AsyncItemHandle {
     fn from(h: CacheHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for CacheReplaceHandle {
+    fn from(h: AsyncItemHandle) -> CacheReplaceHandle {
+        CacheReplaceHandle::from(h.as_u32())
+    }
+}
+
+impl From<CacheReplaceHandle> for AsyncItemHandle {
+    fn from(h: CacheReplaceHandle) -> AsyncItemHandle {
         AsyncItemHandle::from_u32(h.into())
     }
 }
