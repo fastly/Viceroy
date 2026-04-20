@@ -24,7 +24,7 @@ include = [
     "../doc/logo.png",
     "src/**/*"
 ]
-rust-version = "1.90"
+rust-version = "1.95"
 
 [[bin]]
 name = "viceroy"
