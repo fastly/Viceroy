@@ -12,6 +12,7 @@ mod downstream_req;
 mod early_hints;
 mod edge_rate_limiting;
 mod env_vars;
+mod fastly_key_is_valid;
 mod geolocation_lookup;
 mod grpc;
 mod http_semantics;

@@ -10,8 +10,8 @@ use {
         cache::Cache,
         component as compute,
         config::{
-            Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation,
-            UnknownImportBehavior,
+            Backends, DeviceDetection, Dictionaries, ExperimentalModule, FakeValidFastlyKeys,
+            Geolocation, UnknownImportBehavior,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
@@ -153,6 +153,8 @@ pub struct ExecuteCtx {
     secret_stores: SecretStores,
     /// The shielding sites for this execution.
     shielding_sites: ShieldingSites,
+    /// The valid mock Fastly API keys that should be considered valid.
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
     /// The cache for this service.
     cache: Arc<Cache>,
     /// Senders waiting for new requests for reusable sessions.
@@ -307,6 +309,7 @@ impl ExecuteCtx {
             object_store: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
@@ -885,6 +888,11 @@ impl ExecuteCtx {
         &self.shielding_sites
     }
 
+    /// Get the valid mock Fastly API keys for this execution context.
+    pub fn fake_valid_fastly_keys(&self) -> &FakeValidFastlyKeys {
+        &self.fake_valid_fastly_keys
+    }
+
     pub async fn register_pending_downstream(&self) -> Option<oneshot::Receiver<NextRequest>> {
         let mut pending = self.pending_reuse.lock().await;
 
@@ -956,6 +964,15 @@ impl ExecuteCtxBuilder {
     /// Set the shielding sites for this execution context.
     pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
         self.inner.shielding_sites = shielding_sites;
+        self
+    }
+
+    /// Set the valid mock Fastly API keys for this execution context.
+    pub fn with_fake_valid_fastly_keys(
+        mut self,
+        fake_valid_fastly_keys: FakeValidFastlyKeys,
+    ) -> Self {
+        self.inner.fake_valid_fastly_keys = fake_valid_fastly_keys;
         self
     }
 

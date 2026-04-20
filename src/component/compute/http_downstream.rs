@@ -214,9 +214,11 @@ impl http_downstream::Host for ComponentCtx {
 
     fn fastly_key_is_valid(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
-        Ok(false)
+        self.session()
+            .check_fastly_key(h.into())
+            .map_err(Into::into)
     }
 
     fn downstream_bot_analyzed(
