@@ -31,9 +31,12 @@ impl FastlyBackend for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::BackendHealth, Error> {
-        // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, memory, backend)?;
-        Ok(super::types::BackendHealth::Unknown)
+        let backend = lookup_backend_definition(self, memory, backend)?;
+        match &backend.health {
+            crate::config::BackendHealth::Unknown => Ok(super::types::BackendHealth::Unknown),
+            crate::config::BackendHealth::Healthy => Ok(super::types::BackendHealth::Healthy),
+            crate::config::BackendHealth::Unhealthy => Ok(super::types::BackendHealth::Unhealthy),
+        }
     }
 
     fn is_dynamic(

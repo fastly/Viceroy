@@ -486,6 +486,11 @@ pub enum BackendConfigError {
     #[error("'grpc' field was not a boolean")]
     InvalidGrpcEntry,
 
+    #[error(
+        "'health' field has invalid value '{0}' (expected 'unknown', 'healthy', or 'unhealthy')"
+    )]
+    InvalidHealthEntry(String),
+
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
 
