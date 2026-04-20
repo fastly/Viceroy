@@ -312,7 +312,7 @@ impl ExecuteCtx {
             fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             epoch_increment_thread,
             epoch_increment_stop,
-            guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
+            guest_profile_config: guest_profile_config.map(Arc::new),
             cache: Arc::new(Cache::default()),
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };

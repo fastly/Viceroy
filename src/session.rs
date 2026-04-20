@@ -731,6 +731,7 @@ impl Session {
         self.kv_store_by_name.get(handle)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn kv_insert(
         &self,
         obj_store_key: ObjectStoreKey,

@@ -61,7 +61,7 @@ pub(crate) fn exec(adapt_args: AdaptArgs) -> ExitCode {
         Ok(_) => ExitCode::SUCCESS,
         Err(e) => {
             event!(Level::ERROR, "Failed to write component: {e:?}");
-            return ExitCode::FAILURE;
+            ExitCode::FAILURE
         }
     }
 }

@@ -241,7 +241,7 @@ impl Error {
             InvalidFlagValue { .. }
             | InvalidEnumValue { .. }
             | PtrOutOfBounds { .. }
-            | PtrOverflow { .. }
+            | PtrOverflow
             | InvalidUtf8 { .. }
             | TryFromIntError { .. } => FastlyStatus::Inval,
             // These errors indicate either a pathological user input or an internal programming

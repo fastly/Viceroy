@@ -55,7 +55,7 @@ fn load_write_options(
     let vary_rule = if options_mask.contains(CacheWriteOptionsMask::VARY_RULE) {
         let slice = options.vary_rule_ptr.as_array(options.vary_rule_len);
         let vary_rule_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
-        let vary_rule_str = str::from_utf8(vary_rule_bytes).map_err(|e| Error::Utf8Expected(e))?;
+        let vary_rule_str = str::from_utf8(vary_rule_bytes).map_err(Error::Utf8Expected)?;
         vary_rule_str.parse()?
     } else {
         VaryRule::default()
@@ -189,7 +189,7 @@ impl FastlyCache for Session {
         let LookupOptions {
             headers,
             always_use_requested_range,
-        } = load_lookup_options(&self, memory, options_mask, options)?;
+        } = load_lookup_options(self, memory, options_mask, options)?;
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
@@ -350,7 +350,7 @@ impl FastlyCache for Session {
         let LookupOptions {
             headers,
             always_use_requested_range,
-        } = load_lookup_options(&self, memory, options_mask, options)?;
+        } = load_lookup_options(self, memory, options_mask, options)?;
         let key = load_cache_key(memory, cache_key)?;
         let cache = Arc::clone(self.cache());
 
@@ -465,11 +465,11 @@ impl FastlyCache for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<(), Error> {
-        let entry = self.cache_entry_mut(handle.into()).await?;
+        let entry = self.cache_entry_mut(handle).await?;
         if entry.cancel() {
             Ok(())
         } else {
-            Err(Error::CacheError(crate::cache::Error::CannotWrite).into())
+            Err(Error::CacheError(crate::cache::Error::CannotWrite))
         }
     }
 
@@ -528,7 +528,7 @@ impl FastlyCache for Session {
         user_metadata_out_len: u32,
         nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let entry = self.cache_entry(handle.into()).await?;
+        let entry = self.cache_entry(handle).await?;
 
         let md_bytes = entry
             .found()
@@ -575,7 +575,7 @@ impl FastlyCache for Session {
         options_mask &= !types::CacheGetBodyOptionsMask::TO;
 
         if !options_mask.is_empty() {
-            return Err(Error::NotAvailable("unknown cache get_body option").into());
+            return Err(Error::NotAvailable("unknown cache get_body option"));
         }
 
         // We wind up re-borrowing `found` and `self.session` several times here, to avoid
@@ -586,7 +586,7 @@ impl FastlyCache for Session {
         // We have an exclusive borrow &mut self.session for the lifetime of this call,
         // so even though we're re-borrowing/repeating lookups, we know we won't run into TOCTOU.
 
-        let entry = self.cache_entry(handle.into()).await?;
+        let entry = self.cache_entry(handle).await?;
 
         // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
         // clean up the copying task.
@@ -608,13 +608,13 @@ impl FastlyCache for Session {
         let body_handle = self.insert_body(body);
         // Finalize by committing the handle as "the last read".
         // We have to borrow `found` again, this time as mutable.
-        self.cache_entry_mut(handle.into())
+        self.cache_entry_mut(handle)
             .await?
             .found_mut()
             .unwrap()
-            .last_body_handle = Some(body_handle.into());
+            .last_body_handle = Some(body_handle);
 
-        Ok(body_handle.into())
+        Ok(body_handle)
     }
 
     async fn get_length(
@@ -623,7 +623,7 @@ impl FastlyCache for Session {
         handle: types::CacheHandle,
     ) -> Result<types::CacheObjectLength, Error> {
         let found = self
-            .cache_entry(handle.into())
+            .cache_entry(handle)
             .await?
             .found()
             .ok_or(Error::CacheError(crate::cache::Error::Missing))?;

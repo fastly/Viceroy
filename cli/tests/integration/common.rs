@@ -347,7 +347,7 @@ impl Test {
 
         let ctx = ExecuteCtx::build(
             &self.module_path,
-            self.profiling_strategy.clone(),
+            self.profiling_strategy,
             HashSet::new(),
             self.guest_profile_config.clone(),
             self.unknown_import_behavior,
@@ -522,6 +522,7 @@ impl Drop for TestServer {
 }
 
 #[derive(Clone)]
+#[allow(clippy::type_complexity)]
 enum TestService {
     Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
     Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),

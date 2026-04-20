@@ -57,10 +57,10 @@ impl Acl {
     /// - and in case of a tie, the last entry wins.
     pub fn lookup(&self, ip: IpAddr) -> Option<&Entry> {
         self.entries.iter().fold(None, |acc, entry| {
-            if let Some(mask) = entry.prefix.is_match(ip) {
-                if acc.is_none_or(|prev_match: &Entry| mask >= prev_match.prefix.mask) {
-                    return Some(entry);
-                }
+            if let Some(mask) = entry.prefix.is_match(ip)
+                && acc.is_none_or(|prev_match: &Entry| mask >= prev_match.prefix.mask)
+            {
+                return Some(entry);
             }
             acc
         })

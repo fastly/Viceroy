@@ -145,7 +145,7 @@ impl FastlyHttpResp for Session {
     ) -> Result<(), Error> {
         let resp = self.response_parts_mut(resp_handle)?;
 
-        let version = hyper::Version::try_from(version)?;
+        let version = hyper::Version::from(version);
         resp.version = version;
         Ok(())
     }

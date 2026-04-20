@@ -61,6 +61,7 @@ impl PendingKvListTask {
 ///
 /// The `try_recv()` method can be used to make sure that we safely recover
 /// any pending requests that are sent to us without dropping them.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum PendingDownstreamReqTask {
     Complete(Result<Option<NextRequest>, Error>),
@@ -148,6 +149,7 @@ impl PendingCacheTask {
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
 /// body (writeable only). It is used within the body handle map in `Session`.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum AsyncItem {
     Body(Body),

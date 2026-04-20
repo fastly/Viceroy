@@ -272,8 +272,8 @@ impl TestBackendBuilder {
     ///
     /// Panics if:
     ///
-    /// * The `TestBackends` that created this builder no longer exists, or its test servers have
-    /// already been started
+    ///   * The `TestBackends` that created this builder no longer exists, or its test servers have
+    ///     already been started
     ///
     /// * The `path` does not parse as a valid `PathAndQuery`
     ///
