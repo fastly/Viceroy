@@ -167,12 +167,9 @@ impl hyper::service::Service<Uri> for BackendConnector {
         };
 
         Box::pin(async move {
-            let tcp = connect_fut.await.map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("TCP connection error: {}", e),
-                )
-            })?;
+            let tcp = connect_fut
+                .await
+                .map_err(|e| std::io::Error::other(format!("TCP connection error: {}", e)))?;
 
             let remote_addr = tcp.peer_addr()?;
             let metadata = ConnMetadata {
@@ -224,10 +221,10 @@ impl hyper::service::Service<Uri> for BackendConnector {
                         if e.to_string().contains("certificate validation failed") {
                             Error::TlsCertificateValidationFailed
                         } else {
-                            Error::IoError(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("TLS connection error: {}", e),
-                            ))
+                            Error::IoError(std::io::Error::other(format!(
+                                "TLS connection error: {}",
+                                e
+                            )))
                         }
                     })?;
 
