@@ -4,6 +4,7 @@ VICEROY_CARGO=cargo
 .PHONY: format
 format:
 	$(VICEROY_CARGO) fmt
+	cd wasm_abi/adapter && $(VICEROY_CARGO) fmt
 
 .PHONY: format-check
 format-check:
@@ -18,8 +19,7 @@ test: test-crates trap-test
 
 .PHONY: test-crates
 test-crates: fix-build
-	# TODO: cceckman-at-fastly: When all cache APIs match Compute Platform, remove the environment flag.
-	RUST_BACKTRACE=1 ENABLE_EXPERIMENTAL_CACHE_API=1 $(VICEROY_CARGO) test --all
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
 
 .PHONY: fix-build
 fix-build:
@@ -63,24 +63,57 @@ generate-lockfile:
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=test-fixtures/Cargo.toml
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=cli/tests/trap-test/Cargo.toml
 
-# Check that the crates can be packaged for crates.io.
-#
-# FIXME(katie): Add option flags to `publish.rs` for the vendor directory, remove `.cargo/` after
-# running.
-.PHONY: package-check
-package-check:
-	rustc scripts/publish.rs
-	./publish verify
-	rm publish
-	rm -rf .cargo/
-	rm -rf verify-publishable/
+# Regenerate the adapter, and move it into `wasm_abi/data`
+.PHONY: build-adapter
+build-adapter:
+	# Build the component adapter for adapting the host-call abi to the
+	# component model. This version uses `--no-default-features` to disable
+	# the default "exports" feature, to build the imports-only "library"
+	# version of the adapter.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--no-default-features \
+			--profile release-library \
+	)
+	# Build the non-shift "library" version of the adapter.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--no-default-features \
+			--profile release-library-noshift \
+			--features noshift \
+	)
 
-# Re-generate the adapter, and move it into `lib/adapter`
-.PHONY: adapter
-adapter:
-	cargo build --release \
-		-p viceroy-component-adapter \
-		--target wasm32-unknown-unknown
-	mkdir -p lib/adapter
-	cp target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
-		lib/data/viceroy-component-adapter.wasm
+	# Build the component adapter for adapting the host-call abi to the
+	# component model. This is the normal version that includes the exports.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--release \
+	)
+
+	# Build the non-shift normal version of the adapter.
+	( \
+		cd wasm_abi/adapter && \
+		cargo build \
+			--package viceroy-component-adapter \
+			--target wasm32-unknown-unknown \
+			--profile release-noshift \
+			--features noshift \
+	)
+
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-noshift/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.noshift.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.library.wasm
+	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library-noshift/viceroy_component_adapter.wasm \
+		wasm_abi/data/viceroy-component-adapter.library.noshift.wasm

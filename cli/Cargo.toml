@@ -1,10 +1,10 @@
 [package]
 name = "viceroy"
 description = "Viceroy is a local testing daemon for Fastly Compute."
-version = "0.13.1"
+version = "0.16.6"
 authors = ["Fastly"]
 readme = "../README.md"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://developer.fastly.com/learning/compute/testing/#running-a-local-testing-server"
 homepage = "https://developer.fastly.com/learning/compute/"
@@ -24,8 +24,7 @@ include = [
     "../doc/logo.png",
     "src/**/*"
 ]
-# MSRV: 1.78 for wasm32-wasip1
-rust-version = "1.78"
+rust-version = "1.90"
 
 [[bin]]
 name = "viceroy"
@@ -37,17 +36,14 @@ base64 = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 serde_json = { workspace = true }
-serial_test = "^2.0.0"
 clap = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
-tls-listener = { version = "^0.7.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tracing = { workspace = true }
-tracing-futures = { workspace = true }
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
-viceroy-lib = { path = "../lib", version = "=0.13.1" }
+viceroy-lib = { path = "..", version = "=0.16.6" }
 wat = "^1.0.38"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
@@ -57,3 +53,6 @@ libc = "^0.2.139"
 anyhow = { workspace = true }
 futures = { workspace = true }
 url = { workspace = true }
+tls-listener = { version = "^0.7.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
+tempfile = "3"
+serde_json = { workspace = true }

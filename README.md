@@ -27,7 +27,7 @@ version 0.34 or above supports local testing, and the workflow is documented
 
 To install Viceroy as a standalone tool, you'll need to first
 [install Rust](https://www.rust-lang.org/tools/install) if you haven't already.
-Then run `cargo install viceroy`, which will download and build the latest
+Then run `cargo install --locked viceroy`, which will download and build the latest
 Viceroy release.
 
 ## Usage as a library
@@ -58,12 +58,12 @@ the URL in your web browser.
 Viceroy can also be used as a test runner for running Rust unit tests for Compute applications in the following way:
 
 1. Ensure the `viceroy` command is available in your path
-2. Add the following to your project's `.cargo/config`:
+2. Add the following to your project's `.cargo/config.toml`:
 ```
 [build]
-target = "wasm32-wasi"
+target = "wasm32-wasip1"
 
-[target.wasm32-wasi]
+[target.wasm32-wasip1]
 runner = "viceroy run -C fastly.toml -- "
 ```
 3. Install [cargo-nextest](https://nexte.st/book/installation.html)

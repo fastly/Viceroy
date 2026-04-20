@@ -1,7 +1,7 @@
 //! Common values and types used by test fixtures
 
 use futures::stream::StreamExt;
-use hyper::{service, Body as HyperBody, Request, Response, Server, Uri};
+use hyper::{Body as HyperBody, Request, Response, Server, Uri, service};
 use std::{
     collections::HashSet,
     convert::Infallible,
@@ -14,12 +14,12 @@ use std::{
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
+    ExecuteCtx, ProfilingStrategy, ViceroyService,
     body::Body,
     config::{
-        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
-        ShieldingSites,
+        Acls, DeviceDetection, Dictionaries, FakeValidFastlyKeys, FastlyConfig, Geolocation,
+        ObjectStores, SecretStores, ShieldingSites,
     },
-    ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
 
 pub use self::backends::TestBackends;
@@ -86,12 +86,15 @@ pub struct Test {
     object_stores: ObjectStores,
     secret_stores: SecretStores,
     shielding_sites: ShieldingSites,
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
     capture_logs: Arc<Mutex<dyn Write + Send>>,
     log_stdout: bool,
     log_stderr: bool,
     via_hyper: bool,
     unknown_import_behavior: UnknownImportBehavior,
     adapt_component: bool,
+    profiling_strategy: ProfilingStrategy,
+    guest_profile_config: Option<viceroy_lib::GuestProfileConfig>,
 }
 
 impl Test {
@@ -110,12 +113,15 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
+            profiling_strategy: ProfilingStrategy::None,
+            guest_profile_config: None,
         }
     }
 
@@ -134,12 +140,15 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
+            profiling_strategy: ProfilingStrategy::None,
+            guest_profile_config: None,
         }
     }
 
@@ -155,6 +164,7 @@ impl Test {
             object_stores: config.object_stores().to_owned(),
             secret_stores: config.secret_stores().to_owned(),
             shielding_sites: config.shielding_sites().to_owned(),
+            fake_valid_fastly_keys: config.fake_valid_fastly_keys().to_owned(),
             ..self
         })
     }
@@ -287,6 +297,12 @@ impl Test {
         self
     }
 
+    /// Enable guest profiling with the specified configuration.
+    pub fn with_guest_profiling(mut self, config: viceroy_lib::GuestProfileConfig) -> Self {
+        self.guest_profile_config = Some(config);
+        self
+    }
+
     /// Pass the given requests through this test, returning the associated responses.
     ///
     /// A `Test` can be used repeatedly against different requests, either individually (as with
@@ -331,9 +347,9 @@ impl Test {
 
         let ctx = ExecuteCtx::build(
             &self.module_path,
-            ProfilingStrategy::None,
+            self.profiling_strategy.clone(),
             HashSet::new(),
-            None,
+            self.guest_profile_config.clone(),
             self.unknown_import_behavior,
             self.adapt_component,
         )?
@@ -345,6 +361,7 @@ impl Test {
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())
         .with_shielding_sites(self.shielding_sites.clone())
+        .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
         .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
         .with_log_stdout(self.log_stdout)
@@ -535,7 +552,7 @@ impl TestService {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
                         let mut body = Box::new(body); // for pinning
-                                                       // read out all of the bytes from the body into a vector, then re-assemble the request
+                        // read out all of the bytes from the body into a vector, then re-assemble the request
                         let mut body_bytes = Vec::new();
                         while let Some(chunk) = body.next().await {
                             body_bytes.extend_from_slice(&chunk.unwrap());

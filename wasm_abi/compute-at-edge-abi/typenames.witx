@@ -1,0 +1,593 @@
+;;; Status codes returned from hostcalls.
+(typename $fastly_status
+    (enum (@witx tag u32)
+        ;;; Success value.
+        ;;;
+        ;;; This indicates that a hostcall finished successfully.
+        $ok
+        ;;; Generic error value.
+        ;;;
+        ;;; This means that some unexpected error occurred during a hostcall.
+        $error
+        ;;; Invalid argument.
+        $inval
+        ;;; Invalid handle.
+        ;;;
+        ;;; Returned when a request, response, or body handle is not valid.
+        $badf
+        ;;; Buffer length error.
+        ;;;
+        ;;; Returned when a buffer is too long.
+        $buflen
+        ;;; Unsupported operation error.
+        ;;;
+        ;;; This error is returned when some operation cannot be performed, because it is not supported.
+        $unsupported
+        ;;; Alignment error.
+        ;;;
+        ;;; This is returned when a pointer does not point to a properly aligned slice of memory.
+        $badalign
+        ;;; Invalid HTTP error.
+        ;;;
+        ;;; This can be returned when a method, URI, header, or status is not valid. This can also
+        ;;; be returned if a message head is too large.
+        $httpinvalid
+        ;;; HTTP user error.
+        ;;;
+        ;;; This is returned in cases where user code caused an HTTP error. For example, attempt to send
+        ;;; a 1xx response code, or a request with a non-absolute URI. This can also be caused by
+        ;;; an unexpected header: both `content-length` and `transfer-encoding`, for example.
+        $httpuser
+        ;;; HTTP incomplete message error.
+        ;;;
+        ;;; This can be returned when a stream ended unexpectedly.
+        $httpincomplete
+        ;;; A `None` error.
+        ;;;
+        ;;; This status code is used to indicate when an optional value did not exist, as opposed to
+        ;;; an empty value.
+        $none
+        ;;; Message head too large.
+        $httpheadtoolarge
+        ;;; Invalid HTTP status.
+        $httpinvalidstatus
+        ;;; Limit exceeded
+        ;;;
+        ;;; This is returned when an attempt to allocate a resource has exceeded the maximum number of
+        ;;; resources permitted. For example, creating too many response handles.
+        $limitexceeded
+        ;;; Resource temporarily unavailable
+        ;;;
+        ;;; This is returned when an attempting to retrieve a resource that is not yet available.
+        ;;; For example when attempting to read trailers from a Body that has not yet been consumed.
+        $again))
+
+;;; A tag indicating HTTP protocol versions.
+(typename $http_version
+    (enum (@witx tag u32)
+        $http_09
+        $http_10
+        $http_11
+        $h2
+        $h3))
+
+;;; HTTP status codes.
+(typename $http_status u16)
+
+(typename $body_write_end
+    (enum (@witx tag u32)
+        $back
+        $front))
+
+;;; A handle to an HTTP request or response body.
+(typename $body_handle (handle))
+;;; A handle to an HTTP request.
+(typename $request_handle (handle))
+;;; A handle to an HTTP response.
+(typename $response_handle (handle))
+;;; A handle to a currently-pending asynchronous HTTP request.
+(typename $pending_request_handle (handle))
+;;; A handle to a logging endpoint.
+(typename $endpoint_handle (handle))
+;;; A handle to an Edge Dictionary.
+(typename $dictionary_handle (handle))
+;;; (DEPRECATED) A handle to an Object Store.
+(typename $object_store_handle (handle))
+;;; (DEPRECATED) A handle to a pending KV lookup.
+(typename $pending_kv_lookup_handle (handle))
+;;; (DEPRECATED) A handle to a pending KV insert.
+(typename $pending_kv_insert_handle (handle))
+;;; (DEPRECATED) A handle to a pending KV delete.
+(typename $pending_kv_delete_handle (handle))
+;;; (DEPRECATED) A handle to a pending KV list.
+(typename $pending_kv_list_handle (handle))
+;;; A handle to an KV Store.
+(typename $kv_store_handle (handle))
+;;; A handle to a KV Store lookup.
+(typename $kv_store_lookup_handle (handle))
+;;; A handle to a KV Store insert.
+(typename $kv_store_insert_handle (handle))
+;;; A handle to a KV Store delete.
+(typename $kv_store_delete_handle (handle))
+;;; A handle to a KV Store list.
+(typename $kv_store_list_handle (handle))
+;;; A handle to a Secret Store.
+(typename $secret_store_handle (handle))
+;;; A handle to an individual secret.
+(typename $secret_handle (handle))
+;;; A handle to an ACL.
+(typename $acl_handle (handle))
+;;; A handle to a request promise.
+(typename $request_promise_handle (handle))
+;;; A handle to an object supporting generic async operations.
+;;; Can be a `body_handle`, `pending_request_handle`,
+;;; `cache_handle`, `cache_busy_handle`, `cache_replace_handle` (see cache.witx),
+;;; `request_promise_handle`, or other handles.
+;;;
+;;; Each async item has an associated I/O action:
+;;;
+;;; * Pending requests: awaiting the response headers / `Response` object
+;;; * Normal bodies: reading bytes from the body
+;;; * Streaming bodies: writing bytes to the body
+;;; * Cache handles: the caller has been selected to perform a fetch, or there is data ready
+;;; * Request promise: a new request is ready, or there will be no request provided via this handle
+;;;
+;;; For writing bytes, note that there is a large host-side buffer that bytes can eagerly be written
+;;; into, even before the origin itself consumes that data.
+(typename $async_item_handle (handle))
+
+;;; A "multi-value" cursor.
+(typename $multi_value_cursor u32)
+;;; -1 represents "finished", non-negative represents a $multi_value_cursor:
+(typename $multi_value_cursor_result s64)
+
+;;; An override for response caching behavior.
+;;; A zero value indicates that the origin response's cache control headers should be used.
+(typename $cache_override_tag
+    (flags (@witx repr u32)
+        ;;; Do not cache the response to this request, regardless of the origin response's headers.
+        $pass
+        $ttl
+        $stale_while_revalidate
+        $pci))
+(typename $num_bytes (@witx usize))
+(typename $header_count u32)
+(typename $is_done u32)
+(typename $done_idx u32)
+(typename $is_valid u32)
+(typename $inserted u32)
+(typename $ready_idx u32)
+(typename $ddos_detected u32)
+
+(typename $port u16)
+(typename $timeout_ms u32)
+(typename $timeout_secs u32)
+(typename $probe_count u32)
+(typename $backend_exists u32)
+(typename $is_dynamic u32)
+(typename $is_keepalive u32)
+(typename $is_ssl u32)
+(typename $backend_health
+    (enum (@witx tag u32)
+        $unknown
+        $healthy
+        $unhealthy))
+
+(typename $bot_analyzed u32)
+(typename $bot_detected u32)
+(typename $bot_category_kind u32)
+(typename $bot_verified u32)
+
+(typename $content_encodings
+    (flags (@witx repr u32)
+        $gzip))
+
+(typename $framing_headers_mode
+    (enum (@witx tag u32)
+        $automatic
+        $manually_from_headers))
+
+(typename $http_keepalive_mode
+    (enum (@witx tag u32)
+        $automatic
+        $no_keepalive))
+
+(typename $tls_version
+    (enum (@witx tag u32)
+       $tls_1
+       $tls_1_1
+       $tls_1_2
+       $tls_1_3))
+
+(typename $kv_lookup_config_options
+    (flags (@witx repr u32)
+       $reserved
+       ))
+
+(typename $kv_lookup_config
+  (record
+    (field $reserved u32)
+    ))
+
+(typename $kv_delete_config_options
+    (flags (@witx repr u32)
+       $reserved
+       ))
+
+(typename $kv_delete_config
+  (record
+    (field $reserved u32)
+    ))
+
+(typename $kv_insert_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $background_fetch
+       ;; reserved_2 was previously if_generation_match (u32)
+       $reserved_2
+       $metadata
+       $time_to_live_sec
+       $if_generation_match
+       ))
+
+(typename $kv_insert_mode
+    (enum (@witx tag u32)
+       $overwrite
+       $add
+       $append
+       $prepend))
+
+(typename $kv_insert_config
+  (record
+    (field $mode $kv_insert_mode)
+    (field $unused u32)
+    (field $metadata (@witx pointer (@witx char8)))
+    (field $metadata_len u32)
+    (field $time_to_live_sec u32)
+    (field $if_generation_match u64)
+    ))
+
+(typename $kv_list_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $cursor
+       $limit
+       $prefix
+       ))
+
+(typename $kv_list_mode
+    (enum (@witx tag u32)
+       $strong
+       $eventual))
+
+(typename $kv_list_config
+  (record
+    (field $mode $kv_list_mode)
+    (field $cursor (@witx pointer (@witx char8)))
+    (field $cursor_len u32)
+    (field $limit u32)
+    (field $prefix (@witx pointer (@witx char8)))
+    (field $prefix_len u32)
+    ))
+
+(typename $kv_error
+    (enum (@witx tag u32)
+        ;;; The $kv_error has not been set.
+        $uninitialized
+        ;;; There was no error.
+        $ok
+        ;;; KV store cannot or will not process the request due to something that is perceived to be a client error
+        ;;; This will map to the api's 400 codes
+        $bad_request
+        ;;; KV store cannot find the requested resource
+        ;;; This will map to the api's 404 codes
+        $not_found
+        ;;; KV store cannot fulfill the request, as defined by the client's prerequisites (ie. if-generation-match)
+        ;;; This will map to the api's 412 codes
+        $precondition_failed
+        ;;; The size limit for a KV store key was exceeded.
+        ;;; This will map to the api's 413 codes
+        $payload_too_large
+        ;;; The system encountered an unexpected internal error.
+        ;;; This will map to all remaining http error codes
+        $internal_error
+        ;;; Too many requests have been made to the KV store.
+        ;;; This will map to the api's 429 codes
+        $too_many_requests
+        ))
+
+(typename $backend_config_options
+    (flags (@witx repr u32)
+       $reserved
+       $host_override
+       $connect_timeout
+       $first_byte_timeout
+       $between_bytes_timeout
+       $use_ssl
+       $ssl_min_version
+       $ssl_max_version
+       $cert_hostname
+       $ca_cert
+       $ciphers
+       $sni_hostname
+       $dont_pool
+       $client_cert
+       $grpc
+       $keepalive
+       $pooling_limits
+       $prefer_ipv4
+       ))
+
+(typename $dynamic_backend_config
+  (record
+    (field $host_override (@witx pointer (@witx char8)))
+    (field $host_override_len u32)
+    (field $connect_timeout_ms u32)
+    (field $first_byte_timeout_ms u32)
+    (field $between_bytes_timeout_ms u32)
+    (field $ssl_min_version $tls_version)
+    (field $ssl_max_version $tls_version)
+    (field $cert_hostname (@witx pointer (@witx char8)))
+    (field $cert_hostname_len u32)
+    (field $ca_cert (@witx pointer (@witx char8)))
+    (field $ca_cert_len u32)
+    (field $ciphers (@witx pointer (@witx char8)))
+    (field $ciphers_len u32)
+    (field $sni_hostname (@witx pointer (@witx char8)))
+    (field $sni_hostname_len u32)
+    (field $client_certificate (@witx pointer (@witx char8)))
+    (field $client_certificate_len u32)
+    (field $client_key $secret_handle)
+    (field $http_keepalive_time_ms $timeout_ms)
+    (field $tcp_keepalive_enable u32)
+    (field $tcp_keepalive_interval_secs $timeout_secs)
+    (field $tcp_keepalive_probes $probe_count)
+    (field $tcp_keepalive_time_secs $timeout_secs)
+    (field $max_connections u32)
+    (field $max_use u32)
+    (field $max_lifetime_ms $timeout_ms)
+    ))
+
+;;; TLS client certificate verified result from downstream.
+(typename $client_cert_verify_result
+    (enum (@witx tag u32)
+        ;;; Success value.
+        ;;;
+        ;;; This indicates that client certificate verified successfully.
+        $ok
+        ;;; bad certificate error.
+        ;;;
+        ;;; This error means the certificate is corrupt
+        ;;; (e.g., the certificate signatures do not verify correctly).
+        $bad_certificate
+        ;;; certificate revoked error.
+        ;;;
+        ;;; This error means the client certificate is revoked by its signer.
+        $certificate_revoked
+        ;;; certificate expired error.
+        ;;;
+        ;;; This error means the client certificate has expired or is not currently valid.
+        $certificate_expired
+        ;;; unknown CA error.
+        ;;;
+        ;;; This error means the valid certificate chain or partial chain was received,
+        ;;; but the certificate was not accepted because the CA certificate could not be
+        ;;; located or could not be matched with a known trust anchor.
+        $unknown_ca
+        ;;; certificate missing error.
+        ;;;
+        ;;; This error means the client does not provide a certificate
+        ;;; during the handshake..
+        $certificate_missing
+        ;;; certificate unknown error.
+        ;;;
+        ;;; This error means the client certificate was received, but some other (unspecified)
+        ;;; issue arose in processing the certificate, rendering it unacceptable.
+        $certificate_unknown))
+
+(typename $purge_options_mask
+    (flags (@witx repr u32)
+        $soft_purge
+        $ret_buf ;; all ret_buf fields must be populated
+    )
+)
+
+(typename $purge_options
+    (record
+        ;; JSON purge response as in https://developer.fastly.com/reference/api/purging/#purge-tag
+        (field $ret_buf_ptr (@witx pointer u8))
+        (field $ret_buf_len (@witx usize))
+        (field $ret_buf_nwritten_out (@witx pointer (@witx usize)))
+    )
+)
+
+(typename $send_error_detail_tag
+    (enum (@witx tag u32)
+        ;;; The $send_error_detail struct has not been populated.
+        $uninitialized
+        ;;; There was no send error.
+        $ok
+        ;;; The system encountered a timeout when trying to find an IP address for the backend
+        ;;; hostname.
+        $dns_timeout
+        ;;; The system encountered a DNS error when trying to find an IP address for the backend
+        ;;; hostname. The fields $dns_error_rcode and $dns_error_info_code may be set in the
+        ;;; $send_error_detail.
+        $dns_error
+        ;;; The system cannot determine which backend to use, or the specified backend was invalid.
+        $destination_not_found
+        ;;; The system considers the backend to be unavailable; e.g., recent attempts to communicate
+        ;;; with it may have failed, or a health check may indicate that it is down.
+        $destination_unavailable
+        ;;; The system cannot find a route to the next-hop IP address.
+        $destination_ip_unroutable
+        ;;; The system's connection to the backend was refused.
+        $connection_refused
+        ;;; The system's connection to the backend was closed before a complete response was
+        ;;; received.
+        $connection_terminated
+        ;;; The system's attempt to open a connection to the backend timed out.
+        $connection_timeout
+        ;;; The system is configured to limit the number of connections it has to the backend, and
+        ;;; that limit has been exceeded.
+        $connection_limit_reached
+        ;;; The system encountered an error when verifying the certificate presented by the backend.
+        $tls_certificate_error
+        ;;; The system encountered an error with the backend TLS configuration.
+        $tls_configuration_error
+        ;;; The system received an incomplete response to the request from the backend.
+        $http_incomplete_response
+        ;;; The system received a response to the request whose header section was considered too
+        ;;; large.
+        $http_response_header_section_too_large
+        ;;; The system received a response to the request whose body was considered too large.
+        $http_response_body_too_large
+        ;;; The system reached a configured time limit waiting for the complete response.
+        $http_response_timeout
+        ;;; The system received a response to the request whose status code or reason phrase was
+        ;;; invalid.
+        $http_response_status_invalid
+        ;;; The process of negotiating an upgrade of the HTTP version between the system and the
+        ;;; backend failed.
+        $http_upgrade_failed
+        ;;; The system encountered an HTTP protocol error when communicating with the backend. This
+        ;;; error will only be used when a more specific one is not defined.
+        $http_protocol_error
+        ;;; An invalid cache key was provided for the request.
+        $http_request_cache_key_invalid
+        ;;; An invalid URI was provided for the request.
+        $http_request_uri_invalid
+        ;;; The system encountered an unexpected internal error.
+        $internal_error
+        ;;; The system received a TLS alert from the backend. The field $tls_alert_id may be set in
+        ;;; the $send_error_detail.
+        $tls_alert_received
+        ;;; The system encountered a TLS error when communicating with the backend, either during
+        ;;; the handshake or afterwards.
+        $tls_protocol_error
+        ;;; The system received an HTTP/2 error code from the server. The fields $h2_error_frame and
+        ;;; $h2_error_code may be set in the $send_error_detail.
+        $h2_error
+        ))
+
+;;; Mask representing which fields are understood by the guest, and which have been set by the host.
+;;;
+;;; When the guest calls hostcalls with a mask, it should set every bit in the mask that corresponds
+;;; to a defined flag. This signals the host to write only to fields with a set bit, allowing
+;;; forward compatibility for existing guest programs even after new fields are added to the struct.
+(typename $send_error_detail_mask
+    (flags (@witx repr u32)
+       $reserved
+       $dns_error_rcode
+       $dns_error_info_code
+       $tls_alert_id
+       $h2_error
+       ))
+
+(typename $send_error_detail
+  (record
+    (field $tag $send_error_detail_tag)
+    (field $mask $send_error_detail_mask)
+    (field $dns_error_rcode u16)
+    (field $dns_error_info_code u16)
+    (field $tls_alert_id u8)
+    (field $h2_error_frame u8)
+    (field $h2_error_code u32)
+    ))
+
+(typename $blocked u32)
+(typename $rate u32)
+(typename $count u32)
+(typename $has u32)
+
+(typename $body_length u64)
+(typename $vcpu_ms u64)
+(typename $memory_mib u32)
+
+(typename $inspect_info_mask
+    (flags (@witx repr u32)
+        $reserved
+        $corp
+        $workspace
+        $override_client_ip
+    )
+)
+
+(typename $inspect_info
+    (record
+        (field $corp (@witx pointer (@witx char8)))
+        (field $corp_len u32)
+        (field $workspace (@witx pointer (@witx char8)))
+        (field $workspace_len u32)
+        (field $override_client_ip_ptr (@witx pointer u8))
+        (field $override_client_ip_len u32)
+    )
+)
+
+(typename $acl_error
+    (enum (@witx tag u32)
+        ;;; The $acl_error has not been initialized.
+        $uninitialized
+        ;;; There was no error.
+        $ok
+        ;;; This will map to the api's 204 code.
+        ;;; It indicates that the request succeeded, yet returned nothing.
+        $no_content
+        ;;; This will map to the api's 429 code.
+        ;;; Too many requests have been made.
+        $too_many_requests
+        ))
+
+(typename $image_optimizer_transform_config_options
+    (flags (@witx repr u32)
+        $reserved
+        $sdk_claims_opts
+        ))
+
+(typename $image_optimizer_transform_config
+  (record
+    ;; sdk_claims_opts contains any Image Optimizer API parameters that were set
+    ;; as well as the Image Optimizer region the request is meant for.
+    (field $sdk_claims_opts (@witx pointer (@witx char8)))
+    (field $sdk_claims_opts_len u32)
+    ))
+
+(typename $image_optimizer_error_tag
+    (enum (@witx tag u32)
+        $uninitialized
+        $ok
+        $error
+        $warning
+    )
+)
+
+(typename $image_optimizer_error_detail
+    (record
+        (field $tag $image_optimizer_error_tag)
+        (field $message (@witx pointer (@witx char8)))
+        (field $message_len u32)
+    )
+)
+
+(typename $next_request_options_mask
+    (flags (@witx repr u32)
+        $reserved
+        $timeout
+    ))
+
+(typename $next_request_options
+    (record
+        ;; A maximum amount of time to wait for a downstream request to appear, in milliseconds.
+        (field $timeout_ms u64)
+    ))
+
+(typename $resvpnproxy_is_anonymous u32)
+(typename $resvpnproxy_is_anonymous_vpn u32)
+(typename $resvpnproxy_is_hosting_provider u32)
+(typename $resvpnproxy_is_proxy_over_vpn u32)
+(typename $resvpnproxy_is_public_proxy u32)
+(typename $resvpnproxy_is_relay_proxy u32)
+(typename $resvpnproxy_is_residential_proxy u32)
+(typename $resvpnproxy_is_smart_dns_proxy u32)
+(typename $resvpnproxy_is_tor_exit_node u32)
+(typename $resvpnproxy_is_vpn_datacenter u32)

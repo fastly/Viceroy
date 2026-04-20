@@ -1,7 +1,7 @@
 use fastly::http::request::SendError;
 use fastly::http::StatusCode;
 use fastly::{Backend, Request};
-use std::io::Read;
+use std::io::{Read, Write};
 
 static HELLO_WORLD: &'static str = "hello, world!\n";
 static HELLO_WORLD_GZ: &'static [u8] = include_bytes!("../../data/hello_world.gz");
@@ -84,7 +84,7 @@ fn main() -> Result<(), SendError> {
             .send_async_streaming(echo_server.clone())?;
 
         for tiny_bit in HELLO_WORLD_GZ.chunks(8) {
-            streaming_body.write_bytes(tiny_bit);
+            streaming_body.write_all(tiny_bit).unwrap();
         }
 
         streaming_body.finish().unwrap();

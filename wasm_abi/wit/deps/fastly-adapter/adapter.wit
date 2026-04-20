@@ -1,0 +1,53 @@
+/// Interfaces available to the component adapter, which are not otherwise
+/// part of the Fastly Compute platform.
+package fastly:adapter;
+
+/// Adapter functions formerly of `fastly:compute/http-req`.
+///
+/// These functions depend on the host maintaining an implicit downstream
+/// request. They were deprecated and replaced by functions in the
+/// `http-downstream` interface which do the same thing but take an explicit
+/// `request` handle.
+interface adapter-http-req {
+  use fastly:compute/types@0.1.0.{error, ip-address};
+  use fastly:compute/http-req@0.1.0.{
+    client-cert-verify-result, request, body, response-with-body, error-with-detail,
+    pending-response
+  };
+
+  downstream-tls-cipher-openssl-name: func(max-len: u64) -> result<option<list<u8>>, error>;
+  downstream-tls-protocol: func(max-len: u64) -> result<option<list<u8>>, error>;
+
+  /// Deprecated, because it doesn't return `none` on an empty certificate.
+  downstream-tls-raw-client-certificate-deprecated: func(max-len: u64) -> result<option<list<u8>>, error>;
+
+  get-original-header-names: func(
+    max-len: u64,
+    cursor: u32,
+  ) -> result<tuple<string, option<u32>>, error>;
+
+  original-header-count: func() -> result<u32, error>;
+}
+
+/// A world that just imports all the deprecated APIs, split out from the main
+/// world below so that we can refer to it in tests.
+world adapter-imports {
+  import adapter-http-req;
+}
+
+/// The `fastly:compute/service` world plus the deprecated interfaces.
+world adapter-service {
+  // Make this world a superset of the public `service` world.
+  include fastly:compute/service@0.1.0;
+
+  // And, add all the deprecated interfaces.
+  include adapter-imports;
+}
+
+/// Like `adapter-service`, but only includes the imports, and not the
+/// exports (`http-incoming.handle`), so that it can be used by library components
+/// that don't have their own `main` function.
+world adapter-service-imports {
+    include fastly:compute/service-imports@0.1.0;
+    include adapter-imports;
+}

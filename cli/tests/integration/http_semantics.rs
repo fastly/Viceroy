@@ -5,7 +5,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{header, Request, Response, StatusCode},
+    hyper::{Request, Response, StatusCode, header},
 };
 
 viceroy_test!(framing_headers_are_overridden, |is_component| {
@@ -36,6 +36,29 @@ viceroy_test!(framing_headers_are_overridden, |is_component| {
         Some(&hyper::header::HeaderValue::from(11))
     );
 
+    Ok(())
+});
+
+viceroy_test!(manual_framing_preserves_transfer_encoding, |is_component| {
+    let test = Test::using_fixture("manual-framing-headers.wasm")
+        .adapt_component(is_component)
+        .backend("TheOrigin", "/", None, |req| {
+            assert!(
+                !req.headers().contains_key(header::CONTENT_LENGTH),
+                "Content-Length was incorrectly added"
+            );
+            // Transfer-Encoding should be preserved
+            assert_eq!(
+                req.headers().get(header::TRANSFER_ENCODING),
+                Some(&hyper::header::HeaderValue::from_static("chunked")),
+                "Transfer-Encoding should have been preserved"
+            );
+            Response::new(Vec::new())
+        })
+        .await;
+
+    let resp = test.via_hyper().against_empty().await?;
+    assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
 });
 

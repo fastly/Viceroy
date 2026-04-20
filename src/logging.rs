@@ -1,0 +1,135 @@
+use std::{
+    io::{self, Write},
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll},
+};
+use tokio::io::AsyncWrite;
+
+/// A named logging endpoint.
+#[derive(Clone)]
+pub struct LogEndpoint {
+    name: Vec<u8>,
+    writer: Arc<Mutex<dyn Write + Send>>,
+}
+
+impl LogEndpoint {
+    /// Allocate a new `LogEndpoint` with the given name, with log messages sent
+    /// to the given writer.
+    pub fn new(name: &[u8], writer: Arc<Mutex<dyn Write + Send>>) -> LogEndpoint {
+        LogEndpoint {
+            name: name.to_owned(),
+            writer,
+        }
+    }
+
+    /// Write a log entry to this endpoint.
+    ///
+    /// Log entries are prefixed with the endpoint name and terminated with a newline.
+    /// Any newlines in the message will be escaped to the string r"\n".
+    ///
+    /// The entry is written atomically to the writer given to [`LogEndpoint::new`].
+    pub fn write_entry(&self, mut msg: &[u8]) -> io::Result<()> {
+        const LOG_ENDPOINT_DELIM: &[u8] = b" :: ";
+
+        // Strip any trailing newlines; we will add a newline at the end,
+        // and escape any interior newlines.
+        if msg.last() == Some(&b'\n') {
+            msg = &msg[..msg.len() - 1];
+        }
+
+        if msg.is_empty() {
+            return Ok(());
+        }
+
+        // Accumulate log entry into a buffer before writing, while escaping newlines
+        let mut to_write =
+            Vec::with_capacity(msg.len() + self.name.len() + LOG_ENDPOINT_DELIM.len() + 1);
+
+        to_write.extend_from_slice(&self.name);
+        to_write.extend_from_slice(LOG_ENDPOINT_DELIM);
+        for &byte in msg {
+            if byte == b'\n' {
+                to_write.extend_from_slice(br"\n");
+            } else {
+                to_write.push(byte);
+            }
+        }
+        to_write.push(b'\n');
+
+        self.writer.lock().unwrap().write_all(&to_write)
+    }
+}
+
+impl Write for LogEndpoint {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write_entry(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.lock().unwrap().flush()
+    }
+}
+
+impl wasmtime_wasi::cli::StdoutStream for LogEndpoint {
+    fn p2_stream(&self) -> Box<dyn wasmtime_wasi::p2::OutputStream> {
+        Box::new(self.clone())
+    }
+
+    fn async_stream(&self) -> Box<dyn AsyncWrite + Send + Sync> {
+        Box::new(self.clone())
+    }
+}
+
+#[wasmtime_wasi::async_trait]
+impl wasmtime_wasi::p2::Pollable for LogEndpoint {
+    async fn ready(&mut self) {}
+}
+
+impl wasmtime_wasi::cli::IsTerminal for LogEndpoint {
+    fn is_terminal(&self) -> bool {
+        false
+    }
+}
+
+impl wasmtime_wasi::p2::OutputStream for LogEndpoint {
+    fn write(&mut self, bytes: bytes::Bytes) -> wasmtime_wasi::p2::StreamResult<()> {
+        self.write_entry(&bytes)
+            .map_err(|e| wasmtime_wasi::p2::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+    }
+
+    fn flush(&mut self) -> wasmtime_wasi::p2::StreamResult<()> {
+        <Self as Write>::flush(self)
+            .map_err(|e| wasmtime_wasi::p2::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+    }
+
+    fn check_write(&mut self) -> wasmtime_wasi::p2::StreamResult<usize> {
+        Ok(1024 * 1024)
+    }
+}
+
+impl AsyncWrite for LogEndpoint {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        self.write_entry(&buf)?;
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Poll::Ready(<Self as Write>::flush(&mut self))
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}

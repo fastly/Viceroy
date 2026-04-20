@@ -1,5 +1,5 @@
 use crate::{common::Test, common::TestResult, viceroy_test};
-use hyper::{body::to_bytes, StatusCode};
+use hyper::{StatusCode, body::to_bytes};
 use viceroy_lib::config::FastlyConfig;
 use viceroy_lib::error::{AclConfigError, FastlyConfigError};
 
@@ -23,11 +23,13 @@ viceroy_test!(acl_works, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 
     Ok(())
 });
