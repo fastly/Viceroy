@@ -255,7 +255,6 @@ impl From<error::Error> for types::Error {
             | Error::InvalidAlpnRepsonse { .. }
             | Error::DeviceDetectionError(_)
             | Error::SharedMemory
-            | Error::TlsNoCertsAdded
             | Error::TlsNoCAAvailable
             | Error::TlsNoValidCACerts
             | Error::TlsInvalidHost

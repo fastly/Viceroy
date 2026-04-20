@@ -46,24 +46,15 @@ pub struct TlsConfig {
 
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
+        let certs = rustls_native_certs::load_native_certs().map_err(Error::BadCerts)?;
         let mut roots = rustls::RootCertStore::empty();
-        match rustls_native_certs::load_native_certs() {
-            Ok(certs) => {
-                let mut cert_added = false;
-                for cert in certs {
-                    match roots.add(&rustls::Certificate(cert.0)) {
-                        Ok(_) => cert_added = true,
-                        Err(e) => {
-                            // Log but continue trying other certs
-                            warn!("failed to load certificate: {e}");
-                        }
-                    }
-                }
-                if !cert_added {
-                    return Err(Error::TlsNoCertsAdded);
-                }
-            }
-            Err(err) => return Err(Error::BadCerts(err)),
+        let (added, failed) =
+            roots.add_parsable_certificates(&certs.into_iter().map(|c| c.0).collect::<Vec<_>>());
+        if failed > 0 {
+            warn!(
+                "failed to load {} certificate(s). attempting to continue with {} available certificate(s)",
+                failed, added
+            );
         }
         if roots.is_empty() {
             return Err(Error::TlsNoCAAvailable);
@@ -167,9 +158,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
         };
 
         Box::pin(async move {
-            let tcp = connect_fut
-                .await
-                .map_err(|e| std::io::Error::other(format!("TCP connection error: {}", e)))?;
+            let tcp = connect_fut.await?;
 
             let remote_addr = tcp.peer_addr()?;
             let metadata = ConnMetadata {

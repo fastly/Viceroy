@@ -124,9 +124,6 @@ pub enum Error {
     #[error("Could not load native certificates: {0}")]
     BadCerts(std::io::Error),
 
-    #[error("No valid CA certificates could be added")]
-    TlsNoCertsAdded,
-
     #[error("No CA certificates available")]
     TlsNoCAAvailable,
 
@@ -220,7 +217,6 @@ impl Error {
             Error::AbiVersionMismatch
             | Error::BackendUrl(_)
             | Error::BadCerts(_)
-            | Error::TlsNoCertsAdded
             | Error::TlsNoCAAvailable
             | Error::TlsNoValidCACerts
             | Error::TlsInvalidHost
