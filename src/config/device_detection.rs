@@ -9,8 +9,9 @@ pub struct DeviceDetection {
     mapping: DeviceDetectionMapping,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum DeviceDetectionMapping {
+    #[default]
     Empty,
     InlineToml {
         user_agents: HashMap<String, DeviceDetectionData>,
@@ -155,12 +156,6 @@ mod deserialization {
         DeviceDetectionMapping::read_json_contents(&file)?;
 
         Ok(DeviceDetectionMapping::Json { file })
-    }
-}
-
-impl Default for DeviceDetectionMapping {
-    fn default() -> Self {
-        Self::Empty
     }
 }
 

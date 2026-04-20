@@ -1365,7 +1365,7 @@ impl Session {
     /// rely on implementation details that may change over time.
     pub fn get_heap_usage_mib(&self) -> u32 {
         const MEBIBYTE: usize = 1024 * 1024;
-        let mb = self.limiter.memory_allocated.next_multiple_of(MEBIBYTE) / MEBIBYTE;
+        let mb = self.limiter.memory_allocated.div_ceil(MEBIBYTE);
         mb.try_into().unwrap_or(u32::MAX)
     }
 

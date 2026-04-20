@@ -13,8 +13,9 @@ pub struct Geolocation {
     use_default_loopback: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum GeolocationMapping {
+    #[default]
     Empty,
     InlineToml {
         addresses: HashMap<IpAddr, GeolocationData>,
@@ -178,12 +179,6 @@ mod deserialization {
         GeolocationMapping::read_json_contents(&file)?;
 
         Ok(GeolocationMapping::Json { file })
-    }
-}
-
-impl Default for GeolocationMapping {
-    fn default() -> Self {
-        Self::Empty
     }
 }
 
