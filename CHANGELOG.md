@@ -17,6 +17,7 @@
 - Add no-op implementations for stale-if-error hostcalls ([#591](https://github.com/fastly/Viceroy/pull/591))
 - Guest profiling support added for components. ([#593](https://github.com/fastly/Viceroy/pull/593))
 - Add `manifest_version` validation to fastly.toml parsing. ([#590](https://github.com/fastly/Viceroy/pull/590))
+- Internal unification of native/guest profiling config. (#[597](https://github.com/fastly/Viceroy/pull/597))
 
 ## 0.16.4 (2026-01-26)
 

@@ -24,12 +24,7 @@ pub(crate) async fn exec(run_args: RunArgs) -> ExitCode {
 /// Execute a Wasm program in the Viceroy environment.
 async fn run_wasm_main(run_args: RunArgs) -> Result<(), anyhow::Error> {
     // Load the wasm module into an execution context
-    let ctx = create_execution_context(
-        run_args.shared(),
-        false,
-        run_args.shared().guest_profile_config(),
-    )
-    .await?;
+    let ctx = create_execution_context(run_args.shared(), false).await?;
     let input = run_args.shared().input();
     let program_name = match input.file_stem() {
         Some(stem) => stem.to_string_lossy(),
