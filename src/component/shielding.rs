@@ -28,6 +28,7 @@ pub(crate) fn backend_for_shield(
         grpc: false,
         client_cert: None,
         ca_certs: Vec::new(),
+        health: crate::config::BackendHealth::Unknown,
     };
 
     if !session.add_backend(&new_name, new_backend) {
