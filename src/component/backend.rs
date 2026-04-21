@@ -144,6 +144,7 @@ pub(crate) async fn register_dynamic_backend(
         grpc,
         client_cert,
         ca_certs,
+        health: crate::config::BackendHealth::Unknown,
     };
 
     if !session.add_backend(name, new_backend) {
@@ -163,9 +164,12 @@ pub(crate) fn is_healthy(
     session: &mut Session,
     backend: &str,
 ) -> Result<backend::BackendHealth, types::Error> {
-    // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
-    Ok(backend::BackendHealth::Unknown)
+    let backend = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    match &backend.health {
+        crate::config::BackendHealth::Unknown => Ok(backend::BackendHealth::Unknown),
+        crate::config::BackendHealth::Healthy => Ok(backend::BackendHealth::Healthy),
+        crate::config::BackendHealth::Unhealthy => Ok(backend::BackendHealth::Unhealthy),
+    }
 }
 
 pub(crate) fn is_dynamic(session: &mut Session, backend: &str) -> Result<bool, types::Error> {

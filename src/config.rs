@@ -39,7 +39,7 @@ pub use crate::acl::Acls;
 /// Types and deserializers for backend configuration settings.
 mod backends;
 
-pub use self::backends::{Backend, ClientCertError, ClientCertInfo};
+pub use self::backends::{Backend, BackendHealth, ClientCertError, ClientCertInfo};
 
 pub type Backends = HashMap<String, Arc<Backend>>;
 
