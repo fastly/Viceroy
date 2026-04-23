@@ -252,7 +252,7 @@ impl From<error::Error> for types::Error {
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse { .. }
+            | Error::InvalidAlpnResponse { .. }
             | Error::DeviceDetectionError(_)
             | Error::SharedMemory => types::Error::GenericError,
         }

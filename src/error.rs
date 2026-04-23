@@ -152,7 +152,7 @@ pub enum Error {
     InvalidClientCert(#[from] crate::config::ClientCertError),
 
     #[error("Invalid response to ALPN request; wanted '{0}', got '{1}'")]
-    InvalidAlpnRepsonse(&'static str, String),
+    InvalidAlpnResponse(&'static str, String),
 
     #[error("Resource temporarily unavailable")]
     Again,
@@ -228,7 +228,7 @@ impl Error {
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse(_, _) => FastlyStatus::Error,
+            | Error::InvalidAlpnResponse(_, _) => FastlyStatus::Error,
         }
     }
 
