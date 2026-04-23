@@ -147,7 +147,7 @@
 
   ;; extend the heap by the given number of kilobytes. because WebAssembly
   ;; only allows us to operate in terms of 64kb pages, this necessarily
-  ;; rounds up. if this operationg fails we return a 500 error and quit
+  ;; rounds up. if this operation fails we return a 500 error and quit
   ;; immediately
   (func $extend_heap (param $size_in_kb i32)
     (local $original_heap_page_count i32)
