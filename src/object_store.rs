@@ -364,7 +364,7 @@ pub enum KvStoreError {
     )]
     BadRequest,
     #[error(
-        "KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)"
+        "KV store cannot fulfill the request, as defined by the client's prerequisites (ie. if-generation-match)"
     )]
     PreconditionFailed,
     #[error("The size limit for a KV store key was exceeded")]
