@@ -35,7 +35,7 @@ pub struct StreamingBody {
 /// these cases, `hyper` will dutifully frame each chunk as it reads them from the `Body`. If the
 /// `Body` suddenly returns `Ok(None)`, it will apply the proper `0\r\n\r\n` termination to the
 /// message. The finish message ensures that this will only happen when the Wasm program
-/// affirmitavely marks the body as finished.
+/// affirmatively marks the body as finished.
 #[derive(Debug)]
 pub enum StreamingBodyItem {
     Chunk(Chunk),
