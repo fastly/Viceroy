@@ -237,7 +237,7 @@
                             ;; rest of this block is just the return
         (return))
 
-      ;; wheee! we get to add a header.
+      ;; whee! we get to add a header.
       ;; first step in adding the header: figure out the name of the
       ;; field. this involves using our little int2str helper function,
       ;; which takes the value and a memory offset and returns the offset
