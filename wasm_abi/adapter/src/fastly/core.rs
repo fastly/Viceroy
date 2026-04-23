@@ -3581,7 +3581,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct LookupConfig {
         // reserved is just a placeholder,
-        // can be removed when somethin real is added
+        // can be removed when something real is added
         reserved: u32,
     }
 
@@ -3594,7 +3594,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct DeleteConfig {
         // reserved is just a placeholder,
-        // can be removed when somethin real is added
+        // can be removed when something real is added
         reserved: u32,
     }
 
