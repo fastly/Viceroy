@@ -55,7 +55,7 @@ impl TestBackends {
     /// Get [`viceroy_lib::config::Backends`] for the defined test backends and their test servers.
     ///
     /// Panics if the test servers have not been started, as the ephemeral ports bound during test
-    /// server startup are required in order to provide complete complete backend configurations.
+    /// server startup are required in order to provide complete backend configurations.
     pub async fn backend_configs(&self) -> viceroy_lib::config::Backends {
         let inner = self.inner.lock().await;
         let mut backends = viceroy_lib::config::Backends::new();
