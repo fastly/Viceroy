@@ -374,7 +374,7 @@
      (call $to_int))
 
 
-  ;; Send OK back to the test harness; this thing is exitting normally
+  ;; Send OK back to the test harness; this thing is exiting normally
   (func $send_response (param $result i32)
       ;; set the status
       (global.get $response_handle_buffer)
