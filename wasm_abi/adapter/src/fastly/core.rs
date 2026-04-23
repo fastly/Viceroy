@@ -83,7 +83,7 @@ pub enum FramingHeadersMode {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum HttpKeepaliveMode {
-    /// This is the default behavor.
+    /// This is the default behavior.
     Automatic = 0,
 
     /// Send `Connection: close` in HTTP/1 and a GOAWAY frame in HTTP/2 and HTTP/3.  This prompts
