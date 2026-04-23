@@ -800,7 +800,7 @@ pub enum SecretStoreConfigError {
 #[derive(Debug, thiserror::Error)]
 pub enum ShieldingSiteConfigError {
     #[error(
-        "Illegal TOML value for shielding site; must be either the string 'local' or a table containin an encrypted and unencrypted URL."
+        "Illegal TOML value for shielding site; must be either the string 'local' or a table containing an encrypted and unencrypted URL."
     )]
     IllegalSiteValue,
 
