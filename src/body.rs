@@ -220,7 +220,7 @@ impl HttpBody for Body {
         mut self: Pin<&mut Self>,
         cx: &mut Context,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        while let Some(mut chunk) = self.chunks.pop_front() {
+        while let Some(chunk) = self.chunks.pop_front() {
             match chunk {
                 Chunk::HttpBody(mut body) => {
                     let body_mut = &mut body;
@@ -294,22 +294,30 @@ impl HttpBody for Body {
                         }
                     }
                 }
-                Chunk::CompressedHttpBody(ref mut decoder_state, ref mut body) => {
-                    pin_mut!(body);
+                Chunk::CompressedHttpBody(mut decoder_state, mut body) => {
+                    let body_mut = &mut body;
+                    pin_mut!(body_mut);
 
-                    match body.poll_data(cx) {
+                    match body_mut.poll_data(cx) {
                         Poll::Pending => {
                             // put the body back, so we can poll it again next time
+                            let chunk = Chunk::CompressedHttpBody(decoder_state, body);
                             self.chunks.push_front(chunk);
                             return Poll::Pending;
                         }
-                        Poll::Ready(None) => match decoder_state.try_finish() {
-                            Err(e) => return Poll::Ready(Some(Err(e.into()))),
-                            Ok(()) => {
-                                let chunk = decoder_state.get_mut().get_mut().split().freeze();
-                                return Poll::Ready(Some(Ok(chunk)));
+                        Poll::Ready(None) => {
+                            match decoder_state.try_finish() {
+                                Err(e) => return Poll::Ready(Some(Err(e.into()))),
+                                Ok(()) => {
+                                    // The body is done, but we put it back so that
+                                    // we make sure to poll trailers next:
+                                    self.chunks.push_front(body.into());
+
+                                    let chunk = decoder_state.get_mut().get_mut().split().freeze();
+                                    return Poll::Ready(Some(Ok(chunk)));
+                                }
                             }
-                        },
+                        }
                         Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e.into()))),
                         Poll::Ready(Some(Ok(bytes))) => {
                             match decoder_state.write_all(&bytes) {
@@ -319,6 +327,7 @@ impl HttpBody for Body {
                                     let resulting_bytes =
                                         decoder_state.get_mut().get_mut().split().freeze();
                                     // put the body back, so we can poll it again next time
+                                    let chunk = Chunk::CompressedHttpBody(decoder_state, body);
                                     self.chunks.push_front(chunk);
                                     if resulting_bytes.is_empty() {
                                         // If we got no bytes from this chunk, it might be just the gzip header
