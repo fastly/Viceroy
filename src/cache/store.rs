@@ -148,7 +148,7 @@ impl CacheKeyObjects {
     /// Perform a transactional lookup.
     ///
     /// Returns a CacheData if existing data were found (even if stale),
-    /// and returns an Obligaton if the data need to be freshened.
+    /// and returns an Obligation if the data need to be freshened.
     ///
     /// If !ok_to_wait, returns a result immediately, without waiting for outstanding Obligations
     /// to complete.
@@ -179,7 +179,7 @@ impl CacheKeyObjects {
                 for cache_value in response_values {
                     if let Some(data) = &cache_value.present {
                         if data.meta.is_fresh() {
-                            // We have fresh data; no need to generate an obligaton.
+                            // We have fresh data; no need to generate an obligation.
                             return (Some(Arc::clone(data)), None);
                         }
                         if data.meta.is_usable() && cache_value.obligated {
@@ -215,7 +215,7 @@ impl CacheKeyObjects {
             // being fulfilled.
             self.0.send_if_modified(|key_objects| {
                 // Now under the write lock.
-                // We might have a stale result, or someone else might have an obligaton;
+                // We might have a stale result, or someone else might have an obligation;
                 // pick the best we can.
                 let response_keys: Vec<_> = key_objects
                     .vary_rules
@@ -723,7 +723,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn obligaton_when_stale() {
+    async fn obligation_when_stale() {
         let objects = Arc::new(CacheKeyObjects::default());
         let body: Body = "hello".as_bytes().into();
 
@@ -857,9 +857,9 @@ mod tests {
         assert!(objects.get(&h1).is_some());
 
         // But not with different headers:
-        let (found2, obligaton2) = objects.transaction_get(&h2, true).await;
+        let (found2, obligation2) = objects.transaction_get(&h2, true).await;
         assert!(found2.is_none());
-        assert!(obligaton2.is_some());
+        assert!(obligation2.is_some());
     }
 
     #[tokio::test]
