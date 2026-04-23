@@ -1524,7 +1524,7 @@ pub(crate) struct State {
     ///
     /// `cache_busy_handle_wait` consumes its handle, however because the
     /// SDK's `CacheBusyHandle::wait` doesn't consume `self`, it does a
-    /// seperate drop and calls `close_busy`. To avoid this use of a dangling
+    /// separate drop and calls `close_busy`. To avoid this use of a dangling
     /// handle, `cache_busy_handle_wait` records the handle it consumed so that
     /// `close_busy` can check if it's closing a handle that has just been
     /// consumed.
@@ -1535,7 +1535,7 @@ pub(crate) struct State {
     ///
     /// `replace_insert` consumes its handle, however because the
     /// SDK's `CacheReplaceHandle::replace_insert` doesn't consume `self`, it does a
-    /// seperate drop and calls `close`. To avoid this use of a dangling
+    /// separate drop and calls `close`. To avoid this use of a dangling
     /// handle, `replace_insert` records the handle it consumed so that
     /// `close` can check if it's closing a handle that has just been
     /// consumed.
