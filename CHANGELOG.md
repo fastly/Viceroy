@@ -250,7 +250,7 @@
 - Explicitly test the dictionary host calls in the dictionary fixture ([#390](https://github.com/fastly/Viceroy/pull/390))
 - Enable the config-store-lookup tests ([#387](https://github.com/fastly/Viceroy/pull/387))
 - Run the `request` tests as a component ([#386](https://github.com/fastly/Viceroy/pull/386))
-- Update Ubuntu and MacOS runners to latest (and non-EOL) versions ([#388](https://github.com/fastly/Viceroy/pull/388))
+- Update Ubuntu and macOS runners to latest (and non-EOL) versions ([#388](https://github.com/fastly/Viceroy/pull/388))
 - Fix trap handling when running components ([#382](https://github.com/fastly/Viceroy/pull/382))
 - fix(wiggle_abi): write the result's length, not the guest buffer's ([#385](https://github.com/fastly/Viceroy/pull/385))
 - Add adaptive buffer support for geo + device detection lookups ([#383](https://github.com/fastly/Viceroy/pull/383))
