@@ -2502,7 +2502,7 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         // `http-req.select-request` traps if there are no handles or too many handles; this
-        // check preservs the witx `pending-req-select` behavior.
+        // check preserves the witx `pending-req-select` behavior.
         if pending_req_handles_len == 0
             || pending_req_handles_len >= fastly_shared::MAX_PENDING_REQS as usize
         {
@@ -2532,7 +2532,7 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         // `http-req.select-request` traps if there are no handles or too many handles; this
-        // check preservs the witx `pending-req-select` behavior.
+        // check preserves the witx `pending-req-select` behavior.
         if pending_req_handles_len == 0
             || pending_req_handles_len >= fastly_shared::MAX_PENDING_REQS as usize
         {
