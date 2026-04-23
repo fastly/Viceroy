@@ -92,7 +92,7 @@
 
 ## 0.14.0 (2025-08-08)
 
-- Fix for shielding suport ([#503](https://github.com/fastly/Viceroy/pull/503))
+- Fix for shielding support ([#503](https://github.com/fastly/Viceroy/pull/503))
 
   Shielding support in 0.13.0 was, alas, slightly broken: the `toml` settings were
   not passed through to the main library.
