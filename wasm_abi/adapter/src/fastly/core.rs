@@ -4921,7 +4921,7 @@ pub mod fastly_shielding {
             Some(adapted_options)
         };
         // We allow the ShieldBackendOptions Resource to drop at the end of this call;
-        // we don't need it any more, and it has no heap allocations.
+        // we don't need it anymore, and it has no heap allocations.
 
         let res = host::backend_for_shield(name, adapted_options.as_ref());
 
