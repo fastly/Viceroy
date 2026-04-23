@@ -425,7 +425,7 @@ impl CacheKeyObjects {
                         Some((variant, value))
                     } else if value.obligated {
                         // This value has an outstanding obligation.
-                        // We don't want to clobber that, otherwise the obligee will be Confused;
+                        // We don't want to clobber that; otherwise, the obligee will be Confused;
                         // So, keep the CacheValue but remove the "present".
                         Some((
                             variant,

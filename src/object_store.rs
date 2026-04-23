@@ -195,7 +195,7 @@ impl ObjectStores {
             .map_err(|_| KvStoreError::InternalError)?
             .entry(obj_store_key)
             .and_modify(|store| match store.get(&obj_key) {
-                // 404 if the key doesn't exist, otherwise delete
+                // 404 if the key doesn't exist; otherwise, delete
                 Some(val) => {
                     // manages ttl
                     if let Some(exp) = val.expiration {
