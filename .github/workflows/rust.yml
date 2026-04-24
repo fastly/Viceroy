@@ -18,8 +18,4 @@ jobs:
         submodules: true
     - name: Install Rust
       run: rustup default ${{ matrix.rust }}
-    - run: rustup target add wasm32-wasip1
-    - run: rustup target add wasm32-unknown-unknown
-    - name: Install rustfmt and clippy
-      run: rustup component add rustfmt clippy
     - run: make ci
