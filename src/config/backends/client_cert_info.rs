@@ -26,6 +26,8 @@ pub enum ClientCertError {
     InvalidToml,
     #[error("No certificates found in client cert definition")]
     NoCertsFound,
+    #[error("Invalid certificate data: {0}")]
+    InvalidCertificateData(String),
     #[error("Expected a string value for key {0}, got something else")]
     InvalidTomlData(&'static str),
 }
@@ -42,12 +44,25 @@ impl ClientCertInfo {
 
         for item in cert_info.into_iter().chain(key_info) {
             match item {
-                rustls_pemfile::Item::X509Certificate(x) => certificates.push(Certificate(x)),
+                rustls_pemfile::Item::X509Certificate(x) => {
+                    // Basic validation of certificate data
+                    if x.is_empty() {
+                        return Err(ClientCertError::InvalidCertificateData(
+                            "Empty certificate data".to_string(),
+                        ));
+                    }
+                    certificates.push(Certificate(x))
+                }
                 rustls_pemfile::Item::RSAKey(x) => keys.push(PrivateKey(x)),
                 rustls_pemfile::Item::PKCS8Key(x) => keys.push(PrivateKey(x)),
                 rustls_pemfile::Item::ECKey(x) => keys.push(PrivateKey(x)),
                 _ => {}
             }
+        }
+
+        // Ensure certificates were found
+        if certificates.is_empty() {
+            return Err(ClientCertError::NoCertsFound);
         }
 
         let key = if keys.is_empty() {
