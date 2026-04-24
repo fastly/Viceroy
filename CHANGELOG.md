@@ -5,6 +5,7 @@
 - Add `health` config parameter for backends to mock backend health status in testing. ([#605](https://github.com/fastly/Viceroy/pulls/606))
 - Use `cargo clippy` to lint code in CI. ([#603](https://github.com/fastly/Viceroy/pull/603))
 - Rename `Error::InvalidAlpnRepsonse` to correct a typo ([#612](https://github.com/fastly/Viceroy/pull/612))
+- Upgrade to Rust 1.95 ([#604](https://github.com/fastly/Viceroy/pull/604))
 - Add options for experimenting with wasm gc and exceptions. ([#601](https://github.com/fastly/Viceroy/pull/601))
 
 ## 0.16.5 (2026-03-23)
