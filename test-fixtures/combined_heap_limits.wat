@@ -341,7 +341,7 @@
       (call $maybe_error_die)
     )
 
-  ;; get the size the user wants from the provided header
+  ;; get the size that the user wants from the provided header
   ;; we're going to cheat a bit, here, and assume that the only
   ;; reason we might get an error is because the user didn't pass
   ;; this header. so if they didn't pass a header, or really if any
