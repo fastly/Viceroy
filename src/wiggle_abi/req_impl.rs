@@ -1117,7 +1117,7 @@ impl FastlyHttpReq for Session {
                 Ok(s)
             } else {
                 // For now, corp and workspace arguments are required to actually generate the hostname,
-                // but in the future the lookaside service will be generated using the customer ID, and
+                // but in the future, the lookaside service will be generated using the customer ID, and
                 // it will be okay for them to be unspecified or empty.
                 Err(Error::InvalidArgument)
             }

@@ -17,7 +17,7 @@ impl security::Host for ComponentCtx {
         let _ = self.session().body(ds_body.into())?;
 
         // For now, corp and workspace arguments are required to actually generate the hostname,
-        // but in the future the lookaside service will be generated using the customer ID, and
+        // but in the future, the lookaside service will be generated using the customer ID, and
         // it will be okay for them to be unspecified or empty.
         if info.corp.is_none() || info.workspace.is_none() {
             return Err(Error::InvalidArgument.into());
