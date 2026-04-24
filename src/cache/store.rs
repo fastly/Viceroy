@@ -179,7 +179,7 @@ impl CacheKeyObjects {
                 for cache_value in response_values {
                     if let Some(data) = &cache_value.present {
                         if data.meta.is_fresh() {
-                            // We have fresh data; no need to generate an obligaton.
+                            // We have fresh data; no need to generate an obligation.
                             return (Some(Arc::clone(data)), None);
                         }
                         if data.meta.is_usable() && cache_value.obligated {
@@ -215,7 +215,7 @@ impl CacheKeyObjects {
             // being fulfilled.
             self.0.send_if_modified(|key_objects| {
                 // Now under the write lock.
-                // We might have a stale result, or someone else might have an obligaton;
+                // We might have a stale result, or someone else might have an obligation;
                 // pick the best we can.
                 let response_keys: Vec<_> = key_objects
                     .vary_rules

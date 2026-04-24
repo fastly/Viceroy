@@ -587,7 +587,7 @@ pub enum DictionaryConfigError {
 /// Errors that may occur while validating device detection configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceDetectionConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
 
@@ -643,7 +643,7 @@ pub enum DeviceDetectionConfigError {
 /// Errors that may occur while validating geolocation configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum GeolocationConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
 
@@ -702,7 +702,7 @@ pub enum GeolocationConfigError {
 /// Errors that may occur while validating object store configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum ObjectStoreConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
     #[error("The `file` and `data` keys for the object `{0}` are set. Only one can be used.")]
@@ -754,7 +754,7 @@ pub enum ObjectStoreConfigError {
 /// Errors that may occur while validating secret store configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum SecretStoreConfigError {
-    /// An I/O error that occured while reading the file.
+    /// An I/O error that occurred while reading the file.
     #[error(transparent)]
     IoError(std::io::Error),
 
@@ -800,7 +800,7 @@ pub enum SecretStoreConfigError {
 #[derive(Debug, thiserror::Error)]
 pub enum ShieldingSiteConfigError {
     #[error(
-        "Illegal TOML value for shielding site; must be either the string 'local' or a table containin an encrypted and unencrypted URL."
+        "Illegal TOML value for shielding site; must be either the string 'local' or a table containing an encrypted and unencrypted URL."
     )]
     IllegalSiteValue,
 

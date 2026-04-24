@@ -83,7 +83,7 @@ pub enum FramingHeadersMode {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum HttpKeepaliveMode {
-    /// This is the default behavor.
+    /// This is the default behavior.
     Automatic = 0,
 
     /// Send `Connection: close` in HTTP/1 and a GOAWAY frame in HTTP/2 and HTTP/3.  This prompts
@@ -2502,7 +2502,7 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         // `http-req.select-request` traps if there are no handles or too many handles; this
-        // check preservs the witx `pending-req-select` behavior.
+        // check preserves the witx `pending-req-select` behavior.
         if pending_req_handles_len == 0
             || pending_req_handles_len >= fastly_shared::MAX_PENDING_REQS as usize
         {
@@ -2532,7 +2532,7 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         // `http-req.select-request` traps if there are no handles or too many handles; this
-        // check preservs the witx `pending-req-select` behavior.
+        // check preserves the witx `pending-req-select` behavior.
         if pending_req_handles_len == 0
             || pending_req_handles_len >= fastly_shared::MAX_PENDING_REQS as usize
         {
@@ -3581,7 +3581,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct LookupConfig {
         // reserved is just a placeholder,
-        // can be removed when somethin real is added
+        // can be removed when something real is added
         reserved: u32,
     }
 
@@ -3594,7 +3594,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct DeleteConfig {
         // reserved is just a placeholder,
-        // can be removed when somethin real is added
+        // can be removed when something real is added
         reserved: u32,
     }
 
