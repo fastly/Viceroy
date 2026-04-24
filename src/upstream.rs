@@ -196,7 +196,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
                         Some(b"h2") => {}
 
                         Some(other_value) => {
-                            return Err(Error::InvalidAlpnRepsonse(
+                            return Err(Error::InvalidAlpnResponse(
                                 "h2",
                                 String::from_utf8_lossy(other_value).to_string(),
                             )
