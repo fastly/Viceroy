@@ -54,6 +54,8 @@ use {
     wasmtime_wasi::I32Exit,
 };
 
+pub use wasmtime::WasmFeatures;
+
 pub const DEFAULT_EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
 
 const NEXT_REQ_PENDING_MAX: usize = 5;
@@ -175,6 +177,7 @@ impl ExecuteCtx {
         guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
+        wasm_features: WasmFeatures,
     ) -> Result<ExecuteCtxBuilder, Error> {
         let input = fs::read(&module_path)?;
 
@@ -202,7 +205,7 @@ impl ExecuteCtx {
             (is_wat, is_component, input)
         };
 
-        let config = &configure_wasmtime(is_component, profiling_strategy);
+        let config = &configure_wasmtime(wasm_features, profiling_strategy);
         let engine = Engine::new(config)?;
         let instance_pre = if is_component {
             warn!(
@@ -328,6 +331,7 @@ impl ExecuteCtx {
         guest_profile_config: Option<GuestProfileConfig>,
         unknown_import_behavior: UnknownImportBehavior,
         adapt_components: bool,
+        wasm_features: WasmFeatures,
     ) -> Result<Arc<Self>, Error> {
         ExecuteCtx::build(
             module_path,
@@ -336,6 +340,7 @@ impl ExecuteCtx {
             guest_profile_config,
             unknown_import_behavior,
             adapt_components,
+            wasm_features,
         )?
         .finish()
     }
@@ -417,12 +422,22 @@ impl ExecuteCtx {
     ///
     /// ```no_run
     /// # use std::collections::HashSet;
+    /// # use wasmtime::WasmFeatures;
     /// use hyper::{Body, http::Request};
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # async fn f() -> Result<(), Error> {
     /// # let req = Request::new(Body::from(""));
     /// let adapt_core_wasm = false;
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
+    /// let wasm_features = WasmFeatures::default();
+    /// let ctx = ExecuteCtx::new(
+    ///     "path/to/a/file.wasm",
+    ///     ProfilingStrategy::None,
+    ///     HashSet::new(),
+    ///     None,
+    ///     Default::default(),
+    ///     adapt_core_wasm,
+    ///     wasm_features
+    /// )?;
     /// let local = "127.0.0.1:80".parse().unwrap();
     /// let remote = "127.0.0.1:0".parse().unwrap();
     /// let resp = ctx.handle_request(req, local, remote).await?;
@@ -1078,7 +1093,7 @@ impl Drop for ExecuteCtx {
 }
 
 fn configure_wasmtime(
-    allow_components: bool,
+    wasm_features: WasmFeatures,
     profiling_strategy: ProfilingStrategy,
 ) -> wasmtime::Config {
     use wasmtime::{Config, InstanceAllocationStrategy, WasmBacktraceDetails};
@@ -1092,9 +1107,7 @@ fn configure_wasmtime(
 
     config.allocation_strategy(InstanceAllocationStrategy::OnDemand);
 
-    if allow_components {
-        config.wasm_component_model(true);
-    }
+    config.wasm_features(wasm_features, true);
 
     // Wasm permits the "relaxed" instructions to be nondeterministic
     // between runs, but requires them to be deterministic within runs.

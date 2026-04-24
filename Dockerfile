@@ -18,9 +18,7 @@ RUN apt-get update \
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 # Install Rust, rustfmt, and the wasm32-wasi cross-compilation target
-RUN curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain 1.52.1 -y
+RUN curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y
 ENV PATH=/root/.cargo/bin:$PATH
-RUN rustup component add rustfmt
-RUN rustup target add wasm32-wasip1
 
 WORKDIR $VICEROY_SRC
