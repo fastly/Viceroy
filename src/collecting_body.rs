@@ -259,7 +259,7 @@ impl CollectingBody {
                     };
 
                     if tx.send_chunk(chunk).await.is_err() {
-                        // Reader hung up; we don't care any more.
+                        // Reader hung up; we don't care anymore.
                         return;
                     }
                 }

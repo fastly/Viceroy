@@ -178,7 +178,7 @@ impl FromStr for FastlyConfig {
 /// a [`FastlyConfig`][conf].
 ///
 /// [conf]: struct.FastlyConfig.html
-/// [fromt-str]: https://docs.rs/toml/latest/toml/de/fn.from_str.html
+/// [from-str]: https://docs.rs/toml/latest/toml/de/fn.from_str.html
 #[derive(Deserialize)]
 struct TomlFastlyConfig {
     manifest_version: Option<u32>,

@@ -58,7 +58,7 @@ fn main() {
         assert_eq!(nwritten_2, msg_2.len());
     }
 
-    // Allocate another body, and write a "!" to it. We now now have two bodies: "Viceroy" and "!"
+    // Allocate another body, and write a "!" to it. We now have two bodies: "Viceroy" and "!"
     let other_body = {
         let mut other_body: BodyHandle = 0;
         let msg = "!";

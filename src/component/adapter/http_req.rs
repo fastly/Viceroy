@@ -8,7 +8,7 @@ use {
     wasmtime::component::Resource,
 };
 
-/// Extension trait to add a `.ds_req_handle()` for `CompontentCtx` so to help
+/// Extension trait to add a `.ds_req_handle()` for `ComponentCtx` so to help
 /// `http_req` implementations forward to `http_downstream` implementations.
 trait DsView {
     fn ds_req_handle(&self) -> Resource<http_req::Request>;

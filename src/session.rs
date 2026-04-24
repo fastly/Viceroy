@@ -784,7 +784,7 @@ impl Session {
 
     /// Get a reference to a [`PendingInsert`], given its [`PendingKvInsertHandle`].
     ///
-    /// Returns a [`HandleError`] if the handle is not associated with a insert in the
+    /// Returns a [`HandleError`] if the handle is not associated with an insert in the
     /// session.
     pub fn pending_kv_insert(
         &self,

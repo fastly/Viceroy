@@ -57,7 +57,7 @@
         ;; properties.
         (field $override_key_ptr (@witx pointer (@witx char8)))
         (field $override_key_len (@witx usize))
-        ;; Name of the backend the request will eventually be sent to.
+        ;; Name of the backend to which the request will eventually be sent.
         (field $backend_name_ptr (@witx pointer (@witx char8)))
         (field $backend_name_len (@witx usize))
     )

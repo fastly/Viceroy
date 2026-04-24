@@ -195,7 +195,7 @@ impl ObjectStores {
             .map_err(|_| KvStoreError::InternalError)?
             .entry(obj_store_key)
             .and_modify(|store| match store.get(&obj_key) {
-                // 404 if the key doesn't exist, otherwise delete
+                // 404 if the key doesn't exist; otherwise, delete
                 Some(val) => {
                     // manages ttl
                     if let Some(exp) = val.expiration
@@ -363,7 +363,7 @@ pub enum KvStoreError {
     )]
     BadRequest,
     #[error(
-        "KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)"
+        "KV store cannot fulfill the request, as defined by the client's prerequisites (ie. if-generation-match)"
     )]
     PreconditionFailed,
     #[error("The size limit for a KV store key was exceeded")]
