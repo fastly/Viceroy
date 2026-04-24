@@ -1387,7 +1387,7 @@ interface erl {
     /// Returns the name of this penaltybox.
     get-name: func() -> string;
 
-    /// Adds `entry` to a the penaltybox for the duration of ttl.
+    /// Adds `entry` to the penaltybox for the duration of ttl.
     ///
     /// Valid ttl span is 1m to 1h and TTL value is truncated to the nearest minute.
     add: func(

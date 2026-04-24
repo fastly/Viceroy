@@ -439,7 +439,7 @@ fn test_novary_ignore_headers() {
 fn test_vary_subtle() {
     let key = new_key();
 
-    // A very subtle (hah!) case: can one header run in to another?
+    // A very subtle (hah!) case: can one header run into another?
 
     let h1 = HeaderName::from_static("x-viceroy-test");
     let h2 = HeaderName::from_static("x-viceroy-assert");

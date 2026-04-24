@@ -106,8 +106,8 @@ pub enum Connection {
 impl Connection {
     fn metadata(&self) -> &ConnMetadata {
         match self {
-            Connection::Http(_, md) => &md,
-            Connection::Https(_, md) => &md,
+            Connection::Http(_, md) => md,
+            Connection::Https(_, md) => md,
         }
     }
 }
@@ -395,7 +395,6 @@ pub fn send_request(
 }
 
 /// The type ultimately yielded by a `PendingRequest`.
-
 /// An asynchronous request awaiting a response.
 #[allow(unused)]
 #[derive(Debug)]

@@ -35,7 +35,7 @@ impl FastlyDeviceDetection for Session {
             let user_agent_slice = memory
                 .as_slice(user_agent.as_bytes())?
                 .ok_or(Error::SharedMemory)?;
-            let user_agent_str = std::str::from_utf8(&user_agent_slice)?;
+            let user_agent_str = std::str::from_utf8(user_agent_slice)?;
 
             self.device_detection_lookup(user_agent_str)
                 .ok_or_else(|| {

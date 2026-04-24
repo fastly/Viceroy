@@ -30,11 +30,11 @@ impl FastlyLog for Session {
     ) -> Result<EndpointHandle, Error> {
         let name = memory.as_slice(name)?.ok_or(Error::SharedMemory)?;
 
-        if is_reserved_endpoint(&name) {
+        if is_reserved_endpoint(name) {
             return Err(Error::InvalidArgument);
         }
 
-        Ok(self.log_endpoint_handle(&name))
+        Ok(self.log_endpoint_handle(name))
     }
 
     fn write(
@@ -48,7 +48,7 @@ impl FastlyLog for Session {
 
         // The log API is infallible, so if we get an error, warn about it
         // rather than bubbling it up through the log API.
-        match endpoint.write_entry(&msg) {
+        match endpoint.write_entry(msg) {
             Ok(()) => {}
             Err(err) => tracing::error!("Error writing log message: {:?}", err),
         }

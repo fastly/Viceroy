@@ -334,25 +334,25 @@ fn parse_profile_sample_duration(s: &str) -> Result<Duration, Error> {
         return Ok(Duration::from_secs(val));
     }
 
-    if let Some(num) = s.strip_suffix("s") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_secs(val));
-        }
+    if let Some(num) = s.strip_suffix("s")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_secs(val));
     }
-    if let Some(num) = s.strip_suffix("ms") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_millis(val));
-        }
+    if let Some(num) = s.strip_suffix("ms")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_millis(val));
     }
-    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs")) {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_micros(val));
-        }
+    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs"))
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_micros(val));
     }
-    if let Some(num) = s.strip_suffix("ns") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_nanos(val));
-        }
+    if let Some(num) = s.strip_suffix("ns")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_nanos(val));
     }
 
     Err(Error::ProfilingStrategy)

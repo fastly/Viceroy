@@ -347,7 +347,7 @@ impl Test {
 
         let ctx = ExecuteCtx::build(
             &self.module_path,
-            self.profiling_strategy.clone(),
+            self.profiling_strategy,
             HashSet::new(),
             self.guest_profile_config.clone(),
             self.unknown_import_behavior,
@@ -520,11 +520,15 @@ impl Drop for TestServer {
         }
     }
 }
+type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
+
+type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
+type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]
 enum TestService {
-    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
-    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
+    Sync(Arc<SyncService>),
+    Async(Arc<AsyncService>),
 }
 
 impl std::fmt::Debug for TestService {
@@ -599,5 +603,3 @@ impl TestService {
         }
     }
 }
-
-type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;

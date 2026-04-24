@@ -129,5 +129,5 @@ pub fn get_values(
     }
 
     let values = headers.get_all(HeaderName::try_from(name)?);
-    Ok(write_values(values.into_iter(), b'\0', max_len, cursor)?)
+    write_values(values.into_iter(), b'\0', max_len, cursor)
 }

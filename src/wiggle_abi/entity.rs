@@ -28,7 +28,7 @@ macro_rules! wiggle_entity {
         impl cranelift_entity::EntityRef for $entity {
             /// Create a new entity reference from a small integer.
             fn new(index: usize) -> Self {
-                debug_assert!(index < (std::u32::MAX as usize));
+                debug_assert!(index < (u32::MAX as usize));
                 (index as u32).into()
             }
             /// Get the index that was used to create this entity reference.

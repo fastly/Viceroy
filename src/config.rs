@@ -178,7 +178,7 @@ impl FromStr for FastlyConfig {
 /// a [`FastlyConfig`][conf].
 ///
 /// [conf]: struct.FastlyConfig.html
-/// [fromt-str]: https://docs.rs/toml/latest/toml/de/fn.from_str.html
+/// [from-str]: https://docs.rs/toml/latest/toml/de/fn.from_str.html
 #[derive(Deserialize)]
 struct TomlFastlyConfig {
     manifest_version: Option<u32>,
@@ -209,13 +209,13 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             local_server,
         } = self;
 
-        if let Some(manifest_version) = manifest_version {
-            if manifest_version > MAX_MANIFEST_VERSION {
-                return Err(FastlyConfigError::UnsupportedManifestVersion(
-                    manifest_version,
-                    MAX_MANIFEST_VERSION,
-                ));
-            }
+        if let Some(manifest_version) = manifest_version
+            && manifest_version > MAX_MANIFEST_VERSION
+        {
+            return Err(FastlyConfigError::UnsupportedManifestVersion(
+                manifest_version,
+                MAX_MANIFEST_VERSION,
+            ));
         }
 
         let local_server = local_server
