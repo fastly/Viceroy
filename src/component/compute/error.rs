@@ -106,7 +106,7 @@ impl From<wiggle::GuestError> for types::Error {
             | InvalidFlagValue { .. }
             | InvalidEnumValue { .. }
             | PtrOutOfBounds { .. }
-            | PtrOverflow { .. }
+            | PtrOverflow
             | InvalidUtf8 { .. }
             | TryFromIntError { .. } => types::Error::InvalidArgument,
             // These errors indicate either a pathological user input or an internal programming
@@ -146,9 +146,7 @@ impl From<KvStoreError> for types::Error {
 
 impl From<ResourceTableError> for types::Error {
     fn from(err: ResourceTableError) -> Self {
-        match err {
-            _ => panic!("{}", err),
-        }
+        panic!("{}", err)
     }
 }
 
@@ -252,7 +250,7 @@ impl From<error::Error> for types::Error {
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse { .. }
+            | Error::InvalidAlpnResponse { .. }
             | Error::DeviceDetectionError(_)
             | Error::SharedMemory
             | Error::TlsNoCAAvailable

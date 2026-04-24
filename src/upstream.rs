@@ -105,8 +105,8 @@ pub enum Connection {
 impl Connection {
     fn metadata(&self) -> &ConnMetadata {
         match self {
-            Connection::Http(_, md) => &md,
-            Connection::Https(_, md) => &md,
+            Connection::Http(_, md) => md,
+            Connection::Https(_, md) => md,
         }
     }
 }
@@ -230,7 +230,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
                         Some(b"h2") => {}
 
                         Some(other_value) => {
-                            return Err(Error::InvalidAlpnRepsonse(
+                            return Err(Error::InvalidAlpnResponse(
                                 "h2",
                                 String::from_utf8_lossy(other_value).to_string(),
                             )
@@ -429,7 +429,6 @@ pub fn send_request(
 }
 
 /// The type ultimately yielded by a `PendingRequest`.
-
 /// An asynchronous request awaiting a response.
 #[allow(unused)]
 #[derive(Debug)]

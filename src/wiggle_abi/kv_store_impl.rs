@@ -31,8 +31,8 @@ impl FastlyKvStore for Session {
         name: GuestPtr<str>,
     ) -> Result<KvStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
-        if self.kv_store().store_exists(&name)? {
-            Ok(self.kv_store_handle(&name))
+        if self.kv_store().store_exists(name)? {
+            Ok(self.kv_store_handle(name))
         } else {
             Err(Error::ObjectStoreError(
                 ObjectStoreError::UnknownObjectStore(name.to_owned()),
@@ -382,7 +382,7 @@ impl FastlyKvStore for Session {
 
         match resp {
             Ok(value) => {
-                let body_handle = self.insert_body(value.into()).into();
+                let body_handle = self.insert_body(value.into());
 
                 memory.write(body_handle_out, body_handle)?;
 

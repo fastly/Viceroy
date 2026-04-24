@@ -50,7 +50,7 @@ impl FastlySecretStore for Session {
         name: GuestPtr<str>,
     ) -> Result<SecretStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
-        self.secret_store_handle(&name)
+        self.secret_store_handle(name)
             .ok_or(Error::SecretStoreError(
                 SecretStoreError::UnknownSecretStore(name.to_string()),
             ))
@@ -68,7 +68,7 @@ impl FastlySecretStore for Session {
                     SecretStoreError::InvalidSecretStoreHandle(secret_store_handle),
                 ))?;
         let secret_name = memory.as_str(secret_name)?.ok_or(Error::SharedMemory)?;
-        self.secret_handle(store_name.as_str(), &secret_name)
+        self.secret_handle(store_name.as_str(), secret_name)
             .ok_or(Error::SecretStoreError(SecretStoreError::UnknownSecret(
                 secret_name.to_string(),
             )))

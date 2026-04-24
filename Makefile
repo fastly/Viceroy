@@ -12,7 +12,7 @@ format-check:
 
 .PHONY: clippy
 clippy:
-	$(VICEROY_CARGO) clippy --all -- -D warnings
+	$(VICEROY_CARGO) clippy --all-targets --all-features -- -D warnings
 
 .PHONY: test
 test: test-crates trap-test
@@ -37,7 +37,7 @@ trap-test-ci: trap-test
 # The main `ci` target runs everything except `trap-test`.
 .PHONY: ci
 ci: VICEROY_CARGO=cargo --locked
-ci: format-check test-crates
+ci: format-check clippy test-crates
 
 .PHONY: clean
 clean:

@@ -42,20 +42,20 @@ impl http_downstream::Host for ComponentCtx {
         &mut self,
         h: Resource<http_req::Request>,
     ) -> Option<types::IpAddress> {
-        match self.session().downstream_client_ip(h.into()).ok()? {
-            None => None,
-            Some(ip) => Some(ip.into()),
-        }
+        self.session()
+            .downstream_client_ip(h.into())
+            .ok()?
+            .map(|ip| ip.into())
     }
 
     fn downstream_server_ip_addr(
         &mut self,
         h: Resource<http_req::Request>,
     ) -> Option<types::IpAddress> {
-        match self.session().downstream_server_ip(h.into()).ok()? {
-            None => None,
-            Some(ip) => Some(ip.into()),
-        }
+        self.session()
+            .downstream_server_ip(h.into())
+            .ok()?
+            .map(|ip| ip.into())
     }
 
     fn downstream_client_ddos_detected(

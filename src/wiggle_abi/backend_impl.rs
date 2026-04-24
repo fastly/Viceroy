@@ -8,7 +8,7 @@ fn lookup_backend_definition<'sess>(
 ) -> Result<&'sess Backend, Error> {
     let name = memory.as_str(backend)?.ok_or(Error::SharedMemory)?;
     session
-        .backend(&name)
+        .backend(name)
         .map(AsRef::as_ref)
         .ok_or(Error::InvalidArgument)
 }
@@ -31,9 +31,12 @@ impl FastlyBackend for Session {
         memory: &mut wiggle::GuestMemory<'_>,
         backend: wiggle::GuestPtr<str>,
     ) -> Result<super::types::BackendHealth, Error> {
-        // just doing this to get a different error if the backend doesn't exist
-        let _ = lookup_backend_definition(self, memory, backend)?;
-        Ok(super::types::BackendHealth::Unknown)
+        let backend = lookup_backend_definition(self, memory, backend)?;
+        match &backend.health {
+            crate::config::BackendHealth::Unknown => Ok(super::types::BackendHealth::Unknown),
+            crate::config::BackendHealth::Healthy => Ok(super::types::BackendHealth::Healthy),
+            crate::config::BackendHealth::Unhealthy => Ok(super::types::BackendHealth::Unhealthy),
+        }
     }
 
     fn is_dynamic(
@@ -43,9 +46,9 @@ impl FastlyBackend for Session {
     ) -> Result<super::types::IsDynamic, Error> {
         let name = memory.as_str(backend)?.ok_or(Error::SharedMemory)?;
 
-        if self.dynamic_backend(&name).is_some() {
+        if self.dynamic_backend(name).is_some() {
             Ok(1)
-        } else if self.backend(&name).is_some() {
+        } else if self.backend(name).is_some() {
             Ok(0)
         } else {
             Err(Error::InvalidArgument)

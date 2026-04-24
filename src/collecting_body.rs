@@ -259,7 +259,7 @@ impl CollectingBody {
                     };
 
                     if tx.send_chunk(chunk).await.is_err() {
-                        // Reader hung up; we don't care any more.
+                        // Reader hung up; we don't care anymore.
                         return;
                     }
                 }
@@ -270,13 +270,13 @@ impl CollectingBody {
                     }
 
                     // Did the body terminate before our "end" offset?
-                    if let Some(end) = end {
-                        if cursor < end {
-                            // Reached the end-of-input without getting the offset we wanted.
-                            // This should be an "unfinished streaming body" error;
-                            // so, return without "finish"ing.
-                            return;
-                        }
+                    if let Some(end) = end
+                        && cursor < end
+                    {
+                        // Reached the end-of-input without getting the offset we wanted.
+                        // This should be an "unfinished streaming body" error;
+                        // so, return without "finish"ing.
+                        return;
                     }
 
                     // We don't wait for the channel to be closed;

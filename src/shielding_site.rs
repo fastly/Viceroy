@@ -147,22 +147,16 @@ impl ShieldingSites {
     }
 
     pub fn get_encrypted<S: AsRef<str>>(&self, name: S) -> Option<Url> {
-        self.sites
-            .get(name.as_ref())
-            .map(|x| match x {
-                ShieldingSite::Local => None,
-                ShieldingSite::Remote { encrypted, .. } => Some(encrypted.clone()),
-            })
-            .flatten()
+        self.sites.get(name.as_ref()).and_then(|x| match x {
+            ShieldingSite::Local => None,
+            ShieldingSite::Remote { encrypted, .. } => Some(encrypted.clone()),
+        })
     }
 
     pub fn get_unencrypted<S: AsRef<str>>(&self, name: S) -> Option<Url> {
-        self.sites
-            .get(name.as_ref())
-            .map(|x| match x {
-                ShieldingSite::Local => None,
-                ShieldingSite::Remote { unencrypted, .. } => Some(unencrypted.clone()),
-            })
-            .flatten()
+        self.sites.get(name.as_ref()).and_then(|x| match x {
+            ShieldingSite::Local => None,
+            ShieldingSite::Remote { unencrypted, .. } => Some(unencrypted.clone()),
+        })
     }
 }

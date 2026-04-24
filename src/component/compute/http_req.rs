@@ -18,7 +18,7 @@ use {
 
 // NOTE [error-detail]:
 //
-// The v2 apis return additional error through an send-error-detail outparam, but this is a little
+// The v2 apis return additional error through a send-error-detail outparam, but this is a little
 // bit awkward in the context of wit, which lacks the notion of an outparam. As the presence of
 // this value is optional, and only serves to augment additional error context, we instead
 // represent this as a different error result in compute.wit:
@@ -400,7 +400,7 @@ impl http_req::HostRequest for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::http_req::redirect_to_websocket_proxy(&mut self.session, handle, &backend)
+        crate::component::http_req::redirect_to_websocket_proxy(&mut self.session, handle, backend)
     }
 
     fn set_framing_headers_mode(
@@ -440,7 +440,7 @@ impl http_req::HostRequest for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::http_req::redirect_to_grip_proxy(&mut self.session, req_handle, &backend)
+        crate::component::http_req::redirect_to_grip_proxy(&mut self.session, req_handle, backend)
     }
 
     fn drop(&mut self, _request: Resource<http_req::Request>) -> wasmtime::Result<()> {

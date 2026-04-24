@@ -71,7 +71,7 @@ impl FastlyHttpReq for Session {
     ) -> Result<(), Error> {
         let sk = if sk.len() > 0 {
             let sk = memory.as_slice(sk)?.ok_or(Error::SharedMemory)?;
-            let sk = HeaderValue::from_bytes(&sk).map_err(|_| Error::InvalidArgument)?;
+            let sk = HeaderValue::from_bytes(sk).map_err(|_| Error::InvalidArgument)?;
             Some(sk)
         } else {
             None
@@ -461,7 +461,7 @@ impl FastlyHttpReq for Session {
                 let byte_slice = memory
                     .as_slice(config.ca_cert.as_array(config.ca_cert_len))?
                     .ok_or(Error::SharedMemory)?;
-                let mut byte_cursor = std::io::Cursor::new(&byte_slice[..]);
+                let mut byte_cursor = std::io::Cursor::new(byte_slice);
                 rustls_pemfile::certs(&mut byte_cursor)?
                     .drain(..)
                     .map(rustls::Certificate)
@@ -483,7 +483,7 @@ impl FastlyHttpReq for Session {
                 .as_slice(config.cert_hostname.as_array(config.cert_hostname_len))?
                 .ok_or(Error::SharedMemory)?;
 
-            Some(std::str::from_utf8(&byte_slice)?.to_owned())
+            Some(std::str::from_utf8(byte_slice)?.to_owned())
         } else {
             None
         };
@@ -497,7 +497,7 @@ impl FastlyHttpReq for Session {
                 let byte_slice = memory
                     .as_slice(config.sni_hostname.as_array(config.sni_hostname_len))?
                     .ok_or(Error::SharedMemory)?;
-                let sni_hostname = std::str::from_utf8(&byte_slice)?;
+                let sni_hostname = std::str::from_utf8(byte_slice)?;
                 if let Some(cert_host) = &cert_host {
                     if cert_host != sni_hostname {
                         // because we're using rustls, we cannot support distinct SNI and cert hostnames
@@ -545,7 +545,7 @@ impl FastlyHttpReq for Session {
                 SecretLookup::Injected { plaintext } => plaintext,
             };
 
-            Some(ClientCertInfo::new(&cert_slice, key)?)
+            Some(ClientCertInfo::new(cert_slice, key)?)
         } else {
             None
         };
@@ -564,6 +564,7 @@ impl FastlyHttpReq for Session {
             grpc,
             client_cert,
             ca_certs,
+            health: crate::config::BackendHealth::Unknown,
         };
 
         if !self.add_backend(&name, new_backend) {
@@ -807,7 +808,7 @@ impl FastlyHttpReq for Session {
     ) -> Result<(), Error> {
         let req = self.request_parts_mut(req_handle)?;
 
-        let version = hyper::Version::try_from(version)?;
+        let version = hyper::Version::from(version);
         req.version = version;
         Ok(())
     }
@@ -822,7 +823,7 @@ impl FastlyHttpReq for Session {
         let backend_bytes_slice = memory
             .as_slice(backend_bytes.as_bytes())?
             .ok_or(Error::SharedMemory)?;
-        let backend_name = std::str::from_utf8(&backend_bytes_slice)?;
+        let backend_name = std::str::from_utf8(backend_bytes_slice)?;
 
         // prepare the request
         let req_parts = self.take_request_parts(req_handle)?;
@@ -872,7 +873,7 @@ impl FastlyHttpReq for Session {
         let backend_bytes_slice = memory
             .as_slice(backend_bytes.as_bytes())?
             .ok_or(Error::SharedMemory)?;
-        let backend_name = std::str::from_utf8(&backend_bytes_slice)?;
+        let backend_name = std::str::from_utf8(backend_bytes_slice)?;
 
         // prepare the request
         let req_parts = self.take_request_parts(req_handle)?;
@@ -1116,7 +1117,7 @@ impl FastlyHttpReq for Session {
                 Ok(s)
             } else {
                 // For now, corp and workspace arguments are required to actually generate the hostname,
-                // but in the future the lookaside service will be generated using the customer ID, and
+                // but in the future, the lookaside service will be generated using the customer ID, and
                 // it will be okay for them to be unspecified or empty.
                 Err(Error::InvalidArgument)
             }
@@ -1181,7 +1182,7 @@ fn read_guest_ip(
     bytes: &GuestPtr<u8>,
     len: u32,
 ) -> Result<Option<IpAddr>, Error> {
-    let bytes = memory.as_slice(bytes.as_array(len as u32))?;
+    let bytes = memory.as_slice(bytes.as_array(len))?;
 
     match len {
         0 => Ok(None),
