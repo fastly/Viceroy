@@ -102,8 +102,7 @@ impl http_body::Host for ComponentCtx {
         // only normal bodies (not streaming bodies) can be read from
         let body = self.session_mut().body_mut(h)?;
 
-        let mut buffer = Vec::new();
-        buffer.resize(chunk_size as usize, 0u8);
+        let mut buffer = vec![0; chunk_size as usize];
         let len = body.read(&mut buffer).await?;
         buffer.truncate(len);
         Ok(buffer)

@@ -86,11 +86,11 @@ pub struct GuestProfileConfig {
     pub sample_period: Duration,
 }
 
-pub struct NextRequest(Option<(DownstreamRequest, Arc<ExecuteCtx>)>);
+pub struct NextRequest(Option<(Box<DownstreamRequest>, Arc<ExecuteCtx>)>);
 
 impl NextRequest {
     pub fn into_request(mut self) -> Option<DownstreamRequest> {
-        self.0.take().map(|(r, _)| r)
+        self.0.take().map(|(r, _)| *r)
     }
 }
 
@@ -109,7 +109,7 @@ impl Drop for NextRequest {
             return;
         };
 
-        ctx.retry_request(req);
+        ctx.retry_request(*req);
     }
 }
 
@@ -312,7 +312,7 @@ impl ExecuteCtx {
             fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             epoch_increment_thread,
             epoch_increment_stop,
-            guest_profile_config: guest_profile_config.map(|c| Arc::new(c)),
+            guest_profile_config: guest_profile_config.map(Arc::new),
             cache: Arc::new(Cache::default()),
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };
@@ -548,7 +548,7 @@ impl ExecuteCtx {
             metadata,
         };
 
-        let mut next_req = NextRequest(Some((downstream, self.clone())));
+        let mut next_req = NextRequest(Some((Box::new(downstream), self.clone())));
         let mut reusable = self.pending_reuse.lock().await;
 
         while let Some(pending) = reusable.pop() {

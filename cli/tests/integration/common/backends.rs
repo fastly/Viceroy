@@ -273,12 +273,10 @@ impl TestBackendBuilder {
     ///
     /// Panics if:
     ///
-    /// * The `TestBackends` that created this builder no longer exists, or its test servers have
-    /// already been started
-    ///
-    /// * The `path` does not parse as a valid `PathAndQuery`
-    ///
-    /// * The `override_host` does not parse as a valid `HeaderValue`
+    ///   * The `TestBackends` that created this builder no longer exists, or its test servers have
+    ///     already been started
+    ///   * The `path` does not parse as a valid `PathAndQuery`
+    ///   * The `override_host` does not parse as a valid `HeaderValue`
     pub async fn build(self) {
         let inner_arc = self.inner.upgrade().expect("TestBackends dropped");
         let path = self.path.parse().expect("invalid backend path");

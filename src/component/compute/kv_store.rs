@@ -237,11 +237,9 @@ impl kv_store::HostStore for ComponentCtx {
         let meta = options.metadata;
         let igm = options.if_generation_match;
 
-        let ttl = if let Some(time_to_live_sec) = options.time_to_live_sec {
-            Some(std::time::Duration::from_secs(time_to_live_sec as u64))
-        } else {
-            None
-        };
+        let ttl = options
+            .time_to_live_sec
+            .map(|time_to_live_sec| std::time::Duration::from_secs(time_to_live_sec as u64));
 
         let fut = futures::future::ok(self.session.kv_insert(
             store.clone(),

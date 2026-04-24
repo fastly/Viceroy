@@ -15,7 +15,7 @@ pub(crate) fn backend_for_shield(
 ) -> Result<String, types::Error> {
     let shield_uri = name;
 
-    let Ok(uri) = Uri::from_str(&shield_uri) else {
+    let Ok(uri) = Uri::from_str(shield_uri) else {
         return Err(Error::InvalidArgument.into());
     };
 

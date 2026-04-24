@@ -209,13 +209,13 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             local_server,
         } = self;
 
-        if let Some(manifest_version) = manifest_version {
-            if manifest_version > MAX_MANIFEST_VERSION {
-                return Err(FastlyConfigError::UnsupportedManifestVersion(
-                    manifest_version,
-                    MAX_MANIFEST_VERSION,
-                ));
-            }
+        if let Some(manifest_version) = manifest_version
+            && manifest_version > MAX_MANIFEST_VERSION
+        {
+            return Err(FastlyConfigError::UnsupportedManifestVersion(
+                manifest_version,
+                MAX_MANIFEST_VERSION,
+            ));
         }
 
         let local_server = local_server

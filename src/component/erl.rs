@@ -1,5 +1,6 @@
 use {crate::component::bindings::fastly::compute::types, crate::session::Session};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn check_rate(
     _session: &mut Session,
     _rc: &str,
