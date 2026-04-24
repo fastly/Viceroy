@@ -210,6 +210,17 @@ impl From<error::Error> for types::Error {
             Error::HyperError(e) if e.is_user() => types::Error::HttpUser,
             Error::HyperError(e) if e.is_incomplete_message() => types::Error::HttpIncomplete,
             Error::HyperError(_) => types::Error::GenericError,
+            // BackendConnectionError wraps hyper::Error with context
+            Error::BackendConnectionError { source, .. } if source.is_parse() => {
+                types::Error::HttpInvalid
+            }
+            Error::BackendConnectionError { source, .. } if source.is_user() => {
+                types::Error::HttpUser
+            }
+            Error::BackendConnectionError { source, .. } if source.is_incomplete_message() => {
+                types::Error::HttpIncomplete
+            }
+            Error::BackendConnectionError { .. } => types::Error::GenericError,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => e.into(),
             // We delegate to some error types' own implementation of `to_fastly_status`.
