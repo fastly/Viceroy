@@ -834,7 +834,7 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // synchronously send the request
-        let resp = upstream::send_request(req, backend, self.tls_config()).await?;
+        let resp = upstream::send_request(req, backend, backend_name, self.tls_config()).await?;
         Ok(self.insert_response(resp))
     }
 
@@ -884,8 +884,13 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let task =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
+        let task = PeekableTask::spawn(upstream::send_request(
+            req,
+            backend,
+            backend_name,
+            self.tls_config(),
+        ))
+        .await;
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))
@@ -929,8 +934,13 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let task =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
+        let task = PeekableTask::spawn(upstream::send_request(
+            req,
+            backend,
+            backend_name,
+            self.tls_config(),
+        ))
+        .await;
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))

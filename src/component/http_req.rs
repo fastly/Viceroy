@@ -64,7 +64,7 @@ pub(crate) async fn send(
     // synchronously send the request
     // This initial implementation ignores the error detail field
     let tls_config = session.tls_config();
-    let resp = upstream::send_request(req, backend, tls_config)
+    let resp = upstream::send_request(req, backend, backend_name, tls_config)
         .await
         .map_err(Into::into)
         .map_err(types::Error::with_empty_detail)?;
@@ -98,7 +98,8 @@ pub(crate) async fn send_async(
 
     // asynchronously send the request
     let tls_config = session.tls_config();
-    let task = PeekableTask::spawn(upstream::send_request(req, backend, tls_config)).await;
+    let task = PeekableTask::spawn(upstream::send_request(req, backend, backend_name, tls_config))
+        .await;
 
     // return a handle to the pending request
     Ok(session.insert_pending_request(task).into())
@@ -138,7 +139,8 @@ pub(crate) async fn send_async_streaming(
 
     // asynchronously send the request
     let tls_config = session.tls_config();
-    let task = PeekableTask::spawn(upstream::send_request(req, backend, tls_config)).await;
+    let task = PeekableTask::spawn(upstream::send_request(req, backend, backend_name, tls_config))
+        .await;
 
     // return a handle to the pending request
     Ok(session.insert_pending_request(task).into())
