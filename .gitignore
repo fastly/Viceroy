@@ -3,3 +3,5 @@ publish
 vendor/
 verify-publishable/
 .vscode
+# Auto-generated adapter wasm files (built by build.rs)
+wasm_abi/data/*.wasm
