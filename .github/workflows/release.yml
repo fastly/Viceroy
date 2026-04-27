@@ -39,6 +39,10 @@ jobs:
         with:
           submodules: true
 
+      - name: Install Rust
+        run: rustup target add ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+        shell: bash
+
       - name: Install C cross-compilation toolchain
         if: ${{ matrix.name == 'linux' && matrix.arch != 'amd64' }}
         run: |
