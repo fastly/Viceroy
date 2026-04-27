@@ -1,6 +1,6 @@
 [package]
 name = "viceroy-lib"
-version = "0.16.6"
+version = "0.17.1"
 description = "Viceroy implementation details."
 authors = ["Fastly"]
 edition = "2024"

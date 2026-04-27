@@ -1,6 +1,8 @@
 ## Unreleased
 
-- Add stub implementations for resvpnproxy hostcalls.
+## 0.17.0 (2026-04-27)
+
+- Add stub implementations for resvpnproxy hostcalls. ([#596](https://github.com/fastly/Viceroy/pull/596))
 - Add `fake_valid_fastly_keys` config parameter to allow testing `fastly_key_is_valid` hostcall with fake valid keys. ([#599](https://github.com/fastly/Viceroy/pull/599))
 - Add `health` config parameter for backends to mock backend health status in testing. ([#605](https://github.com/fastly/Viceroy/pulls/606))
 - Use `cargo clippy` to lint code in CI. ([#603](https://github.com/fastly/Viceroy/pull/603))
