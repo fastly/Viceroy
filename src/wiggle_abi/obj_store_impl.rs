@@ -1,15 +1,15 @@
 //! fastly_obj_store` hostcall implementations.
 
 use super::types::{PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle};
-use crate::session::PeekableTask;
-use crate::session::{PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask};
+use crate::sandbox::PeekableTask;
+use crate::sandbox::{PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask};
 
 use {
     crate::{
         body::Body,
         error::Error,
         object_store::{ObjectKey, ObjectStoreError},
-        session::Session,
+        sandbox::Sandbox,
         wiggle_abi::{
             fastly_object_store::FastlyObjectStore,
             types::{BodyHandle, ObjectStoreHandle},
@@ -18,7 +18,7 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyObjectStore for Session {
+impl FastlyObjectStore for Sandbox {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,

@@ -1,4 +1,4 @@
-//! Session type and related facilities.
+//! Sandbox type and related facilities.
 
 mod async_item;
 mod downstream;
@@ -62,9 +62,9 @@ pub struct RequestParts {
 
 /// Data specific to an individual request, including any host-side
 /// allocations on behalf of the guest processing the request.
-pub struct Session {
-    session_id: u64,
-    /// The amount of time we've spent on this session in microseconds.
+pub struct Sandbox {
+    sandbox_id: u64,
+    /// The amount of time we've spent on this sandbox in microseconds.
     pub active_cpu_time_us: Arc<AtomicU64>,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
@@ -81,14 +81,14 @@ pub struct Session {
     /// A handle map for items that provide blocking operations. These items are grouped together
     /// in order to support generic async operations that work across different object types.
     async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>>,
-    /// The context for executing the service that is shared between sessions.
+    /// The context for executing the service that is shared between sandboxes.
     ctx: Arc<ExecuteCtx>,
-    /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Request`][req]s.
+    /// A handle map for the component [`Parts`][parts] of the sandbox's HTTP [`Request`][req]s.
     ///
     /// [parts]: https://docs.rs/http/latest/http/request/struct.Parts.html
     /// [req]: https://docs.rs/http/latest/http/request/struct.Request.html
     req_parts: PrimaryMap<RequestHandle, RequestParts>,
-    /// A handle map for the component [`Parts`][parts] of the session's HTTP [`Response`][resp]s.
+    /// A handle map for the component [`Parts`][parts] of the sandbox's HTTP [`Response`][resp]s.
     ///
     /// [parts]: https://docs.rs/http/latest/http/response/struct.Parts.html
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
@@ -104,8 +104,8 @@ pub struct Session {
     /// The NGWAF verdict to return when using the `inspect` hostcall.
     ngwaf_verdict: String,
     /// The backends dynamically added by the program. This is separated from
-    /// `backends` because we do not want one session to effect the backends
-    /// available to any other session.
+    /// `backends` because we do not want one sandbox to effect the backends
+    /// available to any other sandbox.
     dynamic_backends: Backends,
     /// The dictionaries that have been opened by the guest.
     loaded_dictionaries: PrimaryMap<DictionaryHandle, LoadedDictionary>,
@@ -121,26 +121,26 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     secrets_by_name: PrimaryMap<SecretHandle, SecretLookup>,
-    /// How many additional downstream requests have been receive by this Session.
+    /// How many additional downstream requests have been receive by this Sandbox.
     next_req_accepted: usize,
     /// Memory usage limiter to ensure the guest doesn't use over 128mb of heap.
     limiter: Limiter,
 }
 
-impl Session {
-    /// Create an empty session.
+impl Sandbox {
+    /// Create an empty sandbox.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         downstream: DownstreamRequest,
         active_cpu_time_us: Arc<AtomicU64>,
         ctx: Arc<ExecuteCtx>,
-    ) -> Session {
+    ) -> Sandbox {
         let (parts, body) = downstream.req.into_parts();
 
         let mut async_items: PrimaryMap<AsyncItemHandle, Option<AsyncItem>> = PrimaryMap::new();
         let mut req_parts = PrimaryMap::new();
 
-        let session_id = downstream.metadata.req_id;
+        let sandbox_id = downstream.metadata.req_id;
         let downstream_req_handle = req_parts.push(RequestParts {
             parts: Some(parts),
             metadata: Some(downstream.metadata),
@@ -153,8 +153,8 @@ impl Session {
             Limiter::for_wasip1()
         };
 
-        Session {
-            session_id,
+        Sandbox {
+            sandbox_id,
             downstream_req_handle,
             downstream_req_body_handle,
             active_cpu_time_us,
@@ -285,7 +285,7 @@ impl Session {
 
     // ----- Bodies API -----
 
-    /// Insert a [`Body`][body] into the session.
+    /// Insert a [`Body`][body] into the sandbox.
     ///
     /// This method returns the [`BodyHandle`][handle], which can then be used to access and mutate
     /// the response parts.
@@ -298,7 +298,7 @@ impl Session {
 
     /// Get a reference to a [`Body`][body], given its [`BodyHandle`][handle].
     ///
-    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the sandbox.
     ///
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
@@ -313,7 +313,7 @@ impl Session {
 
     /// Get a mutable reference to a [`Body`][body], given its [`BodyHandle`][handle].
     ///
-    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the sandbox.
     ///
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
@@ -328,7 +328,7 @@ impl Session {
 
     /// Take ownership of a [`Body`][body], given its [`BodyHandle`][handle].
     ///
-    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the sandbox.
     ///
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
@@ -341,9 +341,9 @@ impl Session {
             .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
-    /// Drop a [`Body`][crate::body::Body] from the [`Session`], given its [`BodyHandle`][crate::wiggle_abi::types::BodyHandle].
+    /// Drop a [`Body`][crate::body::Body] from the [`Sandbox`], given its [`BodyHandle`][crate::wiggle_abi::types::BodyHandle].
     ///
-    /// Returns a [`HandleError`][crate::error::HandleError] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][crate::error::HandleError] if the handle is not associated with a body in the sandbox.
     pub fn drop_body(&mut self, handle: BodyHandle) -> Result<(), HandleError> {
         self.async_items
             .get_mut(handle.into())
@@ -355,7 +355,7 @@ impl Session {
     /// Transition a normal [`Body`][body] into the write end of a streaming body, returning
     /// the original body with the read end appended.
     ///
-    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the sandbox.
     ///
     /// [body]: ../body/struct.Body.html
     /// [err]: ../error/enum.HandleError.html
@@ -370,7 +370,7 @@ impl Session {
     /// Returns `true` if and only if the provided `BodyHandle` is the downstream body being sent.
     ///
     /// To get a mutable reference to the streaming body `Sender`, see
-    /// [`Session::streaming_body_mut`](struct.Session.html#method.streaming_body_mut).
+    /// [`Sandbox::streaming_body_mut`](struct.Sandbox.html#method.streaming_body_mut).
     pub fn is_streaming_body(&self, handle: BodyHandle) -> bool {
         if let Some(Some(body)) = self.async_items.get(handle.into()) {
             body.is_streaming()
@@ -383,9 +383,9 @@ impl Session {
     /// `BodyHandle` is the downstream body being sent.
     ///
     /// To check if a handle is the currently-streaming downstream response body, see
-    /// [`Session::is_streaming_body`](struct.Session.html#method.is_streaming_body).
+    /// [`Sandbox::is_streaming_body`](struct.Sandbox.html#method.is_streaming_body).
     ///
-    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     pub fn streaming_body_mut(
@@ -403,9 +403,9 @@ impl Session {
     /// `BodyHandle` is the downstream body being sent.
     ///
     /// To check if a handle is the currently-streaming downstream response body, see
-    /// [`Session::is_streaming_body`](struct.Session.html#method.is_streaming_body).
+    /// [`Sandbox::is_streaming_body`](struct.Sandbox.html#method.is_streaming_body).
     ///
-    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the session.
+    /// Returns a [`HandleError`][err] if the handle is not associated with a body in the sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     pub fn take_streaming_body(
@@ -421,7 +421,7 @@ impl Session {
 
     // ----- Request Parts API -----
 
-    /// Insert the [`Parts`][parts] of a [`Request`][req] into the session.
+    /// Insert the [`Parts`][parts] of a [`Request`][req] into the sandbox.
     ///
     /// This method returns a new [`RequestHandle`][handle], which can then be used to access
     /// and mutate the request parts.
@@ -440,7 +440,7 @@ impl Session {
     /// [`RequestHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a request in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.RequestHandle.html
@@ -457,7 +457,7 @@ impl Session {
     /// [`RequestHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a request in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.RequestHandle.html
@@ -477,7 +477,7 @@ impl Session {
     /// [`RequestHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a request in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.RequestHandle.html
@@ -495,7 +495,7 @@ impl Session {
 
     // ----- Response Parts API -----
 
-    /// Insert the [`Parts`][parts] of a [`Response`][resp] into the session.
+    /// Insert the [`Parts`][parts] of a [`Response`][resp] into the sandbox.
     ///
     /// This method returns a new [`ResponseHandle`][handle], which can then be used to access
     /// and mutate the response parts.
@@ -511,7 +511,7 @@ impl Session {
     /// [`ResponseHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a response in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.ResponseHandle.html
@@ -528,7 +528,7 @@ impl Session {
     /// [`ResponseHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a response in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.ResponseHandle.html
@@ -548,7 +548,7 @@ impl Session {
     /// [`ResponseHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with a response in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.ResponseHandle.html
@@ -573,7 +573,7 @@ impl Session {
 
     // ----- Logging Endpoints API -----
 
-    /// Get an [`EndpointHandle`][handle] from the session, corresponding to the provided
+    /// Get an [`EndpointHandle`][handle] from the sandbox, corresponding to the provided
     /// endpoint name. A new backing [`LogEndpoint`] will be created if one does not
     /// already exist.
     ///
@@ -592,7 +592,7 @@ impl Session {
     /// Get a reference to a [`LogEndpoint`][endpoint], given its [`EndpointHandle`][handle].
     ///
     /// Returns a [`HandleError`][err] if the handle is not associated with an endpoint in the
-    /// session.
+    /// sandbox.
     ///
     /// [err]: ../error/enum.HandleError.html
     /// [handle]: ../wiggle_abi/types/struct.EndpointHandle.html
@@ -708,7 +708,7 @@ impl Session {
 
     // ----- NGWAF Inspect API -----
 
-    /// Retrieve the compliance region that received the request for this session.
+    /// Retrieve the compliance region that received the request for this sandbox.
     pub fn ngwaf_response(&self) -> String {
         format!(
             r#"{{"waf_response":200,"redirect_url":"","tags":[],"verdict":"{}","decision_ms":0}}"#,
@@ -751,7 +751,7 @@ impl Session {
             .insert(obj_store_key, obj_key, obj, mode, generation, metadata, ttl)
     }
 
-    /// Insert a [`PendingKvInsert`] into the session.
+    /// Insert a [`PendingKvInsert`] into the sandbox.
     ///
     /// This method returns a new [`PendingKvInsertHandle`], which can then be used to access
     /// and mutate the pending insert.
@@ -767,7 +767,7 @@ impl Session {
     /// Take ownership of a [`PendingKvInsert`], given its [`PendingKvInsertHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a pending insert in the
-    /// session.
+    /// sandbox.
     pub fn take_pending_kv_insert(
         &mut self,
         handle: PendingKvInsertHandle,
@@ -785,7 +785,7 @@ impl Session {
     /// Get a reference to a [`PendingInsert`], given its [`PendingKvInsertHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with an insert in the
-    /// session.
+    /// sandbox.
     pub fn pending_kv_insert(
         &self,
         handle: PendingKvInsertHandle,
@@ -805,7 +805,7 @@ impl Session {
         self.kv_store().delete(obj_store_key, obj_key)
     }
 
-    /// Insert a [`PendingKvDelete`] into the session.
+    /// Insert a [`PendingKvDelete`] into the sandbox.
     ///
     /// This method returns a new [`PendingKvDeleteHandle`], which can then be used to access
     /// and mutate the pending delete.
@@ -821,7 +821,7 @@ impl Session {
     /// Take ownership of a [`PendingKvDelete`], given its [`PendingKvDeleteHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a pending delete in the
-    /// session.
+    /// sandbox.
     pub fn take_pending_kv_delete(
         &mut self,
         handle: PendingKvDeleteHandle,
@@ -839,7 +839,7 @@ impl Session {
     /// Get a reference to a [`PendingDelete`], given its [`PendingKvDeleteHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a delete in the
-    /// session.
+    /// sandbox.
     pub fn pending_kv_delete(
         &self,
         handle: PendingKvDeleteHandle,
@@ -859,7 +859,7 @@ impl Session {
         self.kv_store().lookup(obj_store_key, obj_key)
     }
 
-    /// Insert a [`PendingLookup`] into the session.
+    /// Insert a [`PendingLookup`] into the sandbox.
     ///
     /// This method returns a new [`PendingKvLookupHandle`], which can then be used to access
     /// and mutate the pending lookup.
@@ -875,7 +875,7 @@ impl Session {
     /// Take ownership of a [`PendingLookup`], given its [`PendingKvLookupHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a pending lookup in the
-    /// session.
+    /// sandbox.
     pub fn take_pending_kv_lookup(
         &mut self,
         handle: PendingKvLookupHandle,
@@ -893,7 +893,7 @@ impl Session {
     /// Get a reference to a [`PendingLookup`], given its [`PendingKvLookupHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a lookup in the
-    /// session.
+    /// sandbox.
     pub fn pending_kv_lookup(
         &self,
         handle: PendingKvLookupHandle,
@@ -917,7 +917,7 @@ impl Session {
         self.kv_store().list(obj_store_key, cursor, prefix, limit)
     }
 
-    /// Insert a [`PendingList`] into the session.
+    /// Insert a [`PendingList`] into the sandbox.
     ///
     /// This method returns a new [`PendingKvListHandle`], which can then be used to access
     /// and mutate the pending list.
@@ -930,7 +930,7 @@ impl Session {
     /// Take ownership of a [`PendingList`], given its [`PendingKvListHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a pending list in the
-    /// session.
+    /// sandbox.
     pub fn take_pending_kv_list(
         &mut self,
         handle: PendingKvListHandle,
@@ -948,7 +948,7 @@ impl Session {
     /// Get a reference to a [`PendingList`], given its [`PendingKvListHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a list in the
-    /// session.
+    /// sandbox.
     pub fn pending_kv_list(
         &self,
         handle: PendingKvListHandle,
@@ -996,7 +996,7 @@ impl Session {
 
     // ----- Pending Requests API -----
 
-    /// Insert a [`PendingRequest`] into the session.
+    /// Insert a [`PendingRequest`] into the sandbox.
     ///
     /// This method returns a new [`PendingRequestHandle`], which can then be used to access
     /// and mutate the pending request.
@@ -1012,7 +1012,7 @@ impl Session {
     /// Get a reference to a [`PendingRequest`], given its [`PendingRequestHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a request in the
-    /// session.
+    /// sandbox.
     pub fn pending_request(
         &self,
         handle: PendingRequestHandle,
@@ -1027,7 +1027,7 @@ impl Session {
     /// Get a mutable reference to a [`PendingRequest`], given its [`PendingRequestHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a request in the
-    /// session.
+    /// sandbox.
     pub fn pending_request_mut(
         &mut self,
         handle: PendingRequestHandle,
@@ -1042,7 +1042,7 @@ impl Session {
     /// Take ownership of a [`PendingRequest`], given its [`PendingRequestHandle`].
     ///
     /// Returns a [`HandleError`] if the handle is not associated with a pending request in the
-    /// session.
+    /// sandbox.
     pub fn take_pending_request(
         &mut self,
         handle: PendingRequestHandle,
@@ -1141,7 +1141,7 @@ impl Session {
     /// Take ownership of multiple AsyncItems in preparation for a `select`.
     ///
     /// Returns a [`HandleError`] if any of the handles are not associated with a pending
-    /// request in the session.
+    /// request in the sandbox.
     pub fn prepare_select_targets(
         &mut self,
         handles: impl IntoIterator<Item = AsyncItemHandle>,
@@ -1181,14 +1181,14 @@ impl Session {
         self.async_items.push(Some(AsyncItem::Ready))
     }
 
-    /// Returns the unique identifier for the current session.
+    /// Returns the unique identifier for the current sandbox.
     ///
     /// While this corresponds to the request ID for the initial request that spawned
-    /// the session, subsequent downstream requests received by the session will have
+    /// the sandbox, subsequent downstream requests received by the sandbox will have
     /// their own unique identifier. Care should be taken to not conflate the two, and
-    /// to use [Session::downstream_request_id] whenever a request needs to be identified.
-    pub fn session_id(&self) -> u64 {
-        self.session_id
+    /// to use [Sandbox::downstream_request_id] whenever a request needs to be identified.
+    pub fn sandbox_id(&self) -> u64 {
+        self.sandbox_id
     }
 
     /// Access the path to the configuration file for this invocation.
@@ -1229,7 +1229,7 @@ impl Session {
         &mut self,
         handles: impl IntoIterator<Item = AsyncItemHandle>,
     ) -> Result<usize, Error> {
-        // we have to temporarily move the async items out of the session table,
+        // we have to temporarily move the async items out of the sandbox table,
         // because we need &mut borrows of all of them simultaneously.
         let targets = self.prepare_select_targets(handles)?;
         let mut selected = SelectedTargets::new(self, targets);
@@ -1378,14 +1378,14 @@ impl Session {
     }
 }
 
-pub struct SelectedTargets<'session> {
-    session: &'session mut Session,
+pub struct SelectedTargets<'sandbox> {
+    sandbox: &'sandbox mut Sandbox,
     targets: Vec<SelectTarget>,
 }
 
-impl<'session> SelectedTargets<'session> {
-    fn new(session: &'session mut Session, targets: Vec<SelectTarget>) -> Self {
-        Self { session, targets }
+impl<'sandbox> SelectedTargets<'sandbox> {
+    fn new(sandbox: &'sandbox mut Sandbox, targets: Vec<SelectTarget>) -> Self {
+        Self { sandbox, targets }
     }
 
     fn future(&mut self) -> Box<dyn Future<Output = usize> + Unpin + Send + Sync + '_> {
@@ -1405,10 +1405,10 @@ impl<'session> SelectedTargets<'session> {
     }
 }
 
-impl<'session> Drop for SelectedTargets<'session> {
+impl<'sandbox> Drop for SelectedTargets<'sandbox> {
     fn drop(&mut self) {
         let targets = std::mem::take(&mut self.targets);
-        self.session.reinsert_select_targets(targets);
+        self.sandbox.reinsert_select_targets(targets);
     }
 }
 

@@ -1,12 +1,12 @@
 use {
     crate::component::bindings::fastly::compute::{dictionary, types},
-    crate::linking::{ComponentCtx, SessionView},
+    crate::linking::{ComponentCtx, SandboxView},
     wasmtime::component::Resource,
 };
 
 impl dictionary::HostDictionary for ComponentCtx {
     fn open(&mut self, name: String) -> Result<Resource<dictionary::Dictionary>, types::OpenError> {
-        let handle = self.session_mut().dictionary_handle(name.as_str())?;
+        let handle = self.sandbox_mut().dictionary_handle(name.as_str())?;
         Ok(handle.into())
     }
 
@@ -16,7 +16,7 @@ impl dictionary::HostDictionary for ComponentCtx {
         key: String,
         max_len: u64,
     ) -> Result<Option<String>, types::Error> {
-        let dict = &self.session().dictionary(h.into())?.contents;
+        let dict = &self.sandbox().dictionary(h.into())?.contents;
 
         let item = if let Some(item) = dict.get(&key) {
             item

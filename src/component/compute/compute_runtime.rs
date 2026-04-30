@@ -4,15 +4,15 @@ use std::sync::atomic::Ordering;
 
 impl compute_runtime::Host for ComponentCtx {
     fn get_vcpu_ms(&mut self) -> u64 {
-        self.session().active_cpu_time_us.load(Ordering::SeqCst) / 1000
+        self.sandbox().active_cpu_time_us.load(Ordering::SeqCst) / 1000
     }
 
     fn get_heap_mib(&mut self) -> compute_runtime::MemoryMib {
-        self.session().get_heap_usage_mib()
+        self.sandbox().get_heap_usage_mib()
     }
 
     fn get_sandbox_id(&mut self) -> String {
-        format!("{:032x}", self.session().session_id())
+        format!("{:032x}", self.sandbox().sandbox_id())
     }
 
     fn get_hostname(&mut self) -> String {

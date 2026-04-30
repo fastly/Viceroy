@@ -1,8 +1,8 @@
 use {
     crate::{
         error::Error,
+        sandbox::Sandbox,
         secret_store::SecretLookup,
-        session::Session,
         wiggle_abi::{
             fastly_secret_store::FastlySecretStore,
             types::{FastlyStatus, SecretHandle, SecretStoreHandle},
@@ -43,7 +43,7 @@ impl From<&SecretStoreError> for FastlyStatus {
     }
 }
 
-impl FastlySecretStore for Session {
+impl FastlySecretStore for Sandbox {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,

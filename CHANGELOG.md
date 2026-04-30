@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Rename 'session' to 'sandbox' since that is the preferred term in public documentation.
+
 ## 0.17.0 (2026-04-27)
 
 - Add stub implementations for resvpnproxy hostcalls. ([#596](https://github.com/fastly/Viceroy/pull/596))

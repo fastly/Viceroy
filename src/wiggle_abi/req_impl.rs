@@ -12,7 +12,7 @@ use {
         config::Backend,
         error::Error,
         pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
-        session::{AsyncItem, PeekableTask, Session, ViceroyRequestMetadata},
+        sandbox::{AsyncItem, PeekableTask, Sandbox, ViceroyRequestMetadata},
         upstream,
         wiggle_abi::{
             fastly_http_downstream::FastlyHttpDownstream,
@@ -32,7 +32,7 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyHttpReq for Session {
+impl FastlyHttpReq for Sandbox {
     fn body_downstream_get(
         &mut self,
         _memory: &mut GuestMemory<'_>,
@@ -1071,7 +1071,7 @@ impl FastlyHttpReq for Session {
         encodings: ContentEncodings,
     ) -> Result<(), Error> {
         // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
-        // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
+        // the book-keeping burden inside Sandbox. The flag will get picked up later, in `send_request`.
         let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
 
         match extensions.get_mut::<ViceroyRequestMetadata>() {

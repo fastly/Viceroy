@@ -1,9 +1,9 @@
 use crate::error::{Error, HandleError};
-use crate::session::Session;
+use crate::sandbox::Sandbox;
 use crate::wiggle_abi::{fastly_acl, types};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-impl fastly_acl::FastlyAcl for Session {
+impl fastly_acl::FastlyAcl for Sandbox {
     /// Open a handle to an ACL by its linked name.
     fn open(
         &mut self,

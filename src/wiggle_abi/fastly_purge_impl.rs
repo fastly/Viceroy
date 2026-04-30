@@ -2,11 +2,11 @@
 
 use {
     super::types::{PurgeOptions, PurgeOptionsMask},
-    crate::{error::Error, session::Session, wiggle_abi::fastly_purge::FastlyPurge},
+    crate::{error::Error, sandbox::Sandbox, wiggle_abi::fastly_purge::FastlyPurge},
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyPurge for Session {
+impl FastlyPurge for Sandbox {
     fn purge_surrogate_key(
         &mut self,
         memory: &mut GuestMemory<'_>,

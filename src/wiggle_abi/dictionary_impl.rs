@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::Session,
+        sandbox::Sandbox,
         wiggle_abi::{
             fastly_dictionary::FastlyDictionary,
             types::{DictionaryHandle, FastlyStatus},
@@ -33,7 +33,7 @@ impl DictionaryError {
     }
 }
 
-impl FastlyDictionary for Session {
+impl FastlyDictionary for Sandbox {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,

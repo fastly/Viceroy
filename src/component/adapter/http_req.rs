@@ -4,7 +4,7 @@ use {
         fastly::compute::http_downstream::Host as HttpDownstream,
         fastly::compute::{http_req, types},
     },
-    crate::linking::{ComponentCtx, SessionView},
+    crate::linking::{ComponentCtx, SandboxView},
     wasmtime::component::Resource,
 };
 
@@ -15,7 +15,7 @@ trait DsView {
 }
 impl DsView for ComponentCtx {
     fn ds_req_handle(&self) -> Resource<http_req::Request> {
-        self.session().downstream_request().into()
+        self.sandbox().downstream_request().into()
     }
 }
 

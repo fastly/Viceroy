@@ -1,19 +1,19 @@
 use super::fastly_backend::FastlyBackend;
-use crate::{config::Backend, error::Error, session::Session};
+use crate::{config::Backend, error::Error, sandbox::Sandbox};
 
 fn lookup_backend_definition<'sess>(
-    session: &'sess Session,
+    sandbox: &'sess Sandbox,
     memory: &mut wiggle::GuestMemory<'_>,
     backend: wiggle::GuestPtr<str>,
 ) -> Result<&'sess Backend, Error> {
     let name = memory.as_str(backend)?.ok_or(Error::SharedMemory)?;
-    session
+    sandbox
         .backend(name)
         .map(AsRef::as_ref)
         .ok_or(Error::InvalidArgument)
 }
 
-impl FastlyBackend for Session {
+impl FastlyBackend for Sandbox {
     fn exists(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,

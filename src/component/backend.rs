@@ -2,8 +2,8 @@ use {
     crate::component::bindings::fastly::compute::{backend, http_types, types},
     crate::config::{Backend, ClientCertInfo},
     crate::error::Error,
+    crate::sandbox::Sandbox,
     crate::secret_store::SecretLookup,
-    crate::session::Session,
     crate::wiggle_abi::SecretStoreError,
     http::HeaderValue,
     http::Uri,
@@ -12,7 +12,7 @@ use {
 };
 
 pub(crate) async fn register_dynamic_backend(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     table: &mut ResourceTable,
     prefix: String,
     target: String,
@@ -98,7 +98,7 @@ pub(crate) async fn register_dynamic_backend(
     };
 
     let client_cert = if let Some((client_cert, client_key)) = options.client_cert {
-        let key_lookup = session
+        let key_lookup = sandbox
             .secret_lookup(client_key)
             .ok_or(Error::SecretStoreError(
                 SecretStoreError::InvalidSecretHandle(client_key),
@@ -107,7 +107,7 @@ pub(crate) async fn register_dynamic_backend(
             SecretLookup::Standard {
                 store_name,
                 secret_name,
-            } => session
+            } => sandbox
                 .secret_stores()
                 .get_store(store_name)
                 .ok_or(Error::SecretStoreError(
@@ -147,7 +147,7 @@ pub(crate) async fn register_dynamic_backend(
         health: crate::config::BackendHealth::Unknown,
     };
 
-    if !session.add_backend(name, new_backend) {
+    if !sandbox.add_backend(name, new_backend) {
         return Err(Error::BackendNameRegistryError(name.to_string()).into());
     }
 
@@ -156,15 +156,15 @@ pub(crate) async fn register_dynamic_backend(
     Ok(res)
 }
 
-pub(crate) fn exists(session: &mut Session, backend: &str) -> bool {
-    session.backend(backend).is_some()
+pub(crate) fn exists(sandbox: &mut Sandbox, backend: &str) -> bool {
+    sandbox.backend(backend).is_some()
 }
 
 pub(crate) fn is_healthy(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
 ) -> Result<backend::BackendHealth, types::Error> {
-    let backend = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let backend = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     match &backend.health {
         crate::config::BackendHealth::Unknown => Ok(backend::BackendHealth::Unknown),
         crate::config::BackendHealth::Healthy => Ok(backend::BackendHealth::Healthy),
@@ -172,10 +172,10 @@ pub(crate) fn is_healthy(
     }
 }
 
-pub(crate) fn is_dynamic(session: &mut Session, backend: &str) -> Result<bool, types::Error> {
-    if session.dynamic_backend(backend).is_some() {
+pub(crate) fn is_dynamic(sandbox: &mut Sandbox, backend: &str) -> Result<bool, types::Error> {
+    if sandbox.dynamic_backend(backend).is_some() {
         Ok(true)
-    } else if session.backend(backend).is_some() {
+    } else if sandbox.backend(backend).is_some() {
         Ok(false)
     } else {
         Err(Error::InvalidArgument.into())
@@ -183,12 +183,12 @@ pub(crate) fn is_dynamic(session: &mut Session, backend: &str) -> Result<bool, t
 }
 
 pub(crate) fn get_host(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
     _max_len: u64,
 ) -> Result<String, types::Error> {
     // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     Err(Error::Unsupported {
         msg: "`get-host` is not actually supported in Viceroy",
     }
@@ -196,11 +196,11 @@ pub(crate) fn get_host(
 }
 
 pub(crate) fn get_override_host(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
     max_len: u64,
 ) -> Result<Option<Vec<u8>>, types::Error> {
-    let backend = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let backend = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     if let Some(host) = backend.override_host.as_ref() {
         let host = host.to_str()?;
 
@@ -218,8 +218,8 @@ pub(crate) fn get_override_host(
     }
 }
 
-pub(crate) fn get_port(session: &mut Session, backend: &str) -> Result<u16, types::Error> {
-    let backend = session.backend(backend).ok_or(Error::InvalidArgument)?;
+pub(crate) fn get_port(sandbox: &mut Sandbox, backend: &str) -> Result<u16, types::Error> {
+    let backend = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     match backend.uri.port_u16() {
         Some(port) => Ok(port),
         None => {
@@ -233,11 +233,11 @@ pub(crate) fn get_port(session: &mut Session, backend: &str) -> Result<u16, type
 }
 
 pub(crate) fn get_connect_timeout_ms(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
 ) -> Result<u32, types::Error> {
     // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     Err(Error::Unsupported {
         msg: "connection timing is not actually supported in Viceroy",
     }
@@ -245,11 +245,11 @@ pub(crate) fn get_connect_timeout_ms(
 }
 
 pub(crate) fn get_first_byte_timeout_ms(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
 ) -> Result<u32, types::Error> {
     // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     Err(Error::Unsupported {
         msg: "connection timing is not actually supported in Viceroy",
     }
@@ -257,28 +257,28 @@ pub(crate) fn get_first_byte_timeout_ms(
 }
 
 pub(crate) fn get_between_bytes_timeout_ms(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
 ) -> Result<u32, types::Error> {
     // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     Err(Error::Unsupported {
         msg: "connection timing is not actually supported in Viceroy",
     }
     .into())
 }
 
-pub(crate) fn is_tls(session: &mut Session, backend: &str) -> Result<bool, types::Error> {
-    let backend = session.backend(backend).ok_or(Error::InvalidArgument)?;
+pub(crate) fn is_tls(sandbox: &mut Sandbox, backend: &str) -> Result<bool, types::Error> {
+    let backend = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     Ok(backend.uri.scheme() == Some(&http::uri::Scheme::HTTPS))
 }
 
 pub(crate) fn get_tls_min_version(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
 ) -> Result<Option<http_types::TlsVersion>, types::Error> {
     // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     // health checks are not enabled in Viceroy :(
     Err(Error::Unsupported {
         msg: "tls version flags are not supported in Viceroy",
@@ -287,11 +287,11 @@ pub(crate) fn get_tls_min_version(
 }
 
 pub(crate) fn get_tls_max_version(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     backend: &str,
 ) -> Result<Option<http_types::TlsVersion>, types::Error> {
     // just doing this to get a different error if the backend doesn't exist
-    let _ = session.backend(backend).ok_or(Error::InvalidArgument)?;
+    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
     // health checks are not enabled in Viceroy :(
     Err(Error::Unsupported {
         msg: "tls version flags are not supported in Viceroy",
@@ -300,7 +300,7 @@ pub(crate) fn get_tls_max_version(
 }
 
 pub(crate) fn get_http_keepalive_time(
-    _session: &mut Session,
+    _sandbox: &mut Sandbox,
     _backend: &str,
 ) -> Result<backend::TimeoutMs, types::Error> {
     Err(Error::Unsupported {
@@ -310,7 +310,7 @@ pub(crate) fn get_http_keepalive_time(
 }
 
 pub(crate) fn get_tcp_keepalive_enable(
-    _session: &mut Session,
+    _sandbox: &mut Sandbox,
     _backend: &str,
 ) -> Result<bool, types::Error> {
     Err(Error::Unsupported {
@@ -320,7 +320,7 @@ pub(crate) fn get_tcp_keepalive_enable(
 }
 
 pub(crate) fn get_tcp_keepalive_interval(
-    _session: &mut Session,
+    _sandbox: &mut Sandbox,
     _backend: &str,
 ) -> Result<backend::TimeoutSecs, types::Error> {
     Err(Error::Unsupported {
@@ -330,7 +330,7 @@ pub(crate) fn get_tcp_keepalive_interval(
 }
 
 pub(crate) fn get_tcp_keepalive_probes(
-    _session: &mut Session,
+    _sandbox: &mut Sandbox,
     _backend: &str,
 ) -> Result<backend::ProbeCount, types::Error> {
     Err(Error::Unsupported {
@@ -340,7 +340,7 @@ pub(crate) fn get_tcp_keepalive_probes(
 }
 
 pub(crate) fn get_tcp_keepalive_time(
-    _session: &mut Session,
+    _sandbox: &mut Sandbox,
     _backend: &str,
 ) -> Result<backend::TimeoutSecs, types::Error> {
     Err(Error::Unsupported {
