@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Rename 'session' to 'sandbox' since that is the preferred term in public documentation.
+- Rename 'session' to 'sandbox' since that is the preferred term in public documentation. ([#617](https://github.com/fastly/Viceroy/pull/617))
 
 ## 0.17.0 (2026-04-27)
 
