@@ -15,7 +15,7 @@ impl image_optimizer::Host for ComponentCtx {
         let origin_image_request_backend =
             self.wasi_table.get(&origin_image_request_backend).unwrap();
         crate::component::image_optimizer::transform_image_optimizer_request(
-            &mut self.session,
+            &mut self.sandbox,
             origin_image_request,
             origin_image_request_body,
             origin_image_request_backend,

@@ -7,7 +7,7 @@ use http::HeaderMap;
 
 use crate::body::Body;
 use crate::cache::{CacheKey, SurrogateKeySet, VaryRule, WriteOptions};
-use crate::session::{PeekableTask, PendingCacheTask, Session};
+use crate::sandbox::{PeekableTask, PendingCacheTask, Sandbox};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
 use super::fastly_cache::FastlyCache;
@@ -140,7 +140,7 @@ struct LookupOptions {
 }
 
 fn load_lookup_options(
-    session: &Session,
+    sandbox: &Sandbox,
     memory: &wiggle::GuestMemory<'_>,
     mut options_mask: types::CacheLookupOptionsMask,
     options: wiggle::GuestPtr<types::CacheLookupOptions>,
@@ -148,7 +148,7 @@ fn load_lookup_options(
     let options = memory.read(options)?;
     let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
         let handle = options.request_headers;
-        let parts = session.request_parts(handle)?;
+        let parts = sandbox.request_parts(handle)?;
         parts.headers.clone()
     } else {
         HeaderMap::default()
@@ -178,7 +178,7 @@ fn load_lookup_options(
 }
 
 #[allow(unused_variables)]
-impl FastlyCache for Session {
+impl FastlyCache for Sandbox {
     async fn lookup(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
@@ -578,20 +578,20 @@ impl FastlyCache for Session {
             return Err(Error::NotAvailable("unknown cache get_body option"));
         }
 
-        // We wind up re-borrowing `found` and `self.session` several times here, to avoid
+        // We wind up re-borrowing `found` and `self.sandbox` several times here, to avoid
         // borrowing the both of them at once.
         // (It possible that inserting a body would change the address of Found, by re-shuffling
         // the AsyncItems table; we have to live by borrowck's rules.)
         //
-        // We have an exclusive borrow &mut self.session for the lifetime of this call,
+        // We have an exclusive borrow &mut self.sandbox for the lifetime of this call,
         // so even though we're re-borrowing/repeating lookups, we know we won't run into TOCTOU.
 
         let entry = self.cache_entry(handle).await?;
 
         // Preemptively (optimistically) start a read. Don't worry, the Drop impl for Body will
         // clean up the copying task.
-        // We have to do this to allow `found`'s lifetime to end before self.session.body, which
-        // has to re-borrow self.self.session.
+        // We have to do this to allow `found`'s lifetime to end before self.sandbox.body, which
+        // has to re-borrow self.self.sandbox.
         let body = entry.body(from, to).await?;
 
         let found = entry

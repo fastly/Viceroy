@@ -1,4 +1,4 @@
-use crate::session::Session;
+use crate::sandbox::Sandbox;
 
 use super::fastly_http_cache::FastlyHttpCache;
 use super::{Error, types};
@@ -6,7 +6,7 @@ use super::{Error, types};
 use wiggle::{GuestMemory, GuestPtr};
 
 #[allow(unused_variables)]
-impl FastlyHttpCache for Session {
+impl FastlyHttpCache for Sandbox {
     async fn lookup(
         &mut self,
         memory: &mut GuestMemory<'_>,

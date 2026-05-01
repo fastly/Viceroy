@@ -3,7 +3,7 @@
 use {
     crate::{
         Error, body::Body, config::ExperimentalModule, execute::ExecuteCtx, logging::LogEndpoint,
-        session::Session, wiggle_abi,
+        sandbox::Sandbox, wiggle_abi,
     },
     hyper::Response,
     std::collections::HashSet,
@@ -99,23 +99,23 @@ pub struct ComponentCtx {
     pub wasi_ctx: wasmtime_wasi::WasiCtx,
     pub wasi_table: wasmtime_wasi::ResourceTable,
     pub wasi_random: wasmtime_wasi::random::WasiRandomCtx,
-    pub(crate) session: Session,
+    pub(crate) sandbox: Sandbox,
     guest_profiler: Option<Box<GuestProfiler>>,
 }
 
-/// An extension trait for users of `ComponentCtx` to access the session.
-pub trait SessionView {
-    fn session(&self) -> &Session;
-    fn session_mut(&mut self) -> &mut Session;
+/// An extension trait for users of `ComponentCtx` to access the sandbox.
+pub trait SandboxView {
+    fn sandbox(&self) -> &Sandbox;
+    fn sandbox_mut(&mut self) -> &mut Sandbox;
 }
 
-impl SessionView for ComponentCtx {
-    fn session(&self) -> &Session {
-        &self.session
+impl SandboxView for ComponentCtx {
+    fn sandbox(&self) -> &Sandbox {
+        &self.sandbox
     }
 
-    fn session_mut(&mut self) -> &mut Session {
-        &mut self.session
+    fn sandbox_mut(&mut self) -> &mut Sandbox {
+        &mut self.sandbox
     }
 }
 
@@ -124,8 +124,8 @@ impl ComponentCtx {
         &mut self.wasi_ctx
     }
 
-    pub fn session(&mut self) -> &mut Session {
-        &mut self.session
+    pub fn sandbox(&mut self) -> &mut Sandbox {
+        &mut self.sandbox
     }
 
     pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
@@ -133,11 +133,11 @@ impl ComponentCtx {
     }
 
     pub fn limiter(&self) -> &Limiter {
-        self.session.limiter()
+        self.sandbox.limiter()
     }
 
     pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
-        self.session.close_downstream_response_sender(resp)
+        self.sandbox.close_downstream_response_sender(resp)
     }
 
     /// Initialize a new [`Store`][store], given an [`ExecuteCtx`][ctx].
@@ -146,11 +146,11 @@ impl ComponentCtx {
     /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
     pub(crate) fn create_store(
         ctx: &ExecuteCtx,
-        session: Session,
+        sandbox: Sandbox,
         guest_profiler: Option<GuestProfiler>,
         extra_init: impl FnOnce(&mut wasmtime_wasi::WasiCtxBuilder),
     ) -> Result<Store<ComponentCtx>, anyhow::Error> {
-        let mut builder = make_wasi_ctx(ctx, &session);
+        let mut builder = make_wasi_ctx(ctx, &sandbox);
 
         extra_init(&mut builder);
 
@@ -158,7 +158,7 @@ impl ComponentCtx {
             wasi_table: wasmtime_wasi::ResourceTable::new(),
             wasi_ctx: builder.build(),
             wasi_random: wasmtime_wasi::random::WasiRandomCtx::default(),
-            session,
+            sandbox,
             guest_profiler: guest_profiler.map(Box::new),
         };
         let mut store = Store::new(ctx.engine(), wasm_ctx);
@@ -182,7 +182,7 @@ impl ComponentCtx {
             Ok(UpdateDeadline::Yield(1))
         });
 
-        store.limiter(|ctx| ctx.session.limiter_mut());
+        store.limiter(|ctx| ctx.sandbox.limiter_mut());
         Ok(store)
     }
 }
@@ -205,7 +205,7 @@ impl wasmtime_wasi_io::IoView for ComponentCtx {
 pub struct WasmCtx {
     wasi: WasiP1Ctx,
     wasi_nn: WasiNnCtx,
-    session: Session,
+    sandbox: Sandbox,
     guest_profiler: Option<Box<GuestProfiler>>,
 }
 
@@ -218,8 +218,8 @@ impl WasmCtx {
         &mut self.wasi_nn
     }
 
-    pub fn session(&mut self) -> &mut Session {
-        &mut self.session
+    pub fn sandbox(&mut self) -> &mut Sandbox {
+        &mut self.sandbox
     }
 
     pub fn take_guest_profiler(&mut self) -> Option<Box<GuestProfiler>> {
@@ -227,13 +227,13 @@ impl WasmCtx {
     }
 
     pub fn limiter(&self) -> &Limiter {
-        self.session.limiter()
+        self.sandbox.limiter()
     }
 }
 
 impl WasmCtx {
     pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
-        self.session.close_downstream_response_sender(resp)
+        self.sandbox.close_downstream_response_sender(resp)
     }
 }
 
@@ -243,11 +243,11 @@ impl WasmCtx {
 /// [store]: https://docs.rs/wasmtime/latest/wasmtime/struct.Store.html
 pub(crate) fn create_store(
     ctx: &ExecuteCtx,
-    session: Session,
+    sandbox: Sandbox,
     guest_profiler: Option<GuestProfiler>,
     extra_init: impl FnOnce(&mut wasmtime_wasi::WasiCtxBuilder),
 ) -> Result<Store<WasmCtx>, anyhow::Error> {
-    let mut builder = make_wasi_ctx(ctx, &session);
+    let mut builder = make_wasi_ctx(ctx, &sandbox);
 
     extra_init(&mut builder);
 
@@ -257,7 +257,7 @@ pub(crate) fn create_store(
     let wasm_ctx = WasmCtx {
         wasi,
         wasi_nn,
-        session,
+        sandbox,
         guest_profiler: guest_profiler.map(Box::new),
     };
     let mut store = Store::new(ctx.engine(), wasm_ctx);
@@ -281,12 +281,12 @@ pub(crate) fn create_store(
         Ok(UpdateDeadline::Yield(1))
     });
 
-    store.limiter(|ctx| ctx.session.limiter_mut());
+    store.limiter(|ctx| ctx.sandbox.limiter_mut());
     Ok(store)
 }
 
 /// Constructs a `WasiCtxBuilder` for _each_ incoming request.
-fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> wasmtime_wasi::WasiCtxBuilder {
+fn make_wasi_ctx(ctx: &ExecuteCtx, sandbox: &Sandbox) -> wasmtime_wasi::WasiCtxBuilder {
     let mut wasi_ctx = wasmtime_wasi::WasiCtxBuilder::new();
 
     // Viceroy provides the same `FASTLY_*` environment variables that the production
@@ -305,7 +305,7 @@ fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session) -> wasmtime_wasi::WasiCtxB
         // ...which is not the staging environment
         .env("FASTLY_IS_STAGING", "0")
         // request IDs start at 0 and increment, rather than being UUIDs, for ease of testing
-        .env("FASTLY_TRACE_ID", format!("{:032x}", session.session_id()));
+        .env("FASTLY_TRACE_ID", format!("{:032x}", sandbox.sandbox_id()));
 
     if ctx.log_stdout() {
         wasi_ctx.stdout(LogEndpoint::new(b"stdout", ctx.capture_logs()));
@@ -335,30 +335,30 @@ pub fn link_host_functions(
         })?;
 
     wasmtime_wasi::p1::add_to_linker_async(linker, WasmCtx::wasi)?;
-    wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_acl::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_backend::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_compute_runtime::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_device_detection::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_erl::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_http_body::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_http_cache::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_http_downstream::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_http_req::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_http_resp::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_image_optimizer::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_kv_store::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_log::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_purge::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::session)?;
-    wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::session)?;
+    wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_acl::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_backend::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_cache::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_compute_runtime::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_config_store::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_device_detection::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_dictionary::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_erl::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_geo::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_http_body::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_http_cache::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_http_downstream::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_http_req::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_http_resp::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_image_optimizer::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_kv_store::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_log::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_object_store::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_purge::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::sandbox)?;
+    wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::sandbox)?;
     link_legacy_aliases(linker)?;
     Ok(())
 }

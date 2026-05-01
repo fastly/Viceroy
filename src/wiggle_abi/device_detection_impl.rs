@@ -1,7 +1,7 @@
 //! fastly_device_detection` hostcall implementations.
 
 use crate::error::Error;
-use crate::wiggle_abi::{FastlyStatus, Session, fastly_device_detection::FastlyDeviceDetection};
+use crate::wiggle_abi::{FastlyStatus, Sandbox, fastly_device_detection::FastlyDeviceDetection};
 use std::convert::TryFrom;
 use wiggle::{GuestMemory, GuestPtr};
 
@@ -22,7 +22,7 @@ impl DeviceDetectionError {
     }
 }
 
-impl FastlyDeviceDetection for Session {
+impl FastlyDeviceDetection for Sandbox {
     fn lookup(
         &mut self,
         memory: &mut GuestMemory<'_>,

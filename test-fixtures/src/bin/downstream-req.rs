@@ -34,10 +34,10 @@ fn main() {
 
     assert_eq!(client_req.take_body_str(), "Hello, world!");
 
-    // Request ID matches session ID for first request:
+    // Request ID matches sandbox ID for first request:
     let req_id = client_req.get_client_request_id().unwrap().to_string();
-    let session_id = std::env::var("FASTLY_TRACE_ID").unwrap();
-    assert_eq!(req_id, session_id);
+    let sandbox_id = std::env::var("FASTLY_TRACE_ID").unwrap();
+    assert_eq!(req_id, sandbox_id);
 
     // Check that we can get addresses used in downstream connection:
     let localhost: IpAddr = "127.0.0.1".parse().unwrap();

@@ -1,13 +1,13 @@
 use crate::component::bindings::fastly::compute::{shielding, types};
 use crate::config::Backend;
 use crate::error::Error;
-use crate::session::Session;
+use crate::sandbox::Sandbox;
 use http::Uri;
 use std::str::FromStr;
 use wasmtime::component::{Resource, ResourceTable};
 
 pub(crate) fn backend_for_shield(
-    session: &mut Session,
+    sandbox: &mut Sandbox,
     _table: &mut ResourceTable,
     name: &str,
     _options: Option<Resource<shielding::ShieldBackendOptions>>,
@@ -31,7 +31,7 @@ pub(crate) fn backend_for_shield(
         health: crate::config::BackendHealth::Unknown,
     };
 
-    if !session.add_backend(&new_name, new_backend) {
+    if !sandbox.add_backend(&new_name, new_backend) {
         return Err(Error::BackendNameRegistryError(new_name).into());
     }
 

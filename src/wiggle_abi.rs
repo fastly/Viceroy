@@ -20,7 +20,7 @@ use {
         fastly_abi::FastlyAbi,
         types::{FastlyStatus, UserErrorConversion},
     },
-    crate::{error::Error, session::Session},
+    crate::{error::Error, sandbox::Sandbox},
     tracing::{Level, event},
     wiggle::{GuestErrorType, GuestMemory, GuestPtr},
 };
@@ -194,7 +194,7 @@ impl TryFrom<http::version::Version> for types::HttpVersion {
     }
 }
 
-impl FastlyAbi for Session {
+impl FastlyAbi for Sandbox {
     fn init(&mut self, _memory: &mut GuestMemory<'_>, abi_version: u64) -> Result<(), Error> {
         if abi_version != ABI_VERSION {
             Err(Error::AbiVersionMismatch)
@@ -204,7 +204,7 @@ impl FastlyAbi for Session {
     }
 }
 
-impl UserErrorConversion for Session {
+impl UserErrorConversion for Sandbox {
     fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, anyhow::Error> {
         match e {
             Error::UnknownBackend(ref backend) => {

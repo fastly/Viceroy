@@ -21,7 +21,7 @@ use crate::{
 /// - Streaming in a body, from an `insert`/`replace`-style request, implemented via StreamingBody
 /// - Storage of that body in the cache
 /// - Streaming out of the body, from a `lookup`/`TransactionInsertBuilder:execute_and_stream_back`
-///   request, from the same or a different session
+///   request, from the same or a different sandbox
 ///
 /// CollectingBody provides a place for this to happen. It accepts a `Body` as a source of data,
 /// e.g. one from a `StreamingBody` or an origin response; stores the data for future retrieval;

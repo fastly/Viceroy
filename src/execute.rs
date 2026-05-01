@@ -18,8 +18,8 @@ use {
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
         pushpin::{PushpinRedirectRequestInfo, proxy_through_pushpin},
+        sandbox::Sandbox,
         secret_store::SecretStores,
-        session::Session,
         shielding_site::ShieldingSites,
         upstream::TlsConfig,
     },
@@ -159,7 +159,7 @@ pub struct ExecuteCtx {
     fake_valid_fastly_keys: FakeValidFastlyKeys,
     /// The cache for this service.
     cache: Arc<Cache>,
-    /// Senders waiting for new requests for reusable sessions.
+    /// Senders waiting for new requests for reusable sandboxes.
     pending_reuse: Arc<AsyncMutex<Vec<Sender<NextRequest>>>>,
     epoch_increment_thread: Option<JoinHandle<()>>,
     // `Arc` so that it can be tracked both by this context and `epoch_increment_thread`.
@@ -524,7 +524,7 @@ impl ExecuteCtx {
     }
 
     /// Spawn a new guest to process a request whose processing was never attempted by
-    /// a reused session.
+    /// a reused sandbox.
     pub(crate) fn retry_request(self: Arc<Self>, mut downstream: DownstreamRequest) {
         if downstream.sender.is_closed() {
             return;
@@ -638,7 +638,7 @@ impl ExecuteCtx {
         );
         let start_timestamp = Instant::now();
         let req_id = downstream.metadata.req_id;
-        let session = Session::new(downstream, active_cpu_time_us, self.clone());
+        let sandbox = Sandbox::new(downstream, active_cpu_time_us, self.clone());
 
         let guest_profile_path = self.guest_profile_config.as_deref().map(|pcfg| {
             let now = SystemTime::now()
@@ -660,10 +660,10 @@ impl ExecuteCtx {
                     )
                 });
 
-                let req = session.downstream_request();
-                let body = session.downstream_request_body();
+                let req = sandbox.downstream_request();
+                let body = sandbox.downstream_request_body();
 
-                let mut store = ComponentCtx::create_store(&self, session, profiler, |ctx| {
+                let mut store = ComponentCtx::create_store(&self, sandbox, profiler, |ctx| {
                     ctx.arg("compute-app");
                 })
                 .map_err(ExecutionError::Context)?;
@@ -713,7 +713,7 @@ impl ExecuteCtx {
                     .unwrap_or_default();
                 store
                     .data_mut()
-                    .session
+                    .sandbox
                     .close_downstream_response_sender(resp);
 
                 let request_duration = Instant::now().duration_since(start_timestamp);
@@ -742,7 +742,7 @@ impl ExecuteCtx {
                 // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
                 // However, the fact that the module itself is created within `ExecuteCtx::new`
                 // means that the heavy lifting happens only once.
-                let mut store = create_store(&self, session, profiler, |ctx| {
+                let mut store = create_store(&self, sandbox, profiler, |ctx| {
                     ctx.arg("compute-app");
                 })
                 .map_err(ExecutionError::Context)?;
@@ -824,7 +824,7 @@ impl ExecuteCtx {
         };
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
-        let session = Session::new(downstream, active_cpu_time_us.clone(), self.clone());
+        let sandbox = Sandbox::new(downstream, active_cpu_time_us.clone(), self.clone());
 
         if let Instance::Component(_, _) = self.instance_pre.as_ref() {
             panic!("components not currently supported with `run`");
@@ -840,7 +840,7 @@ impl ExecuteCtx {
             )
         });
 
-        let mut store = create_store(&self, session, profiler, |builder| {
+        let mut store = create_store(&self, sandbox, profiler, |builder| {
             builder.arg(program_name);
             for arg in args {
                 builder.arg(arg);

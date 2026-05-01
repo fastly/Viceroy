@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::{Session, ViceroyResponseMetadata},
+        sandbox::{Sandbox, ViceroyResponseMetadata},
         upstream,
         wiggle_abi::{
             fastly_http_resp::FastlyHttpResp,
@@ -20,7 +20,7 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyHttpResp for Session {
+impl FastlyHttpResp for Sandbox {
     fn new(&mut self, _memory: &mut GuestMemory<'_>) -> Result<ResponseHandle, Error> {
         // KTM: Unfortunately `response::Parts` doesn't expose a constructor. This is a workaround.
         let (parts, _) = Response::new(()).into_parts();
@@ -158,7 +158,7 @@ impl FastlyHttpResp for Session {
         streaming: u32,
     ) -> Result<(), Error> {
         let resp = {
-            // Take the response parts and body from the session, and use them to build a response.
+            // Take the response parts and body from the sandbox, and use them to build a response.
             // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
             let resp_parts = self.take_response_parts(resp_handle)?;
             let body = if streaming == 1 {

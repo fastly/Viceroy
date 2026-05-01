@@ -8,7 +8,7 @@ use {
         framing::{content_length_is_valid, transfer_encoding_is_supported},
         headers::filter_outgoing_headers,
         pushpin::PushpinRedirectInfo,
-        session::ViceroyResponseMetadata,
+        sandbox::ViceroyResponseMetadata,
         wiggle_abi::types::FramingHeadersMode,
     },
     hyper::http::response::Response,
@@ -18,11 +18,11 @@ use {
 
 /// Downstream response states.
 ///
-/// See [`Session::set_downstream_response_sender`][set] and
-/// [`Session::send_downstream_response`][send] for more information.
+/// See [`Sandbox::set_downstream_response_sender`][set] and
+/// [`Sandbox::send_downstream_response`][send] for more information.
 ///
-/// [send]: struct.Session.html#method.send_downstream_response
-/// [set]: struct.Session.html#method.set_downstream_response_sender
+/// [send]: struct.Sandbox.html#method.send_downstream_response
+/// [set]: struct.Sandbox.html#method.set_downstream_response_sender
 pub enum DownstreamResponseState {
     /// No channel to send the response has been opened yet.
     Closed,

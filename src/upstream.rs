@@ -5,7 +5,7 @@ use crate::{
     error::Error,
     framing::{content_length_is_valid, transfer_encoding_is_supported},
     headers::filter_outgoing_headers,
-    session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
+    sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
     wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
 use futures::Future;
@@ -436,7 +436,7 @@ pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.
 }
 
-/// A pair of a pending request and the handle that pointed to it in the session, suitable for
+/// A pair of a pending request and the handle that pointed to it in the sandbox, suitable for
 /// invoking the futures select API.
 ///
 /// We need this type because `future::select_all` does not guarantee anything about the order of

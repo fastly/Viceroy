@@ -3,10 +3,10 @@ use super::{
     fastly_dictionary::FastlyDictionary,
     types::{ConfigStoreHandle, DictionaryHandle},
 };
-use crate::{Error, session::Session};
+use crate::{Error, sandbox::Sandbox};
 use wiggle::{GuestMemory, GuestPtr};
 
-impl FastlyConfigStore for Session {
+impl FastlyConfigStore for Sandbox {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,
