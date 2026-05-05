@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix noshift adapter selection for wit-bindgen library components. The existing heuristic only checked for wit-bindgen *imports*; an export-only library component still received the shifted adapter, silently corrupting strings and lists when composed with another adapted component via `wac plug`. The heuristic now also detects canonical-ABI mangled exports. ([#618](https://github.com/fastly/Viceroy/pull/618)) See also [#582](https://github.com/fastly/Viceroy/pull/582) and [ExecuteD#6130](https://github.com/fastly/ExecuteD/issues/6130).
+
 ## 0.17.0 (2026-04-27)
 
 - Add stub implementations for resvpnproxy hostcalls. ([#596](https://github.com/fastly/Viceroy/pull/596))
