@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix noshift adapter selection for wit-bindgen library components. ([#618](https://github.com/fastly/Viceroy/pull/618))
+
 ## 0.17.0 (2026-04-27)
 
 - Add stub implementations for resvpnproxy hostcalls. ([#596](https://github.com/fastly/Viceroy/pull/596))
