@@ -16,11 +16,16 @@ impl FastlyCache for Session {
     ) -> Result<types::CacheHandle, Error> {
         let primary_key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
         let options: types::CacheLookupOptions = options.read().unwrap();
-        let req_parts = self.request_parts(options.request_headers)?;
+        let empty_headers = http::HeaderMap::new();
+        let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
+            &self.request_parts(options.request_headers)?.headers
+        } else {
+            &empty_headers
+        };
 
         Ok(self
             .cache
-            .get_entry(&primary_key, &req_parts.headers)
+            .get_entry(&primary_key, headers)
             .unwrap_or(not_found_handle()))
     }
 
@@ -101,10 +106,30 @@ impl FastlyCache for Session {
         options_mask: types::CacheWriteOptionsMask,
         options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
-        event!(Level::ERROR, "Tx insert and stream back not implemented");
-        Err(Error::Unsupported {
-            msg: "Tx insert and stream back not implemented",
-        })
+        let key = self
+            .cache
+            .pending_tx
+            .read()
+            .unwrap()
+            .get(&handle)
+            .map(ToOwned::to_owned);
+
+        if let Some(pending_tx_key) = key {
+            let options: types::CacheWriteOptions = options.read().unwrap();
+            let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
+                Some(self.request_parts(options.request_headers)?)
+            } else {
+                None
+            };
+
+            let cache_handle =
+                self.cache
+                    .insert(pending_tx_key.to_owned(), options_mask, options, parts)?;
+
+            Ok((self.insert_cache_body(cache_handle), cache_handle))
+        } else {
+            Err(HandleError::InvalidCacheHandle(handle).into())
+        }
     }
 
     fn transaction_update<'a>(
@@ -136,9 +161,8 @@ impl FastlyCache for Session {
             let mut state = types::CacheLookupState::FOUND;
 
             if entry.is_stale() {
-                state |= types::CacheLookupState::STALE
-            } else {
-                // If stale, entry must be updated.
+                state |= types::CacheLookupState::STALE;
+                // Stale but found entries should be refreshed.
                 state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
             }
 

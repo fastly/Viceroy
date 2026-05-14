@@ -71,7 +71,7 @@ impl InMemoryCache {
                     .get(*candidate_handle)
                     .and_then(|candidate_entry| {
                         candidate_entry.as_ref().and_then(|entry| {
-                            entry.vary_matches(headers).then(|| *candidate_handle)
+                            (entry.vary_matches(headers) && entry.is_usable()).then(|| *candidate_handle)
                         })
                     })
             })
