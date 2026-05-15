@@ -142,7 +142,7 @@ pub async fn perform_handoff(
         }
     }
 
-    // Initiate the connection, and manage/stream/upgrade it 
+    // Initiate the connection, and manage/stream/upgrade it
     execute_handoff(target_addr, display_name, proxy_req, on_upgrade).await
 }
 

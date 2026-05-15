@@ -404,6 +404,10 @@ impl ExecuteCtx {
                 Response::new(Body::empty()),
                 Some(NonHttpResponse::HandoffToPushpin(info).into()),
             )),
+            DownstreamResponse::HandoffToBackend(info) => Some((
+                Response::new(Body::empty()),
+                Some(NonHttpResponse::HandoffToBackend(info).into()),
+            )),
         }
     }
 
@@ -472,6 +476,8 @@ impl ExecuteCtx {
             original_headers,
         };
 
+        let backends = self.backends.clone();
+
         let (resp, mut err) = self.reuse_or_spawn_guest(req, metadata).await;
 
         let span = info_span!("request", id = req_id);
@@ -515,6 +521,58 @@ impl ExecuteCtx {
                         format!("Pushpin [{backend_name}]"),
                         None, // Path prefix is applied by Pushpin route
                         additional_headers,
+                        handoff_info.request_info,
+                        orig_request_info_for_pushpin,
+                        orig_body_tee,
+                        orig_req_on_upgrade,
+                    )
+                    .await;
+
+                    let (p, hyper_body) = handoff_resp.into_parts();
+                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                }
+                Ok(NonHttpResponse::HandoffToBackend(handoff_info)) => {
+                    let backend_name = handoff_info.backend_name.clone();
+
+                    info!("Backend handoff signaled to backend '{backend_name}'");
+
+                    let backend = backends.get(backend_name.as_str());
+                    let backend = match backend {
+                        None => {
+                            error!("Backend handoff signaled to unknown backend '{backend_name}'.");
+                            let resp = Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from(hyper::Body::from(
+                                    "Backend handoff signaled to unknown backend '{backend_name}'.",
+                                )))
+                                .expect("Could not build error response");
+                            return Ok((resp, None));
+                        }
+                        Some(backend) => backend,
+                    };
+
+                    let backend_uri = backend.uri.clone();
+                    let backend_host = backend_uri
+                        .authority()
+                        .map(|a| a.to_string())
+                        .unwrap_or_default();
+                    // Use override_host if present, otherwise fallback to the URI's authority
+                    let host_header = backend
+                        .override_host
+                        .clone()
+                        .map(|host| host.to_str().unwrap().to_string())
+                        .unwrap_or_else(|| backend_host.clone());
+
+                    // Prepend a path if there's actually a path in the backend URI
+                    let path_prefix = (!backend_uri.path().is_empty() && backend_uri.path() != "/")
+                        .then(|| backend_uri.path().to_string());
+
+                    let handoff_resp = perform_handoff(
+                        backend_host,
+                        host_header,
+                        format!("Backend [{backend_name}]"),
+                        path_prefix,
+                        vec![], // Standard backends don't need extra headers
                         handoff_info.request_info,
                         orig_request_info_for_pushpin,
                         orig_body_tee,

@@ -848,4 +848,6 @@ pub enum DownstreamRequestError {
 pub enum NonHttpResponse {
     #[error("graceful Pushpin handoff")]
     HandoffToPushpin(HandoffInfo),
+    #[error("graceful Backend handoff")]
+    HandoffToBackend(HandoffInfo),
 }

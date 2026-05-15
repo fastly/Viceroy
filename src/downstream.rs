@@ -37,6 +37,7 @@ pub struct DownstreamRequest {
 pub enum DownstreamResponse {
     Http(Response<Body>),
     HandoffToPushpin(HandoffInfo),
+    HandoffToBackend(HandoffInfo),
 }
 
 /// Canonicalize the incoming request into the form expected by host calls.
