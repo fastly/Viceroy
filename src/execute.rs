@@ -15,7 +15,7 @@ use {
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
-        handoff::{HandoffRequestInfo, perform_handoff},
+        handoff::{HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
         sandbox::Sandbox,
@@ -477,6 +477,7 @@ impl ExecuteCtx {
         };
 
         let backends = self.backends.clone();
+        let tls_config = self.tls_config.clone();
 
         let (resp, mut err) = self.reuse_or_spawn_guest(req, metadata).await;
 
@@ -525,6 +526,7 @@ impl ExecuteCtx {
                         orig_request_info_for_pushpin,
                         orig_body_tee,
                         orig_req_on_upgrade,
+                        None, // Pushpin only runs locally, without https
                     )
                     .await;
 
@@ -552,6 +554,20 @@ impl ExecuteCtx {
                     };
 
                     let backend_uri = backend.uri.clone();
+                    let tls_handoff_config = if backend_uri.scheme_str() == Some("https") {
+                        Some(HandoffTlsConfig {
+                            ca_certs: backend.ca_certs.clone(),
+                            client_cert: backend.client_cert.clone(),
+                            use_sni: backend.use_sni,
+                            cert_host: backend.cert_host.clone(),
+                            dns_name_fallback: backend.uri.host().unwrap_or_default().to_string(),
+                            is_grpc: backend.grpc,
+                            base_tls_config: tls_config.clone(), // Pass the builder from self
+                        })
+                    } else {
+                        None
+                    };
+
                     let backend_host = backend_uri
                         .authority()
                         .map(|a| a.to_string())
@@ -577,6 +593,7 @@ impl ExecuteCtx {
                         orig_request_info_for_pushpin,
                         orig_body_tee,
                         orig_req_on_upgrade,
+                        tls_handoff_config,
                     )
                     .await;
 

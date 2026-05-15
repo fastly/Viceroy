@@ -1,4 +1,8 @@
 use {
+    crate::{
+        config::ClientCertInfo,
+        upstream::TlsConfig,
+    },
     http::{header, HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Uri, request::Parts},
     hyper::{
         Body,
@@ -7,7 +11,7 @@ use {
         upgrade::OnUpgrade,
     },
     tokio::{io::copy_bidirectional, net::TcpStream, task::JoinHandle},
-    tracing::{debug, error, info, warn},
+    tracing::{trace, debug, error, info, warn},
 };
 
 /// The list of request header names that cannot be modified during handoff.
@@ -63,6 +67,55 @@ impl HandoffRequestInfo {
     }
 }
 
+pub struct HandoffTlsConfig {
+    pub ca_certs: Vec<rustls::Certificate>,
+    pub client_cert: Option<ClientCertInfo>, // Viceroy's existing cert wrapper
+    pub use_sni: bool,
+    pub cert_host: Option<String>,
+    pub dns_name_fallback: String,
+    pub is_grpc: bool,
+    pub base_tls_config: TlsConfig,
+}
+
+pub enum Connection {
+    Http(TcpStream),
+    Https(Box<tokio_rustls::client::TlsStream<TcpStream>>),
+}
+
+impl tokio::io::AsyncRead for Connection {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match std::pin::Pin::get_mut(self) {
+            Connection::Http(s) => std::pin::Pin::new(s).poll_read(cx, buf),
+            Connection::Https(s) => std::pin::Pin::new(s).poll_read(cx, buf),
+        }
+    }
+}
+
+impl tokio::io::AsyncWrite for Connection {
+    fn poll_write(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, buf: &[u8]) -> std::task::Poll<std::io::Result<usize>> {
+        match std::pin::Pin::get_mut(self) {
+            Connection::Http(s) => std::pin::Pin::new(s).poll_write(cx, buf),
+            Connection::Https(s) => std::pin::Pin::new(s).poll_write(cx, buf),
+        }
+    }
+    fn poll_flush(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        match std::pin::Pin::get_mut(self) {
+            Connection::Http(s) => std::pin::Pin::new(s).poll_flush(cx),
+            Connection::Https(s) => std::pin::Pin::new(s).poll_flush(cx),
+        }
+    }
+    fn poll_shutdown(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        match std::pin::Pin::get_mut(self) {
+            Connection::Http(s) => std::pin::Pin::new(s).poll_shutdown(cx),
+            Connection::Https(s) => std::pin::Pin::new(s).poll_shutdown(cx),
+        }
+    }
+}
+
 /// Hands off the current request to the target address.
 ///
 /// - The method and request URI (path + query) are taken from request_info
@@ -91,6 +144,7 @@ pub async fn perform_handoff(
     orig_request_info: HandoffRequestInfo,
     orig_body: Body,
     on_upgrade: OnUpgrade,
+    tls_config: Option<HandoffTlsConfig>,
 ) -> Response<Body> {
 
     let mut proxy_req = match create_request_for_handoff(
@@ -143,7 +197,7 @@ pub async fn perform_handoff(
     }
 
     // Initiate the connection, and manage/stream/upgrade it
-    execute_handoff(target_addr, display_name, proxy_req, on_upgrade).await
+    execute_handoff(target_addr, display_name, proxy_req, on_upgrade, tls_config).await
 }
 
 /// Creates a request suitable for use with execute_handoff().
@@ -211,21 +265,60 @@ async fn execute_handoff(
     target_name: String,
     req: Request<Body>,
     downstream_on_upgrade: OnUpgrade,
+    tls_config: Option<HandoffTlsConfig>,
 ) -> Response<Body> {
     debug!("Proxying through handoff target '{target_name}'.");
 
-    let handoff_stream = match TcpStream::connect(target_addr).await {
+    let handoff_stream = match TcpStream::connect(&target_addr).await {
         Ok(str) => str,
         Err(e) => {
             error!("Could not connect to handoff target: {e}.");
             return build_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "Could not connect to handoff target",
+                format!("Could not connect to handoff target: {e}."),
             );
-        }
+        },
     };
 
-    let (mut sender, conn) = match Builder::new().handshake(handoff_stream).await {
+    let handoff_connection = if let Some(config) = tls_config {
+        debug!("TLS Handoff triggered for {}", target_name);
+
+        // Finalize Root Certificates
+        let mut custom_roots = rustls::RootCertStore::empty();
+        let (added, _) = custom_roots.add_parsable_certificates(&config.ca_certs);
+        debug!("Using {added} certificates from provided CA certificate.");
+
+        let builder = if config.ca_certs.is_empty() {
+            config.base_tls_config.partial_config.with_root_certificates(config.base_tls_config.default_roots)
+        } else {
+            config.base_tls_config.partial_config.with_root_certificates(custom_roots)
+        };
+
+        // Finalize Client Authentication
+        let mut client_config = if let Some(certed_key) = &config.client_cert {
+            builder.with_client_auth_cert(certed_key.certs(), certed_key.key()).unwrap()
+        } else {
+            builder.with_no_client_auth()
+        };
+
+        client_config.enable_sni = config.use_sni;
+        if config.is_grpc {
+            client_config.alpn_protocols = vec![b"h2".to_vec()];
+        }
+
+        // Resolve SNI Host
+        let cert_host = config.cert_host.as_deref().unwrap_or(&config.dns_name_fallback);
+        let dnsname = rustls::client::ServerName::try_from(cert_host).unwrap();
+
+        let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(client_config));
+        let tls = connector.connect(dnsname, handoff_stream).await.unwrap();
+
+        Connection::Https(Box::new(tls))
+    } else {
+        Connection::Http(handoff_stream)
+    };
+
+    let (mut sender, conn) = match Builder::new().handshake(handoff_connection).await {
         Ok(res) => res,
         Err(e) => {
             error!("Handoff handshake failed: {e}");
@@ -244,7 +337,7 @@ async fn execute_handoff(
 
     let upstream_resp = match sender.send_request(req).await {
         Ok(proxy_resp) => {
-            info!("Received response from handoff target '{target_name}'. Proxying response.");
+            info!("Handoff target '{}' responded with status: {}. Proxying response.", target_name, proxy_resp.status());
             proxy_resp
         }
         Err(e) => {
@@ -269,14 +362,14 @@ async fn execute_handoff(
 /// A background task to proxy an upgraded (e.g., WebSocket) connection
 async fn proxy_upgraded_connection(
     downstream_req_on_upgrade: OnUpgrade,
-    upstream_conn_fut: JoinHandle<Result<ConnParts<TcpStream>, hyper::Error>>,
+    upstream_conn_fut: JoinHandle<Result<ConnParts<Connection>, hyper::Error>>,
 ) {
     // Await the client-side upgrade. This future will not resolve until
     // the `101` response is sent to the client by the main service.
     let mut downstream_upgraded = match downstream_req_on_upgrade.await {
         Ok(upgraded) => upgraded,
         Err(e) => {
-            error!("Downstream client upgrade failed: {}", e);
+            error!("Downstream client upgrade failed: {e}");
             return;
         }
     };
@@ -287,11 +380,11 @@ async fn proxy_upgraded_connection(
     let mut upstream_parts = match upstream_conn_fut.await {
         Ok(Ok(parts)) => parts,
         Ok(Err(e)) => {
-            error!("Upstream connection error: {}", e);
+            error!("Upstream connection error: {e}");
             return;
         }
         Err(e) => {
-            warn!("Upstream connection task failed: {}", e);
+            warn!("Upstream connection task failed: {e}");
             return;
         }
     };
