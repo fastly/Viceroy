@@ -1,6 +1,6 @@
 //! Error types.
 
-use crate::{pushpin::PushpinRedirectInfo, wiggle_abi::types::FastlyStatus};
+use crate::{handoff::HandoffInfo, wiggle_abi::types::FastlyStatus};
 use std::error::Error as StdError;
 use std::io;
 use url::Url;
@@ -846,9 +846,6 @@ pub enum DownstreamRequestError {
 /// HTTP response, but instead signals for a different action.
 #[derive(Debug, thiserror::Error)]
 pub enum NonHttpResponse {
-    #[error("graceful Pushpin redirect")]
-    PushpinRedirect(PushpinRedirectInfo),
-    // In the future, e.g.
-    // #[error("websocket upgrade requested")]
-    // WebSocketUpgrade(WebSocketUpgradeInfo),
+    #[error("graceful Pushpin handoff")]
+    HandoffToPushpin(HandoffInfo),
 }

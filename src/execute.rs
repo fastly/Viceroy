@@ -15,9 +15,9 @@ use {
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
+        handoff::{HandoffRequestInfo, perform_handoff},
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
-        pushpin::{PushpinRedirectRequestInfo, proxy_through_pushpin},
         sandbox::Sandbox,
         secret_store::SecretStores,
         shielding_site::ShieldingSites,
@@ -400,9 +400,9 @@ impl ExecuteCtx {
     ) -> Option<(Response<Body>, Option<anyhow::Error>)> {
         match receiver.await.ok()? {
             DownstreamResponse::Http(resp) => Some((resp, None)),
-            DownstreamResponse::RedirectToPushpin(info) => Some((
+            DownstreamResponse::HandoffToPushpin(info) => Some((
                 Response::new(Body::empty()),
-                Some(NonHttpResponse::PushpinRedirect(info).into()),
+                Some(NonHttpResponse::HandoffToPushpin(info).into()),
             )),
         }
     }
@@ -455,8 +455,7 @@ impl ExecuteCtx {
         let local_pushpin_proxy_port = self.local_pushpin_proxy_port;
 
         let (body_for_wasm, orig_body_tee) = tee(incoming_req_body).await;
-        let orig_request_info_for_pushpin =
-            PushpinRedirectRequestInfo::from_parts(&incoming_req_parts);
+        let orig_request_info_for_pushpin = HandoffRequestInfo::from_parts(&incoming_req_parts);
 
         let original_headers = incoming_req_parts.headers.clone();
         let req = prepare_request(Request::from_parts(incoming_req_parts, body_for_wasm))?;
@@ -482,36 +481,48 @@ impl ExecuteCtx {
 
         if let Some(e) = err {
             match e.downcast::<NonHttpResponse>() {
-                Ok(NonHttpResponse::PushpinRedirect(redirect_info)) => {
-                    let backend_name = redirect_info.backend_name;
-                    let redirect_request_info = redirect_info.request_info;
-                    info!("Pushpin redirect signaled to backend '{}'", backend_name);
+                Ok(NonHttpResponse::HandoffToPushpin(handoff_info)) => {
+                    let backend_name = handoff_info.backend_name.clone();
+
+                    info!("Pushpin handoff signaled to backend '{backend_name}'");
 
                     let local_pushpin_proxy_port = match local_pushpin_proxy_port {
                         None => {
-                            error!("Pushpin redirect signaled, but Pushpin mode not enabled.");
-                            let err = anyhow::anyhow!(
-                                "Pushpin redirect signaled, but Pushpin mode not enabled."
-                            );
+                            error!("Pushpin handoff signaled, but Pushpin mode not enabled.");
                             let resp = Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from(hyper::Body::from(err.to_string())))?;
-                            return Ok((resp, Some(err)));
+                                .body(Body::from(hyper::Body::from(
+                                    "Pushpin handoff signaled, but Pushpin mode not enabled.",
+                                )))
+                                .expect("Could not build error response");
+                            return Ok((resp, None));
                         }
                         Some(port) => port,
                     };
 
-                    let proxy_resp = proxy_through_pushpin(
-                        SocketAddr::new(Ipv4Addr::LOCALHOST.into(), local_pushpin_proxy_port),
-                        backend_name,
-                        redirect_request_info,
+                    let pushpin_addr =
+                        SocketAddr::new(Ipv4Addr::LOCALHOST.into(), local_pushpin_proxy_port)
+                            .to_string();
+
+                    // To distinguish backends, the HTTP request header `pushpin-route: <backend_name>` is added
+                    // to the request. Pushpin routes should be configured with `id=<backend_name>`.
+                    let additional_headers =
+                        vec![("pushpin-route".to_string(), backend_name.clone())];
+
+                    let handoff_resp = perform_handoff(
+                        pushpin_addr.clone(),
+                        pushpin_addr, // Host header is the local proxy address
+                        format!("Pushpin [{backend_name}]"),
+                        None, // Path prefix is applied by Pushpin route
+                        additional_headers,
+                        handoff_info.request_info,
                         orig_request_info_for_pushpin,
                         orig_body_tee,
                         orig_req_on_upgrade,
                     )
                     .await;
 
-                    let (p, hyper_body) = proxy_resp.into_parts();
+                    let (p, hyper_body) = handoff_resp.into_parts();
                     return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
                 }
                 Err(e) => {

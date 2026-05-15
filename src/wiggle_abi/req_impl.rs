@@ -11,7 +11,7 @@ use {
     crate::{
         config::Backend,
         error::Error,
-        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
+        handoff::{HandoffInfo, HandoffRequestInfo},
         sandbox::{AsyncItem, PeekableTask, Sandbox, ViceroyRequestMetadata},
         upstream,
         wiggle_abi::{
@@ -222,7 +222,7 @@ impl FastlyHttpReq for Sandbox {
             .as_str(backend_name)?
             .ok_or(Error::SharedMemory)?
             .to_string();
-        let redirect_info = PushpinRedirectInfo {
+        let redirect_info = HandoffInfo {
             backend_name,
             request_info: None,
         };
@@ -251,9 +251,9 @@ impl FastlyHttpReq for Sandbox {
             .ok_or(Error::SharedMemory)?
             .to_string();
         let req = self.request_parts(req_handle)?;
-        let redirect_info = PushpinRedirectInfo {
+        let redirect_info = HandoffInfo {
             backend_name,
-            request_info: Some(PushpinRedirectRequestInfo::from_parts(req)),
+            request_info: Some(HandoffRequestInfo::from_parts(req)),
         };
 
         self.redirect_downstream_to_pushpin(redirect_info)?;
