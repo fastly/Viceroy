@@ -7,12 +7,27 @@ use {
 };
 
 pub(crate) fn redirect_to_websocket_proxy(
-    _sandbox: &mut Sandbox,
-    _handle: Resource<http_req::Request>,
-    _backend: &str,
+    sandbox: &mut Sandbox,
+    req_handle: Resource<http_req::Request>,
+    backend_name: &str,
 ) -> Result<(), types::Error> {
-    Err(Error::NotAvailable("Redirect to WebSocket proxy").into())
-}
+    let request_info = match sandbox.request_parts(req_handle.into()) {
+        Ok(req) => Some(HandoffRequestInfo::from_parts(req)),
+        Err(_) => {
+            // This function can legitimately be called with an invalid request handle;
+            // this may happen when the guest uses a legacy API for pushpin redirection.
+            // The legacy behavior is equivalent to simply using None.
+            None
+        }
+    };
+
+    let redirect_info = HandoffInfo {
+        backend_name: backend_name.to_owned(),
+        request_info,
+    };
+
+    sandbox.redirect_downstream_to_backend(redirect_info)?;
+    Ok(())}
 
 pub(crate) fn redirect_to_grip_proxy(
     sandbox: &mut Sandbox,

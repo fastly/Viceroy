@@ -209,8 +209,17 @@ impl FastlyHttpReq for Sandbox {
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
-    }
+        let backend_name = memory
+            .as_str(backend_name)?
+            .ok_or(Error::SharedMemory)?
+            .to_string();
+        let redirect_info = HandoffInfo {
+            backend_name,
+            request_info: None,
+        };
+
+        self.redirect_downstream_to_backend(redirect_info)?;
+        Ok(())    }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
     fn redirect_to_grip_proxy(
@@ -233,12 +242,22 @@ impl FastlyHttpReq for Sandbox {
 
     fn redirect_to_websocket_proxy_v2(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _req_handle: RequestHandle,
-        _backend: GuestPtr<str>,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        backend_name: GuestPtr<str>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
-    }
+        let backend_name = memory
+            .as_str(backend_name)?
+            .ok_or(Error::SharedMemory)?
+            .to_string();
+        let req = self.request_parts(req_handle)?;
+        let redirect_info = HandoffInfo {
+            backend_name,
+            request_info: Some(HandoffRequestInfo::from_parts(req)),
+        };
+
+        self.redirect_downstream_to_backend(redirect_info)?;
+        Ok(())    }
 
     fn redirect_to_grip_proxy_v2(
         &mut self,
