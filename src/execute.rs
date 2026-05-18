@@ -544,9 +544,9 @@ impl ExecuteCtx {
                             error!("Backend handoff signaled to unknown backend '{backend_name}'.");
                             let resp = Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from(hyper::Body::from(
-                                    "Backend handoff signaled to unknown backend '{backend_name}'.",
-                                )))
+                                .body(Body::from(hyper::Body::from(format!(
+                                    "Backend handoff signaled to unknown backend '{backend_name}'."
+                                ))))
                                 .expect("Could not build error response");
                             return Ok((resp, None));
                         }
