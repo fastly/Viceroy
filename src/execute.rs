@@ -570,7 +570,13 @@ impl ExecuteCtx {
 
                     let backend_host = backend_uri
                         .authority()
-                        .map(|a| a.to_string())
+                        .map(|a| match (a.port(), backend_uri.scheme_str()) {
+                            (None, Some("wss")) => format!("{}:443", a),
+                            (None, Some("https")) => format!("{}:443", a),
+                            (None, Some("ws")) => format!("{}:80", a),
+                            (None, Some("http")) => format!("{}:80", a),
+                            _ => a.to_string(), // already has a port, or scheme is unknown (unlikely)
+                        })
                         .unwrap_or_default();
                     // Use override_host if present, otherwise fallback to the URI's authority
                     let host_header = backend
