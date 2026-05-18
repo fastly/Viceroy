@@ -3,6 +3,12 @@ use crate::error::Error;
 use crate::linking::ComponentCtx;
 use wasmtime::component::Resource;
 
+#[derive(Default)]
+pub struct ShieldBackendOptions {
+    pub first_byte_timeout_ms: Option<u32>,
+    pub between_bytes_timeout_ms: Option<u32>,
+}
+
 impl shielding::Host for ComponentCtx {
     fn shield_info(&mut self, name: String, max_len: u64) -> Result<String, types::Error> {
         let running_on = self.sandbox().shielding_sites().is_local(&name);
@@ -47,7 +53,7 @@ impl shielding::Host for ComponentCtx {
     fn backend_for_shield(
         &mut self,
         target_shield: String,
-        options: Option<Resource<shielding::ShieldBackendOptions>>,
+        options: Option<Resource<ShieldBackendOptions>>,
     ) -> Result<Resource<String>, types::Error> {
         // `u64::MAX` because we don't need to impose any extra constraints
         // on the length of the backend name string here.
@@ -68,29 +74,31 @@ impl shielding::Host for ComponentCtx {
 impl shielding::HostShieldBackendOptions for ComponentCtx {
     fn set_first_byte_timeout(
         &mut self,
-        _resource: Resource<shielding::ShieldBackendOptions>,
-        _timeout_ms: u32,
-    ) {
+        resource: Resource<ShieldBackendOptions>,
+        timeout_ms: u32,
+    ) -> Result<(), anyhow::Error> {
+        let current = self.wasi_table.get_mut(&resource)?;
+        current.first_byte_timeout_ms = Some(timeout_ms);
+        Ok(())
     }
 
-    fn set_cache_key(
+    fn set_between_bytes_timeout(
         &mut self,
-        _resource: Resource<shielding::ShieldBackendOptions>,
-        _cache_key: String,
-    ) {
+        resource: Resource<ShieldBackendOptions>,
+        timeout_ms: u32,
+    ) -> Result<(), anyhow::Error> {
+        let current = self.wasi_table.get_mut(&resource)?;
+        current.between_bytes_timeout_ms = Some(timeout_ms);
+        Ok(())
     }
 
-    fn new(&mut self) -> Result<Resource<shielding::ShieldBackendOptions>, anyhow::Error> {
-        Err(Error::Unsupported {
-            msg: "Shield backend options not yet supported in Viceroy",
-        }
-        .into())
+    fn set_cache_key(&mut self, _resource: Resource<ShieldBackendOptions>, _cache_key: String) {}
+
+    fn new(&mut self) -> Result<Resource<ShieldBackendOptions>, anyhow::Error> {
+        Ok(self.wasi_table.push(ShieldBackendOptions::default())?)
     }
 
-    fn drop(
-        &mut self,
-        _options: Resource<shielding::ShieldBackendOptions>,
-    ) -> wasmtime::Result<()> {
+    fn drop(&mut self, _options: Resource<ShieldBackendOptions>) -> wasmtime::Result<()> {
         Ok(())
     }
 }

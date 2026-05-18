@@ -8,6 +8,7 @@ use {
     http::HeaderValue,
     http::Uri,
     std::mem::take,
+    std::time::Duration,
     wasmtime::component::{Resource, ResourceTable},
 };
 
@@ -129,6 +130,18 @@ pub(crate) async fn register_dynamic_backend(
 
     let grpc = options.grpc;
 
+    let first_byte_timeout = if options.first_byte_timeout != 0 {
+        Some(Duration::from_millis(options.first_byte_timeout as u64))
+    } else {
+        None
+    };
+
+    let between_bytes_timeout = if options.between_bytes_timeout != 0 {
+        Some(Duration::from_millis(options.between_bytes_timeout as u64))
+    } else {
+        None
+    };
+
     let uri = Uri::builder()
         .scheme(scheme)
         .authority(origin_name)
@@ -142,6 +155,8 @@ pub(crate) async fn register_dynamic_backend(
         cert_host,
         use_sni,
         grpc,
+        first_byte_timeout,
+        between_bytes_timeout,
         client_cert,
         ca_certs,
         health: crate::config::BackendHealth::Unknown,

@@ -19,6 +19,9 @@ pub(crate) mod bindings {
             // The trap-test test depends on being able to induce an artificial
             // trap in `get-header-values`.
             "fastly:compute/http-resp.[method]response.get-header-values": tracing | trappable,
+            "fastly:compute/shielding.[method]shield-backend-options.set-first-byte-timeout": tracing | trappable,
+            "fastly:compute/shielding.[method]shield-backend-options.set-between-bytes-timeout": tracing | trappable,
+
 
             "fastly:compute/http-body.append": async | tracing,
             "fastly:compute/kv-store.await-delete": async | tracing,
@@ -114,6 +117,7 @@ pub(crate) mod bindings {
             "fastly:compute/erl.rate-counter": String,
             "fastly:compute/erl.penalty-box": String,
             "fastly:compute/http-downstream.extra-bot-category": super::compute::http_downstream::ExtraBotCategory,
+            "fastly:compute/shielding.shield-backend-options": super::compute::shielding::ShieldBackendOptions,
         },
 
         trappable_error_type: {

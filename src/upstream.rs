@@ -389,16 +389,12 @@ pub fn send_request(
             .map(CacheOverride::is_pass)
             .unwrap_or_default();
 
-        let mut basic_response = builder
-            .set_host(false)
-            .http2_only(h2only)
-            .build(connector)
-            .request(req)
-            .await
-            .map_err(|e| {
-                eprintln!("Error: {:?}", e);
-                e
-            })?;
+        let client = builder.set_host(false).http2_only(h2only).build(connector);
+
+        let mut basic_response = client.request(req).await.map_err(|e| {
+            eprintln!("Error: {:?}", e);
+            e
+        })?;
 
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
             // This is used later to create similar behaviour between Compute and Viceroy.

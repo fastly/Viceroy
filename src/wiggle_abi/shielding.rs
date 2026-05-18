@@ -4,6 +4,7 @@ use crate::sandbox::Sandbox;
 use crate::wiggle_abi::{fastly_shielding, types};
 use http::Uri;
 use std::str::FromStr;
+use std::time::Duration;
 
 impl fastly_shielding::FastlyShielding for Sandbox {
     fn shield_info(
@@ -82,6 +83,22 @@ impl fastly_shielding::FastlyShielding for Sandbox {
             }
         }
 
+        let first_byte_timeout =
+            if shield_backend_options.contains(types::ShieldBackendOptions::FIRST_BYTE_TIMEOUT) {
+                Some(Duration::from_millis(config.first_byte_timeout_ms as u64))
+            } else {
+                None
+            };
+
+        let between_bytes_timeout =
+            if shield_backend_options.contains(types::ShieldBackendOptions::FIRST_BYTE_TIMEOUT) {
+                Some(Duration::from_millis(
+                    config.between_bytes_timeout_ms as u64,
+                ))
+            } else {
+                None
+            };
+
         let Ok(uri) = Uri::from_str(&shield_uri) else {
             return Err(Error::InvalidArgument);
         };
@@ -93,6 +110,8 @@ impl fastly_shielding::FastlyShielding for Sandbox {
             cert_host: None,
             use_sni: false,
             grpc: false,
+            first_byte_timeout,
+            between_bytes_timeout,
             client_cert: None,
             ca_certs: Vec::new(),
             health: crate::config::BackendHealth::Unknown,

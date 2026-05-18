@@ -524,6 +524,9 @@ pub enum BackendConfigError {
 
     #[error(transparent)]
     ClientCertError(#[from] crate::config::ClientCertError),
+
+    #[error("Illegal timeout value (must be an integer >= 0)")]
+    InvalidTimeoutValue,
 }
 
 /// Errors that may occur while validating dictionary configurations.
