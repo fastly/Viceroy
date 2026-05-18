@@ -27,7 +27,8 @@ pub(crate) fn redirect_to_websocket_proxy(
     };
 
     sandbox.redirect_downstream_to_backend(redirect_info)?;
-    Ok(())}
+    Ok(())
+}
 
 pub(crate) fn redirect_to_grip_proxy(
     sandbox: &mut Sandbox,

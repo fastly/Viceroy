@@ -1,9 +1,9 @@
 use {
-    crate::{
-        config::ClientCertInfo,
-        upstream::TlsConfig,
+    crate::{config::ClientCertInfo, upstream::TlsConfig},
+    http::{
+        HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Uri, header,
+        request::Parts,
     },
-    http::{header, HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Uri, request::Parts},
     hyper::{
         Body,
         client::conn::{Builder, Parts as ConnParts},
@@ -11,7 +11,7 @@ use {
         upgrade::OnUpgrade,
     },
     tokio::{io::copy_bidirectional, net::TcpStream, task::JoinHandle},
-    tracing::{trace, debug, error, info, warn},
+    tracing::{debug, error, info, warn},
 };
 
 /// The list of request header names that cannot be modified during handoff.
@@ -96,19 +96,29 @@ impl tokio::io::AsyncRead for Connection {
 }
 
 impl tokio::io::AsyncWrite for Connection {
-    fn poll_write(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, buf: &[u8]) -> std::task::Poll<std::io::Result<usize>> {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
         match std::pin::Pin::get_mut(self) {
             Connection::Http(s) => std::pin::Pin::new(s).poll_write(cx, buf),
             Connection::Https(s) => std::pin::Pin::new(s).poll_write(cx, buf),
         }
     }
-    fn poll_flush(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         match std::pin::Pin::get_mut(self) {
             Connection::Http(s) => std::pin::Pin::new(s).poll_flush(cx),
             Connection::Https(s) => std::pin::Pin::new(s).poll_flush(cx),
         }
     }
-    fn poll_shutdown(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         match std::pin::Pin::get_mut(self) {
             Connection::Http(s) => std::pin::Pin::new(s).poll_shutdown(cx),
             Connection::Https(s) => std::pin::Pin::new(s).poll_shutdown(cx),
@@ -146,7 +156,6 @@ pub async fn perform_handoff(
     on_upgrade: OnUpgrade,
     tls_config: Option<HandoffTlsConfig>,
 ) -> Response<Body> {
-
     let mut proxy_req = match create_request_for_handoff(
         &host_header,
         request_info,
@@ -251,7 +260,7 @@ fn create_request_for_handoff(
     let mut req = req.body(body)?;
     req.headers_mut().insert(
         header::HOST,
-        HeaderValue::from_str(backend_host).expect("Invalid host header")
+        HeaderValue::from_str(backend_host).expect("Invalid host header"),
     );
     Ok(req)
 }
@@ -277,7 +286,7 @@ async fn execute_handoff(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Could not connect to handoff target: {e}."),
             );
-        },
+        }
     };
 
     let handoff_connection = if let Some(config) = tls_config {
@@ -289,14 +298,22 @@ async fn execute_handoff(
         debug!("Using {added} certificates from provided CA certificate.");
 
         let builder = if config.ca_certs.is_empty() {
-            config.base_tls_config.partial_config.with_root_certificates(config.base_tls_config.default_roots)
+            config
+                .base_tls_config
+                .partial_config
+                .with_root_certificates(config.base_tls_config.default_roots)
         } else {
-            config.base_tls_config.partial_config.with_root_certificates(custom_roots)
+            config
+                .base_tls_config
+                .partial_config
+                .with_root_certificates(custom_roots)
         };
 
         // Finalize Client Authentication
         let mut client_config = if let Some(certed_key) = &config.client_cert {
-            builder.with_client_auth_cert(certed_key.certs(), certed_key.key()).unwrap()
+            builder
+                .with_client_auth_cert(certed_key.certs(), certed_key.key())
+                .unwrap()
         } else {
             builder.with_no_client_auth()
         };
@@ -307,7 +324,10 @@ async fn execute_handoff(
         }
 
         // Resolve SNI Host
-        let cert_host = config.cert_host.as_deref().unwrap_or(&config.dns_name_fallback);
+        let cert_host = config
+            .cert_host
+            .as_deref()
+            .unwrap_or(&config.dns_name_fallback);
         let dnsname = rustls::client::ServerName::try_from(cert_host).unwrap();
 
         let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(client_config));
@@ -337,7 +357,11 @@ async fn execute_handoff(
 
     let upstream_resp = match sender.send_request(req).await {
         Ok(proxy_resp) => {
-            info!("Handoff target '{}' responded with status: {}. Proxying response.", target_name, proxy_resp.status());
+            info!(
+                "Handoff target '{}' responded with status: {}. Proxying response.",
+                target_name,
+                proxy_resp.status()
+            );
             proxy_resp
         }
         Err(e) => {

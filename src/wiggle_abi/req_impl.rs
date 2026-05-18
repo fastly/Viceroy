@@ -219,7 +219,8 @@ impl FastlyHttpReq for Sandbox {
         };
 
         self.redirect_downstream_to_backend(redirect_info)?;
-        Ok(())    }
+        Ok(())
+    }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
     fn redirect_to_grip_proxy(
@@ -257,7 +258,8 @@ impl FastlyHttpReq for Sandbox {
         };
 
         self.redirect_downstream_to_backend(redirect_info)?;
-        Ok(())    }
+        Ok(())
+    }
 
     fn redirect_to_grip_proxy_v2(
         &mut self,
