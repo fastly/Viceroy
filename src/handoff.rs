@@ -38,14 +38,14 @@ const PROTECTED_REQ_HEADERS: &[&str] = &[
     "cdn-loop",
 ];
 
-/// A signal to redirect the request to Pushpin
+/// A signal to hand off the request to Pushpin or a backend
 #[derive(Debug)]
 pub struct HandoffInfo {
     pub backend_name: String,
     pub request_info: Option<HandoffRequestInfo>,
 }
 
-/// Information about the Pushpin request being redirected
+/// Information about the request being handed off
 #[derive(Debug)]
 pub struct HandoffRequestInfo {
     pub method: String,
@@ -65,6 +65,15 @@ impl HandoffRequestInfo {
             headers: parts.headers.clone(),
         }
     }
+}
+
+pub struct HandoffConfig {
+    pub target_addr: String,
+    pub host_header: String,
+    pub display_name: String,
+    pub path_prefix: Option<String>,
+    pub extra_headers: Vec<(String, String)>,
+    pub tls_config: Option<HandoffTlsConfig>,
 }
 
 pub struct HandoffTlsConfig {
@@ -136,7 +145,7 @@ impl tokio::io::AsyncWrite for Connection {
 ///   orig_request_info otherwise.
 /// - The Host header is always replaced by the parameter `host_header`.
 /// - `extra_headers`, if provided, are applied. This always replaces existing
-///   headers of the same name.
+///   headers of the same name (including protected headers).
 /// - The `path_prefix`, if provided, is prepended to the request path.
 ///
 /// The request is forwarded to `target_addr` and the resulting connection
@@ -145,35 +154,36 @@ impl tokio::io::AsyncWrite for Connection {
 /// `on_upgrade` future is used to take over the incoming request connection and
 /// wire it up with the handoff connection.
 pub async fn perform_handoff(
-    target_addr: String,
-    host_header: String,
-    display_name: String,
-    path_prefix: Option<String>,
-    extra_headers: Vec<(String, String)>,
     request_info: Option<HandoffRequestInfo>,
     orig_request_info: HandoffRequestInfo,
     orig_body: Body,
     on_upgrade: OnUpgrade,
-    tls_config: Option<HandoffTlsConfig>,
+    perform_handoff_config: HandoffConfig,
 ) -> Response<Body> {
     let mut proxy_req = match create_request_for_handoff(
-        &host_header,
+        &perform_handoff_config.host_header,
         request_info,
         orig_request_info,
         orig_body,
     ) {
         Ok(req) => req,
         Err(e) => {
-            error!("Failed to build {display_name} request: {e}");
+            error!(
+                "Failed to build {} request: {}",
+                perform_handoff_config.display_name, e
+            );
             return build_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to build {display_name} request: {e}"),
+                format!(
+                    "Failed to build {} request: {}",
+                    perform_handoff_config.display_name, e
+                ),
             );
         }
     };
 
     // Prepend path prefix if the backend has one (e.g., http://localhost:3000/api/v1)
-    if let Some(prefix) = path_prefix {
+    if let Some(prefix) = perform_handoff_config.path_prefix {
         let mut parts = proxy_req.uri().clone().into_parts();
         let original_path = parts
             .path_and_query
@@ -199,27 +209,34 @@ pub async fn perform_handoff(
     }
 
     // Insert additional headers
-    for (name, value) in extra_headers {
+    for (name, value) in perform_handoff_config.extra_headers {
         if let (Ok(header_name), Ok(header_val)) = (HeaderName::try_from(name), value.parse()) {
             proxy_req.headers_mut().insert(header_name, header_val);
         }
     }
 
     // Initiate the connection, and manage/stream/upgrade it
-    execute_handoff(target_addr, display_name, proxy_req, on_upgrade, tls_config).await
+    execute_handoff(
+        perform_handoff_config.target_addr,
+        perform_handoff_config.display_name,
+        proxy_req,
+        on_upgrade,
+        perform_handoff_config.tls_config,
+    )
+    .await
 }
 
 /// Creates a request suitable for use with execute_handoff().
 fn create_request_for_handoff(
     backend_host: &str,
-    redirect_request_info: Option<HandoffRequestInfo>,
+    handoff_request_info: Option<HandoffRequestInfo>,
     original_request_info: HandoffRequestInfo,
     body: Body,
 ) -> HttpResult<Request<Body>> {
-    let (path_and_query, method) = if let Some(ref info) = redirect_request_info {
+    let (path_and_query, method) = if let Some(ref handoff_request_info) = handoff_request_info {
         (
-            info.path_and_query.as_deref().unwrap_or(""),
-            info.method.as_str(),
+            handoff_request_info.path_and_query.as_deref().unwrap_or(""),
+            handoff_request_info.method.as_str(),
         )
     } else {
         (
@@ -232,7 +249,7 @@ fn create_request_for_handoff(
     };
     let mut req = Request::builder().method(method).uri(path_and_query);
 
-    if let Some(redirect_request_info) = redirect_request_info {
+    if let Some(handoff_request_info) = handoff_request_info {
         // move the original headers defined in `PROTECTED_REQ_HEADERS` to the top of the req.headers
         for (name, value) in &original_request_info.headers {
             if PROTECTED_REQ_HEADERS
@@ -242,8 +259,8 @@ fn create_request_for_handoff(
                 req = req.header(name, value);
             }
         }
-        // add the req headers received via pushpin_redirect, except for the ones in `PROTECTED_REQ_HEADERS`
-        for (name, value) in &redirect_request_info.headers {
+        // add the req headers received via the handoff call, except for the ones in `PROTECTED_REQ_HEADERS`
+        for (name, value) in &handoff_request_info.headers {
             if !PROTECTED_REQ_HEADERS
                 .iter()
                 .any(|h| h.eq_ignore_ascii_case(name.as_str()))
@@ -260,7 +277,7 @@ fn create_request_for_handoff(
     let mut req = req.body(body)?;
     req.headers_mut().insert(
         header::HOST,
-        HeaderValue::from_str(backend_host).expect("Invalid host header"),
+        HeaderValue::from_str(backend_host).expect("`backend_host` should be a valid header value"),
     );
     Ok(req)
 }
@@ -310,10 +327,10 @@ async fn execute_handoff(
         };
 
         // Finalize Client Authentication
-        let mut client_config = if let Some(certed_key) = &config.client_cert {
+        let mut client_config = if let Some(client_cert_info) = &config.client_cert {
             builder
-                .with_client_auth_cert(certed_key.certs(), certed_key.key())
-                .unwrap()
+                .with_client_auth_cert(client_cert_info.certs(), client_cert_info.key())
+                .expect("`backend.client_cert` should have valid private key")
         } else {
             builder.with_no_client_auth()
         };
@@ -328,10 +345,14 @@ async fn execute_handoff(
             .cert_host
             .as_deref()
             .unwrap_or(&config.dns_name_fallback);
-        let dnsname = rustls::client::ServerName::try_from(cert_host).unwrap();
+        let dnsname = rustls::client::ServerName::try_from(cert_host)
+            .expect("`backend.cert_host` should be a valid DNS name");
 
         let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(client_config));
-        let tls = connector.connect(dnsname, handoff_stream).await.unwrap();
+        let tls = connector
+            .connect(dnsname, handoff_stream)
+            .await
+            .expect("Should be able to initiate TLS stream");
 
         Connection::Https(Box::new(tls))
     } else {
@@ -430,8 +451,7 @@ async fn proxy_upgraded_connection(
 
 /// A helper function to build a simple error response.
 fn build_error_response(status: StatusCode, message: impl ToString) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(Body::from(format!("Error: {}", message.to_string())))
-        .expect("Could not build error response")
+    let mut resp = Response::new(Body::from(format!("Error: {}", message.to_string())));
+    *resp.status_mut() = status;
+    resp
 }

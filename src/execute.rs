@@ -15,7 +15,7 @@ use {
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
-        handoff::{HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
+        handoff::{HandoffConfig, HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
         sandbox::Sandbox,
@@ -496,12 +496,10 @@ impl ExecuteCtx {
                     let local_pushpin_proxy_port = match local_pushpin_proxy_port {
                         None => {
                             error!("Pushpin handoff signaled, but Pushpin mode not enabled.");
-                            let resp = Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from(hyper::Body::from(
-                                    "Pushpin handoff signaled, but Pushpin mode not enabled.",
-                                )))
-                                .expect("Could not build error response");
+                            let mut resp = Response::new(Body::from(hyper::Body::from(
+                                "Pushpin handoff signaled, but Pushpin mode not enabled.",
+                            )));
+                            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                             return Ok((resp, None));
                         }
                         Some(port) => port,
@@ -517,16 +515,18 @@ impl ExecuteCtx {
                         vec![("pushpin-route".to_string(), backend_name.clone())];
 
                     let handoff_resp = perform_handoff(
-                        pushpin_addr.clone(),
-                        pushpin_addr, // Host header is the local proxy address
-                        format!("Pushpin [{backend_name}]"),
-                        None, // Path prefix is applied by Pushpin route
-                        additional_headers,
                         handoff_info.request_info,
                         orig_request_info_for_pushpin,
                         orig_body_tee,
                         orig_req_on_upgrade,
-                        None, // Pushpin only runs locally, without https
+                        HandoffConfig {
+                            target_addr: pushpin_addr.clone(),
+                            host_header: pushpin_addr, // Host header is the local proxy address
+                            display_name: format!("Pushpin [{backend_name}]"),
+                            path_prefix: None, // Path prefix is applied by Pushpin route
+                            extra_headers: additional_headers,
+                            tls_config: None, // Pushpin only runs locally, without https
+                        },
                     )
                     .await;
 
@@ -542,12 +542,10 @@ impl ExecuteCtx {
                     let backend = match backend {
                         None => {
                             error!("Backend handoff signaled to unknown backend '{backend_name}'.");
-                            let resp = Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from(hyper::Body::from(format!(
-                                    "Backend handoff signaled to unknown backend '{backend_name}'."
-                                ))))
-                                .expect("Could not build error response");
+                            let mut resp = Response::new(Body::from(hyper::Body::from(format!(
+                                "Backend handoff signaled to unknown backend '{backend_name}'."
+                            ))));
+                            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                             return Ok((resp, None));
                         }
                         Some(backend) => backend,
@@ -582,7 +580,9 @@ impl ExecuteCtx {
                     let host_header = backend
                         .override_host
                         .clone()
-                        .map(|host| host.to_str().unwrap().to_string())
+                        .map(|host| host.to_str()
+                            .expect("`backend.override_host`, if provided, should be a valid header value")
+                            .to_string())
                         .unwrap_or_else(|| backend_host.clone());
 
                     // Prepend a path if there's actually a path in the backend URI
@@ -590,16 +590,18 @@ impl ExecuteCtx {
                         .then(|| backend_uri.path().to_string());
 
                     let handoff_resp = perform_handoff(
-                        backend_host,
-                        host_header,
-                        format!("Backend [{backend_name}]"),
-                        path_prefix,
-                        vec![], // Standard backends don't need extra headers
                         handoff_info.request_info,
                         orig_request_info_for_pushpin,
                         orig_body_tee,
                         orig_req_on_upgrade,
-                        tls_handoff_config,
+                        HandoffConfig {
+                            target_addr: backend_host,
+                            host_header,
+                            display_name: format!("Backend [{backend_name}]"),
+                            path_prefix,
+                            extra_headers: vec![], // Standard backends don't need extra headers
+                            tls_config: tls_handoff_config,
+                        },
                     )
                     .await;
 
