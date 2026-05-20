@@ -253,6 +253,8 @@ impl From<error::Error> for types::Error {
             | Error::InvalidAlpnResponse { .. }
             | Error::DeviceDetectionError(_)
             | Error::SharedMemory
+            | Error::FirstByteTimeout(_)
+            | Error::BetweenBytesTimeout
             | Error::TlsNoCAAvailable
             | Error::TlsNoValidCACerts
             | Error::TlsInvalidHost

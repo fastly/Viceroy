@@ -14,8 +14,9 @@ use {
         io::Write,
         pin::Pin,
         task::{Context, Poll},
+        time::Duration,
     },
-    tokio::sync::mpsc,
+    tokio::{sync::mpsc, time::Instant},
 };
 
 type DecoderState = Box<GzDecoder<bytes::buf::Writer<BytesMut>>>;
@@ -88,11 +89,25 @@ impl From<mpsc::Receiver<StreamingBodyItem>> for Chunk {
 ///
 /// [body-trait]: https://docs.rs/http-body/latest/http_body/trait.Body.html
 /// [hyper-body]: https://docs.rs/hyper/latest/hyper/body/struct.Body.html
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Body {
     chunks: VecDeque<Chunk>,
+    between_bytes_timeout: Duration,
+    sleep: Option<Pin<Box<tokio::time::Sleep>>>,
     pub(crate) trailers: HeaderMap,
     pub(crate) trailers_ready: bool,
+}
+
+impl Default for Body {
+    fn default() -> Self {
+        Body {
+            chunks: VecDeque::new(),
+            between_bytes_timeout: Duration::from_hours(7 * 24),
+            sleep: None,
+            trailers: HeaderMap::new(),
+            trailers_ready: false,
+        }
+    }
 }
 
 impl Body {
@@ -216,6 +231,36 @@ impl IntoIterator for Body {
     }
 }
 
+impl Body {
+    pub fn set_between_bytes_timeout(&mut self, timeout: Duration) {
+        self.between_bytes_timeout = timeout;
+        self.sleep = Some(Box::pin(tokio::time::sleep(timeout)));
+    }
+
+    fn reset_between_bytes_timeout_timer(&mut self) {
+        if let Some(sleep) = self.sleep.as_mut() {
+            sleep
+                .as_mut()
+                .reset(Instant::now() + self.between_bytes_timeout);
+        }
+    }
+
+    fn check_timeout_on_pending(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<bytes::Bytes, error::Error>>> {
+        if let Some(sleep) = self.sleep.as_mut() {
+            if sleep.as_mut().poll(cx).is_ready() {
+                Poll::Ready(Some(Err(Error::BetweenBytesTimeout)))
+            } else {
+                Poll::Pending
+            }
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
 impl HttpBody for Body {
     type Data = bytes::Bytes;
     type Error = error::Error;
@@ -234,7 +279,7 @@ impl HttpBody for Body {
                         Poll::Pending => {
                             // put the body back, so we can poll it again next time
                             self.chunks.push_front(body.into());
-                            return Poll::Pending;
+                            return self.check_timeout_on_pending(cx);
                         }
                         Poll::Ready(None) => {
                             // no more bytes from this body, so continue the loop now that it's been
@@ -242,7 +287,7 @@ impl HttpBody for Body {
                             match body_mut.trailers().poll_unpin(cx) {
                                 Poll::Pending => {
                                     self.chunks.push_front(body.into());
-                                    return Poll::Pending;
+                                    return self.check_timeout_on_pending(cx);
                                 }
 
                                 Poll::Ready(Err(e)) => {
@@ -262,6 +307,7 @@ impl HttpBody for Body {
                         Poll::Ready(Some(item)) => {
                             // put the body back, so we can poll it again next time
                             self.chunks.push_front(body.into());
+                            self.reset_between_bytes_timeout_timer();
                             return Poll::Ready(Some(item.map_err(Into::into)));
                         }
                     }
@@ -273,7 +319,7 @@ impl HttpBody for Body {
                         Poll::Pending => {
                             // put the channel back, so we can poll it again next time
                             self.chunks.push_front(receiver.into());
-                            return Poll::Pending;
+                            return self.check_timeout_on_pending(cx);
                         }
                         Poll::Ready(None) => {
                             // the channel completed without a Finish message, so yield an error
@@ -286,6 +332,7 @@ impl HttpBody for Body {
                             // now push the chunk which will be polled appropriately the next time
                             // through the loop
                             self.chunks.push_front(chunk);
+                            self.reset_between_bytes_timeout_timer();
                             continue;
                         }
                         Poll::Ready(Some(StreamingBodyItem::Finished(trailers))) => {
@@ -305,17 +352,19 @@ impl HttpBody for Body {
                         Poll::Pending => {
                             // put the body back, so we can poll it again next time
                             self.chunks.push_front(chunk);
-                            return Poll::Pending;
+                            return self.check_timeout_on_pending(cx);
                         }
                         Poll::Ready(None) => match decoder_state.try_finish() {
                             Err(e) => return Poll::Ready(Some(Err(e.into()))),
                             Ok(()) => {
                                 let chunk = decoder_state.get_mut().get_mut().split().freeze();
+                                self.reset_between_bytes_timeout_timer();
                                 return Poll::Ready(Some(Ok(chunk)));
                             }
                         },
                         Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e.into()))),
                         Poll::Ready(Some(Ok(bytes))) => {
+                            self.reset_between_bytes_timeout_timer();
                             match decoder_state.write_all(&bytes) {
                                 Err(e) => return Poll::Ready(Some(Err(e.into()))),
                                 Ok(()) => {

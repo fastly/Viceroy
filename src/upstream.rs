@@ -376,6 +376,8 @@ pub fn send_request(
     *req.uri_mut() = uri;
 
     let h2only = backend.grpc;
+    let first_byte_timeout = backend.first_byte_timeout;
+    let between_bytes_timeout = backend.between_bytes_timeout;
     async move {
         let mut builder = Client::builder();
 
@@ -391,7 +393,13 @@ pub fn send_request(
 
         let client = builder.set_host(false).http2_only(h2only).build(connector);
 
-        let mut basic_response = client.request(req).await.map_err(|e| {
+        let mut basic_response = match first_byte_timeout {
+            None => client.request(req).await,
+            Some(timeout) => tokio::time::timeout(timeout, client.request(req))
+                .await
+                .map_err(Error::FirstByteTimeout)?,
+        }
+        .map_err(|e| {
             eprintln!("Error: {:?}", e);
             e
         })?;
@@ -401,7 +409,7 @@ pub fn send_request(
             md.direct_pass = is_pass;
         }
 
-        if try_decompression
+        let mut new_body = if try_decompression
             && basic_response
                 .headers()
                 .get(header::CONTENT_ENCODING)
@@ -417,10 +425,16 @@ pub fn send_request(
             decompressing_response
                 .headers_mut()
                 .remove(header::CONTENT_LENGTH);
-            Ok(decompressing_response)
+            decompressing_response
         } else {
-            Ok(basic_response.map(Body::from))
+            basic_response.map(Body::from)
+        };
+
+        if let Some(timeout) = between_bytes_timeout {
+            new_body.body_mut().set_between_bytes_timeout(timeout);
         }
+
+        Ok(new_body)
     }
 }
 
