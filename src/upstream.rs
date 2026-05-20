@@ -40,8 +40,8 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
-    default_roots: rustls::RootCertStore,
+    pub(crate) partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    pub(crate) default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
