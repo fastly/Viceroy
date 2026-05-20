@@ -7,6 +7,18 @@ use {
 
 pub use self::client_cert_info::{ClientCertError, ClientCertInfo};
 
+/// Backend health status for testing purposes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum BackendHealth {
+    /// Health status is unknown (default).
+    #[default]
+    Unknown,
+    /// Backend is healthy.
+    Healthy,
+    /// Backend is unhealthy.
+    Unhealthy,
+}
+
 /// A single backend definition.
 #[derive(Clone, Debug)]
 pub struct Backend {
@@ -17,6 +29,7 @@ pub struct Backend {
     pub grpc: bool,
     pub client_cert: Option<ClientCertInfo>,
     pub ca_certs: Vec<rustls::Certificate>,
+    pub health: BackendHealth,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -149,6 +162,25 @@ mod deserialization {
                 .transpose()?
                 .unwrap_or(false);
 
+            let health = toml
+                .remove("health")
+                .map(|health| match health {
+                    Value::String(health) => {
+                        let health_lower = health.to_lowercase();
+                        match health_lower.as_str() {
+                            "unknown" => Ok(super::BackendHealth::Unknown),
+                            "healthy" => Ok(super::BackendHealth::Healthy),
+                            "unhealthy" => Ok(super::BackendHealth::Unhealthy),
+                            _ => Err(BackendConfigError::InvalidHealthEntry(health)),
+                        }
+                    }
+                    _ => Err(BackendConfigError::InvalidHealthEntry(
+                        "not a string".to_string(),
+                    )),
+                })
+                .transpose()?
+                .unwrap_or_default();
+
             check_for_unrecognized_keys(&toml)?;
 
             Ok(Self {
@@ -159,6 +191,7 @@ mod deserialization {
                 client_cert,
                 grpc,
                 ca_certs,
+                health,
             })
         }
     }

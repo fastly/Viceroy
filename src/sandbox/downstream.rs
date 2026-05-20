@@ -6,9 +6,9 @@ use {
         downstream::DownstreamResponse,
         error::Error,
         framing::{content_length_is_valid, transfer_encoding_is_supported},
+        handoff::HandoffInfo,
         headers::filter_outgoing_headers,
-        pushpin::PushpinRedirectInfo,
-        session::ViceroyResponseMetadata,
+        sandbox::ViceroyResponseMetadata,
         wiggle_abi::types::FramingHeadersMode,
     },
     hyper::http::response::Response,
@@ -18,18 +18,20 @@ use {
 
 /// Downstream response states.
 ///
-/// See [`Session::set_downstream_response_sender`][set] and
-/// [`Session::send_downstream_response`][send] for more information.
+/// See [`Sandbox::set_downstream_response_sender`][set] and
+/// [`Sandbox::send_downstream_response`][send] for more information.
 ///
-/// [send]: struct.Session.html#method.send_downstream_response
-/// [set]: struct.Session.html#method.set_downstream_response_sender
+/// [send]: struct.Sandbox.html#method.send_downstream_response
+/// [set]: struct.Sandbox.html#method.set_downstream_response_sender
 pub enum DownstreamResponseState {
     /// No channel to send the response has been opened yet.
     Closed,
     /// A channel has been opened, but no response has been sent yet.
     Pending(Sender<DownstreamResponse>),
     /// The guest has initiated a proxy to Pushpin; the response will come from there.
-    RedirectingToPushpin,
+    HandingOffToPushpin,
+    /// The guest has initiated a proxy to a Backend; the response will come from there.
+    HandingOffToBackend,
     /// A response has already been sent downstream.
     Sent,
 }
@@ -57,7 +59,9 @@ impl DownstreamResponseState {
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
-        use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
+        use DownstreamResponseState::{
+            Closed, HandingOffToBackend, HandingOffToPushpin, Pending, Sent,
+        };
 
         let mut framing_headers_mode = response
             .extensions()
@@ -119,23 +123,49 @@ impl DownstreamResponseState {
                 .send(DownstreamResponse::Http(response))
                 .map_err(|_| ())
                 .expect("response receiver is open"),
-            Sent | RedirectingToPushpin => return Err(Error::DownstreamRespSending),
+            Sent | HandingOffToPushpin | HandingOffToBackend => {
+                return Err(Error::DownstreamRespSending);
+            }
         }
 
         Ok(())
     }
 
-    pub fn redirect_to_pushpin(&mut self, redirect_info: PushpinRedirectInfo) -> Result<(), Error> {
-        use DownstreamResponseState::{Closed, Pending, RedirectingToPushpin, Sent};
+    pub fn redirect_to_pushpin(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {
+        use DownstreamResponseState::{
+            Closed, HandingOffToBackend, HandingOffToPushpin, Pending, Sent,
+        };
 
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
-        match mem::replace(self, RedirectingToPushpin) {
+        match mem::replace(self, HandingOffToPushpin) {
             Closed => panic!("downstream response channel was closed"),
             Pending(sender) => sender
-                .send(DownstreamResponse::RedirectToPushpin(redirect_info))
+                .send(DownstreamResponse::HandoffToPushpin(redirect_info))
                 .map_err(|_| ())
                 .expect("response receiver is open"),
-            Sent | RedirectingToPushpin => return Err(Error::DownstreamRespSending),
+            Sent | HandingOffToPushpin | HandingOffToBackend => {
+                return Err(Error::DownstreamRespSending);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn redirect_to_backend(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {
+        use DownstreamResponseState::{
+            Closed, HandingOffToBackend, HandingOffToPushpin, Pending, Sent,
+        };
+
+        // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
+        match mem::replace(self, HandingOffToBackend) {
+            Closed => panic!("downstream response channel was closed"),
+            Pending(sender) => sender
+                .send(DownstreamResponse::HandoffToBackend(redirect_info))
+                .map_err(|_| ())
+                .expect("response receiver is open"),
+            Sent | HandingOffToPushpin | HandingOffToBackend => {
+                return Err(Error::DownstreamRespSending);
+            }
         }
 
         Ok(())

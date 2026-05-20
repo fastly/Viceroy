@@ -1,8 +1,8 @@
 use {
     crate::{
         error::Error,
+        sandbox::Sandbox,
         secret_store::SecretLookup,
-        session::Session,
         wiggle_abi::{
             fastly_secret_store::FastlySecretStore,
             types::{FastlyStatus, SecretHandle, SecretStoreHandle},
@@ -43,14 +43,14 @@ impl From<&SecretStoreError> for FastlyStatus {
     }
 }
 
-impl FastlySecretStore for Session {
+impl FastlySecretStore for Sandbox {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,
         name: GuestPtr<str>,
     ) -> Result<SecretStoreHandle, Error> {
         let name = memory.as_str(name)?.ok_or(Error::SharedMemory)?;
-        self.secret_store_handle(&name)
+        self.secret_store_handle(name)
             .ok_or(Error::SecretStoreError(
                 SecretStoreError::UnknownSecretStore(name.to_string()),
             ))
@@ -68,7 +68,7 @@ impl FastlySecretStore for Session {
                     SecretStoreError::InvalidSecretStoreHandle(secret_store_handle),
                 ))?;
         let secret_name = memory.as_str(secret_name)?.ok_or(Error::SharedMemory)?;
-        self.secret_handle(store_name.as_str(), &secret_name)
+        self.secret_handle(store_name.as_str(), secret_name)
             .ok_or(Error::SecretStoreError(SecretStoreError::UnknownSecret(
                 secret_name.to_string(),
             )))

@@ -1,6 +1,19 @@
 ## Unreleased
 
-- Add stub implementations for resvpnproxy hostcalls.
+- Rename 'session' to 'sandbox' since that is the preferred term in public documentation. ([#617](https://github.com/fastly/Viceroy/pull/617))
+- Add support for "WebSockets passthrough" ([#621](https://github.com/fastly/Viceroy/pull/621))
+- Provide extra context in error messages for backend connection failures ([#613](https://github.com/fastly/Viceroy/pull/613))
+
+## 0.17.0 (2026-04-27)
+
+- Add stub implementations for resvpnproxy hostcalls. ([#596](https://github.com/fastly/Viceroy/pull/596))
+- Add `fake_valid_fastly_keys` config parameter to allow testing `fastly_key_is_valid` hostcall with fake valid keys. ([#599](https://github.com/fastly/Viceroy/pull/599))
+- Add `health` config parameter for backends to mock backend health status in testing. ([#605](https://github.com/fastly/Viceroy/pulls/606))
+- Use `cargo clippy` to lint code in CI. ([#603](https://github.com/fastly/Viceroy/pull/603))
+- Rename `Error::InvalidAlpnRepsonse` to correct a typo ([#612](https://github.com/fastly/Viceroy/pull/612))
+- Upgrade to Rust 1.95 ([#604](https://github.com/fastly/Viceroy/pull/604))
+- Add options for experimenting with wasm gc and exceptions. ([#601](https://github.com/fastly/Viceroy/pull/601))
+- Improve TLS certificate loading, handling and validation ([#478](https://github.com/fastly/Viceroy/pull/478))
 
 ## 0.16.5 (2026-03-23)
 
@@ -90,7 +103,7 @@
 
 ## 0.14.0 (2025-08-08)
 
-- Fix for shielding suport ([#503](https://github.com/fastly/Viceroy/pull/503))
+- Fix for shielding support ([#503](https://github.com/fastly/Viceroy/pull/503))
 
   Shielding support in 0.13.0 was, alas, slightly broken: the `toml` settings were
   not passed through to the main library.
@@ -248,7 +261,7 @@
 - Explicitly test the dictionary host calls in the dictionary fixture ([#390](https://github.com/fastly/Viceroy/pull/390))
 - Enable the config-store-lookup tests ([#387](https://github.com/fastly/Viceroy/pull/387))
 - Run the `request` tests as a component ([#386](https://github.com/fastly/Viceroy/pull/386))
-- Update Ubuntu and MacOS runners to latest (and non-EOL) versions ([#388](https://github.com/fastly/Viceroy/pull/388))
+- Update Ubuntu and macOS runners to latest (and non-EOL) versions ([#388](https://github.com/fastly/Viceroy/pull/388))
 - Fix trap handling when running components ([#382](https://github.com/fastly/Viceroy/pull/382))
 - fix(wiggle_abi): write the result's length, not the guest buffer's ([#385](https://github.com/fastly/Viceroy/pull/385))
 - Add adaptive buffer support for geo + device detection lookups ([#383](https://github.com/fastly/Viceroy/pull/383))

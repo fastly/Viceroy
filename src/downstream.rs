@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use crate::body::Body;
 use crate::error::DownstreamRequestError;
-use crate::pushpin::PushpinRedirectInfo;
+use crate::handoff::HandoffInfo;
 use http::{HeaderMap, Request, Response};
 use hyper::Uri;
 use tokio::sync::oneshot::Sender;
@@ -18,7 +18,7 @@ pub struct DownstreamMetadata {
     pub client_addr: SocketAddr,
     /// The compliance region that this request was received in.
     ///
-    /// For now this is just always `"none"`, but we place the field in the session
+    /// For now this is just always `"none"`, but we place the field in the sandbox
     /// to make it easier to implement custom configuration values later on.
     pub compliance_region: String,
     /// The originally received headers in this request, before the
@@ -36,7 +36,8 @@ pub struct DownstreamRequest {
 #[derive(Debug)]
 pub enum DownstreamResponse {
     Http(Response<Body>),
-    RedirectToPushpin(PushpinRedirectInfo),
+    HandoffToPushpin(HandoffInfo),
+    HandoffToBackend(HandoffInfo),
 }
 
 /// Canonicalize the incoming request into the form expected by host calls.

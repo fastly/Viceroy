@@ -147,7 +147,7 @@ impl PendingCacheTask {
 /// Represents either a full body, or the write end of a streaming body.
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
-/// body (writeable only). It is used within the body handle map in `Session`.
+/// body (writeable only). It is used within the body handle map in `Sandbox`.
 #[derive(Debug)]
 pub enum AsyncItem {
     Body(Body),

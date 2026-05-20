@@ -1,7 +1,7 @@
 use {
     crate::{
         error::Error,
-        session::Session,
+        sandbox::Sandbox,
         wiggle_abi::{fastly_async_io::FastlyAsyncIo, types::AsyncItemHandle},
     },
     futures::{FutureExt, TryFutureExt},
@@ -10,7 +10,7 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyAsyncIo for Session {
+impl FastlyAsyncIo for Sandbox {
     async fn select(
         &mut self,
         memory: &mut GuestMemory<'_>,

@@ -13,6 +13,7 @@ use {
         path::{Path, PathBuf},
     },
     viceroy_lib::{Error, ProfilingStrategy, config::ExperimentalModule},
+    wasmtime::WasmFeatures,
 };
 
 // Command-line arguments for the Viceroy CLI.
@@ -124,6 +125,15 @@ pub struct SharedArgs {
     /// components before running them.
     #[arg(long = "adapt")]
     adapt: bool,
+    /// Enable the Wasm Exception Handling feature.
+    #[arg(long)]
+    wasm_exceptions: bool,
+    /// Enable the Wasm GC feature.
+    #[arg(long)]
+    wasm_gc: bool,
+    /// Enable component-model GC integration.
+    #[arg(long)]
+    wasm_cm_gc: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -232,6 +242,20 @@ impl SharedArgs {
     pub fn adapt(&self) -> bool {
         self.adapt
     }
+
+    pub fn wasm_features(&self) -> WasmFeatures {
+        let mut wasm_features = WasmFeatures::default();
+        if self.wasm_exceptions {
+            wasm_features.insert(WasmFeatures::EXCEPTIONS);
+        }
+        if self.wasm_gc {
+            wasm_features.insert(WasmFeatures::GC);
+        }
+        if self.wasm_cm_gc {
+            wasm_features.insert(WasmFeatures::CM_GC);
+        }
+        wasm_features
+    }
 }
 
 #[derive(Args, Debug, Clone)]
@@ -334,25 +358,25 @@ fn parse_profile_sample_duration(s: &str) -> Result<Duration, Error> {
         return Ok(Duration::from_secs(val));
     }
 
-    if let Some(num) = s.strip_suffix("s") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_secs(val));
-        }
+    if let Some(num) = s.strip_suffix("s")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_secs(val));
     }
-    if let Some(num) = s.strip_suffix("ms") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_millis(val));
-        }
+    if let Some(num) = s.strip_suffix("ms")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_millis(val));
     }
-    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs")) {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_micros(val));
-        }
+    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs"))
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_micros(val));
     }
-    if let Some(num) = s.strip_suffix("ns") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_nanos(val));
-        }
+    if let Some(num) = s.strip_suffix("ns")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_nanos(val));
     }
 
     Err(Error::ProfilingStrategy)

@@ -89,7 +89,7 @@ mod tests {
     use super::VaryRule;
 
     #[test]
-    fn vary_rule_uniqe_sorted() {
+    fn vary_rule_unique_sorted() {
         let vary1: VaryRule = "unknown-header Accept content-type".parse().unwrap();
         let vary2: VaryRule = "content-type unknown-header unknown-header Accept"
             .parse()

@@ -17,7 +17,7 @@ impl backend::Host for ComponentCtx {
         options: Resource<backend::DynamicBackendOptions>,
     ) -> Result<Resource<String>, types::Error> {
         crate::component::backend::register_dynamic_backend(
-            &mut self.session,
+            &mut self.sandbox,
             &mut self.wasi_table,
             prefix,
             target,
@@ -29,7 +29,7 @@ impl backend::Host for ComponentCtx {
 
 impl backend::HostBackend for ComponentCtx {
     fn open(&mut self, name: String) -> Result<Resource<String>, backend::OpenError> {
-        if !crate::component::backend::exists(&mut self.session, &name) {
+        if !crate::component::backend::exists(&mut self.sandbox, &name) {
             return Err(backend::OpenError::NotFound);
         }
 
@@ -47,17 +47,17 @@ impl backend::HostBackend for ComponentCtx {
         name: Resource<String>,
     ) -> Result<backend::BackendHealth, types::Error> {
         let name = self.wasi_table.get(&name).unwrap();
-        crate::component::backend::is_healthy(&mut self.session, name)
+        crate::component::backend::is_healthy(&mut self.sandbox, name)
     }
 
     fn is_dynamic(&mut self, name: Resource<String>) -> Result<bool, types::Error> {
         let name = self.wasi_table.get(&name).unwrap();
-        crate::component::backend::is_dynamic(&mut self.session, name)
+        crate::component::backend::is_dynamic(&mut self.sandbox, name)
     }
 
     fn get_host(&mut self, name: Resource<String>, max_len: u64) -> Result<String, types::Error> {
         let name = self.wasi_table.get(&name).unwrap();
-        crate::component::backend::get_host(&mut self.session, name, max_len)
+        crate::component::backend::get_host(&mut self.sandbox, name, max_len)
     }
 
     fn get_override_host(
@@ -66,17 +66,17 @@ impl backend::HostBackend for ComponentCtx {
         max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
         let name = self.wasi_table.get(&name).unwrap();
-        crate::component::backend::get_override_host(&mut self.session, name, max_len)
+        crate::component::backend::get_override_host(&mut self.sandbox, name, max_len)
     }
 
     fn get_port(&mut self, backend: Resource<String>) -> Result<u16, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_port(&mut self.session, backend)
+        crate::component::backend::get_port(&mut self.sandbox, backend)
     }
 
     fn get_connect_timeout_ms(&mut self, backend: Resource<String>) -> Result<u32, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_connect_timeout_ms(&mut self.session, backend)
+        crate::component::backend::get_connect_timeout_ms(&mut self.sandbox, backend)
     }
 
     fn get_first_byte_timeout_ms(
@@ -84,7 +84,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<u32, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_first_byte_timeout_ms(&mut self.session, backend)
+        crate::component::backend::get_first_byte_timeout_ms(&mut self.sandbox, backend)
     }
 
     fn get_between_bytes_timeout_ms(
@@ -92,7 +92,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<u32, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_between_bytes_timeout_ms(&mut self.session, backend)
+        crate::component::backend::get_between_bytes_timeout_ms(&mut self.sandbox, backend)
     }
 
     fn get_http_keepalive_time(
@@ -100,7 +100,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<backend::TimeoutMs, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_http_keepalive_time(&mut self.session, backend)
+        crate::component::backend::get_http_keepalive_time(&mut self.sandbox, backend)
     }
 
     fn get_tcp_keepalive_enable(
@@ -108,7 +108,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<bool, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_tcp_keepalive_enable(&mut self.session, backend)
+        crate::component::backend::get_tcp_keepalive_enable(&mut self.sandbox, backend)
     }
 
     fn get_tcp_keepalive_interval(
@@ -116,7 +116,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<backend::TimeoutSecs, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_tcp_keepalive_interval(&mut self.session, backend)
+        crate::component::backend::get_tcp_keepalive_interval(&mut self.sandbox, backend)
     }
 
     fn get_tcp_keepalive_probes(
@@ -124,7 +124,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<backend::ProbeCount, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_tcp_keepalive_probes(&mut self.session, backend)
+        crate::component::backend::get_tcp_keepalive_probes(&mut self.sandbox, backend)
     }
 
     fn get_tcp_keepalive_time(
@@ -132,12 +132,12 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<backend::TimeoutSecs, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_tcp_keepalive_time(&mut self.session, backend)
+        crate::component::backend::get_tcp_keepalive_time(&mut self.sandbox, backend)
     }
 
     fn is_tls(&mut self, backend: Resource<String>) -> Result<bool, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::is_tls(&mut self.session, backend)
+        crate::component::backend::is_tls(&mut self.sandbox, backend)
     }
 
     fn get_tls_min_version(
@@ -145,7 +145,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<Option<http_types::TlsVersion>, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_tls_min_version(&mut self.session, backend)
+        crate::component::backend::get_tls_min_version(&mut self.sandbox, backend)
     }
 
     fn get_tls_max_version(
@@ -153,7 +153,7 @@ impl backend::HostBackend for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<Option<http_types::TlsVersion>, types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::backend::get_tls_max_version(&mut self.session, backend)
+        crate::component::backend::get_tls_max_version(&mut self.sandbox, backend)
     }
 
     fn drop(&mut self, backend: Resource<String>) -> wasmtime::Result<()> {

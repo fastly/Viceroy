@@ -12,7 +12,7 @@ format-check:  ## Check formatting, without updating.
 
 .PHONY: clippy
 clippy:  ## Ask for Clippy lints.
-	$(VICEROY_CARGO) clippy --all -- -D warnings
+	$(VICEROY_CARGO) clippy --all-targets --all-features -- -D warnings
 
 .PHONY: test
 test: test-crates trap-test  ## Run all tests.
@@ -21,8 +21,6 @@ test: test-crates trap-test  ## Run all tests.
 test-crates: fix-build
 	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
 
-# Build test fixtures.
-# You typically don't need to do this yourself, as the test suites depend on this target.
 .PHONY: fix-build
 fix-build:
 	cd test-fixtures && $(VICEROY_CARGO) build --target=wasm32-wasip1
@@ -31,15 +29,14 @@ fix-build:
 trap-test: fix-build
 	cd cli/tests/trap-test && RUST_BACKTRACE=1 $(VICEROY_CARGO) test fatal_error_traps -- --nocapture
 
-# The main `ci` target runs everything except `trap-test`.
-.PHONY: ci
-ci: VICEROY_CARGO=cargo --locked
-ci: format-check test-crates  ## The main CI target; runs all tests except `trap-test`.
-
 # The `trap-test` is its own top-level target for CI in order to achieve better build parallelism.
 .PHONY: trap-test-ci
 trap-test-ci: VICEROY_CARGO=cargo --locked
 trap-test-ci: trap-test
+
+.PHONY: ci
+ci: VICEROY_CARGO=cargo --locked
+ci: format-check test-crates  ## The main CI target; runs all tests except `trap-test`.
 
 .PHONY: clean
 clean:  ## Clean up Cargo outputs and cache.

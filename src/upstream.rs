@@ -5,7 +5,7 @@ use crate::{
     error::Error,
     framing::{content_length_is_valid, transfer_encoding_is_supported},
     headers::filter_outgoing_headers,
-    session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
+    sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
     wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
 use futures::Future;
@@ -40,25 +40,24 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
-    default_roots: rustls::RootCertStore,
+    pub(crate) partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    pub(crate) default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
+        let certs = rustls_native_certs::load_native_certs().map_err(Error::BadCerts)?;
         let mut roots = rustls::RootCertStore::empty();
-        match rustls_native_certs::load_native_certs() {
-            Ok(certs) => {
-                for cert in certs {
-                    if let Err(e) = roots.add(&rustls::Certificate(cert.0)) {
-                        warn!("failed to load certificate: {e}");
-                    }
-                }
-            }
-            Err(err) => return Err(Error::BadCerts(err)),
+        let (added, failed) =
+            roots.add_parsable_certificates(&certs.into_iter().map(|c| c.0).collect::<Vec<_>>());
+        if failed > 0 {
+            warn!(
+                "failed to load {} certificate(s). attempting to continue with {} available certificate(s)",
+                failed, added
+            );
         }
         if roots.is_empty() {
-            warn!("no CA certificates available");
+            return Err(Error::TlsNoCAAvailable);
         }
 
         let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
@@ -106,8 +105,8 @@ pub enum Connection {
 impl Connection {
     fn metadata(&self) -> &ConnMetadata {
         match self {
-            Connection::Http(_, md) => &md,
-            Connection::Https(_, md) => &md,
+            Connection::Http(_, md) => md,
+            Connection::Https(_, md) => md,
         }
     }
 }
@@ -144,6 +143,11 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 ignored
             );
         }
+        if added == 0 && !self.backend.ca_certs.is_empty() {
+            return Box::pin(std::future::ready(Err(
+                Box::new(Error::TlsNoValidCACerts).into()
+            )));
+        }
         let config = if self.backend.ca_certs.is_empty() {
             config
                 .partial_config
@@ -154,7 +158,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
         };
 
         Box::pin(async move {
-            let tcp = connect_fut.await.map_err(Box::new)?;
+            let tcp = connect_fut.await?;
 
             let remote_addr = tcp.peer_addr()?;
             let metadata = ConnMetadata {
@@ -164,7 +168,15 @@ impl hyper::service::Service<Uri> for BackendConnector {
 
             let conn = if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
-                    config.with_client_auth_cert(certed_key.certs(), certed_key.key())?
+                    config
+                        .with_client_auth_cert(certed_key.certs(), certed_key.key())
+                        .map_err(|_| {
+                            Error::InvalidClientCert(
+                                crate::config::ClientCertError::InvalidCertificateData(
+                                    "Client certificate validation failed".to_string(),
+                                ),
+                            )
+                        })?
                 } else {
                     config.with_no_client_auth()
                 };
@@ -178,10 +190,32 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     .cert_host
                     .as_deref()
                     .or_else(|| backend.uri.host())
-                    .unwrap_or_default();
-                let dnsname = ServerName::try_from(cert_host).map_err(Box::new)?;
+                    .ok_or(Error::TlsInvalidHost)?;
 
-                let tls = connector.connect(dnsname, tcp).await.map_err(Box::new)?;
+                let dnsname = ServerName::try_from(cert_host).map_err(|_| {
+                    let err_msg = format!("Invalid DNS name: {}", cert_host);
+                    tracing::error!("{}", err_msg);
+                    Error::TlsInvalidHost
+                })?;
+
+                // Connect with proper validation
+                let tls = connector
+                    .connect(dnsname, tcp)
+                    .await
+                    .inspect_err(|e| {
+                        // Log detailed error information for certificate issues
+                        tracing::error!("TLS certificate validation failed: {}", e);
+                    })
+                    .map_err(|e| {
+                        if e.to_string().contains("certificate validation failed") {
+                            Error::TlsCertificateValidationFailed
+                        } else {
+                            Error::IoError(std::io::Error::other(format!(
+                                "TLS connection error: {}",
+                                e
+                            )))
+                        }
+                    })?;
 
                 if backend.grpc {
                     let (_, tls_state) = tls.get_ref();
@@ -196,7 +230,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
                         Some(b"h2") => {}
 
                         Some(other_value) => {
-                            return Err(Error::InvalidAlpnRepsonse(
+                            return Err(Error::InvalidAlpnResponse(
                                 "h2",
                                 String::from_utf8_lossy(other_value).to_string(),
                             )
@@ -288,6 +322,7 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
 pub fn send_request(
     mut req: Request<Body>,
     backend: &Arc<Backend>,
+    backend_name: &str,
     tls_config: &TlsConfig,
 ) -> impl Future<Output = Result<Response<Body>, Error>> + use<> {
     let connector = BackendConnector::new(backend.clone(), tls_config.clone());
@@ -342,6 +377,8 @@ pub fn send_request(
     *req.uri_mut() = uri;
 
     let h2only = backend.grpc;
+    let backend_name = backend_name.to_string();
+    let backend_uri = backend.uri.to_string();
     async move {
         let mut builder = Client::builder();
 
@@ -361,9 +398,14 @@ pub fn send_request(
             .build(connector)
             .request(req)
             .await
-            .map_err(|e| {
-                eprintln!("Error: {:?}", e);
-                e
+            .map_err(|source| {
+                let err = Error::BackendConnectionError {
+                    backend_name: backend_name.clone(),
+                    uri: backend_uri.clone(),
+                    source,
+                };
+                tracing::error!("{}", err);
+                err
             })?;
 
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
@@ -395,7 +437,6 @@ pub fn send_request(
 }
 
 /// The type ultimately yielded by a `PendingRequest`.
-
 /// An asynchronous request awaiting a response.
 #[allow(unused)]
 #[derive(Debug)]
@@ -403,7 +444,7 @@ pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.
 }
 
-/// A pair of a pending request and the handle that pointed to it in the session, suitable for
+/// A pair of a pending request and the handle that pointed to it in the sandbox, suitable for
 /// invoking the futures select API.
 ///
 /// We need this type because `future::select_all` does not guarantee anything about the order of

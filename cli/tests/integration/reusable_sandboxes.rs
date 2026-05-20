@@ -5,12 +5,11 @@ use crate::viceroy_test;
 use hyper::{Request, StatusCode};
 
 viceroy_test!(check_hostcalls_implemented, |is_component| {
-    let test = Test::using_fixture("reusable-sessions.wasm")
+    let test = Test::using_fixture("reusable-sandboxes.wasm")
         .adapt_component(is_component)
         .via_hyper();
 
     let reqs = (0..5)
-        .into_iter()
         .map(|n| Request::post("/").body(n.to_string()).unwrap())
         .collect();
 
@@ -26,12 +25,11 @@ viceroy_test!(check_hostcalls_implemented, |is_component| {
 });
 
 viceroy_test!(check_crash_causes_5xx, |is_component| {
-    let test = Test::using_fixture("reusable-sessions.wasm")
+    let test = Test::using_fixture("reusable-sandboxes.wasm")
         .adapt_component(is_component)
         .via_hyper();
 
     let reqs = (0..5)
-        .into_iter()
         .map(|n| {
             let body = if n == 4 {
                 "crash!".to_owned()

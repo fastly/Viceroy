@@ -1,9 +1,9 @@
 use crate::error::{Error, HandleError};
-use crate::session::Session;
+use crate::sandbox::Sandbox;
 use crate::wiggle_abi::{fastly_acl, types};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-impl fastly_acl::FastlyAcl for Session {
+impl fastly_acl::FastlyAcl for Sandbox {
     /// Open a handle to an ACL by its linked name.
     fn open(
         &mut self,
@@ -17,8 +17,10 @@ impl fastly_acl::FastlyAcl for Session {
     /// Perform an ACL lookup operation using the given ACL handle.
     ///
     /// There are two levels of errors returned by this function:
+    ///
     ///   - Error: These are general hostcall errors, e.g. handle not found.
     ///   - AclError: There are ACL-specific errors, e.g. 'no content'.
+    ///
     /// It's the callers responsibility to check both errors.
     async fn lookup(
         &mut self,

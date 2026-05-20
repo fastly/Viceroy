@@ -1,11 +1,11 @@
 use crate::config::Backend;
 use crate::error::Error;
-use crate::session::Session;
+use crate::sandbox::Sandbox;
 use crate::wiggle_abi::{fastly_shielding, types};
 use http::Uri;
 use std::str::FromStr;
 
-impl fastly_shielding::FastlyShielding for Session {
+impl fastly_shielding::FastlyShielding for Sandbox {
     fn shield_info(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
@@ -95,6 +95,7 @@ impl fastly_shielding::FastlyShielding for Session {
             grpc: false,
             client_cert: None,
             ca_certs: Vec::new(),
+            health: crate::config::BackendHealth::Unknown,
         };
 
         if !self.add_backend(&new_name, new_backend) {

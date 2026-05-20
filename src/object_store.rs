@@ -55,11 +55,11 @@ impl ObjectStores {
                 Some(val) => {
                     res = Ok(Some(val.clone()));
                     // manages ttl
-                    if let Some(exp) = val.expiration {
-                        if SystemTime::now() >= exp {
-                            store.remove(&obj_key);
-                            res = Ok(None);
-                        }
+                    if let Some(exp) = val.expiration
+                        && SystemTime::now() >= exp
+                    {
+                        store.remove(&obj_key);
+                        res = Ok(None);
                     }
                 }
                 None => {
@@ -84,6 +84,7 @@ impl ObjectStores {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert(
         &self,
         obj_store_key: ObjectStoreKey,
@@ -99,12 +100,11 @@ impl ObjectStores {
             .lookup(obj_store_key.clone(), obj_key.clone())
             .map_err(|_| KvStoreError::InternalError)?;
 
-        if let Some(g) = generation {
-            if let Some(val) = &existing {
-                if val.generation != g {
-                    return Err(KvStoreError::PreconditionFailed);
-                }
-            }
+        if let Some(g) = generation
+            && let Some(val) = &existing
+            && val.generation != g
+        {
+            return Err(KvStoreError::PreconditionFailed);
         }
 
         let out_obj = match mode {
@@ -195,13 +195,13 @@ impl ObjectStores {
             .map_err(|_| KvStoreError::InternalError)?
             .entry(obj_store_key)
             .and_modify(|store| match store.get(&obj_key) {
-                // 404 if the key doesn't exist, otherwise delete
+                // 404 if the key doesn't exist; otherwise, delete
                 Some(val) => {
                     // manages ttl
-                    if let Some(exp) = val.expiration {
-                        if SystemTime::now() >= exp {
-                            res = Ok(false);
-                        }
+                    if let Some(exp) = val.expiration
+                        && SystemTime::now() >= exp
+                    {
+                        res = Ok(false);
                     }
                     store.remove(&obj_key);
                 }
@@ -243,12 +243,11 @@ impl ObjectStores {
                 let ttl_list = store.iter_mut().map(|(k, _)| k.clone()).collect::<Vec<_>>();
                 ttl_list.into_iter().for_each(|k| {
                     let val = store.get(&k);
-                    if let Some(v) = val {
-                        if let Some(exp) = v.expiration {
-                            if SystemTime::now() >= exp {
-                                store.remove(&k);
-                            }
-                        }
+                    if let Some(v) = val
+                        && let Some(exp) = v.expiration
+                        && SystemTime::now() >= exp
+                    {
+                        store.remove(&k);
                     }
                 });
 
@@ -364,7 +363,7 @@ pub enum KvStoreError {
     )]
     BadRequest,
     #[error(
-        "KV store cannot fulfill the request, as definied by the client's prerequisites (ie. if-generation-match)"
+        "KV store cannot fulfill the request, as defined by the client's prerequisites (ie. if-generation-match)"
     )]
     PreconditionFailed,
     #[error("The size limit for a KV store key was exceeded")]
@@ -426,7 +425,7 @@ impl From<&KvStoreError> for FastlyStatus {
 ///   * Keys cannot use Unicode characters 0 through 32, 65534 and 65535 as
 ///     single-character key names.  (0x0 through 0x20, 0xFFFE and 0xFFFF)
 fn is_valid_key(key: &str) -> Result<(), KeyValidationError> {
-    let len = key.as_bytes().len();
+    let len = key.len();
     if len < 1 {
         return Err(KeyValidationError::EmptyKey);
     } else if len > 1024 {

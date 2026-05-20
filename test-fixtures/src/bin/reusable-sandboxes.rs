@@ -1,4 +1,4 @@
-//! A guest program that tests the hostcalls for fetching multiple requests per session.
+//! A guest program that tests the hostcalls for fetching multiple requests per sandbox.
 
 use fastly::{Request, Response};
 use fastly::handle::{BodyHandle, RequestHandle};

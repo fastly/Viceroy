@@ -52,7 +52,7 @@ viceroy_test!(zero_length_raw_chunks_are_transparent, |is_component| {
                             };
                             tokio::task::yield_now().await;
                         }
-                        let _ = write.send_trailers(HeaderMap::default());
+                        let _ = write.send_trailers(HeaderMap::default()).await;
                     });
                     Response::builder()
                         .status(StatusCode::OK)
@@ -103,7 +103,7 @@ viceroy_test!(gzip_breaks_are_ok, |is_component| {
                             };
                             tokio::task::yield_now().await;
                         }
-                        let _ = write.send_trailers(HeaderMap::default());
+                        let _ = write.send_trailers(HeaderMap::default()).await;
                     });
                     Response::builder()
                         .status(StatusCode::OK)

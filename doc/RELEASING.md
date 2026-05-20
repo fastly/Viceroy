@@ -15,9 +15,8 @@ Below are the steps needed to do a Viceroy release:
 1. Run `make ci` locally to make sure that everything will pass before pushing
    the branch and opening up a PR.
 1. After you get approval, run `git tag vx.y.z HEAD && git push origin vx.y.z`.
-   Pushing this tag will kick off a build for all of the release artifacts.
-1. After CI completes, we should publish all crates in the workspace to the
-   crates.io registry: `cargo publish --workspace`.
+   Pushing this tag will kick off a build for all of the release artifacts, create
+   a release on GitHub, and publish the crates to crates.io.
 1. Now, we should return to our release PR.
     1. Update the version fields in `Cargo.toml` and `cli/Cargo.toml` to the
      next patch version (so `z + 1`).

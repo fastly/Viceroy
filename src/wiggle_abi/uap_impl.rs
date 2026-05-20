@@ -1,11 +1,11 @@
 //! fastly_uap` hostcall implementations.
 
 use {
-    crate::{error::Error, session::Session, wiggle_abi::fastly_uap::FastlyUap},
+    crate::{error::Error, sandbox::Sandbox, wiggle_abi::fastly_uap::FastlyUap},
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyUap for Session {
+impl FastlyUap for Sandbox {
     fn parse(
         &mut self,
         _memory: &mut GuestMemory<'_>,

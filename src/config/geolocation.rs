@@ -13,8 +13,9 @@ pub struct Geolocation {
     use_default_loopback: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum GeolocationMapping {
+    #[default]
     Empty,
     InlineToml {
         addresses: HashMap<IpAddr, GeolocationData>,
@@ -119,7 +120,7 @@ mod deserialization {
         fn convert_value_to_json(value: Value) -> Option<SerdeValue> {
             match value {
                 Value::String(value) => Some(SerdeValue::String(value)),
-                Value::Integer(value) => Number::try_from(value).ok().map(SerdeValue::Number),
+                Value::Integer(value) => Some(SerdeValue::Number(Number::from(value))),
                 Value::Float(value) => Number::from_f64(value).map(SerdeValue::Number),
                 Value::Boolean(value) => Some(SerdeValue::Bool(value)),
                 _ => None,
@@ -178,12 +179,6 @@ mod deserialization {
         GeolocationMapping::read_json_contents(&file)?;
 
         Ok(GeolocationMapping::Json { file })
-    }
-}
-
-impl Default for GeolocationMapping {
-    fn default() -> Self {
-        Self::Empty
     }
 }
 
@@ -302,8 +297,11 @@ impl GeolocationData {
     }
 }
 
-impl ToString for GeolocationData {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self.data).unwrap_or_else(|_| "".to_string())
+impl std::fmt::Display for GeolocationData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match serde_json::to_string(&self.data) {
+            Ok(s) => write!(f, "{}", s),
+            Err(_) => Ok(()),
+        }
     }
 }

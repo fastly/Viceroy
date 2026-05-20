@@ -55,7 +55,7 @@ impl TestBackends {
     /// Get [`viceroy_lib::config::Backends`] for the defined test backends and their test servers.
     ///
     /// Panics if the test servers have not been started, as the ephemeral ports bound during test
-    /// server startup are required in order to provide complete complete backend configurations.
+    /// server startup are required in order to provide complete backend configurations.
     pub async fn backend_configs(&self) -> viceroy_lib::config::Backends {
         let inner = self.inner.lock().await;
         let mut backends = viceroy_lib::config::Backends::new();
@@ -76,6 +76,7 @@ impl TestBackends {
                 grpc: false,
                 client_cert: None,
                 ca_certs: vec![],
+                health: viceroy_lib::config::BackendHealth::Unknown,
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
         }
@@ -272,12 +273,10 @@ impl TestBackendBuilder {
     ///
     /// Panics if:
     ///
-    /// * The `TestBackends` that created this builder no longer exists, or its test servers have
-    /// already been started
-    ///
-    /// * The `path` does not parse as a valid `PathAndQuery`
-    ///
-    /// * The `override_host` does not parse as a valid `HeaderValue`
+    ///   * The `TestBackends` that created this builder no longer exists, or its test servers have
+    ///     already been started
+    ///   * The `path` does not parse as a valid `PathAndQuery`
+    ///   * The `override_host` does not parse as a valid `HeaderValue`
     pub async fn build(self) {
         let inner_arc = self.inner.upgrade().expect("TestBackends dropped");
         let path = self.path.parse().expect("invalid backend path");

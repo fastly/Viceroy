@@ -6,12 +6,12 @@ use std::{
 };
 
 use {
-    crate::{error::Error, session::Session, wiggle_abi::fastly_geo::FastlyGeo},
+    crate::{error::Error, sandbox::Sandbox, wiggle_abi::fastly_geo::FastlyGeo},
     std::convert::TryFrom,
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyGeo for Session {
+impl FastlyGeo for Sandbox {
     fn lookup(
         &mut self,
         memory: &mut GuestMemory<'_>,

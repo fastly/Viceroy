@@ -77,6 +77,7 @@ pub(crate) async fn create_execution_context(
         guest_profile_config,
         args.unknown_import_behavior(),
         args.adapt(),
+        args.wasm_features(),
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout())
@@ -100,6 +101,7 @@ pub(crate) async fn create_execution_context(
     let object_stores = config.object_stores();
     let secret_stores = config.secret_stores();
     let shielding_sites = config.shielding_sites();
+    let fake_valid_fastly_keys = config.fake_valid_fastly_keys();
     let backend_names = itertools::join(backends.keys(), ", ");
 
     let ctx = ctx
@@ -111,6 +113,7 @@ pub(crate) async fn create_execution_context(
         .with_object_stores(object_stores.clone())
         .with_secret_stores(secret_stores.clone())
         .with_shielding_sites(shielding_sites.clone())
+        .with_fake_valid_fastly_keys(fake_valid_fastly_keys.clone())
         .with_config_path(config_path.into())
         .finish()?;
 

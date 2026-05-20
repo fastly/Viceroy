@@ -115,7 +115,7 @@ impl AsyncWrite for LogEndpoint {
         _cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
-        self.write_entry(&buf)?;
+        self.write_entry(buf)?;
         Poll::Ready(Ok(buf.len()))
     }
 

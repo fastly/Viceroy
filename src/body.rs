@@ -188,6 +188,10 @@ impl Body {
 
         Some(len)
     }
+
+    pub fn is_empty(&self) -> Option<bool> {
+        self.len().map(|len| len == 0)
+    }
 }
 
 impl<T: Into<Chunk>> From<T> for Body {

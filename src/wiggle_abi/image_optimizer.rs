@@ -1,9 +1,9 @@
 use crate::error::Error;
-use crate::session::Session;
+use crate::sandbox::Sandbox;
 use crate::wiggle_abi::{fastly_image_optimizer, types};
 use wiggle::{GuestMemory, GuestPtr};
 
-impl fastly_image_optimizer::FastlyImageOptimizer for Session {
+impl fastly_image_optimizer::FastlyImageOptimizer for Sandbox {
     async fn transform_image_optimizer_request(
         &mut self,
         _memory: &mut GuestMemory<'_>,

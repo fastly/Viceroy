@@ -33,7 +33,7 @@
     unreachable
     )
 
-  ;; Send a resposne back to the test harness, using the status code
+  ;; Send a response back to the test harness, using the status code
   ;; provided in the first argument. This message will have no body,
   ;; and no headers, just the response code. It will fail catastrophically
   ;; (i.e., end this execution) if anything goes wrong in the process.

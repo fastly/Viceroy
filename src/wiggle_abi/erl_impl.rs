@@ -1,11 +1,11 @@
 use crate::{
     error::Error,
-    session::Session,
+    sandbox::Sandbox,
     wiggle_abi::fastly_erl::FastlyErl,
     wiggle_abi::{GuestMemory, GuestPtr},
 };
 
-impl FastlyErl for Session {
+impl FastlyErl for Sandbox {
     fn check_rate(
         &mut self,
         _memory: &mut GuestMemory<'_>,

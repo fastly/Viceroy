@@ -2,7 +2,7 @@ use {
     crate::component::bindings::fastly::compute::{secret_store, types},
     crate::{
         error::Error,
-        linking::{ComponentCtx, SessionView},
+        linking::{ComponentCtx, SandboxView},
         secret_store::SecretLookup,
         wiggle_abi::SecretStoreError,
     },
@@ -14,7 +14,7 @@ impl secret_store::Host for ComponentCtx {}
 impl secret_store::HostStore for ComponentCtx {
     fn open(&mut self, name: String) -> Result<Resource<secret_store::Store>, types::OpenError> {
         let handle = self
-            .session_mut()
+            .sandbox_mut()
             .secret_store_handle(&name)
             .ok_or(types::OpenError::NotFound)?;
         Ok(handle.into())
@@ -27,11 +27,11 @@ impl secret_store::HostStore for ComponentCtx {
     ) -> Result<Option<Resource<secret_store::Secret>>, types::Error> {
         let store = store.into();
         let store_name = self
-            .session()
+            .sandbox()
             .secret_store_name(store)
             .ok_or_else(|| types::Error::from(SecretStoreError::InvalidSecretStoreHandle(store)))?;
         Ok(self
-            .session_mut()
+            .sandbox_mut()
             .secret_handle(&store_name, &key)
             .map(From::from))
     }
@@ -49,7 +49,7 @@ impl secret_store::HostSecret for ComponentCtx {
     ) -> Result<Vec<u8>, types::Error> {
         let secret = secret.into();
         let lookup = self
-            .session()
+            .sandbox()
             .secret_lookup(secret)
             .ok_or(Error::SecretStoreError(
                 SecretStoreError::InvalidSecretHandle(secret),
@@ -60,7 +60,7 @@ impl secret_store::HostSecret for ComponentCtx {
                 store_name,
                 secret_name,
             } => self
-                .session()
+                .sandbox()
                 .secret_stores()
                 .get_store(store_name)
                 .ok_or(Error::SecretStoreError(
@@ -90,7 +90,7 @@ impl secret_store::HostSecret for ComponentCtx {
         &mut self,
         plaintext: Vec<u8>,
     ) -> Result<Resource<secret_store::Secret>, types::Error> {
-        Ok(self.session_mut().add_secret(plaintext).into())
+        Ok(self.sandbox_mut().add_secret(plaintext).into())
     }
 
     fn drop(&mut self, _secret: Resource<secret_store::Secret>) -> wasmtime::Result<()> {

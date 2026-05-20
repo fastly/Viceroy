@@ -106,7 +106,7 @@ impl From<wiggle::GuestError> for types::Error {
             | InvalidFlagValue { .. }
             | InvalidEnumValue { .. }
             | PtrOutOfBounds { .. }
-            | PtrOverflow { .. }
+            | PtrOverflow
             | InvalidUtf8 { .. }
             | TryFromIntError { .. } => types::Error::InvalidArgument,
             // These errors indicate either a pathological user input or an internal programming
@@ -146,9 +146,7 @@ impl From<KvStoreError> for types::Error {
 
 impl From<ResourceTableError> for types::Error {
     fn from(err: ResourceTableError) -> Self {
-        match err {
-            _ => panic!("{}", err),
-        }
+        panic!("{}", err)
     }
 }
 
@@ -212,6 +210,17 @@ impl From<error::Error> for types::Error {
             Error::HyperError(e) if e.is_user() => types::Error::HttpUser,
             Error::HyperError(e) if e.is_incomplete_message() => types::Error::HttpIncomplete,
             Error::HyperError(_) => types::Error::GenericError,
+            // BackendConnectionError wraps hyper::Error with context
+            Error::BackendConnectionError { source, .. } if source.is_parse() => {
+                types::Error::HttpInvalid
+            }
+            Error::BackendConnectionError { source, .. } if source.is_user() => {
+                types::Error::HttpUser
+            }
+            Error::BackendConnectionError { source, .. } if source.is_incomplete_message() => {
+                types::Error::HttpIncomplete
+            }
+            Error::BackendConnectionError { .. } => types::Error::GenericError,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => e.into(),
             // We delegate to some error types' own implementation of `to_fastly_status`.
@@ -252,9 +261,13 @@ impl From<error::Error> for types::Error {
             | Error::ObjectStoreKeyValidationError(_)
             | Error::UnfinishedStreamingBody
             | Error::ToStr(_)
-            | Error::InvalidAlpnRepsonse { .. }
+            | Error::InvalidAlpnResponse { .. }
             | Error::DeviceDetectionError(_)
-            | Error::SharedMemory => types::Error::GenericError,
+            | Error::SharedMemory
+            | Error::TlsNoCAAvailable
+            | Error::TlsNoValidCACerts
+            | Error::TlsInvalidHost
+            | Error::TlsCertificateValidationFailed => types::Error::GenericError,
         }
     }
 }

@@ -25,7 +25,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
         let mut instrs = Vec::with_capacity(seq.len());
         for (instr, loc) in seq.instrs.iter() {
             let instr = instr.clone();
-            let loc = loc.clone();
+            let loc = *loc;
             match instr {
                 Instr::Block(Block { seq }) | Instr::Loop(Loop { seq }) => {
                     stack.push(seq);
@@ -212,7 +212,7 @@ pub fn shift_main_module(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
                 };
             }
             DataKind::Active { .. } => unreachable!(),
-            DataKind::Passive { .. } => {}
+            DataKind::Passive => {}
         }
     }
     // shift memory access

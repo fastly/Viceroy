@@ -87,7 +87,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
 fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
     let mut module = wasm_encoder::Module::new();
 
-    for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         let payload = payload?;
         match payload {
             wasmparser::Payload::Version {
@@ -148,22 +148,19 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
 
 /// Test whether `bytes` holds a wasm binary with an export named `wanted`.
 fn has_export(bytes: &[u8], wanted: &str) -> bool {
-    for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         let Ok(payload) = payload else {
             return false;
         };
-        match payload {
-            wasmparser::Payload::ExportSection(section) => {
-                for export in section {
-                    let Ok(export) = export else {
-                        return false;
-                    };
-                    if export.name == wanted {
-                        return true;
-                    }
+        if let wasmparser::Payload::ExportSection(section) = payload {
+            for export in section {
+                let Ok(export) = export else {
+                    return false;
+                };
+                if export.name == wanted {
+                    return true;
                 }
             }
-            _ => {}
         }
     }
 
@@ -173,23 +170,19 @@ fn is_fastly_module(module: &str) -> bool {
     module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
 }
 fn has_wit_bindgen_imports(bytes: &[u8]) -> bool {
-    for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         let Ok(payload) = payload else {
             return false;
         };
-        match payload {
-            wasmparser::Payload::ImportSection(section) => {
-                for import in section {
-                    let Ok(import) = import else {
-                        return false;
-                    };
-                    if !is_fastly_module(import.module) && import.module != "wasi_snapshot_preview1"
-                    {
-                        return true;
-                    }
+        if let wasmparser::Payload::ImportSection(section) = payload {
+            for import in section {
+                let Ok(import) = import else {
+                    return false;
+                };
+                if !is_fastly_module(import.module) && import.module != "wasi_snapshot_preview1" {
+                    return true;
                 }
             }
-            _ => {}
         }
     }
 

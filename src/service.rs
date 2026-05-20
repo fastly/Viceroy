@@ -42,10 +42,20 @@ impl ViceroyService {
     ///
     /// ```no_run
     /// # use std::collections::HashSet;
+    /// # use wasmtime::WasmFeatures;
     /// use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
     /// # fn f() -> Result<(), Error> {
     /// let adapt_core_wasm = false;
-    /// let ctx = ExecuteCtx::new("path/to/a/file.wasm", ProfilingStrategy::None, HashSet::new(), None, Default::default(), adapt_core_wasm)?;
+    /// let wasm_features = WasmFeatures::default();
+    /// let ctx = ExecuteCtx::new(
+    ///     "path/to/a/file.wasm",
+    ///     ProfilingStrategy::None,
+    ///     HashSet::new(),
+    ///     None,
+    ///     Default::default(),
+    ///     adapt_core_wasm,
+    ///     wasm_features
+    /// )?;
     /// let svc = ViceroyService::new(ctx);
     /// # Ok(())
     /// # }
@@ -121,11 +131,12 @@ impl RequestService {
     }
 }
 
+type ServiceFuture = dyn Future<Output = Result<Response<Body>, Error>> + Send;
+
 impl Service<Request<hyper::Body>> for RequestService {
     type Response = Response<Body>;
     type Error = Error;
-    #[allow(clippy::type_complexity)]
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = Pin<Box<ServiceFuture>>;
 
     fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

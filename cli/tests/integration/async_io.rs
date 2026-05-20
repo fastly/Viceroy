@@ -1,3 +1,11 @@
+// On Windows, streaming body backpressure doesn't seem to work as expected, either
+// due to the Hyper client or server too eagerly clearing the chunk buffer. This issue does
+// not appear related to async I/O hostcalls; the behavior is seen within the streaming body
+// implementation in general. For the time being, this test is unix-only.
+//
+// https://github.com/fastly/Viceroy/issues/207 tracks the broader issue.
+#![cfg(target_family = "unix")]
+
 use crate::{
     common::{Test, TestResult},
     viceroy_test,
@@ -9,13 +17,6 @@ use std::sync::{
 };
 use tokio::sync::Barrier;
 
-// On Windows, streaming body backpressure doesn't seem to work as expected, either
-// due to the Hyper client or server too eagerly clearing the chunk buffer. This issue does
-// not appear related to async I/O hostcalls; the behavior is seen within the streaming body
-// implementation in general. For the time being, this test is unix-only.
-//
-// https://github.com/fastly/Viceroy/issues/207 tracks the broader issue.
-#[cfg(target_family = "unix")]
 viceroy_test!(async_io_methods, |is_component| {
     let request_count = Arc::new(AtomicUsize::new(0));
     let req_count_1 = request_count.clone();

@@ -2,11 +2,11 @@
 // not be confused with types of similar names in the `fastly` crate which are used to provide safe
 // wrappers around these definitions.
 
-use super::{FastlyStatus, convert_result};
+use super::{convert_result, FastlyStatus};
 use crate::fastly::decode_ip_address;
 use crate::{
-    TrappingUnwrap, alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer,
-    write_bool_result,
+    alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer, write_bool_result,
+    TrappingUnwrap,
 };
 use core::mem::ManuallyDrop;
 
@@ -83,7 +83,7 @@ pub enum FramingHeadersMode {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum HttpKeepaliveMode {
-    /// This is the default behavor.
+    /// This is the default behavior.
     Automatic = 0,
 
     /// Send `Connection: close` in HTTP/1 and a GOAWAY frame in HTTP/2 and HTTP/3.  This prompts
@@ -600,9 +600,9 @@ pub mod fastly_log {
 pub mod fastly_http_downstream {
     use super::*;
     use crate::{
-        TrappingUnwrap,
         bindings::fastly::compute::{http_downstream, http_req},
         fastly::encode_ip_address,
+        TrappingUnwrap,
     };
 
     bitflags::bitflags! {
@@ -1391,12 +1391,12 @@ pub mod fastly_http_req {
 
     use super::*;
     use crate::{
-        TrappingUnwrap,
         bindings::fastly::{
             self,
             adapter::adapter_http_req,
             compute::{backend, http_req, http_types, security},
         },
+        TrappingUnwrap,
     };
 
     bitflags::bitflags! {
@@ -2502,7 +2502,7 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         // `http-req.select-request` traps if there are no handles or too many handles; this
-        // check preservs the witx `pending-req-select` behavior.
+        // check preserves the witx `pending-req-select` behavior.
         if pending_req_handles_len == 0
             || pending_req_handles_len >= fastly_shared::MAX_PENDING_REQS as usize
         {
@@ -2532,7 +2532,7 @@ pub mod fastly_http_req {
         resp_body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
         // `http-req.select-request` traps if there are no handles or too many handles; this
-        // check preservs the witx `pending-req-select` behavior.
+        // check preserves the witx `pending-req-select` behavior.
         if pending_req_handles_len == 0
             || pending_req_handles_len >= fastly_shared::MAX_PENDING_REQS as usize
         {
@@ -3581,7 +3581,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct LookupConfig {
         // reserved is just a placeholder,
-        // can be removed when somethin real is added
+        // can be removed when something real is added
         reserved: u32,
     }
 
@@ -3594,7 +3594,7 @@ pub mod fastly_kv_store {
     #[repr(C)]
     pub struct DeleteConfig {
         // reserved is just a placeholder,
-        // can be removed when somethin real is added
+        // can be removed when something real is added
         reserved: u32,
     }
 
@@ -4921,7 +4921,7 @@ pub mod fastly_shielding {
             Some(adapted_options)
         };
         // We allow the ShieldBackendOptions Resource to drop at the end of this call;
-        // we don't need it any more, and it has no heap allocations.
+        // we don't need it anymore, and it has no heap allocations.
 
         let res = host::backend_for_shield(name, adapted_options.as_ref());
 

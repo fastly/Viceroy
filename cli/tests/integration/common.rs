@@ -17,10 +17,11 @@ use viceroy_lib::{
     ExecuteCtx, ProfilingStrategy, ViceroyService,
     body::Body,
     config::{
-        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
-        ShieldingSites,
+        Acls, DeviceDetection, Dictionaries, FakeValidFastlyKeys, FastlyConfig, Geolocation,
+        ObjectStores, SecretStores, ShieldingSites,
     },
 };
+use wasmtime::WasmFeatures;
 
 pub use self::backends::TestBackends;
 
@@ -86,6 +87,7 @@ pub struct Test {
     object_stores: ObjectStores,
     secret_stores: SecretStores,
     shielding_sites: ShieldingSites,
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
     capture_logs: Arc<Mutex<dyn Write + Send>>,
     log_stdout: bool,
     log_stderr: bool,
@@ -112,6 +114,7 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
@@ -138,6 +141,7 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
@@ -161,6 +165,7 @@ impl Test {
             object_stores: config.object_stores().to_owned(),
             secret_stores: config.secret_stores().to_owned(),
             shielding_sites: config.shielding_sites().to_owned(),
+            fake_valid_fastly_keys: config.fake_valid_fastly_keys().to_owned(),
             ..self
         })
     }
@@ -343,11 +348,12 @@ impl Test {
 
         let ctx = ExecuteCtx::build(
             &self.module_path,
-            self.profiling_strategy.clone(),
+            self.profiling_strategy,
             HashSet::new(),
             self.guest_profile_config.clone(),
             self.unknown_import_behavior,
             self.adapt_component,
+            WasmFeatures::default(),
         )?
         .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)
@@ -357,6 +363,7 @@ impl Test {
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())
         .with_shielding_sites(self.shielding_sites.clone())
+        .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
         .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
         .with_log_stdout(self.log_stdout)
@@ -515,11 +522,15 @@ impl Drop for TestServer {
         }
     }
 }
+type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
+
+type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
+type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]
 enum TestService {
-    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
-    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
+    Sync(Arc<SyncService>),
+    Async(Arc<AsyncService>),
 }
 
 impl std::fmt::Debug for TestService {
@@ -594,5 +605,3 @@ impl TestService {
         }
     }
 }
-
-type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;

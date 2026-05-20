@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use {
     hyper::{Body, Request, StatusCode},
-    viceroy_lib::{ExecuteCtx, ProfilingStrategy},
+    viceroy_lib::{ExecuteCtx, ProfilingStrategy, WasmFeatures},
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
@@ -22,6 +22,7 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
         None,
         viceroy_lib::config::UnknownImportBehavior::LinkError,
         adapt_core_wasm,
+        WasmFeatures::default(),
     )?;
     let req = Request::get("http://127.0.0.1:7676/").body(Body::from(""))?;
     let local = "127.0.0.1:80".parse().unwrap();

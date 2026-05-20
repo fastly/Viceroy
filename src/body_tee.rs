@@ -199,10 +199,10 @@ impl Drop for BodyTeeStream {
         state.consumers[self.id].active = false;
 
         let other_id = 1 - self.id;
-        if state.consumers[other_id].active {
-            if let Some(waker) = state.consumers[other_id].waker.take() {
-                waker.wake();
-            }
+        if state.consumers[other_id].active
+            && let Some(waker) = state.consumers[other_id].waker.take()
+        {
+            waker.wake();
         }
 
         drain_buffer(&mut state);
