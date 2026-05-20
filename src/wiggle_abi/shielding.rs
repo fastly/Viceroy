@@ -91,7 +91,7 @@ impl fastly_shielding::FastlyShielding for Sandbox {
             };
 
         let between_bytes_timeout =
-            if shield_backend_options.contains(types::ShieldBackendOptions::FIRST_BYTE_TIMEOUT) {
+            if shield_backend_options.contains(types::ShieldBackendOptions::BETWEEN_BYTES_TIMEOUT) {
                 Some(Duration::from_millis(
                     config.between_bytes_timeout_ms as u64,
                 ))
