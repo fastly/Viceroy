@@ -2,6 +2,7 @@
 
 - Rename 'session' to 'sandbox' since that is the preferred term in public documentation. ([#617](https://github.com/fastly/Viceroy/pull/617))
 - Add support for "WebSockets passthrough" ([#621](https://github.com/fastly/Viceroy/pull/621))
+- Provide extra context in error messages for backend connection failures ([#613](https://github.com/fastly/Viceroy/pull/613))
 
 ## 0.17.0 (2026-04-27)
 

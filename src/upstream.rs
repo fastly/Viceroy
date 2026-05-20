@@ -322,6 +322,7 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
 pub fn send_request(
     mut req: Request<Body>,
     backend: &Arc<Backend>,
+    backend_name: &str,
     tls_config: &TlsConfig,
 ) -> impl Future<Output = Result<Response<Body>, Error>> + use<> {
     let connector = BackendConnector::new(backend.clone(), tls_config.clone());
@@ -376,6 +377,8 @@ pub fn send_request(
     *req.uri_mut() = uri;
 
     let h2only = backend.grpc;
+    let backend_name = backend_name.to_string();
+    let backend_uri = backend.uri.to_string();
     async move {
         let mut builder = Client::builder();
 
@@ -395,9 +398,14 @@ pub fn send_request(
             .build(connector)
             .request(req)
             .await
-            .map_err(|e| {
-                eprintln!("Error: {:?}", e);
-                e
+            .map_err(|source| {
+                let err = Error::BackendConnectionError {
+                    backend_name: backend_name.clone(),
+                    uri: backend_uri.clone(),
+                    source,
+                };
+                tracing::error!("{}", err);
+                err
             })?;
 
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
