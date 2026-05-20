@@ -69,7 +69,7 @@ viceroy_test!(can_set_http_timeouts, |is_component| {
     Ok(())
 });
 
-viceroy_test!(first_byte_timeout_fires, |is_component| {
+viceroy_test!(http_first_byte_timeout_fires, |is_component| {
     let resp = Test::using_fixture("upstream.wasm")
         .adapt_component(is_component)
         .async_backend_with_timeouts(
@@ -100,7 +100,7 @@ viceroy_test!(first_byte_timeout_fires, |is_component| {
     Ok(())
 });
 
-viceroy_test!(between_bytes_timeout_fires, |is_component| {
+viceroy_test!(http_between_bytes_timeout_fires, |is_component| {
     let resp = Test::using_fixture("upstream.wasm")
         .adapt_component(is_component)
         .async_backend_with_timeouts(
