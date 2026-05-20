@@ -10,6 +10,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
@@ -219,6 +220,53 @@ impl Test {
             .test_service(service);
         if let Some(override_host) = override_host {
             builder = builder.override_host(override_host);
+        }
+        builder.build().await;
+        self
+    }
+
+    /// Add a backend definition to this test with an asynchronous test server function and
+    /// (optionally) a first and between-byte timeout.
+    ///
+    /// The `name` is the static backend name that can be passed as, for example, the argument to
+    /// `Request::send()`.
+    ///
+    /// The `path` is the path that will be prepended to the URLs of requests sent to this
+    /// backend. Note that the host and port used to send requests to this backend will be
+    /// automatically determined when the test servers are started.
+    ///
+    /// `override_host` optionally sets the corresponding parameter in the backend definition.
+    ///
+    /// `service` is the asynchronous function that the test server will run on each request this
+    /// backend receives in order to determine what response to send.
+    pub async fn async_backend_with_timeouts<ServiceFn>(
+        self,
+        name: &str,
+        url: &str,
+        override_host: Option<&str>,
+        first_byte_timeout: Option<Duration>,
+        between_bytes_timeout: Option<Duration>,
+        service: ServiceFn,
+    ) -> Self
+    where
+        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Send + Sync + 'static,
+    {
+        let uri: Uri = url.parse().expect("invalid backend URL");
+        let mut builder = self
+            .backends
+            .test_backend(name)
+            .path(uri.path())
+            .use_sni(true)
+            .async_test_service(service);
+        if let Some(override_host) = override_host {
+            builder = builder.override_host(override_host);
+        }
+        if let Some(timeout) = first_byte_timeout {
+            builder = builder.first_byte_timeout(timeout);
+        }
+        if let Some(timeout) = between_bytes_timeout {
+            builder = builder.between_bytes_timeout(timeout);
         }
         builder.build().await;
         self
@@ -524,7 +572,7 @@ impl Drop for TestServer {
 }
 type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
 
-type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
+pub type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
 type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]

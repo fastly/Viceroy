@@ -29,6 +29,7 @@ mod secret_store;
 mod sending_response;
 mod shielding;
 mod sleep;
+mod timeouts;
 mod unknown_import_behavior;
 mod upstream;
 mod upstream_async;
