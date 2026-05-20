@@ -16,12 +16,13 @@ categories = [
     "wasm"
 ]
 include = [
+    "build.rs",
     "CHANGELOG.md",
     "SECURITY.md",
     "src/**/*",
+    "wasm_abi/adapter/**/*",
     "wasm_abi/wit/**/*",
     "wasm_abi/compute-at-edge-abi/**/*.witx",
-    "wasm_abi/data/*.wasm",
 ]
 rust-version = "1.95"
 
