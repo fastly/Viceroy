@@ -102,7 +102,7 @@ impl Default for Body {
     fn default() -> Self {
         Body {
             chunks: VecDeque::new(),
-            between_bytes_timeout: Duration::from_hours(7 * 24),
+            between_bytes_timeout: Duration::MAX,
             sleep: None,
             trailers: HeaderMap::new(),
             trailers_ready: false,
