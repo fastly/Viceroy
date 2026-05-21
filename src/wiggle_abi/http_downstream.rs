@@ -2,7 +2,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use crate::error::Error;
-use crate::session::{AsyncItemHandle, Session};
+use crate::sandbox::{AsyncItemHandle, Sandbox};
 use crate::wiggle_abi::fastly_http_downstream::FastlyHttpDownstream;
 use crate::wiggle_abi::headers::HttpHeaders;
 use crate::wiggle_abi::types::{
@@ -12,7 +12,7 @@ use crate::wiggle_abi::types::{
 
 use wiggle::{GuestMemory, GuestPtr};
 
-impl FastlyHttpDownstream for Session {
+impl FastlyHttpDownstream for Sandbox {
     async fn next_request(
         &mut self,
         memory: &mut GuestMemory<'_>,
@@ -296,7 +296,7 @@ impl FastlyHttpDownstream for Session {
         region_max_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let region = Session::downstream_compliance_region(self, handle)?
+        let region = Sandbox::downstream_compliance_region(self, handle)?
             .ok_or(Error::MissingDownstreamMetadata)?;
         let region_len = region.len();
 
@@ -476,7 +476,7 @@ trait MetadataView {
     /// Stub for metadata that Viceroy does not support. Validates the handle normally, but always returns Error::ValueAbsent rather than a meaningful value.
     fn absent_metadata_value<T>(&self, handle: RequestHandle) -> Result<T, Error>;
 }
-impl MetadataView for Session {
+impl MetadataView for Sandbox {
     fn absent_metadata_value<T>(&self, handle: RequestHandle) -> Result<T, Error> {
         let _ = self
             .downstream_metadata(handle)?

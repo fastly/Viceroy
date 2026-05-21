@@ -5,8 +5,8 @@ use {
             compute::headers::get_names,
         },
         error::Error,
-        linking::{ComponentCtx, SessionView},
-        session::ViceroyResponseMetadata,
+        linking::{ComponentCtx, SandboxView},
+        sandbox::ViceroyResponseMetadata,
         upstream,
     },
     cfg_if::cfg_if,
@@ -29,13 +29,13 @@ impl http_resp::Host for ComponentCtx {
         b: Resource<http_body::Body>,
     ) -> Result<(), types::Error> {
         let resp = {
-            // Take the response parts and body from the session, and use them to build a response.
+            // Take the response parts and body from the sandbox, and use them to build a response.
             // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
-            let resp_parts = self.session_mut().take_response_parts(h.into())?;
-            let body = self.session_mut().take_body(b.into())?;
+            let resp_parts = self.sandbox_mut().take_response_parts(h.into())?;
+            let body = self.sandbox_mut().take_body(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.session_mut().send_downstream_response(resp)?;
+        self.sandbox_mut().send_downstream_response(resp)?;
         Ok(())
     }
 
@@ -45,20 +45,20 @@ impl http_resp::Host for ComponentCtx {
         b: Resource<http_body::Body>,
     ) -> Result<(), types::Error> {
         let resp = {
-            // Take the response parts and body from the session, and use them to build a response.
+            // Take the response parts and body from the sandbox, and use them to build a response.
             // Return an `FastlyStatus::Badf` error code if either of the given handles are invalid.
-            let resp_parts = self.session_mut().take_response_parts(h.into())?;
-            let body = self.session_mut().begin_streaming(b.into())?;
+            let resp_parts = self.sandbox_mut().take_response_parts(h.into())?;
+            let body = self.sandbox_mut().begin_streaming(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.session_mut().send_downstream_response(resp)?;
+        self.sandbox_mut().send_downstream_response(resp)?;
         Ok(())
     }
 
     fn close(&mut self, h: Resource<http_resp::Response>) -> Result<(), types::Error> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
-        self.session_mut().take_response_parts(h.into())?;
+        self.sandbox_mut().take_response_parts(h.into())?;
         Ok(())
     }
 }
@@ -66,14 +66,14 @@ impl http_resp::Host for ComponentCtx {
 impl http_resp::HostResponse for ComponentCtx {
     fn new(&mut self) -> Result<Resource<http_resp::Response>, types::Error> {
         let (parts, _) = Response::new(()).into_parts();
-        Ok(self.session_mut().insert_response_parts(parts).into())
+        Ok(self.sandbox_mut().insert_response_parts(parts).into())
     }
 
     fn get_status(
         &mut self,
         h: Resource<http_resp::Response>,
     ) -> Result<http_types::HttpStatus, types::Error> {
-        let parts = self.session().response_parts(h.into())?;
+        let parts = self.sandbox().response_parts(h.into())?;
         Ok(parts.status.as_u16())
     }
 
@@ -82,7 +82,7 @@ impl http_resp::HostResponse for ComponentCtx {
         h: Resource<http_resp::Response>,
         status: http_types::HttpStatus,
     ) -> Result<(), types::Error> {
-        let resp = self.session_mut().response_parts_mut(h.into())?;
+        let resp = self.sandbox_mut().response_parts_mut(h.into())?;
         let status = hyper::StatusCode::from_u16(status)?;
         resp.status = status;
         Ok(())
@@ -98,7 +98,7 @@ impl http_resp::HostResponse for ComponentCtx {
             Err(types::Error::InvalidArgument)?;
         }
 
-        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
@@ -111,7 +111,7 @@ impl http_resp::HostResponse for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<(String, Option<u32>), types::Error> {
-        let headers = &self.session_mut().response_parts(h.into())?.headers;
+        let headers = &self.sandbox_mut().response_parts(h.into())?.headers;
 
         let (buf, next) = get_names(headers.keys(), max_len, cursor)?;
 
@@ -128,7 +128,7 @@ impl http_resp::HostResponse for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &self.session().response_parts(h.into())?.headers;
+        let headers = &self.sandbox().response_parts(h.into())?.headers;
         let value = if let Some(value) = headers.get(&name) {
             value
         } else {
@@ -162,7 +162,7 @@ impl http_resp::HostResponse for ComponentCtx {
                     return Ok(Err(Error::InvalidArgument.into()));
                 }
 
-                let headers = &self.session().response_parts(h.into()).unwrap().headers;
+                let headers = &self.sandbox().response_parts(h.into()).unwrap().headers;
 
                 let (buf, next) = match get_values(
                     headers,
@@ -189,7 +189,7 @@ impl http_resp::HostResponse for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().response_parts_mut(h.into())?.headers;
 
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let values = {
@@ -223,7 +223,7 @@ impl http_resp::HostResponse for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
@@ -240,7 +240,7 @@ impl http_resp::HostResponse for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().response_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().response_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers.remove(name).ok_or(types::Error::InvalidArgument)?;
 
@@ -251,7 +251,7 @@ impl http_resp::HostResponse for ComponentCtx {
         &mut self,
         h: Resource<http_resp::Response>,
     ) -> Result<http_types::HttpVersion, types::Error> {
-        let req = self.session().response_parts(h.into())?;
+        let req = self.sandbox().response_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
     }
@@ -261,7 +261,7 @@ impl http_resp::HostResponse for ComponentCtx {
         h: Resource<http_resp::Response>,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
-        let req = self.session_mut().response_parts_mut(h.into())?;
+        let req = self.sandbox_mut().response_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
     }
@@ -280,7 +280,7 @@ impl http_resp::HostResponse for ComponentCtx {
             }
         };
 
-        let extensions = &mut self.session_mut().response_parts_mut(h.into())?.extensions;
+        let extensions = &mut self.sandbox_mut().response_parts_mut(h.into())?.extensions;
 
         match extensions.get_mut::<ViceroyResponseMetadata>() {
             None => {
@@ -318,14 +318,14 @@ impl http_resp::HostResponse for ComponentCtx {
         &mut self,
         resp_handle: Resource<http_resp::Response>,
     ) -> Option<http_resp::IpAddress> {
-        let resp = self.session().response_parts(resp_handle.into()).unwrap();
+        let resp = self.sandbox().response_parts(resp_handle.into()).unwrap();
         let md = resp.extensions.get::<upstream::ConnMetadata>()?;
 
         Some(md.remote_addr.ip().into())
     }
 
     fn get_remote_port(&mut self, resp_handle: Resource<http_resp::Response>) -> Option<u16> {
-        let resp = self.session().response_parts(resp_handle.into()).unwrap();
+        let resp = self.sandbox().response_parts(resp_handle.into()).unwrap();
         let md = resp.extensions.get::<upstream::ConnMetadata>()?;
         let port = md.remote_addr.port();
         Some(port)

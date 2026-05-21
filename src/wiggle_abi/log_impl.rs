@@ -3,7 +3,7 @@
 use {
     crate::{
         error::Error,
-        session::Session,
+        sandbox::Sandbox,
         wiggle_abi::{fastly_log::FastlyLog, types::EndpointHandle},
     },
     lazy_static::lazy_static,
@@ -22,7 +22,7 @@ fn is_reserved_endpoint(name: &[u8]) -> bool {
     RESERVED_ENDPOINT_RE.is_match(name)
 }
 
-impl FastlyLog for Session {
+impl FastlyLog for Sandbox {
     fn endpoint_get(
         &mut self,
         memory: &mut GuestMemory<'_>,

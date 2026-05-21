@@ -1,13 +1,13 @@
 use {
     crate::component::bindings::fastly::compute::{config_store, types},
-    crate::linking::{ComponentCtx, SessionView},
+    crate::linking::{ComponentCtx, SandboxView},
     crate::wiggle_abi::types::{ConfigStoreHandle, DictionaryHandle},
     wasmtime::component::Resource,
 };
 
 impl config_store::HostStore for ComponentCtx {
     fn open(&mut self, name: String) -> Result<Resource<config_store::Store>, types::OpenError> {
-        let handle = self.session_mut().dictionary_handle(name.as_str())?;
+        let handle = self.sandbox_mut().dictionary_handle(name.as_str())?;
         let handle = ConfigStoreHandle::from(u32::from(handle));
         Ok(handle.into())
     }
@@ -19,7 +19,7 @@ impl config_store::HostStore for ComponentCtx {
         max_len: u64,
     ) -> Result<Option<String>, types::Error> {
         let handle = DictionaryHandle::from(store.rep());
-        let dict = &self.session().dictionary(handle)?.contents;
+        let dict = &self.sandbox().dictionary(handle)?.contents;
 
         let item = if let Some(item) = dict.get(&name) {
             item

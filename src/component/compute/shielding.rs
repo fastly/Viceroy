@@ -5,15 +5,15 @@ use wasmtime::component::Resource;
 
 impl shielding::Host for ComponentCtx {
     fn shield_info(&mut self, name: String, max_len: u64) -> Result<String, types::Error> {
-        let running_on = self.session().shielding_sites().is_local(&name);
+        let running_on = self.sandbox().shielding_sites().is_local(&name);
         let unencrypted = self
-            .session()
+            .sandbox()
             .shielding_sites()
             .get_unencrypted(&name)
             .map(|x| x.to_string())
             .unwrap_or_default();
         let encrypted = self
-            .session()
+            .sandbox()
             .shielding_sites()
             .get_encrypted(&name)
             .map(|x| x.to_string())
@@ -52,7 +52,7 @@ impl shielding::Host for ComponentCtx {
         // `u64::MAX` because we don't need to impose any extra constraints
         // on the length of the backend name string here.
         let name = crate::component::shielding::backend_for_shield(
-            &mut self.session,
+            &mut self.sandbox,
             &mut self.wasi_table,
             &target_shield,
             options,

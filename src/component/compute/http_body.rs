@@ -6,7 +6,7 @@ use {
     crate::{
         body::Body,
         error::Error,
-        linking::{ComponentCtx, SessionView},
+        linking::{ComponentCtx, SandboxView},
     },
     http::header::{HeaderName, HeaderValue},
     wasmtime::component::Resource,
@@ -18,7 +18,7 @@ pub const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 impl http_body::Host for ComponentCtx {
     fn new(&mut self) -> Result<Resource<http_body::Body>, types::Error> {
-        Ok(self.session_mut().insert_body(Body::empty()).into())
+        Ok(self.sandbox_mut().insert_body(Body::empty()).into())
     }
 
     async fn write(
@@ -31,11 +31,11 @@ impl http_body::Host for ComponentCtx {
         // Validate the body handle and the buffer.
         let buf = buf.as_slice();
 
-        if self.session().is_streaming_body(h) {
-            let body = self.session_mut().streaming_body_mut(h)?;
+        if self.sandbox().is_streaming_body(h) {
+            let body = self.sandbox_mut().streaming_body_mut(h)?;
             body.send_chunk(buf).await?;
         } else {
-            let body = self.session_mut().body_mut(h)?;
+            let body = self.sandbox_mut().body_mut(h)?;
             body.push_back(buf);
         }
 
@@ -57,14 +57,14 @@ impl http_body::Host for ComponentCtx {
         let buf = buf.as_slice();
 
         // Only normal bodies can be front-written
-        if self.session().is_streaming_body(h) {
+        if self.sandbox().is_streaming_body(h) {
             return Err(Error::Unsupported {
                 msg: "can only write to the end of a streaming body",
             }
             .into());
         }
 
-        let body = self.session_mut().body_mut(h)?;
+        let body = self.sandbox_mut().body_mut(h)?;
         body.push_front(buf);
 
         Ok(())
@@ -75,18 +75,18 @@ impl http_body::Host for ComponentCtx {
         dest: Resource<http_body::Body>,
         src: Resource<http_body::Body>,
     ) -> Result<(), types::Error> {
-        // Take the `src` body out of the session, and get a mutable reference
+        // Take the `src` body out of the sandbox, and get a mutable reference
         // to the `dest` body we will append to.
-        let src = self.session_mut().take_body(src.into())?;
+        let src = self.sandbox_mut().take_body(src.into())?;
 
         let dest = dest.into();
-        if self.session().is_streaming_body(dest) {
-            let dest = self.session_mut().streaming_body_mut(dest)?;
+        if self.sandbox().is_streaming_body(dest) {
+            let dest = self.sandbox_mut().streaming_body_mut(dest)?;
             for chunk in src {
                 dest.send_chunk(chunk).await?;
             }
         } else {
-            let dest = self.session_mut().body_mut(dest)?;
+            let dest = self.sandbox_mut().body_mut(dest)?;
             dest.append(src);
         }
         Ok(())
@@ -100,7 +100,7 @@ impl http_body::Host for ComponentCtx {
         let h = h.into();
 
         // only normal bodies (not streaming bodies) can be read from
-        let body = self.session_mut().body_mut(h)?;
+        let body = self.sandbox_mut().body_mut(h)?;
 
         let mut buffer = vec![0; chunk_size as usize];
         let len = body.read(&mut buffer).await?;
@@ -111,21 +111,21 @@ impl http_body::Host for ComponentCtx {
     fn close(&mut self, h: Resource<http_body::Body>) -> Result<(), types::Error> {
         // Drop the body and pass up an error if the handle does not exist
         let h = h.into();
-        if self.session().is_streaming_body(h) {
+        if self.sandbox().is_streaming_body(h) {
             // Make sure a streaming body gets a `finish` message
-            self.session_mut().take_streaming_body(h)?.finish()?;
+            self.sandbox_mut().take_streaming_body(h)?.finish()?;
             Ok(())
         } else {
-            Ok(self.session_mut().drop_body(h)?)
+            Ok(self.sandbox_mut().drop_body(h)?)
         }
     }
 
     fn get_known_length(&mut self, h: Resource<http_body::Body>) -> Option<u64> {
         let h = h.into();
-        if self.session().is_streaming_body(h) {
+        if self.sandbox().is_streaming_body(h) {
             None
         } else {
-            self.session_mut().body_mut(h).unwrap().len()
+            self.sandbox_mut().body_mut(h).unwrap().len()
         }
     }
 
@@ -137,14 +137,14 @@ impl http_body::Host for ComponentCtx {
     ) -> Result<(), types::Error> {
         // Appending trailers is always allowed for bodies and streaming bodies.
         let h = h.into();
-        if self.session().is_streaming_body(h) {
-            let body = self.session_mut().streaming_body_mut(h)?;
+        if self.sandbox().is_streaming_body(h) {
+            let body = self.sandbox_mut().streaming_body_mut(h)?;
             let name = HeaderName::from_bytes(name.as_bytes())?;
             let value = HeaderValue::from_bytes(value.as_slice())?;
             body.append_trailer(name, value);
             Ok(())
         } else {
-            let trailers = &mut self.session_mut().body_mut(h)?.trailers;
+            let trailers = &mut self.sandbox_mut().body_mut(h)?.trailers;
             if name.len() > MAX_HEADER_NAME_LEN {
                 return Err(Error::InvalidArgument.into());
             }
@@ -165,11 +165,11 @@ impl http_body::Host for ComponentCtx {
         let h = h.into();
 
         // Read operations are not allowed on streaming bodies.
-        if self.session().is_streaming_body(h) {
+        if self.sandbox().is_streaming_body(h) {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h)?;
+        let body = self.sandbox_mut().body_mut(h)?;
         if !body.trailers_ready {
             return Err(http_body::TrailerError::NotAvailableYet);
         }
@@ -189,11 +189,11 @@ impl http_body::Host for ComponentCtx {
         let h = h.into();
 
         // Read operations are not allowed on streaming bodies.
-        if self.session().is_streaming_body(h) {
+        if self.sandbox().is_streaming_body(h) {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h)?;
+        let body = self.sandbox_mut().body_mut(h)?;
         if !body.trailers_ready {
             return Err(http_body::TrailerError::NotAvailableYet);
         }
@@ -233,11 +233,11 @@ impl http_body::Host for ComponentCtx {
         let h = h.into();
 
         // Read operations are not allowed on streaming bodies.
-        if self.session().is_streaming_body(h) {
+        if self.sandbox().is_streaming_body(h) {
             return Err(Error::InvalidArgument.into());
         }
 
-        let body = self.session_mut().body_mut(h).unwrap();
+        let body = self.sandbox_mut().body_mut(h).unwrap();
         if !body.trailers_ready {
             return Err(http_body::TrailerError::NotAvailableYet);
         }

@@ -9,7 +9,7 @@ impl geo::Host for ComponentCtx {
         let ip_addr: IpAddr = addr.into();
 
         let json = self
-            .session()
+            .sandbox()
             .geolocation_lookup(&ip_addr)
             .ok_or(geo::Error::GenericError)?;
 

@@ -11,8 +11,8 @@ use {
     crate::{
         config::Backend,
         error::Error,
-        pushpin::{PushpinRedirectInfo, PushpinRedirectRequestInfo},
-        session::{AsyncItem, PeekableTask, Session, ViceroyRequestMetadata},
+        handoff::{HandoffInfo, HandoffRequestInfo},
+        sandbox::{AsyncItem, PeekableTask, Sandbox, ViceroyRequestMetadata},
         upstream,
         wiggle_abi::{
             fastly_http_downstream::FastlyHttpDownstream,
@@ -32,7 +32,7 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyHttpReq for Session {
+impl FastlyHttpReq for Sandbox {
     fn body_downstream_get(
         &mut self,
         _memory: &mut GuestMemory<'_>,
@@ -209,7 +209,17 @@ impl FastlyHttpReq for Session {
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
+        let backend_name = memory
+            .as_str(backend_name)?
+            .ok_or(Error::SharedMemory)?
+            .to_string();
+        let redirect_info = HandoffInfo {
+            backend_name,
+            request_info: None,
+        };
+
+        self.redirect_downstream_to_backend(redirect_info)?;
+        Ok(())
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
@@ -222,7 +232,7 @@ impl FastlyHttpReq for Session {
             .as_str(backend_name)?
             .ok_or(Error::SharedMemory)?
             .to_string();
-        let redirect_info = PushpinRedirectInfo {
+        let redirect_info = HandoffInfo {
             backend_name,
             request_info: None,
         };
@@ -233,11 +243,22 @@ impl FastlyHttpReq for Session {
 
     fn redirect_to_websocket_proxy_v2(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
-        _req_handle: RequestHandle,
-        _backend: GuestPtr<str>,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        backend_name: GuestPtr<str>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Redirect to WebSocket proxy"))
+        let backend_name = memory
+            .as_str(backend_name)?
+            .ok_or(Error::SharedMemory)?
+            .to_string();
+        let req = self.request_parts(req_handle)?;
+        let redirect_info = HandoffInfo {
+            backend_name,
+            request_info: Some(HandoffRequestInfo::from_parts(req)),
+        };
+
+        self.redirect_downstream_to_backend(redirect_info)?;
+        Ok(())
     }
 
     fn redirect_to_grip_proxy_v2(
@@ -251,9 +272,9 @@ impl FastlyHttpReq for Session {
             .ok_or(Error::SharedMemory)?
             .to_string();
         let req = self.request_parts(req_handle)?;
-        let redirect_info = PushpinRedirectInfo {
+        let redirect_info = HandoffInfo {
             backend_name,
-            request_info: Some(PushpinRedirectRequestInfo::from_parts(req)),
+            request_info: Some(HandoffRequestInfo::from_parts(req)),
         };
 
         self.redirect_downstream_to_pushpin(redirect_info)?;
@@ -834,7 +855,7 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // synchronously send the request
-        let resp = upstream::send_request(req, backend, self.tls_config()).await?;
+        let resp = upstream::send_request(req, backend, backend_name, self.tls_config()).await?;
         Ok(self.insert_response(resp))
     }
 
@@ -884,8 +905,13 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let task =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
+        let task = PeekableTask::spawn(upstream::send_request(
+            req,
+            backend,
+            backend_name,
+            self.tls_config(),
+        ))
+        .await;
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))
@@ -929,8 +955,13 @@ impl FastlyHttpReq for Session {
             .ok_or_else(|| Error::UnknownBackend(backend_name.to_owned()))?;
 
         // asynchronously send the request
-        let task =
-            PeekableTask::spawn(upstream::send_request(req, backend, self.tls_config())).await;
+        let task = PeekableTask::spawn(upstream::send_request(
+            req,
+            backend,
+            backend_name,
+            self.tls_config(),
+        ))
+        .await;
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))
@@ -1071,7 +1102,7 @@ impl FastlyHttpReq for Session {
         encodings: ContentEncodings,
     ) -> Result<(), Error> {
         // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
-        // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
+        // the book-keeping burden inside Sandbox. The flag will get picked up later, in `send_request`.
         let extensions = &mut self.request_parts_mut(req_handle)?.extensions;
 
         match extensions.get_mut::<ViceroyRequestMetadata>() {

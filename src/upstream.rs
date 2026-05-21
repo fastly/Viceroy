@@ -5,7 +5,7 @@ use crate::{
     error::Error,
     framing::{content_length_is_valid, transfer_encoding_is_supported},
     headers::filter_outgoing_headers,
-    session::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
+    sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
     wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
 use futures::Future;
@@ -40,8 +40,8 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
-    default_roots: rustls::RootCertStore,
+    pub(crate) partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    pub(crate) default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
@@ -322,6 +322,7 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
 pub fn send_request(
     mut req: Request<Body>,
     backend: &Arc<Backend>,
+    backend_name: &str,
     tls_config: &TlsConfig,
 ) -> impl Future<Output = Result<Response<Body>, Error>> + use<> {
     let connector = BackendConnector::new(backend.clone(), tls_config.clone());
@@ -376,6 +377,8 @@ pub fn send_request(
     *req.uri_mut() = uri;
 
     let h2only = backend.grpc;
+    let backend_name = backend_name.to_string();
+    let backend_uri = backend.uri.to_string();
     async move {
         let mut builder = Client::builder();
 
@@ -395,9 +398,14 @@ pub fn send_request(
             .build(connector)
             .request(req)
             .await
-            .map_err(|e| {
-                eprintln!("Error: {:?}", e);
-                e
+            .map_err(|source| {
+                let err = Error::BackendConnectionError {
+                    backend_name: backend_name.clone(),
+                    uri: backend_uri.clone(),
+                    source,
+                };
+                tracing::error!("{}", err);
+                err
             })?;
 
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
@@ -436,7 +444,7 @@ pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.
 }
 
-/// A pair of a pending request and the handle that pointed to it in the session, suitable for
+/// A pair of a pending request and the handle that pointed to it in the sandbox, suitable for
 /// invoking the futures select API.
 ///
 /// We need this type because `future::select_all` does not guarantee anything about the order of

@@ -8,7 +8,7 @@ use {
     crate::{
         body::Body,
         error::Error,
-        session::Session,
+        sandbox::Sandbox,
         wiggle_abi::{
             fastly_http_body::FastlyHttpBody,
             types::{
@@ -20,14 +20,14 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyHttpBody for Session {
+impl FastlyHttpBody for Sandbox {
     async fn append(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         dest: BodyHandle,
         src: BodyHandle,
     ) -> Result<(), Error> {
-        // Take the `src` body out of the session, and get a mutable reference
+        // Take the `src` body out of the sandbox, and get a mutable reference
         // to the `dest` body we will append to.
         let mut src = self.take_body(src)?;
         let trailers = std::mem::take(&mut src.trailers);

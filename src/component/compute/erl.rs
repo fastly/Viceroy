@@ -31,7 +31,7 @@ impl erl::HostRateCounter for ComponentCtx {
         let rc = self.wasi_table.get(&rc).unwrap();
         let pb = self.wasi_table.get(&pb).unwrap();
         crate::component::erl::check_rate(
-            &mut self.session,
+            &mut self.sandbox,
             rc,
             entry,
             delta,
@@ -49,7 +49,7 @@ impl erl::HostRateCounter for ComponentCtx {
         delta: u32,
     ) -> Result<(), types::Error> {
         let rc = self.wasi_table.get(&rc).unwrap();
-        crate::component::erl::ratecounter_increment(&mut self.session, rc, entry, delta)
+        crate::component::erl::ratecounter_increment(&mut self.sandbox, rc, entry, delta)
     }
 
     fn lookup_rate(
@@ -59,7 +59,7 @@ impl erl::HostRateCounter for ComponentCtx {
         window: u32,
     ) -> Result<u32, types::Error> {
         let rc = self.wasi_table.get(&rc).unwrap();
-        crate::component::erl::ratecounter_lookup_rate(&mut self.session, rc, entry, window)
+        crate::component::erl::ratecounter_lookup_rate(&mut self.sandbox, rc, entry, window)
     }
 
     fn lookup_count(
@@ -69,7 +69,7 @@ impl erl::HostRateCounter for ComponentCtx {
         duration: u32,
     ) -> Result<u32, types::Error> {
         let rc = self.wasi_table.get(&rc).unwrap();
-        crate::component::erl::ratecounter_lookup_count(&mut self.session, rc, entry, duration)
+        crate::component::erl::ratecounter_lookup_count(&mut self.sandbox, rc, entry, duration)
     }
 
     fn drop(&mut self, ratecounter: Resource<String>) -> wasmtime::Result<()> {
@@ -91,12 +91,12 @@ impl erl::HostPenaltyBox for ComponentCtx {
 
     fn add(&mut self, pb: Resource<String>, entry: String, ttl: u32) -> Result<(), types::Error> {
         let pb = self.wasi_table.get(&pb).unwrap();
-        crate::component::erl::penaltybox_add(&mut self.session, pb, entry, ttl)
+        crate::component::erl::penaltybox_add(&mut self.sandbox, pb, entry, ttl)
     }
 
     fn has(&mut self, pb: Resource<String>, entry: String) -> Result<bool, types::Error> {
         let pb = self.wasi_table.get(&pb).unwrap();
-        crate::component::erl::penaltybox_has(&mut self.session, pb, entry)
+        crate::component::erl::penaltybox_has(&mut self.sandbox, pb, entry)
     }
 
     fn drop(&mut self, penaltybox: Resource<String>) -> wasmtime::Result<()> {

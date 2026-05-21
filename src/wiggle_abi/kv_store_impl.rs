@@ -1,8 +1,8 @@
 //! fastly_obj_store` hostcall implementations.
 
 use crate::object_store::KvStoreError;
-use crate::session::PeekableTask;
-use crate::session::{
+use crate::sandbox::PeekableTask;
+use crate::sandbox::{
     PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
 };
 
@@ -10,7 +10,7 @@ use {
     crate::{
         error::Error,
         object_store::{ObjectKey, ObjectStoreError},
-        session::Session,
+        sandbox::Sandbox,
         wiggle_abi::{
             fastly_kv_store::FastlyKvStore,
             types::{
@@ -24,7 +24,7 @@ use {
     wiggle::{GuestMemory, GuestPtr},
 };
 
-impl FastlyKvStore for Session {
+impl FastlyKvStore for Sandbox {
     fn open(
         &mut self,
         memory: &mut GuestMemory<'_>,

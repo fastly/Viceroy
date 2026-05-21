@@ -5,8 +5,8 @@ use {
             compute::headers::{get_names, get_values},
         },
         error::Error,
-        linking::{ComponentCtx, SessionView},
-        session::ViceroyRequestMetadata,
+        linking::{ComponentCtx, SandboxView},
+        sandbox::ViceroyRequestMetadata,
     },
     http::{
         Method, Uri,
@@ -52,7 +52,7 @@ impl http_req::Host for ComponentCtx {
     ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
         let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        crate::component::http_req::send(&mut self.session, h, b, backend_name).await
+        crate::component::http_req::send(&mut self.sandbox, h, b, backend_name).await
     }
 
     async fn send_uncached(
@@ -63,7 +63,7 @@ impl http_req::Host for ComponentCtx {
     ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
         let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        crate::component::http_req::send_uncached(&mut self.session, h, b, backend_name).await
+        crate::component::http_req::send_uncached(&mut self.sandbox, h, b, backend_name).await
     }
 
     async fn send_async(
@@ -74,7 +74,7 @@ impl http_req::Host for ComponentCtx {
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
         let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        crate::component::http_req::send_async(&mut self.session, h, b, backend_name).await
+        crate::component::http_req::send_async(&mut self.sandbox, h, b, backend_name).await
     }
 
     async fn send_async_uncached(
@@ -85,7 +85,7 @@ impl http_req::Host for ComponentCtx {
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
         let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        crate::component::http_req::send_async_uncached(&mut self.session, h, b, backend_name).await
+        crate::component::http_req::send_async_uncached(&mut self.sandbox, h, b, backend_name).await
     }
 
     async fn send_async_uncached_streaming(
@@ -97,7 +97,7 @@ impl http_req::Host for ComponentCtx {
         let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
         crate::component::http_req::send_async_uncached_streaming(
-            &mut self.session,
+            &mut self.sandbox,
             h,
             b,
             backend_name,
@@ -113,7 +113,7 @@ impl http_req::Host for ComponentCtx {
     ) -> Result<Resource<http_req::PendingRequest>, types::Error> {
         let backend_name = self.wasi_table.get(&backend_name).unwrap();
 
-        crate::component::http_req::send_async_streaming(&mut self.session, h, b, backend_name)
+        crate::component::http_req::send_async_streaming(&mut self.sandbox, h, b, backend_name)
             .await
     }
 
@@ -122,27 +122,27 @@ impl http_req::Host for ComponentCtx {
         h: Resource<http_req::PendingRequest>,
     ) -> Result<http_resp::ResponseWithBody, http_req::ErrorWithDetail> {
         let pending_req = self
-            .session_mut()
+            .sandbox_mut()
             .take_pending_request(h.into())
             .unwrap()
             .recv()
             .await
             .map_err(Into::into)
             .map_err(types::Error::with_empty_detail)?;
-        let (resp_handle, body_handle) = self.session_mut().insert_response(pending_req);
+        let (resp_handle, body_handle) = self.sandbox_mut().insert_response(pending_req);
         Ok((resp_handle.into(), body_handle.into()))
     }
 
     fn close(&mut self, h: Resource<http_req::Request>) -> Result<(), types::Error> {
         // We don't do anything with the parts, but we do pass the error up if
         // the handle given doesn't exist
-        self.session_mut().take_request_parts(h.into())?;
+        self.sandbox_mut().take_request_parts(h.into())?;
         Ok(())
     }
 
     fn upgrade_websocket(&mut self, backend: Resource<String>) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::http_req::upgrade_websocket(&mut self.session, backend)
+        crate::component::http_req::upgrade_websocket(&mut self.sandbox, backend)
     }
 }
 
@@ -152,7 +152,7 @@ impl http_req::HostRequest for ComponentCtx {
         h: Resource<http_req::Request>,
         max_len: u64,
     ) -> Result<String, types::Error> {
-        let req = self.session.request_parts(h.into())?;
+        let req = self.sandbox.request_parts(h.into())?;
         let req_method = &req.method;
 
         if req_method.as_str().len() > usize::try_from(max_len).unwrap() {
@@ -169,7 +169,7 @@ impl http_req::HostRequest for ComponentCtx {
         h: Resource<http_req::Request>,
         max_len: u64,
     ) -> Result<String, types::Error> {
-        let req = self.session().request_parts(h.into())?;
+        let req = self.sandbox().request_parts(h.into())?;
         let req_uri = &req.uri;
         let res = req_uri.to_string();
 
@@ -191,7 +191,7 @@ impl http_req::HostRequest for ComponentCtx {
 
     fn new(&mut self) -> Result<Resource<http_req::Request>, types::Error> {
         let (parts, _) = Request::new(()).into_parts();
-        Ok(self.session_mut().insert_request_parts(parts).into())
+        Ok(self.sandbox_mut().insert_request_parts(parts).into())
     }
 
     fn get_header_names(
@@ -200,7 +200,7 @@ impl http_req::HostRequest for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<(String, Option<u32>), types::Error> {
-        let headers = &self.session().request_parts(h.into())?.headers;
+        let headers = &self.sandbox().request_parts(h.into())?.headers;
 
         let (buf, next) = get_names(headers.keys(), max_len, cursor)?;
 
@@ -217,7 +217,7 @@ impl http_req::HostRequest for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &self.session().request_parts(h.into())?.headers;
+        let headers = &self.sandbox().request_parts(h.into())?.headers;
         let value = if let Some(value) = headers.get(&name) {
             value
         } else {
@@ -238,7 +238,7 @@ impl http_req::HostRequest for ComponentCtx {
         max_len: u64,
         cursor: u32,
     ) -> Result<(Vec<u8>, Option<u32>), types::Error> {
-        let headers = &self.session().request_parts(h.into()).unwrap().headers;
+        let headers = &self.sandbox().request_parts(h.into()).unwrap().headers;
 
         let (buf, next) = get_values(headers, &name, max_len, cursor)?;
 
@@ -255,7 +255,7 @@ impl http_req::HostRequest for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().request_parts_mut(h.into())?.headers;
 
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let values = {
@@ -289,7 +289,7 @@ impl http_req::HostRequest for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.insert(name, value);
@@ -307,7 +307,7 @@ impl http_req::HostRequest for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         let value = HeaderValue::from_bytes(value.as_slice())?;
         headers.append(name, value);
@@ -324,7 +324,7 @@ impl http_req::HostRequest for ComponentCtx {
             return Err(Error::InvalidArgument.into());
         }
 
-        let headers = &mut self.session_mut().request_parts_mut(h.into())?.headers;
+        let headers = &mut self.sandbox_mut().request_parts_mut(h.into())?.headers;
         let name = HeaderName::from_bytes(name.as_bytes())?;
         headers.remove(name).ok_or(types::Error::InvalidArgument)?;
 
@@ -336,13 +336,13 @@ impl http_req::HostRequest for ComponentCtx {
         h: Resource<http_req::Request>,
         method: String,
     ) -> Result<(), types::Error> {
-        let method_ref = &mut self.session_mut().request_parts_mut(h.into())?.method;
+        let method_ref = &mut self.sandbox_mut().request_parts_mut(h.into())?.method;
         *method_ref = Method::from_bytes(method.as_bytes())?;
         Ok(())
     }
 
     fn set_uri(&mut self, h: Resource<http_req::Request>, uri: String) -> Result<(), types::Error> {
-        let uri_ref = &mut self.session_mut().request_parts_mut(h.into())?.uri;
+        let uri_ref = &mut self.sandbox_mut().request_parts_mut(h.into())?.uri;
         *uri_ref = Uri::try_from(uri.as_bytes())?;
         Ok(())
     }
@@ -351,7 +351,7 @@ impl http_req::HostRequest for ComponentCtx {
         &mut self,
         h: Resource<http_req::Request>,
     ) -> Result<http_types::HttpVersion, types::Error> {
-        let req = self.session().request_parts(h.into())?;
+        let req = self.sandbox().request_parts(h.into())?;
         let version = http_types::HttpVersion::try_from(req.version)?;
         Ok(version)
     }
@@ -361,7 +361,7 @@ impl http_req::HostRequest for ComponentCtx {
         h: Resource<http_req::Request>,
         version: http_types::HttpVersion,
     ) -> Result<(), types::Error> {
-        let req = self.session_mut().request_parts_mut(h.into())?;
+        let req = self.sandbox_mut().request_parts_mut(h.into())?;
         req.version = hyper::Version::from(version);
         Ok(())
     }
@@ -374,8 +374,8 @@ impl http_req::HostRequest for ComponentCtx {
         use crate::wiggle_abi::types;
 
         // NOTE: We're going to hide this flag in the extensions of the request in order to decrease
-        // the book-keeping burden inside Session. The flag will get picked up later, in `send_request`.
-        let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;
+        // the book-keeping burden inside Sandbox. The flag will get picked up later, in `send_request`.
+        let extensions = &mut self.sandbox_mut().request_parts_mut(h.into())?.extensions;
 
         let encodings = types::ContentEncodings::try_from(encodings.as_array()[0])?;
 
@@ -400,7 +400,7 @@ impl http_req::HostRequest for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::http_req::redirect_to_websocket_proxy(&mut self.session, handle, backend)
+        crate::component::http_req::redirect_to_websocket_proxy(&mut self.sandbox, handle, backend)
     }
 
     fn set_framing_headers_mode(
@@ -417,7 +417,7 @@ impl http_req::HostRequest for ComponentCtx {
             }
         };
 
-        let extensions = &mut self.session_mut().request_parts_mut(h.into())?.extensions;
+        let extensions = &mut self.sandbox_mut().request_parts_mut(h.into())?.extensions;
 
         match extensions.get_mut::<ViceroyRequestMetadata>() {
             None => {
@@ -440,7 +440,7 @@ impl http_req::HostRequest for ComponentCtx {
         backend: Resource<String>,
     ) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
-        crate::component::http_req::redirect_to_grip_proxy(&mut self.session, req_handle, backend)
+        crate::component::http_req::redirect_to_grip_proxy(&mut self.sandbox, req_handle, backend)
     }
 
     fn drop(&mut self, _request: Resource<http_req::Request>) -> wasmtime::Result<()> {

@@ -5,7 +5,7 @@ use crate::viceroy_test;
 use hyper::{Request, StatusCode};
 
 viceroy_test!(check_hostcalls_implemented, |is_component| {
-    let test = Test::using_fixture("reusable-sessions.wasm")
+    let test = Test::using_fixture("reusable-sandboxes.wasm")
         .adapt_component(is_component)
         .via_hyper();
 
@@ -25,7 +25,7 @@ viceroy_test!(check_hostcalls_implemented, |is_component| {
 });
 
 viceroy_test!(check_crash_causes_5xx, |is_component| {
-    let test = Test::using_fixture("reusable-sessions.wasm")
+    let test = Test::using_fixture("reusable-sandboxes.wasm")
         .adapt_component(is_component)
         .via_hyper();
 

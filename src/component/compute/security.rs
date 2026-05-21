@@ -13,8 +13,8 @@ impl security::Host for ComponentCtx {
         buf_max_len: u64,
     ) -> Result<String, types::Error> {
         // Make sure we're given valid handles, even though we won't use them.
-        let _ = self.session().request_parts(ds_req.into())?;
-        let _ = self.session().body(ds_body.into())?;
+        let _ = self.sandbox().request_parts(ds_req.into())?;
+        let _ = self.sandbox().body(ds_body.into())?;
 
         // For now, corp and workspace arguments are required to actually generate the hostname,
         // but in the future, the lookaside service will be generated using the customer ID, and
@@ -28,7 +28,7 @@ impl security::Host for ComponentCtx {
         }
 
         // Return the mock NGWAF response.
-        let ngwaf_resp = self.session().ngwaf_response();
+        let ngwaf_resp = self.sandbox().ngwaf_response();
         let ngwaf_resp_len = ngwaf_resp.len();
 
         match u64::try_from(ngwaf_resp_len) {

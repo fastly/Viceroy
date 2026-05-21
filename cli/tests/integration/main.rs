@@ -24,7 +24,7 @@ mod memory;
 mod profiling;
 mod request;
 mod response;
-mod reusable_sessions;
+mod reusable_sandboxes;
 mod secret_store;
 mod sending_response;
 mod shielding;

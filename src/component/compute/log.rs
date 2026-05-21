@@ -1,6 +1,6 @@
 use {
     crate::component::bindings::fastly::compute::{log, types},
-    crate::linking::{ComponentCtx, SessionView},
+    crate::linking::{ComponentCtx, SandboxView},
     lazy_static::lazy_static,
     wasmtime::component::Resource,
 };
@@ -27,11 +27,11 @@ impl log::HostEndpoint for ComponentCtx {
             return Err(types::OpenError::Reserved);
         }
 
-        Ok(self.session_mut().log_endpoint_handle(name).into())
+        Ok(self.sandbox_mut().log_endpoint_handle(name).into())
     }
 
     fn write(&mut self, h: Resource<log::Endpoint>, msg: Vec<u8>) {
-        let endpoint = self.session().log_endpoint(h.into()).unwrap();
+        let endpoint = self.sandbox().log_endpoint(h.into()).unwrap();
 
         // The log API is infallible, so if we get an error, warn about it
         // rather than bubbling it up through the log API.
