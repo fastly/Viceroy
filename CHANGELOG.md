@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.18.0 (2026-05-21)
+
 - Fix noshift adapter selection for wit-bindgen library components. ([#618](https://github.com/fastly/Viceroy/pull/618))
 - Rename 'session' to 'sandbox' since that is the preferred term in public documentation. ([#617](https://github.com/fastly/Viceroy/pull/617))
 - Add support for "WebSockets passthrough" ([#621](https://github.com/fastly/Viceroy/pull/621))
