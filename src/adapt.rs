@@ -104,30 +104,35 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
 
                 for import in section {
                     let import = import?;
-                    let entity = wasm_encoder::EntityType::try_from(import.ty).map_err(|_| {
-                        anyhow::anyhow!(
-                            "Failed to translate type for import {}:{}",
-                            import.module,
-                            import.name
-                        )
-                    })?;
+                    for import in import {
+                        let import = import?;
+                        let import = import.1;
+                        let entity =
+                            wasm_encoder::EntityType::try_from(import.ty).map_err(|_| {
+                                anyhow::anyhow!(
+                                    "Failed to translate type for import {}:{}",
+                                    import.module,
+                                    import.name
+                                )
+                            })?;
 
-                    if is_fastly_module(import.module) {
-                        // In order to build a single module that can serve as
-                        // the adapter for the many "fastly_*" modules we have,
-                        // as well as the "env" module we have, as well as for
-                        // the "wasi_snapshot_preview1" module, we mangle
-                        // "fastly_*" and "env" names and put them into the
-                        // "wasi_snapshot_preview1" module.
-                        let module = "wasi_snapshot_preview1";
-                        let name = format!("{}#{}", import.module, import.name);
-                        imports.import(module, &name, entity);
-                    } else {
-                        // It's not a "fastly_" module, so it may be
-                        // "wasi_snapshot_preview1" which we should leave as-is,
-                        // or a wit-bindgen-generated import which doesn't need
-                        // adapting.
-                        imports.import(import.module, import.name, entity);
+                        if is_fastly_module(import.module) {
+                            // In order to build a single module that can serve as
+                            // the adapter for the many "fastly_*" modules we have,
+                            // as well as the "env" module we have, as well as for
+                            // the "wasi_snapshot_preview1" module, we mangle
+                            // "fastly_*" and "env" names and put them into the
+                            // "wasi_snapshot_preview1" module.
+                            let module = "wasi_snapshot_preview1";
+                            let name = format!("{}#{}", import.module, import.name);
+                            imports.import(module, &name, entity);
+                        } else {
+                            // It's not a "fastly_" module, so it may be
+                            // "wasi_snapshot_preview1" which we should leave as-is,
+                            // or a wit-bindgen-generated import which doesn't need
+                            // adapting.
+                            imports.import(import.module, import.name, entity);
+                        }
                     }
                 }
 
@@ -183,8 +188,15 @@ fn has_wit_bindgen_imports(bytes: &[u8]) -> bool {
                 let Ok(import) = import else {
                     return false;
                 };
-                if !is_fastly_module(import.module) && import.module != "wasi_snapshot_preview1" {
-                    return true;
+                for import in import {
+                    let Ok(import) = import else {
+                        return false;
+                    };
+                    let import = import.1;
+                    if !is_fastly_module(import.module) && import.module != "wasi_snapshot_preview1"
+                    {
+                        return true;
+                    }
                 }
             }
         }

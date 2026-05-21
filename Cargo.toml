@@ -60,7 +60,7 @@ url = { workspace = true }
 wasmparser = { workspace = true }
 wasm-encoder = { workspace = true }
 # Disable the "serde" feature which we don't need.
-wasm-metadata = { version = "0.244.0", default-features = false }
+wasm-metadata = { version = "0.250.0", default-features = false }
 wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
@@ -126,7 +126,7 @@ wasmtime-wasi = "39.0.2"
 wasmtime-wasi-io = "39.0.2"
 wasmtime-wasi-nn = "39.0.2"
 wiggle = "39.0.2"
-wat = "1.240.0"
-wasmparser = "0.240.0"
-wasm-encoder = { version = "0.240.0", features = ["wasmparser"] }
-wit-component = "0.240.0"
+wat = "1.250.0"
+wasmparser = "0.250.0"
+wasm-encoder = { version = "0.250.0", features = ["wasmparser"] }
+wit-component = "0.250.0"
