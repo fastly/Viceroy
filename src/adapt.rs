@@ -31,7 +31,9 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     // Determine if we have a main module or a library module.
     let library = !has_export(bytes, "_start");
-    let needs_no_shift_adapter = has_wit_bindgen_imports(bytes);
+
+    // Wit-bindgen imports and exports need the noshift adapter.
+    let needs_no_shift_adapter = has_wit_bindgen_imports(bytes) || has_wit_bindgen_exports(bytes);
 
     let bytes = if needs_no_shift_adapter {
         bytes.to_vec()
@@ -169,6 +171,8 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
 fn is_fastly_module(module: &str) -> bool {
     module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
 }
+
+// Treat non-WASI, non-Fastly imports as wit-bindgen imports.
 fn has_wit_bindgen_imports(bytes: &[u8]) -> bool {
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         let Ok(payload) = payload else {
@@ -187,4 +191,53 @@ fn has_wit_bindgen_imports(bytes: &[u8]) -> bool {
     }
 
     false
+}
+
+// Best-effort check for wit-bindgen export names, such as
+// `<package>:<interface>@<version>#<func>`. The Fastly SDK does not emit this
+// shape for plain wasip1 services.
+fn has_wit_bindgen_exports(bytes: &[u8]) -> bool {
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        let Ok(payload) = payload else {
+            return false;
+        };
+        if let wasmparser::Payload::ExportSection(section) = payload {
+            for export in section {
+                let Ok(export) = export else {
+                    return false;
+                };
+                if export.name.contains(':') && export.name.contains('#') {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adapt_bytes_marks_wit_bindgen_library_fixture_as_library_noshift() {
+        // Fixture generated from fastly/edge-storage's
+        // components/template/inspector-component crate and stripped with
+        // `wasm-tools strip --all`.
+        let adapted = adapt_bytes(include_bytes!(
+            "../tests/fixtures/template_inspector_component.wasm"
+        ))
+        .unwrap();
+
+        // Checking which adapter is used from the custom section.
+        assert!(contains_bytes(&adapted, b"viceroy adapt"));
+        assert!(contains_bytes(&adapted, b"(library, noshift)"));
+    }
+
+    fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+    }
 }
