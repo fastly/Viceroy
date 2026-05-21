@@ -1,6 +1,6 @@
 //! Error types.
 
-use crate::{pushpin::PushpinRedirectInfo, wiggle_abi::types::FastlyStatus};
+use crate::{handoff::HandoffInfo, wiggle_abi::types::FastlyStatus};
 use std::error::Error as StdError;
 use std::io;
 use url::Url;
@@ -46,6 +46,14 @@ pub enum Error {
 
     #[error(transparent)]
     HyperError(#[from] hyper::Error),
+
+    #[error("Backend connection error for '{backend_name}' ({uri}): {source}")]
+    BackendConnectionError {
+        backend_name: String,
+        uri: String,
+        #[source]
+        source: hyper::Error,
+    },
 
     #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
@@ -208,6 +216,26 @@ impl Error {
                 FastlyStatus::Httpincomplete
             }
             Error::HyperError(_) => FastlyStatus::Error,
+            // BackendConnectionError contains detailed context but maps to same status as HyperError
+            Error::BackendConnectionError { source, .. } if source.is_parse() => {
+                FastlyStatus::Httpinvalid
+            }
+            Error::BackendConnectionError { source, .. } if source.is_user() => {
+                FastlyStatus::Httpuser
+            }
+            Error::BackendConnectionError { source, .. } if source.is_incomplete_message() => {
+                FastlyStatus::Httpincomplete
+            }
+            Error::BackendConnectionError { source, .. }
+                if source
+                    .source()
+                    .and_then(|e| e.downcast_ref::<io::Error>())
+                    .map(|ioe| ioe.kind())
+                    == Some(io::ErrorKind::UnexpectedEof) =>
+            {
+                FastlyStatus::Httpincomplete
+            }
+            Error::BackendConnectionError { .. } => FastlyStatus::Error,
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
@@ -857,9 +885,8 @@ pub enum DownstreamRequestError {
 /// HTTP response, but instead signals for a different action.
 #[derive(Debug, thiserror::Error)]
 pub enum NonHttpResponse {
-    #[error("graceful Pushpin redirect")]
-    PushpinRedirect(PushpinRedirectInfo),
-    // In the future, e.g.
-    // #[error("websocket upgrade requested")]
-    // WebSocketUpgrade(WebSocketUpgradeInfo),
+    #[error("graceful Pushpin handoff")]
+    HandoffToPushpin(HandoffInfo),
+    #[error("graceful Backend handoff")]
+    HandoffToBackend(HandoffInfo),
 }

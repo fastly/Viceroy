@@ -31,9 +31,9 @@ use {
         config::{Backend, Backends, Dictionaries, LoadedDictionary},
         downstream::{DownstreamMetadata, DownstreamRequest},
         error::{Error, HandleError},
+        handoff::HandoffInfo,
         logging::LogEndpoint,
         object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
-        pushpin::PushpinRedirectInfo,
         secret_store::{SecretLookup, SecretStores},
         shielding_site::ShieldingSites,
         streaming_body::StreamingBody,
@@ -272,9 +272,24 @@ impl Sandbox {
     /// to send another response will trigger a panic.
     pub fn redirect_downstream_to_pushpin(
         &mut self,
-        redirect_info: PushpinRedirectInfo,
+        redirect_info: HandoffInfo,
     ) -> Result<(), Error> {
         self.downstream_resp.redirect_to_pushpin(redirect_info)
+    }
+
+    /// Redirect the downstream request to a backend.
+    ///
+    /// Yield an error if a response has already been sent.
+    ///
+    /// # Panics
+    ///
+    /// This method must only be called once per downstream request, after which attempting
+    /// to send another response will trigger a panic.
+    pub fn redirect_downstream_to_backend(
+        &mut self,
+        redirect_info: HandoffInfo,
+    ) -> Result<(), Error> {
+        self.downstream_resp.redirect_to_backend(redirect_info)
     }
 
     /// Ensure the downstream response sender is closed, and send the provided response if it

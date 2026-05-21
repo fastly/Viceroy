@@ -90,14 +90,15 @@ impl fastly_shielding::FastlyShielding for Sandbox {
                 None
             };
 
-        let between_bytes_timeout =
-            if shield_backend_options.contains(types::ShieldBackendOptions::BETWEEN_BYTES_TIMEOUT) {
-                Some(Duration::from_millis(
-                    config.between_bytes_timeout_ms as u64,
-                ))
-            } else {
-                None
-            };
+        let between_bytes_timeout = if shield_backend_options
+            .contains(types::ShieldBackendOptions::BETWEEN_BYTES_TIMEOUT)
+        {
+            Some(Duration::from_millis(
+                config.between_bytes_timeout_ms as u64,
+            ))
+        } else {
+            None
+        };
 
         let Ok(uri) = Uri::from_str(&shield_uri) else {
             return Err(Error::InvalidArgument);

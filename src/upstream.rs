@@ -40,8 +40,8 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
-    default_roots: rustls::RootCertStore,
+    pub(crate) partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    pub(crate) default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
@@ -322,6 +322,7 @@ fn canonical_uri(original_uri: &Uri, canonical_host: &str, backend: &Backend) ->
 pub fn send_request(
     mut req: Request<Body>,
     backend: &Arc<Backend>,
+    backend_name: &str,
     tls_config: &TlsConfig,
 ) -> impl Future<Output = Result<Response<Body>, Error>> + use<> {
     let connector = BackendConnector::new(backend.clone(), tls_config.clone());
@@ -378,6 +379,8 @@ pub fn send_request(
     let h2only = backend.grpc;
     let first_byte_timeout = backend.first_byte_timeout;
     let between_bytes_timeout = backend.between_bytes_timeout;
+    let backend_name = backend_name.to_string();
+    let backend_uri = backend.uri.to_string();
     async move {
         let mut builder = Client::builder();
 
@@ -399,9 +402,14 @@ pub fn send_request(
                 .await
                 .map_err(Error::FirstByteTimeout)?,
         }
-        .map_err(|e| {
-            eprintln!("Error: {:?}", e);
-            e
+        .map_err(|source| {
+            let err = Error::BackendConnectionError {
+                backend_name: backend_name.clone(),
+                uri: backend_uri.clone(),
+                source,
+            };
+            tracing::error!("{}", err);
+            err
         })?;
 
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
