@@ -64,6 +64,7 @@ fn main() {
     run_test!(test_implicit_cancel_of_pending);
     run_test!(test_explicit_cancel);
     run_test!(test_collapse_across_vary);
+    run_test!(test_collapse_from_later_vary);
 
     run_test!(test_stream_back);
     run_test!(test_stream_back_fixed);
@@ -1200,6 +1201,78 @@ fn test_collapse_across_vary() {
     // because according to the most recent vary rule they are distinct.
     assert!(!txn2.pending().unwrap());
     assert!(!txn1.pending().unwrap());
+}
+
+fn test_collapse_from_later_vary() {
+    let key = new_key();
+    let header_a = HeaderName::from_static("header-a");
+    // Prefill two stale variants, both under Vary: header-a.
+    let b = insert(key.clone(), Duration::ZERO)
+        .header(&header_a, "foo")
+        .vary_by([&header_a])
+        .execute()
+        .unwrap();
+    b.finish().unwrap();
+
+    let b = insert(key.clone(), Duration::ZERO)
+        .header(&header_a, "bar")
+        .vary_by([&header_a])
+        .execute()
+        .unwrap();
+    b.finish().unwrap();
+
+    // Transaction 1 (foo) and Transaction 2 (bar) dispatch concurrently.
+    // Both see their respective expired variants and recieve GoGet.
+    let pending_txn1 = Transaction::lookup(key.clone())
+        .header(&header_a, "foo")
+        .execute_async()
+        .unwrap();
+    let pending_txn2 = Transaction::lookup(key.clone())
+        .header(&header_a, "bar")
+        .execute_async()
+        .unwrap();
+    assert!(!pending_txn1.pending().unwrap(), "txn1 should have a GoGet");
+    assert!(!pending_txn2.pending().unwrap(), "txn2 should have a GoGet");
+
+    // Transaction 3 (bar) dispatches and collapses behind Transaction 2.
+    // Sleep briefly so the background task reaches sub.changed() before we proceed.
+    let pending_txn3 = Transaction::lookup(key.clone())
+        .header(&header_a, "bar")
+        .execute_async()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(pending_txn3.pending().unwrap(), "txn3 should be waiting on txn2");
+
+    let txn1 = pending_txn1.wait().unwrap();
+    let txn2 = pending_txn2.wait().unwrap();
+    assert!(txn1.must_insert_or_update());
+    assert!(txn2.must_insert_or_update());
+
+    // Transaction 2 is abandoned before Transaction 1 completes.
+    // Must use cancel_insert_or_update() — drop() only releases the Rust wrapper;
+    // it does not close the host-side handle or release the Obligation.
+    txn2.cancel_insert_or_update().unwrap();
+    // Sleep to let txn3's background task wake up from sub.changed() and re-run
+    // the transaction_get loop — where the bug causes it to issue a new GoGet
+    // instead of waiting for txn1.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Transaction 1 completes with an *empty* vary rule (No Vary header in response)
+    let mut writer = txn1.insert(Duration::from_secs(120)).execute().unwrap();
+    writer.write_all(b"the-response").unwrap();
+    writer.finish().unwrap();
+
+    // Transaction 3 must resolve as Found from Transaction 1 empty-vary insert,
+    // not as a GoGet requiring a new origin fetch
+    let txn3 = pending_txn3.wait().unwrap();
+    assert!(
+        txn3.found().is_some(),
+        "txn3 should receive the cached entry from txn1's empty-vary insert"
+    );
+    assert!(
+        !txn3.must_insert_or_update(),
+        "txn3 must not be issued a GoGet"
+    );
 }
 
 fn test_stream_back() {
