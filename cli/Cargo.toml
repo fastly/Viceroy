@@ -25,6 +25,28 @@ include = [
     "src/**/*"
 ]
 
+# Install prebuilt binaries from GitHub releases instead of compiling.
+# Release assets are named e.g. `viceroy_v0.18.1_linux-amd64.tar.gz` and contain
+# a single `viceroy` binary at the archive root.
+[package.metadata.binstall]
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_darwin-amd64.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_darwin-arm64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_linux-amd64.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_linux-arm64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_windows-amd64.tar.gz"
+
 [[bin]]
 name = "viceroy"
 path = "src/main.rs"
