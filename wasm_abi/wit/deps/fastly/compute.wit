@@ -2953,6 +2953,7 @@ interface shielding {
 
     set-cache-key: func(cache-key: string);
     set-first-byte-timeout: func(timeout-ms: u32);
+    set-between-bytes-timeout: func(timeout-ms: u32);
   }
 
   backend-for-shield: func(

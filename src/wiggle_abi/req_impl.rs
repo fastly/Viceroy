@@ -6,6 +6,7 @@ use super::types::SendErrorDetail;
 use crate::cache::CacheOverride;
 use crate::config::ClientCertInfo;
 use crate::secret_store::SecretLookup;
+use std::time::Duration;
 
 use {
     crate::{
@@ -573,6 +574,22 @@ impl FastlyHttpReq for Sandbox {
 
         let grpc = backend_info_mask.contains(BackendConfigOptions::GRPC);
 
+        let first_byte_timeout =
+            if backend_info_mask.contains(BackendConfigOptions::FIRST_BYTE_TIMEOUT) {
+                Some(Duration::from_millis(config.first_byte_timeout_ms as u64))
+            } else {
+                None
+            };
+
+        let between_bytes_timeout =
+            if backend_info_mask.contains(BackendConfigOptions::BETWEEN_BYTES_TIMEOUT) {
+                Some(Duration::from_millis(
+                    config.between_bytes_timeout_ms as u64,
+                ))
+            } else {
+                None
+            };
+
         let new_backend = Backend {
             uri: Uri::builder()
                 .scheme(scheme)
@@ -583,6 +600,8 @@ impl FastlyHttpReq for Sandbox {
             cert_host,
             use_sni,
             grpc,
+            first_byte_timeout,
+            between_bytes_timeout,
             client_cert,
             ca_certs,
             health: crate::config::BackendHealth::Unknown,

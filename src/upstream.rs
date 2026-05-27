@@ -377,6 +377,8 @@ pub fn send_request(
     *req.uri_mut() = uri;
 
     let h2only = backend.grpc;
+    let first_byte_timeout = backend.first_byte_timeout;
+    let between_bytes_timeout = backend.between_bytes_timeout;
     let backend_name = backend_name.to_string();
     let backend_uri = backend.uri.to_string();
     async move {
@@ -392,28 +394,30 @@ pub fn send_request(
             .map(CacheOverride::is_pass)
             .unwrap_or_default();
 
-        let mut basic_response = builder
-            .set_host(false)
-            .http2_only(h2only)
-            .build(connector)
-            .request(req)
-            .await
-            .map_err(|source| {
-                let err = Error::BackendConnectionError {
-                    backend_name: backend_name.clone(),
-                    uri: backend_uri.clone(),
-                    source,
-                };
-                tracing::error!("{}", err);
-                err
-            })?;
+        let client = builder.set_host(false).http2_only(h2only).build(connector);
+
+        let mut basic_response = match first_byte_timeout {
+            None => client.request(req).await,
+            Some(timeout) => tokio::time::timeout(timeout, client.request(req))
+                .await
+                .map_err(Error::FirstByteTimeout)?,
+        }
+        .map_err(|source| {
+            let err = Error::BackendConnectionError {
+                backend_name: backend_name.clone(),
+                uri: backend_uri.clone(),
+                source,
+            };
+            tracing::error!("{}", err);
+            err
+        })?;
 
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
             // This is used later to create similar behaviour between Compute and Viceroy.
             md.direct_pass = is_pass;
         }
 
-        if try_decompression
+        let mut new_body = if try_decompression
             && basic_response
                 .headers()
                 .get(header::CONTENT_ENCODING)
@@ -429,10 +433,16 @@ pub fn send_request(
             decompressing_response
                 .headers_mut()
                 .remove(header::CONTENT_LENGTH);
-            Ok(decompressing_response)
+            decompressing_response
         } else {
-            Ok(basic_response.map(Body::from))
+            basic_response.map(Body::from)
+        };
+
+        if let Some(timeout) = between_bytes_timeout {
+            new_body.body_mut().set_between_bytes_timeout(timeout);
         }
+
+        Ok(new_body)
     }
 }
 

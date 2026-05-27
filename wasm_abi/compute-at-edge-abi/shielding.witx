@@ -3,6 +3,7 @@
     $reserved
     $use_cache_key
     $first_byte_timeout
+    $between_bytes_timeout
   ))
 
 (typename $shield_backend_config
@@ -10,6 +11,7 @@
     (field $cache_key (@witx pointer (@witx char8)))
     (field $cache_key_len u32)
     (field $first_byte_timeout_ms u32)
+    (field $between_bytes_timeout_ms u32)
     ))
 
 (module $fastly_shielding

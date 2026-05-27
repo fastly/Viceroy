@@ -6,6 +6,7 @@ use {
 };
 
 pub use self::client_cert_info::{ClientCertError, ClientCertInfo};
+use std::time::Duration;
 
 /// Backend health status for testing purposes.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -27,6 +28,8 @@ pub struct Backend {
     pub cert_host: Option<String>,
     pub use_sni: bool,
     pub grpc: bool,
+    pub first_byte_timeout: Option<Duration>,
+    pub between_bytes_timeout: Option<Duration>,
     pub client_cert: Option<ClientCertInfo>,
     pub ca_certs: Vec<rustls::Certificate>,
     pub health: BackendHealth,
@@ -47,6 +50,7 @@ mod deserialization {
         crate::error::{BackendConfigError, FastlyConfigError},
         hyper::{Uri, header::HeaderValue},
         std::sync::Arc,
+        std::time::Duration,
         toml::value::{Table, Value},
     };
 
@@ -161,6 +165,30 @@ mod deserialization {
                 })
                 .transpose()?
                 .unwrap_or(false);
+            let first_byte_timeout = toml
+                .remove("first_byte_timeout_ms")
+                .map(|x| {
+                    if let Value::Integer(timeout_ms) = x
+                        && timeout_ms >= 0
+                    {
+                        Ok(Duration::from_millis(timeout_ms as u64))
+                    } else {
+                        Err(BackendConfigError::InvalidTimeoutValue)
+                    }
+                })
+                .transpose()?;
+            let between_bytes_timeout = toml
+                .remove("between_bytes_timeout_ms")
+                .map(|x| {
+                    if let Value::Integer(timeout_ms) = x
+                        && timeout_ms >= 0
+                    {
+                        Ok(Duration::from_millis(timeout_ms as u64))
+                    } else {
+                        Err(BackendConfigError::InvalidTimeoutValue)
+                    }
+                })
+                .transpose()?;
 
             let health = toml
                 .remove("health")
@@ -190,6 +218,8 @@ mod deserialization {
                 use_sni,
                 client_cert,
                 grpc,
+                first_byte_timeout,
+                between_bytes_timeout,
                 ca_certs,
                 health,
             })

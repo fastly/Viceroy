@@ -179,6 +179,12 @@ pub enum Error {
 
     #[error("cache error: {0}")]
     CacheError(crate::cache::Error),
+
+    #[error("Timed out waiting for first byte of response: {0}")]
+    FirstByteTimeout(tokio::time::error::Elapsed),
+
+    #[error("Timed out waiting for an internal byte of response")]
+    BetweenBytesTimeout,
 }
 
 impl Error {
@@ -272,6 +278,8 @@ impl Error {
             | Error::UnfinishedStreamingBody
             | Error::SharedMemory
             | Error::ToStr(_)
+            | Error::FirstByteTimeout(_)
+            | Error::BetweenBytesTimeout
             | Error::InvalidAlpnResponse(_, _) => FastlyStatus::Error,
         }
     }
@@ -552,6 +560,9 @@ pub enum BackendConfigError {
 
     #[error(transparent)]
     ClientCertError(#[from] crate::config::ClientCertError),
+
+    #[error("Illegal timeout value (must be an integer >= 0)")]
+    InvalidTimeoutValue,
 }
 
 /// Errors that may occur while validating dictionary configurations.
