@@ -193,14 +193,6 @@ impl CacheKeyObjects {
                     // obligation.
                     awaitable = awaitable || cache_value.obligated;
                 }
-
-                // Also wait on any obligation under a *different* vary rule.
-                // An in-flight fetch could respond with a simpler vary rule (e.g. empty)
-                // that would satisfy this request, so we must not race to create a new GoGet.
-                // The worst case is a spurious wakeup; correctness is preserved either way.
-                if !awaitable {
-                    awaitable = key_objects.objects.values().any(|v| v.obligated);
-                }
             }
             // Done computing awaitable, make it read-only:
             let awaitable = awaitable;
