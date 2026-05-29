@@ -99,27 +99,21 @@ jobs:
             })
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  publish-crates:
+  publish-lib:
     needs: build
-    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          submodules: true
-      - name: Install Rust
-        run: rustup show
-      - name: Authenticate with crates.io
-        uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-      - name: Publish viceroy-lib
-        run: cargo publish -p viceroy-lib --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - name: Publish viceroy
-        run: cargo publish -p viceroy --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+    uses: fastly/devex-reusable-workflows/.github/workflows/publish-rust-crates-io-v1.yml@main
+    with:
+      crate_name: viceroy-lib
+      expected_version: ${{ github.ref_name }}
+  publish-bin:
+    needs: publish-lib
+    permissions:
+      id-token: write
+      contents: read
+    uses: fastly/devex-reusable-workflows/.github/workflows/publish-rust-crates-io-v1.yml@main
+    with:
+      crate_name: viceroy
+      expected_version: ${{ github.ref_name }}
