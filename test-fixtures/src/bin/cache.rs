@@ -1225,36 +1225,30 @@ fn test_collapse_from_later_vary() {
         .unwrap();
     b.finish().unwrap();
 
-    let pending_txn1 = Transaction::lookup(key.clone())
+    let txn1 = Transaction::lookup(key.clone())
         .header(&header_a, "foo")
-        .execute_async()
+        .execute()
         .unwrap();
-    let pending_txn2 = Transaction::lookup(key.clone())
+
+    let txn2 = Transaction::lookup(key.clone())
         .header(&header_a, "bar")
-        .execute_async()
+        .execute()
         .unwrap();
-    assert!(!pending_txn1.pending().unwrap(), "txn1 should have a GoGet");
-    assert!(!pending_txn2.pending().unwrap(), "txn2 should have a GoGet");
 
     let pending_txn3 = Transaction::lookup(key.clone())
         .header(&header_a, "bar")
         .execute_async()
         .unwrap();
     assert!(pending_txn3.pending().unwrap(), "txn3 should be waiting on txn2");
-
-    let txn1 = pending_txn1.wait().unwrap();
-    let txn2 = pending_txn2.wait().unwrap();
     assert!(txn1.must_insert_or_update());
     assert!(txn2.must_insert_or_update());
 
-    // Txn1 completes with an empty vary rule (no .vary_by() on the insert).
-    // This pushes VaryRule::default() to the front of the key's vary_rules and
-    // inserts under the universal variant {}, which matches any request.
     let mut writer = txn1.insert(Duration::from_secs(120)).execute().unwrap();
     writer.write_all(b"the-response").unwrap();
     writer.finish().unwrap();
 
-    // Txn2 is abandoned after Txn1 completes (matches the issue's ordering).
+    // Abandon Txn2 to verify that Txn3 falls back to 
+    // Txn1's wildcard entry instead of spawning a duplicate origin fetch.
     txn2.cancel_insert_or_update().unwrap();
 
     // Txn3 must resolve as Found from Txn1's empty-vary insert.
