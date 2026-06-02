@@ -16,6 +16,7 @@ use {
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
         handoff::{HandoffConfig, HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
+        http::framing::apply_response_framing,
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
         sandbox::Sandbox,
@@ -45,6 +46,7 @@ use {
         time::{Duration, Instant, SystemTime},
     },
     tokio::sync::Mutex as AsyncMutex,
+    tokio::sync::mpsc,
     tokio::sync::oneshot::{self, Sender},
     tracing::{Instrument, Level, error, event, info, info_span, warn},
     wasmtime::{
@@ -396,18 +398,41 @@ impl ExecuteCtx {
     }
 
     async fn maybe_receive_response(
-        receiver: oneshot::Receiver<DownstreamResponse>,
+        mut receiver: mpsc::Receiver<DownstreamResponse>,
     ) -> Option<(Response<Body>, Option<anyhow::Error>)> {
-        match receiver.await.ok()? {
-            DownstreamResponse::Http(resp) => Some((resp, None)),
-            DownstreamResponse::HandoffToPushpin(info) => Some((
-                Response::new(Body::empty()),
-                Some(NonHttpResponse::HandoffToPushpin(info).into()),
-            )),
-            DownstreamResponse::HandoffToBackend(info) => Some((
-                Response::new(Body::empty()),
-                Some(NonHttpResponse::HandoffToBackend(info).into()),
-            )),
+        loop {
+            match receiver.recv().await? {
+                DownstreamResponse::Http(mut resp) => {
+                    apply_response_framing(&mut resp);
+
+                    // Supporting 103 Early Hints responses is currently infeasible, as Hyper does
+                    // not support sending multiple responses on a single connection. But we don't
+                    // want to generate errors for them either. Early Hints will be dropped, but
+                    // logged so that people will know they *did work*, even though they won't
+                    // reach the client.
+                    if resp.status().is_informational() {
+                        // We'll do these at different log levels in case someone wants to squelch some.
+                        tracing::warn!(
+                            "Guest returned informational response ({}) which will not be sent to the client",
+                            resp.status(),
+                        );
+                        tracing::info!("{:#?}", resp);
+                        continue;
+                    }
+
+                    return Some((resp, None));
+                }
+                DownstreamResponse::HandoffToPushpin(info) => {
+                    let err = NonHttpResponse::HandoffToPushpin(info).into();
+                    let resp = Response::new(Body::empty());
+                    return Some((resp, Some(err)));
+                }
+                DownstreamResponse::HandoffToBackend(info) => {
+                    let resp = Response::new(Body::empty());
+                    let err = NonHttpResponse::HandoffToBackend(info).into();
+                    return Some((resp, Some(err)));
+                }
+            }
         }
     }
 
@@ -625,11 +650,11 @@ impl ExecuteCtx {
         }
 
         tokio::task::spawn(async move {
-            let (sender, receiver) = oneshot::channel();
+            let (sender, receiver) = mpsc::channel(10);
             let original = std::mem::replace(&mut downstream.sender, sender);
             let (resp, err) = self.spawn_guest(downstream, receiver).await;
             let resp = guest_result_to_response(resp, err);
-            let _ = original.send(DownstreamResponse::Http(resp));
+            let _ = original.send(DownstreamResponse::Http(resp)).await;
         });
     }
 
@@ -650,12 +675,7 @@ impl ExecuteCtx {
         req: Request<Body>,
         metadata: DownstreamMetadata,
     ) -> (Response<Body>, Option<anyhow::Error>) {
-        let (sender, receiver) = oneshot::channel();
-        let downstream = DownstreamRequest {
-            req,
-            sender,
-            metadata,
-        };
+        let (downstream, receiver) = DownstreamRequest::new(req, metadata);
 
         let mut next_req = NextRequest(Some((Box::new(downstream), self.clone())));
         let mut reusable = self.pending_reuse.lock().await;
@@ -686,7 +706,7 @@ impl ExecuteCtx {
     async fn spawn_guest(
         self: Arc<Self>,
         downstream: DownstreamRequest,
-        receiver: oneshot::Receiver<DownstreamResponse>,
+        receiver: mpsc::Receiver<DownstreamResponse>,
     ) -> (Response<Body>, Option<anyhow::Error>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
@@ -910,12 +930,7 @@ impl ExecuteCtx {
             compliance_region: String::from(REGION_NONE),
             original_headers: Default::default(),
         };
-        let (sender, receiver) = oneshot::channel();
-        let downstream = DownstreamRequest {
-            req,
-            sender,
-            metadata,
-        };
+        let (downstream, receiver) = DownstreamRequest::new(req, metadata);
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         let sandbox = Sandbox::new(downstream, active_cpu_time_us.clone(), self.clone());

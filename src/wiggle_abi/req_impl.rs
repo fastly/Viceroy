@@ -205,7 +205,7 @@ impl FastlyHttpReq for Sandbox {
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
-    fn redirect_to_websocket_proxy(
+    async fn redirect_to_websocket_proxy(
         &mut self,
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
@@ -219,12 +219,12 @@ impl FastlyHttpReq for Sandbox {
             request_info: None,
         };
 
-        self.redirect_downstream_to_backend(redirect_info)?;
+        self.redirect_downstream_to_backend(redirect_info).await?;
         Ok(())
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
-    fn redirect_to_grip_proxy(
+    async fn redirect_to_grip_proxy(
         &mut self,
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
@@ -238,11 +238,11 @@ impl FastlyHttpReq for Sandbox {
             request_info: None,
         };
 
-        self.redirect_downstream_to_pushpin(redirect_info)?;
+        self.redirect_downstream_to_pushpin(redirect_info).await?;
         Ok(())
     }
 
-    fn redirect_to_websocket_proxy_v2(
+    async fn redirect_to_websocket_proxy_v2(
         &mut self,
         memory: &mut GuestMemory<'_>,
         req_handle: RequestHandle,
@@ -258,11 +258,11 @@ impl FastlyHttpReq for Sandbox {
             request_info: Some(HandoffRequestInfo::from_parts(req)),
         };
 
-        self.redirect_downstream_to_backend(redirect_info)?;
+        self.redirect_downstream_to_backend(redirect_info).await?;
         Ok(())
     }
 
-    fn redirect_to_grip_proxy_v2(
+    async fn redirect_to_grip_proxy_v2(
         &mut self,
         memory: &mut GuestMemory<'_>,
         req_handle: RequestHandle,
@@ -278,7 +278,7 @@ impl FastlyHttpReq for Sandbox {
             request_info: Some(HandoffRequestInfo::from_parts(req)),
         };
 
-        self.redirect_downstream_to_pushpin(redirect_info)?;
+        self.redirect_downstream_to_pushpin(redirect_info).await?;
         Ok(())
     }
 

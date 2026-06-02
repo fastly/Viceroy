@@ -150,7 +150,7 @@ impl FastlyHttpResp for Sandbox {
         Ok(())
     }
 
-    fn send_downstream(
+    async fn send_downstream(
         &mut self,
         _memory: &mut GuestMemory<'_>,
         resp_handle: ResponseHandle,
@@ -168,7 +168,7 @@ impl FastlyHttpResp for Sandbox {
             };
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.send_downstream_response(resp)
+        self.send_downstream_response(resp).await
     }
 
     fn status_get(

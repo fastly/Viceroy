@@ -23,7 +23,7 @@ use crate::component::compute::headers::get_values;
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 impl http_resp::Host for ComponentCtx {
-    fn send_downstream(
+    async fn send_downstream(
         &mut self,
         h: Resource<http_resp::Response>,
         b: Resource<http_body::Body>,
@@ -35,11 +35,11 @@ impl http_resp::Host for ComponentCtx {
             let body = self.sandbox_mut().take_body(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.sandbox_mut().send_downstream_response(resp)?;
+        self.sandbox_mut().send_downstream_response(resp).await?;
         Ok(())
     }
 
-    fn send_downstream_streaming(
+    async fn send_downstream_streaming(
         &mut self,
         h: Resource<http_resp::Response>,
         b: Resource<http_body::Body>,
@@ -51,7 +51,7 @@ impl http_resp::Host for ComponentCtx {
             let body = self.sandbox_mut().begin_streaming(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.sandbox_mut().send_downstream_response(resp)?;
+        self.sandbox_mut().send_downstream_response(resp).await?;
         Ok(())
     }
 

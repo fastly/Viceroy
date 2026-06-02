@@ -6,7 +6,7 @@ use {
     wasmtime::component::Resource,
 };
 
-pub(crate) fn redirect_to_websocket_proxy(
+pub(crate) async fn redirect_to_websocket_proxy(
     sandbox: &mut Sandbox,
     req_handle: Resource<http_req::Request>,
     backend_name: &str,
@@ -26,11 +26,13 @@ pub(crate) fn redirect_to_websocket_proxy(
         request_info,
     };
 
-    sandbox.redirect_downstream_to_backend(redirect_info)?;
+    sandbox
+        .redirect_downstream_to_backend(redirect_info)
+        .await?;
     Ok(())
 }
 
-pub(crate) fn redirect_to_grip_proxy(
+pub(crate) async fn redirect_to_grip_proxy(
     sandbox: &mut Sandbox,
     req_handle: Resource<http_req::Request>,
     backend_name: &str,
@@ -50,7 +52,9 @@ pub(crate) fn redirect_to_grip_proxy(
         request_info,
     };
 
-    sandbox.redirect_downstream_to_pushpin(redirect_info)?;
+    sandbox
+        .redirect_downstream_to_pushpin(redirect_info)
+        .await?;
     Ok(())
 }
 

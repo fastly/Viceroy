@@ -258,8 +258,8 @@ impl Sandbox {
     ///
     /// This method must only be called once per downstream request, after which attempting
     /// to send another response will trigger a panic.
-    pub fn send_downstream_response(&mut self, resp: Response<Body>) -> Result<(), Error> {
-        self.downstream_resp.send(resp)
+    pub async fn send_downstream_response(&mut self, resp: Response<Body>) -> Result<(), Error> {
+        self.downstream_resp.send(resp).await
     }
 
     /// Redirect the downstream request to Pushpin.
@@ -270,11 +270,13 @@ impl Sandbox {
     ///
     /// This method must only be called once per downstream request, after which attempting
     /// to send another response will trigger a panic.
-    pub fn redirect_downstream_to_pushpin(
+    pub async fn redirect_downstream_to_pushpin(
         &mut self,
         redirect_info: HandoffInfo,
     ) -> Result<(), Error> {
-        self.downstream_resp.redirect_to_pushpin(redirect_info)
+        self.downstream_resp
+            .redirect_to_pushpin(redirect_info)
+            .await
     }
 
     /// Redirect the downstream request to a backend.
@@ -285,17 +287,19 @@ impl Sandbox {
     ///
     /// This method must only be called once per downstream request, after which attempting
     /// to send another response will trigger a panic.
-    pub fn redirect_downstream_to_backend(
+    pub async fn redirect_downstream_to_backend(
         &mut self,
         redirect_info: HandoffInfo,
     ) -> Result<(), Error> {
-        self.downstream_resp.redirect_to_backend(redirect_info)
+        self.downstream_resp
+            .redirect_to_backend(redirect_info)
+            .await
     }
 
     /// Ensure the downstream response sender is closed, and send the provided response if it
     /// isn't.
     pub fn close_downstream_response_sender(&mut self, resp: Response<Body>) {
-        let _ = self.downstream_resp.send(resp);
+        self.downstream_resp.send_close(resp);
     }
 
     // ----- Bodies API -----
