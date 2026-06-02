@@ -1141,6 +1141,9 @@ interface http-resp {
   };
   use http-body.{body};
 
+  /// Handle that can be used to asynchronously wait for a response from a sent request.
+  use async-io.{pollable as pending-response};
+
   /// An HTTP response.
   resource response {
     /// Create a new `response`.
@@ -1241,6 +1244,25 @@ interface http-resp {
     get-remote-port: func() -> option<u16>;
   }
 
+  /// Control for under which conditions an operation should be applied to the result of
+  /// a `pending-response`.
+  ///
+  /// This is primarily useful for allowing consumers of `send-downstream-pending` to
+  /// control whether a requested header change (`insert-header-pending` et al.) are
+  /// applied to only the actual origin response, the synthetic 5XX response generated
+  /// in lieu of an `error-with-detail`, or both.
+  enum pending-response-kind {
+    /// Apply the queued change to the response sent downstream, regardless of whether
+    /// it originally came from the origin or was a synthetic 5XX response.
+    any,
+
+    /// Only apply the queued change to an actual response to the request.
+    response,
+
+    /// Only apply the queued change to the synthetic response made when the request fails.
+    error,
+  }
+
   /// Sends a response to the client that made the request passed to `http-incoming.handle`.
   ///
   /// This method returns as soon as the response header begins sending to the client, and
@@ -1259,6 +1281,57 @@ interface http-resp {
   send-downstream-streaming: func(
     response: response,
     body: borrow<body>,
+  ) -> result<_, error>;
+
+  /// Send a pending response back downstream in reply to an incoming request.
+  ///
+  /// This will cause Compute to wait in the background for the pending response to
+  /// resolve into its headers and body, and then forward them back downstream.
+  ///
+  /// If the pending request fails while sending and a response never materializes,
+  /// Compute will generate a 5XX response to send in its stead.
+  send-downstream-pending: func(
+    handle: pending-response
+  ) -> result<_, error>;
+
+  /// Sets a response header to the given value on a pending response.
+  ///
+  /// This will discard any previous values for the given header name, including any
+  /// pending header changes previously queued via other `insert-header-pending` or
+  /// `append-header-pending` calls for the same header name.
+  ///
+  /// The `target` argument controls under which conditions this header is applied.
+  insert-header-pending: func(
+    pending: borrow<pending-response>,
+    name: string,
+    value: list<u8>,
+    target: pending-response-kind,
+  ) -> result<_, error>;
+
+  /// Adds a response header with given value to a pending response.
+  ///
+  /// Unlike `insert-header-pending`, this does not discard existing values for
+  /// the same header name, but will instead result in multiple headers of the
+  /// same name in the final response, each with their own values.
+  ///
+  /// The `target` argument controls under which conditions this header is applied.
+  append-header-pending: func(
+    pending: borrow<pending-response>,
+    name: string,
+    value: list<u8>,
+    target: pending-response-kind,
+  ) -> result<_, error>;
+
+  /// Removes all response headers of the given name from a pending response.
+  ///
+  /// This will also remove any changes previously queued via `insert-header-pending`
+  /// or `append-header-pending` for the same header name.
+  ///
+  /// The `target` argument controls under which conditions this header is applied.
+  remove-header-pending: func(
+    pending: borrow<pending-response>,
+    name: string,
+    target: pending-response-kind,
   ) -> result<_, error>;
 
   /// Closes the `response`, releasing any associated resources.

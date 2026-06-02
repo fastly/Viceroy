@@ -10,7 +10,7 @@ use {
             headers::HttpHeaders,
             types::{
                 BodyHandle, FramingHeadersMode, HttpKeepaliveMode, HttpStatus, HttpVersion,
-                MultiValueCursor, MultiValueCursorResult, ResponseHandle,
+                MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, ResponseHandle,
             },
         },
     },
@@ -169,6 +169,14 @@ impl FastlyHttpResp for Sandbox {
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
         self.send_downstream_response(resp).await
+    }
+
+    async fn send_downstream_pending(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+    ) -> Result<(), Error> {
+        unimplemented!();
     }
 
     fn status_get(

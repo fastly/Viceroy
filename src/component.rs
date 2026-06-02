@@ -35,6 +35,7 @@ pub(crate) mod bindings {
             "fastly:compute/http-req.[method]request.redirect-to-websocket-proxy": async | tracing,
             "fastly:compute/http-resp.send-downstream": async | tracing,
             "fastly:compute/http-resp.send-downstream-streaming": async | tracing,
+            "fastly:compute/http-resp.send-downstream-pending": async | tracing,
             "fastly:compute/cache.close-entry": async | tracing,
             "fastly:compute/cache.close-replace-entry": async | tracing,
             "fastly:compute/cache.insert": async | tracing,

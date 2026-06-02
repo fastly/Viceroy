@@ -1,7 +1,7 @@
 use {
     crate::{
         component::{
-            bindings::fastly::compute::{http_body, http_resp, http_types, types},
+            bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
             compute::headers::get_names,
         },
         error::Error,
@@ -53,6 +53,42 @@ impl http_resp::Host for ComponentCtx {
         }; // Set the downstream response, and return.
         self.sandbox_mut().send_downstream_response(resp).await?;
         Ok(())
+    }
+
+    async fn send_downstream_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+    ) -> Result<(), types::Error> {
+        unimplemented!();
+    }
+
+    fn insert_header_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+        name: String,
+        value: Vec<u8>,
+        target: http_resp::PendingResponseKind,
+    ) -> Result<(), types::Error> {
+        unimplemented!();
+    }
+
+    fn append_header_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+        name: String,
+        value: Vec<u8>,
+        target: http_resp::PendingResponseKind,
+    ) -> Result<(), types::Error> {
+        unimplemented!();
+    }
+
+    fn remove_header_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+        name: String,
+        target: http_resp::PendingResponseKind,
+    ) -> Result<(), types::Error> {
+        unimplemented!();
     }
 
     fn close(&mut self, h: Resource<http_resp::Response>) -> Result<(), types::Error> {

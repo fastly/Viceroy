@@ -1395,7 +1395,7 @@ pub mod fastly_http_req {
         bindings::fastly::{
             self,
             adapter::adapter_http_req,
-            compute::{backend, http_req, http_types, security},
+            compute::{backend, http_req, http_resp, http_types, security},
         },
         TrappingUnwrap,
     };
@@ -1409,6 +1409,24 @@ pub mod fastly_http_req {
             const DNS_ERROR_INFO_CODE = 1 << 2;
             const TLS_ALERT_ID = 1 << 3;
             const H2_ERROR = 1 << 4;
+        }
+    }
+
+    #[repr(u32)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum PendingResponseKind {
+        Any = 0,
+        Response = 1,
+        Error = 2,
+    }
+
+    impl From<PendingResponseKind> for http_resp::PendingResponseKind {
+        fn from(kind: PendingResponseKind) -> Self {
+            match kind {
+                PendingResponseKind::Any => Self::Any,
+                PendingResponseKind::Response => Self::Response,
+                PendingResponseKind::Error => Self::Error,
+            }
         }
     }
 
@@ -2436,6 +2454,71 @@ pub mod fastly_http_req {
         }
     }
 
+    #[export_name = "fastly_http_req#pending_req_header_insert"]
+    fn pending_req_header_insert(
+        pending_req_handle: PendingRequestHandle,
+        name: *const u8,
+        name_len: usize,
+        value: *const u8,
+        value_len: usize,
+        target: PendingResponseKind,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(main_ptr!(name), name_len) };
+        let value = unsafe { slice::from_raw_parts(main_ptr!(value), value_len) };
+        let target = http_resp::PendingResponseKind::from(target);
+        let pending_resp_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingResponse::from_handle(pending_req_handle)
+        });
+        convert_result(http_resp::insert_header_pending(
+            &pending_resp_handle,
+            name,
+            value,
+            target,
+        ))
+    }
+
+    #[export_name = "fastly_http_req#pending_req_header_append"]
+    fn pending_req_header_append(
+        pending_req_handle: PendingRequestHandle,
+        name: *const u8,
+        name_len: usize,
+        value: *const u8,
+        value_len: usize,
+        target: PendingResponseKind,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(main_ptr!(name), name_len) };
+        let value = unsafe { slice::from_raw_parts(main_ptr!(value), value_len) };
+        let target = http_resp::PendingResponseKind::from(target);
+        let pending_resp_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingResponse::from_handle(pending_req_handle)
+        });
+        convert_result(http_resp::append_header_pending(
+            &pending_resp_handle,
+            name,
+            value,
+            target,
+        ))
+    }
+
+    #[export_name = "fastly_http_req#pending_req_header_remove"]
+    fn pending_req_header_remove(
+        pending_req_handle: PendingRequestHandle,
+        name: *const u8,
+        name_len: usize,
+        target: PendingResponseKind,
+    ) -> FastlyStatus {
+        let name = unsafe { slice::from_raw_parts(main_ptr!(name), name_len) };
+        let target = http_resp::PendingResponseKind::from(target);
+        let pending_resp_handle = ManuallyDrop::new(unsafe {
+            http_req::PendingResponse::from_handle(pending_req_handle)
+        });
+        convert_result(http_resp::remove_header_pending(
+            &pending_resp_handle,
+            name,
+            target,
+        ))
+    }
+
     #[export_name = "fastly_http_req#pending_req_poll"]
     pub fn pending_req_poll(
         pending_req_handle: PendingRequestHandle,
@@ -2700,7 +2783,8 @@ pub mod fastly_http_resp {
     use core::slice;
 
     use super::*;
-    use crate::bindings::fastly::{self, compute::http_resp};
+    use crate::bindings::fastly;
+    use crate::bindings::fastly::compute::{http_req, http_resp};
     use crate::fastly::encode_ip_address;
 
     #[export_name = "fastly_http_resp#header_append"]
@@ -2892,6 +2976,14 @@ pub mod fastly_http_resp {
             });
             http_resp::send_downstream_streaming(resp_handle, &body_handle)
         };
+        convert_result(res)
+    }
+
+    #[export_name = "fastly_http_resp#send_downstream_pending"]
+    pub fn send_downstream_pending(pending_req_handle: PendingRequestHandle) -> FastlyStatus {
+        let pending_resp_handle =
+            unsafe { http_req::PendingResponse::from_handle(pending_req_handle) };
+        let res = http_resp::send_downstream_pending(pending_resp_handle);
         convert_result(res)
     }
 

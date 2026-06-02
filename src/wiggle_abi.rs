@@ -93,7 +93,7 @@ wiggle::from_witx!({
             pending_req_wait, pending_req_wait_v2, send, send_v2, send_v3, send_async, send_async_v2, send_async_streaming,
             redirect_to_websocket_proxy, redirect_to_grip_proxy, redirect_to_websocket_proxy_v2, redirect_to_grip_proxy_v2,
         },
-        fastly_http_resp::send_downstream,
+        fastly_http_resp::{send_downstream, send_downstream_pending},
         fastly_image_optimizer::transform_image_optimizer_request,
     }
 });

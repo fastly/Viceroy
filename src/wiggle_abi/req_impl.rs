@@ -23,7 +23,7 @@ use {
                 BackendConfigOptions, BodyHandle, CacheOverrideTag, ClientCertVerifyResult,
                 ContentEncodings, DynamicBackendConfig, FramingHeadersMode, HttpVersion,
                 InspectInfo, InspectInfoMask, MultiValueCursor, MultiValueCursorResult,
-                PendingRequestHandle, RequestHandle, ResponseHandle,
+                PendingRequestHandle, PendingResponseKind, RequestHandle, ResponseHandle,
             },
         },
     },
@@ -984,6 +984,38 @@ impl FastlyHttpReq for Sandbox {
 
         // return a handle to the pending task
         Ok(self.insert_pending_request(task))
+    }
+
+    fn pending_req_header_insert(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+        name: GuestPtr<[u8]>,
+        value: GuestPtr<[u8]>,
+        target: PendingResponseKind,
+    ) -> Result<(), Error> {
+        unimplemented!();
+    }
+
+    fn pending_req_header_append(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+        name: GuestPtr<[u8]>,
+        value: GuestPtr<[u8]>,
+        target: PendingResponseKind,
+    ) -> Result<(), Error> {
+        unimplemented!();
+    }
+
+    fn pending_req_header_remove(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+        name: GuestPtr<[u8]>,
+        target: PendingResponseKind,
+    ) -> Result<(), Error> {
+        unimplemented!();
     }
 
     // note: The first value in the return tuple represents whether the request is done: 0 when not
