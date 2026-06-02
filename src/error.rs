@@ -1,6 +1,7 @@
 //! Error types.
 
 use crate::{handoff::HandoffInfo, wiggle_abi::types::FastlyStatus};
+use hyper::StatusCode;
 use std::error::Error as StdError;
 use std::io;
 use url::Url;
@@ -188,6 +189,45 @@ pub enum Error {
 }
 
 impl Error {
+    /// Map this error onto an appropriate 5XX response code during proxying.
+    pub fn as_status_code(&self) -> StatusCode {
+        match self {
+            Self::FirstByteTimeout(_) | Self::BetweenBytesTimeout => StatusCode::GATEWAY_TIMEOUT,
+            Self::HyperError(e) => {
+                if e.is_timeout() {
+                    StatusCode::GATEWAY_TIMEOUT
+                } else {
+                    StatusCode::BAD_GATEWAY
+                }
+            }
+
+            Self::BackendUrl(..)
+            | Self::BackendConnectionError { .. }
+            | Self::InvalidArgument
+            | Self::InvalidHeaderName(..)
+            | Self::InvalidHeaderValue(..)
+            | Self::InvalidMethod(..)
+            | Self::InvalidStatusCode(..)
+            | Self::InvalidUri(..)
+            | Self::IoError(..)
+            | Self::MissingDownstreamMetadata
+            | Self::StreamingChunkSend
+            | Self::UnknownBackend(..)
+            | Self::BadCerts(..)
+            | Self::TlsNoCAAvailable
+            | Self::TlsNoValidCACerts
+            | Self::TlsInvalidHost
+            | Self::TlsCertificateValidationFailed
+            | Self::HttpError(..)
+            | Self::UnfinishedStreamingBody
+            | Self::InvalidClientCert(..)
+            | Self::InvalidAlpnResponse(..)
+            | Self::CacheError(..) => StatusCode::BAD_GATEWAY,
+
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
     /// Convert to an error code representation suitable for passing across the ABI boundary.
     ///
     /// For more information about specific error codes see [`fastly_shared::FastlyStatus`][status],
