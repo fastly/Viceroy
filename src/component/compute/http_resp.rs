@@ -59,7 +59,10 @@ impl http_resp::Host for ComponentCtx {
         &mut self,
         h: Resource<http_req::PendingResponse>,
     ) -> Result<(), types::Error> {
-        unimplemented!();
+        let session = self.sandbox_mut();
+        let pending = session.take_pending_request(h.into())?;
+        session.send_pending_response(pending).await?;
+        Ok(())
     }
 
     fn insert_header_pending(
@@ -69,7 +72,28 @@ impl http_resp::Host for ComponentCtx {
         value: Vec<u8>,
         target: http_resp::PendingResponseKind,
     ) -> Result<(), types::Error> {
-        unimplemented!();
+        let session = self.sandbox_mut();
+        let pending = session.pending_request_mut(h.into())?;
+
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
+
+        match target {
+            http_resp::PendingResponseKind::Any => {
+                pending
+                    .headers_resp_mut()
+                    .insert(name.clone(), value.clone());
+                pending.headers_err_mut().insert(name, value);
+            }
+            http_resp::PendingResponseKind::Response => {
+                pending.headers_resp_mut().insert(name, value);
+            }
+            http_resp::PendingResponseKind::Error => {
+                pending.headers_err_mut().insert(name, value);
+            }
+        }
+
+        Ok(())
     }
 
     fn append_header_pending(
@@ -79,7 +103,28 @@ impl http_resp::Host for ComponentCtx {
         value: Vec<u8>,
         target: http_resp::PendingResponseKind,
     ) -> Result<(), types::Error> {
-        unimplemented!();
+        let session = self.sandbox_mut();
+        let pending = session.pending_request_mut(h.into())?;
+
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
+
+        match target {
+            http_resp::PendingResponseKind::Any => {
+                pending
+                    .headers_resp_mut()
+                    .append(name.clone(), value.clone());
+                pending.headers_err_mut().append(name, value);
+            }
+            http_resp::PendingResponseKind::Response => {
+                pending.headers_resp_mut().append(name, value);
+            }
+            http_resp::PendingResponseKind::Error => {
+                pending.headers_err_mut().append(name, value);
+            }
+        }
+
+        Ok(())
     }
 
     fn remove_header_pending(
@@ -88,7 +133,25 @@ impl http_resp::Host for ComponentCtx {
         name: String,
         target: http_resp::PendingResponseKind,
     ) -> Result<(), types::Error> {
-        unimplemented!();
+        let session = self.sandbox_mut();
+        let pending = session.pending_request_mut(h.into())?;
+
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+
+        match target {
+            http_resp::PendingResponseKind::Any => {
+                pending.headers_resp_mut().remove(name.clone());
+                pending.headers_err_mut().remove(name);
+            }
+            http_resp::PendingResponseKind::Response => {
+                pending.headers_resp_mut().remove(name);
+            }
+            http_resp::PendingResponseKind::Error => {
+                pending.headers_err_mut().remove(name);
+            }
+        }
+
+        Ok(())
     }
 
     fn close(&mut self, h: Resource<http_resp::Response>) -> Result<(), types::Error> {

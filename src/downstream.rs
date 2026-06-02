@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use crate::body::Body;
 use crate::error::DownstreamRequestError;
 use crate::handoff::HandoffInfo;
+use crate::sandbox::PendingResponse;
 use http::{HeaderMap, Request, Response};
 use hyper::Uri;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -53,6 +54,13 @@ impl DownstreamRequest {
 pub enum DownstreamResponse {
     /// An HTTP response to send back downstream.
     Http(Response<Body>),
+
+    /// A potential [Response] to an in-flight request that should be sent
+    /// downstream once it resolves.
+    ///
+    /// If the in-flight request fails, then the `Error` will be converted
+    /// to an appropriate 5XX HTTP status code.
+    Pending(Box<PendingResponse>),
 
     /// Redirect the WebSocket request to pushpin.
     HandoffToPushpin(HandoffInfo),

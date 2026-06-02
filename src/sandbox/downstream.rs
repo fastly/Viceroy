@@ -3,6 +3,7 @@
 use {
     crate::{
         body::Body, downstream::DownstreamResponse, error::Error, handoff::HandoffInfo,
+        sandbox::async_item::PendingResponse,
     },
     hyper::http::response::Response,
     tokio::sync::mpsc::Sender,
@@ -83,6 +84,22 @@ impl DownstreamResponseState {
 
         let _ = sender.try_send(DownstreamResponse::Http(response));
         *self = Self::Sent;
+    }
+
+    pub async fn send_pending(&mut self, pending: PendingResponse) -> Result<(), Error> {
+        let Self::Unsent(sender) = self else {
+            return Err(Error::DownstreamRespSending);
+        };
+
+        // Send and transfer to `Sent`:
+        sender
+            .send(DownstreamResponse::Pending(pending.into()))
+            .await
+            .map_err(|_| ())
+            .expect("response receiver is open");
+        *self = Self::Sent;
+
+        Ok(())
     }
 
     pub async fn redirect_to_pushpin(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {

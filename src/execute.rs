@@ -422,6 +422,19 @@ impl ExecuteCtx {
 
                     return Some((resp, None));
                 }
+                DownstreamResponse::Pending(pending) => {
+                    let mut resp = pending
+                        .recv_or_else(|e| {
+                            let status = e.as_status_code();
+                            let err = anyhow::Error::from(e);
+                            anyhow_response_with_status(&err, status)
+                        })
+                        .await;
+
+                    apply_response_framing(&mut resp);
+
+                    return Some((resp, None));
+                }
                 DownstreamResponse::HandoffToPushpin(info) => {
                     let err = NonHttpResponse::HandoffToPushpin(info).into();
                     let resp = Response::new(Body::empty());
@@ -1186,8 +1199,12 @@ fn exec_err_to_response(err: &ExecutionError) -> Response<Body> {
 }
 
 fn anyhow_response(err: &anyhow::Error) -> Response<Body> {
+    anyhow_response_with_status(err, hyper::StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn anyhow_response_with_status(err: &anyhow::Error, status: hyper::StatusCode) -> Response<Body> {
     Response::builder()
-        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+        .status(status)
         .body(Body::from(format!("{err:?}").into_bytes()))
         .unwrap()
 }

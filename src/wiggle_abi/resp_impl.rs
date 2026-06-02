@@ -7,7 +7,7 @@ use {
         upstream,
         wiggle_abi::{
             fastly_http_resp::FastlyHttpResp,
-            headers::HttpHeaders,
+            headers::{HttpHeadersRead, HttpHeadersWrite},
             types::{
                 BodyHandle, FramingHeadersMode, HttpKeepaliveMode, HttpStatus, HttpVersion,
                 MultiValueCursor, MultiValueCursorResult, PendingRequestHandle, ResponseHandle,
@@ -104,7 +104,7 @@ impl FastlyHttpResp for Sandbox {
         value: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
         let headers = &mut self.response_parts_mut(resp_handle)?.headers;
-        HttpHeaders::insert(headers, memory, name, value)
+        HttpHeadersWrite::insert(headers, memory, name, value)
     }
 
     fn header_append<'a>(
@@ -115,7 +115,7 @@ impl FastlyHttpResp for Sandbox {
         value: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
         let headers = &mut self.response_parts_mut(resp_handle)?.headers;
-        HttpHeaders::append(headers, memory, name, value)
+        HttpHeadersWrite::append(headers, memory, name, value)
     }
 
     fn header_remove<'a>(
@@ -125,7 +125,7 @@ impl FastlyHttpResp for Sandbox {
         name: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
         let headers = &mut self.response_parts_mut(resp_handle)?.headers;
-        HttpHeaders::remove(headers, memory, name)
+        HttpHeadersWrite::remove(headers, memory, name)
     }
 
     fn version_get(
@@ -176,7 +176,8 @@ impl FastlyHttpResp for Sandbox {
         _memory: &mut GuestMemory<'_>,
         h: PendingRequestHandle,
     ) -> Result<(), Error> {
-        unimplemented!();
+        let pending = self.take_pending_request(h)?;
+        self.send_pending_response(pending).await
     }
 
     fn status_get(

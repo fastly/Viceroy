@@ -5,7 +5,7 @@ mod downstream;
 
 pub use async_item::{
     AsyncItem, PeekableTask, PendingCacheTask, PendingDownstreamReqTask, PendingKvDeleteTask,
-    PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
+    PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask, PendingResponse,
 };
 
 use std::collections::HashMap;
@@ -260,6 +260,11 @@ impl Sandbox {
     /// to send another response will trigger a panic.
     pub async fn send_downstream_response(&mut self, resp: Response<Body>) -> Result<(), Error> {
         self.downstream_resp.send(resp).await
+    }
+
+    /// Send the response to a request that's still inflight downstream once it arrives.
+    pub async fn send_pending_response(&mut self, pending: PendingResponse) -> Result<(), Error> {
+        self.downstream_resp.send_pending(pending).await
     }
 
     /// Redirect the downstream request to Pushpin.
@@ -1024,7 +1029,7 @@ impl Sandbox {
         pending: PeekableTask<Response<Body>>,
     ) -> PendingRequestHandle {
         self.async_items
-            .push(Some(AsyncItem::PendingReq(pending)))
+            .push(Some(AsyncItem::PendingReq(PendingResponse::new(pending))))
             .into()
     }
 
@@ -1035,7 +1040,7 @@ impl Sandbox {
     pub fn pending_request(
         &self,
         handle: PendingRequestHandle,
-    ) -> Result<&PeekableTask<Response<Body>>, HandleError> {
+    ) -> Result<&PendingResponse, HandleError> {
         self.async_items
             .get(handle.into())
             .and_then(Option::as_ref)
@@ -1050,7 +1055,7 @@ impl Sandbox {
     pub fn pending_request_mut(
         &mut self,
         handle: PendingRequestHandle,
-    ) -> Result<&mut PeekableTask<Response<Body>>, HandleError> {
+    ) -> Result<&mut PendingResponse, HandleError> {
         self.async_items
             .get_mut(handle.into())
             .and_then(Option::as_mut)
@@ -1065,7 +1070,7 @@ impl Sandbox {
     pub fn take_pending_request(
         &mut self,
         handle: PendingRequestHandle,
-    ) -> Result<PeekableTask<Response<Body>>, HandleError> {
+    ) -> Result<PendingResponse, HandleError> {
         // check that this is a pending request before removing it
         let _ = self.pending_request(handle)?;
 
@@ -1079,7 +1084,7 @@ impl Sandbox {
     pub fn reinsert_pending_request(
         &mut self,
         handle: PendingRequestHandle,
-        pending_req: PeekableTask<Response<Body>>,
+        pending_req: PendingResponse,
     ) -> Result<(), HandleError> {
         *self
             .async_items
