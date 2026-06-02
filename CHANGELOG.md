@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix adapter codegen to avoid memory shift overflow, and support SIMD instructions. ([#629](https://github.com/fastly/Viceroy/pull/629))
+
 ## 0.18.0 (2026-05-21)
 
 - Fix noshift adapter selection for wit-bindgen library components. ([#618](https://github.com/fastly/Viceroy/pull/618))
