@@ -1,4 +1,5 @@
 use super::{convert_result, BodyHandle, FastlyStatus, RequestHandle};
+use crate::fastly::dynamic_types::{self, DynamicType};
 use crate::fastly::INVALID_HANDLE;
 use crate::{alloc_result_opt, TrappingUnwrap};
 use core::mem::ManuallyDrop;
@@ -219,8 +220,9 @@ mod cache {
 
         match res {
             Ok(res) => {
+                let handle = dynamic_types::set_type(res.take_handle(), DynamicType::CacheEntry);
                 unsafe {
-                    *main_ptr!(cache_handle_out) = res.take_handle();
+                    *main_ptr!(cache_handle_out) = handle;
                 }
                 FastlyStatus::OK
             }
@@ -386,8 +388,9 @@ mod cache {
 
         match res {
             Ok(res) => {
+                let handle = dynamic_types::set_type(res.take_handle(), DynamicType::CacheEntry);
                 unsafe {
-                    *main_ptr!(cache_handle_out) = res.take_handle();
+                    *main_ptr!(cache_handle_out) = handle;
                 }
                 FastlyStatus::OK
             }
@@ -460,8 +463,9 @@ mod cache {
         let cache_busy_handle = unsafe { cache::PendingEntry::from_handle(handle) };
         match cache::await_entry(cache_busy_handle) {
             Ok(res) => {
+                let handle = dynamic_types::set_type(res.take_handle(), DynamicType::CacheEntry);
                 unsafe {
-                    *main_ptr!(cache_handle_out) = res.take_handle();
+                    *main_ptr!(cache_handle_out) = handle;
                 }
 
                 // Remember that we just consumed `handle` so that if there's
@@ -490,6 +494,7 @@ mod cache {
 
         let options = unsafe_main_ptr!(options);
 
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             match unsafe { (*options).request_headers } {
@@ -536,6 +541,7 @@ mod cache {
 
         let options = unsafe_main_ptr!(options);
 
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             match unsafe { (*options).request_headers } {
@@ -559,9 +565,11 @@ mod cache {
 
         match res {
             Ok((body_handle, cache_handle)) => {
+                let cache_handle =
+                    dynamic_types::set_type(cache_handle.take_handle(), DynamicType::CacheEntry);
                 unsafe {
                     *main_ptr!(body_handle_out) = body_handle.take_handle();
-                    *main_ptr!(cache_handle_out) = cache_handle.take_handle();
+                    *main_ptr!(cache_handle_out) = cache_handle;
                 }
                 FastlyStatus::OK
             }
@@ -581,6 +589,7 @@ mod cache {
 
         let options = unsafe_main_ptr!(options);
 
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             match unsafe { (*options).request_headers } {
@@ -607,6 +616,7 @@ mod cache {
 
     #[export_name = "fastly_cache#transaction_cancel"]
     pub fn transaction_cancel(handle: CacheHandle) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         convert_result(handle.transaction_cancel())
     }
@@ -652,14 +662,22 @@ mod cache {
         }
 
         // The witx `close` is shared between cache entries and replace entries.
-        // We set a bit in the returned handle index to distinguish the two.
-        if is_replace_entry(handle) {
-            let handle = decode_replace_entry(handle);
-            let handle = unsafe { cache::ReplaceEntry::from_handle(handle) };
-            convert_result(cache::close_replace_entry(handle))
-        } else {
-            let handle = unsafe { cache::Entry::from_handle(handle) };
-            convert_result(cache::close_entry(handle))
+        // We use a mask in the returned handle index to distinguish the two.
+        let (ty, raw) = dynamic_types::parts(handle);
+        match ty {
+            DynamicType::CacheReplaceEntry => {
+                let handle = unsafe { cache::ReplaceEntry::from_handle(raw) };
+                convert_result(cache::close_replace_entry(handle))
+            }
+            DynamicType::CacheEntry => {
+                let handle = unsafe { cache::Entry::from_handle(raw) };
+                convert_result(cache::close_entry(handle))
+            }
+            _ => {
+                // Not a valid handle for this call. We can't panic, but we can return "bad
+                // handle":
+                FastlyStatus::BADF
+            }
         }
     }
 
@@ -668,6 +686,7 @@ mod cache {
         handle: CacheHandle,
         cache_lookup_state_out: *mut CacheLookupState,
     ) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         match handle.get_state() {
             Ok(res) => {
@@ -687,6 +706,7 @@ mod cache {
         user_metadata_out_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         alloc_result_opt!(
             unsafe_main_ptr!(user_metadata_out_ptr),
@@ -717,6 +737,7 @@ mod cache {
         options: *const CacheGetBodyOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         let options = unsafe { cache::GetBodyOptions::from((options_mask, *main_ptr!(options))) };
 
@@ -737,6 +758,7 @@ mod cache {
 
     #[export_name = "fastly_cache#get_length"]
     pub fn get_length(handle: CacheHandle, length_out: *mut CacheObjectLength) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         match handle.get_length() {
             Ok(Some(res)) => {
@@ -752,6 +774,7 @@ mod cache {
 
     #[export_name = "fastly_cache#get_max_age_ns"]
     pub fn get_max_age_ns(handle: CacheHandle, duration_out: *mut CacheDurationNs) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         match handle.get_max_age_ns() {
             Ok(Some(res)) => {
@@ -770,6 +793,7 @@ mod cache {
         handle: CacheHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         match handle.get_stale_while_revalidate_ns() {
             Ok(Some(res)) => {
@@ -785,6 +809,7 @@ mod cache {
 
     #[export_name = "fastly_cache#get_age_ns"]
     pub fn get_age_ns(handle: CacheHandle, duration_out: *mut CacheDurationNs) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         match handle.get_age_ns() {
             Ok(Some(res)) => {
@@ -800,6 +825,7 @@ mod cache {
 
     #[export_name = "fastly_cache#get_hits"]
     pub fn get_hits(handle: CacheHandle, hits_out: *mut CacheHitCount) -> FastlyStatus {
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheEntry);
         let handle = ManuallyDrop::new(unsafe { cache::Entry::from_handle(handle) });
         match handle.get_hits() {
             Ok(Some(res)) => {
@@ -862,7 +888,8 @@ mod cache {
         match res {
             Ok(res) => {
                 unsafe {
-                    *main_ptr!(cache_handle_out) = encode_replace_entry(res.take_handle());
+                    *main_ptr!(cache_handle_out) =
+                        dynamic_types::set_type(res.take_handle(), DynamicType::CacheReplaceEntry);
                 }
 
                 // We just created a new `CacheReplaceHandle` so forget the
@@ -893,7 +920,7 @@ mod cache {
 
         let options = unsafe_main_ptr!(options);
 
-        let replace_handle = decode_replace_entry(handle);
+        let replace_handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let replace_handle = unsafe { cache::ReplaceEntry::from_handle(replace_handle) };
         let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
             match unsafe { (*options).request_headers } {
@@ -940,7 +967,7 @@ mod cache {
         handle: CacheReplaceHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         match handle.get_age_ns() {
             Ok(Some(res)) => {
@@ -962,7 +989,7 @@ mod cache {
         options: *const CacheGetBodyOptions,
         body_handle_out: *mut BodyHandle,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         let options = unsafe { cache::GetBodyOptions::from((options_mask, *main_ptr!(options))) };
 
@@ -988,7 +1015,7 @@ mod cache {
         handle: CacheReplaceHandle,
         hits_out: *mut CacheHitCount,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         match handle.get_hits() {
             Ok(Some(res)) => {
@@ -1008,7 +1035,7 @@ mod cache {
         handle: CacheReplaceHandle,
         length_out: *mut CacheObjectLength,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         match handle.get_length() {
             Ok(Some(res)) => {
@@ -1028,7 +1055,7 @@ mod cache {
         handle: CacheReplaceHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         match handle.get_max_age_ns() {
             Ok(Some(res)) => {
@@ -1048,7 +1075,7 @@ mod cache {
         handle: CacheReplaceHandle,
         duration_out: *mut CacheDurationNs,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         match handle.get_stale_while_revalidate_ns() {
             Ok(Some(res)) => {
@@ -1068,7 +1095,7 @@ mod cache {
         handle: CacheReplaceHandle,
         cache_lookup_state_out: *mut CacheLookupState,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         match handle.get_state() {
             Ok(Some(res)) => {
@@ -1090,7 +1117,7 @@ mod cache {
         user_metadata_out_len: usize,
         nwritten_out: *mut usize,
     ) -> FastlyStatus {
-        let handle = decode_replace_entry(handle);
+        let handle = dynamic_types::raw_handle(handle, DynamicType::CacheReplaceEntry);
         let handle = ManuallyDrop::new(unsafe { cache::ReplaceEntry::from_handle(handle) });
         alloc_result_opt!(
             unsafe_main_ptr!(user_metadata_out_ptr),
@@ -1099,33 +1126,4 @@ mod cache {
             { handle.get_user_metadata(u64::try_from(user_metadata_out_len).trapping_unwrap(),) }
         )
     }
-}
-
-/// The witx `fastly_cache#close` function works on both `CacheHandle` values and
-/// `CacheReplace` values. In the WIT API, these are separate resources. To
-/// distinguish them, we add a bit to the handle value that we expose to witx that
-/// otherwise not used in the Canonical ABI.
-///
-/// The Canonical ABI doesn't use the high four bits, but we don't use the
-/// most-significant bit here to avoid handle values that may look negative to
-/// witx users.
-const REPLACE_ENTRY_MARKER: u32 = 0x4000_0000;
-
-/// Convert a `CacheReplaceHandle` index into a `CacheHandle` index with the
-/// special flag set indicating that it's a replace entry.
-fn encode_replace_entry(cache_entry: CacheReplaceHandle) -> CacheHandle {
-    assert!(!is_replace_entry(cache_entry));
-    cache_entry | REPLACE_ENTRY_MARKER
-}
-
-/// Convert a `CacheHandle` index that holds an encoded replace entry into a
-/// `CacheReplaceHandle` index.
-fn decode_replace_entry(cache_entry: CacheHandle) -> CacheReplaceHandle {
-    assert!(is_replace_entry(cache_entry));
-    cache_entry & !REPLACE_ENTRY_MARKER
-}
-
-/// Test whether the given `CacheHandle` holds an encoded replace entry.
-fn is_replace_entry(cache_entry: CacheHandle) -> bool {
-    (cache_entry & REPLACE_ENTRY_MARKER) == REPLACE_ENTRY_MARKER
 }

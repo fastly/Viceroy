@@ -4,6 +4,7 @@
 
 use super::{convert_result, FastlyStatus};
 use crate::fastly::decode_ip_address;
+use crate::fastly::dynamic_types::{self, DynamicType};
 use crate::{
     alloc_result, alloc_result_opt, handle_buffer_len, make_vec, with_buffer, write_bool_result,
     TrappingUnwrap,
@@ -4695,7 +4696,7 @@ pub mod fastly_acl {
 
 pub mod fastly_async_io {
     use super::*;
-    use crate::bindings::fastly::compute::async_io;
+    use crate::bindings::fastly::compute::{async_io, cache, http_cache};
     use core::slice;
 
     #[export_name = "fastly_async_io#select"]
@@ -4708,12 +4709,15 @@ pub mod fastly_async_io {
         unsafe {
             let refs = slice::from_raw_parts(main_ptr!(async_item_handles), async_item_handles_len);
 
-            // In the witx ABI, a `timeout_ms` value of 0 means no timeout.
-            *main_ptr!(done_index_out) = if timeout_ms == 0 {
-                select_wrapper(refs)
-            } else {
-                select_with_timeout_wrapper(refs, timeout_ms).unwrap_or(u32::MAX)
-            };
+            // If we have any handles that require dynamic typing, handle them
+            // specially.
+            for handle in refs {
+                if !dynamic_types::is_other(*handle) {
+                    return select_with_dynamic_types(refs, timeout_ms, done_index_out);
+                }
+            }
+
+            *main_ptr!(done_index_out) = select_with_maybe_timeout_wrapper(refs, timeout_ms);
 
             FastlyStatus::OK
         }
@@ -4722,10 +4726,149 @@ pub mod fastly_async_io {
     #[export_name = "fastly_async_io#is_ready"]
     pub fn is_ready(async_item_handle: AsyncItemHandle, ready_out: *mut u32) -> FastlyStatus {
         unsafe {
-            let async_item_handle =
-                ManuallyDrop::new(async_io::Pollable::from_handle(async_item_handle));
-            *main_ptr!(ready_out) = async_item_handle.is_ready().into();
+            let is_ready: bool = match first_pollable(async_item_handle) {
+                None => true,
+                Some(pollable) => {
+                    let is_ready = pollable.is_ready();
+                    drop_pollable(async_item_handle, pollable.take_handle());
+                    is_ready
+                }
+            };
+
+            *main_ptr!(ready_out) = is_ready.into();
             FastlyStatus::OK
+        }
+    }
+
+    fn select_with_dynamic_types(
+        refs: &[u32],
+        timeout_ms: u32,
+        done_index_out: *mut u32,
+    ) -> FastlyStatus {
+        crate::State::with::<FastlyStatus>(|state| {
+            unsafe {
+                // Allocate a new handle array.
+                let mut alloc = state.temporary_alloc();
+                let buf = alloc.alloc(
+                    core::mem::align_of::<u32>(),
+                    core::mem::size_of::<u32>() * refs.len(),
+                );
+                let buf = core::slice::from_raw_parts_mut(buf.cast::<u32>(), refs.len());
+
+                // For each handle with a dynamic type that isn't a `pollable`,
+                // call `.step()` to obtain a `pollable`.
+                for i in 0..refs.len() {
+                    let new = match first_pollable(refs[i]) {
+                        Some(new) => new,
+                        None => {
+                            // The handle is ready already.
+                            *main_ptr!(done_index_out) = i as u32;
+
+                            // Free the `pollable`s we created.
+                            for i in 0..i {
+                                drop_pollable(refs[i], buf[i]);
+                            }
+
+                            return Ok(());
+                        }
+                    };
+                    buf[i] = new.take_handle();
+                }
+
+                loop {
+                    // Wait for an event on any of the handles.
+                    let done_index = select_with_maybe_timeout_wrapper(buf, timeout_ms);
+                    let i = done_index as usize;
+                    if i >= refs.len() {
+                        // The host returned an invalid handle!
+                        // That's not entirely unexpected; we get 0xFF.. if it hits the timeout
+                        // before any handle becomes ready.
+                        //
+                        // Report that back to the user; break the loop.
+                        *main_ptr!(done_index_out) = done_index;
+                        break;
+                    }
+
+                    // One step of `handle` completed, but there may be more steps.
+                    match next_pollable(refs[i]) {
+                        Some(pollable) => {
+                            drop_pollable(refs[i], buf[i]);
+                            buf[i] = pollable.take_handle();
+                        }
+                        None => {
+                            // We're done here.
+                            *main_ptr!(done_index_out) = done_index;
+                            break;
+                        }
+                    }
+                }
+
+                // Free the `pollable`s we created.
+                for i in 0..refs.len() {
+                    drop_pollable(refs[i], buf[i]);
+                }
+
+                Ok(())
+            }
+        })
+    }
+
+    /// Call the host select facility.
+    ///
+    /// `hs` must contain a list of host `pollable` handles. Handles of
+    /// any other type must be converted to `pollable` first, such as with
+    /// `.step()` methods.
+    ///
+    /// This function only does a single wait, so if a resource requires
+    /// multiple `.step()`s, this function must be called multiple times.
+    ///
+    /// If `timeout` is 0, no timeout is applied.
+    fn select_with_maybe_timeout_wrapper(hs: &[u32], timeout_ms: u32) -> u32 {
+        // In the witx ABI, a `timeout_ms` value of 0 means no timeout.
+        if timeout_ms == 0 {
+            select_wrapper(hs)
+        } else {
+            select_with_timeout_wrapper(hs, timeout_ms).unwrap_or(u32::MAX)
+        }
+    }
+
+    /// Return the first `Pollable` for `handle` that a `select` should wait
+    /// for, or `None` if the handle is already ready.
+    unsafe fn first_pollable(handle: AsyncItemHandle) -> Option<async_io::Pollable> {
+        match dynamic_types::parts(handle) {
+            (DynamicType::Other, _) => Some(async_io::Pollable::from_handle(handle)),
+            (DynamicType::CacheEntry, raw) => {
+                ManuallyDrop::new(cache::Entry::from_handle(raw)).step()
+            }
+            (DynamicType::CacheReplaceEntry, raw) => {
+                ManuallyDrop::new(cache::ReplaceEntry::from_handle(raw)).step()
+            }
+            (DynamicType::HttpCacheEntry, raw) => {
+                ManuallyDrop::new(http_cache::Entry::from_handle(raw)).step()
+            }
+        }
+    }
+
+    /// If `handle` requires further steps, return a `Pollable` for the next
+    /// step.
+    unsafe fn next_pollable(handle: AsyncItemHandle) -> Option<async_io::Pollable> {
+        match dynamic_types::parts(handle) {
+            (DynamicType::Other, _) => None,
+            (DynamicType::CacheEntry, raw) => {
+                ManuallyDrop::new(cache::Entry::from_handle(raw)).step()
+            }
+            (DynamicType::CacheReplaceEntry, raw) => {
+                ManuallyDrop::new(cache::ReplaceEntry::from_handle(raw)).step()
+            }
+            (DynamicType::HttpCacheEntry, raw) => {
+                ManuallyDrop::new(http_cache::Entry::from_handle(raw)).step()
+            }
+        }
+    }
+
+    unsafe fn drop_pollable(handle: AsyncItemHandle, pollable: AsyncItemHandle) {
+        if !dynamic_types::is_other(handle) {
+            drop(async_io::Pollable::from_handle(pollable));
         }
     }
 }

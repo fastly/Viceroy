@@ -2182,6 +2182,7 @@ interface cache {
   use types.{error};
   use http-body.{body};
   use http-req.{request};
+  use async-io.{pollable};
 
   /// The outcome of a cache lookup (either bare or as part of a cache transaction)
   resource entry {
@@ -2294,6 +2295,11 @@ interface cache {
     /// Useful if there is an error before streaming is possible, for example if a backend is
     /// unreachable.
     transaction-cancel: func() -> result<_, error>;
+
+    /// Returns a `pollable` representing the next step of work for this `entry`. The `pollable` can be used to wait until this `entry` is unblocked.
+    ///
+    /// The `entry` may require `step`s to complete. When this returns `none`, the entry is ready.
+    step: func() -> option<pollable>;
   }
   /// Handle that can be used to check whether or not a cache lookup is waiting on another client.
   use async-io.{pollable as pending-entry};
@@ -2352,6 +2358,11 @@ interface cache {
     get-user-metadata: func(
       max-len: u64,
     ) -> result<option<list<u8>>, error>;
+
+    /// Returns a `pollable` representing the next step of work for this `replace-entry`. The `pollable` can be used to wait until this `replace-entry` is unblocked.
+    ///
+    /// The `replace-entry` may require `step`s to complete. When this returns `none`, the entry is ready.
+    step: func() -> option<pollable>;
   }
 
   type object-length = u64;
@@ -2561,6 +2572,7 @@ interface http-cache {
   use http-resp.{response, response-with-body};
   use backend.{backend};
   use cache.{lookup-state, object-length, duration-ns, cache-hit-count};
+  use async-io.{pollable};
 
   /// An HTTP Cache transaction.
   resource entry {
@@ -2759,6 +2771,11 @@ interface http-cache {
     /// requests. Consider using `transaction-record-not-cacheable` to make lookups for this request
     /// bypass the cache.
     transaction-abandon: func() -> result<_, error>;
+
+    /// Returns a `pollable` representing the next step of work for this `entry`. The `pollable` can be used to wait until this `entry` is unblocked.
+    ///
+    /// The `entry` may require `step`s to complete. When this returns `none`, the entry is ready.
+    step: func() -> option<pollable>;
   }
 
   /// The suggested action to take for spec-recommended behavior following
