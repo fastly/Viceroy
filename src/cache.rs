@@ -252,13 +252,22 @@ pub struct Found {
     /// We mirror the BodyHandle here when we create it; we can later check whether the handle is
     /// still valid, to find an outstanding read.
     pub last_body_handle: Option<BodyHandle>,
+
+    /// The length of the cached object, snapshotted at lookup time.
+    ///
+    /// On Compute, length is locked-in at lookup time: it is either known immediately or never
+    /// known. Viceroy mirrors this behavior by capturing the length once when `Found` is created,
+    /// rather than re-querying the (potentially still-streaming) body on each call.
+    length: Option<u64>,
 }
 
 impl From<Arc<CacheData>> for Found {
     fn from(data: Arc<CacheData>) -> Self {
+        let length = data.length();
         Found {
             data,
             last_body_handle: None,
+            length,
         }
     }
 }
@@ -273,9 +282,9 @@ impl Found {
         self.data.get_meta()
     }
 
-    /// The length of the cached object, if known.
+    /// The length of the cached object, if known at lookup time.
     pub fn length(&self) -> Option<u64> {
-        self.data.length()
+        self.length
     }
 }
 
@@ -310,10 +319,7 @@ impl Cache {
             .get_with_by_ref(key, async { Default::default() })
             .await
             .get(headers)
-            .map(|data| Found {
-                data,
-                last_body_handle: None,
-            });
+            .map(|data| Found::from(data));
         CacheEntry {
             key: key.clone(),
             found,
