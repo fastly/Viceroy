@@ -26,7 +26,7 @@ use crate::{
 /// CollectingBody provides a place for this to happen. It accepts a `Body` as a source of data,
 /// e.g. one from a `StreamingBody` or an origin response; stores the data for future retrieval;
 /// and can return new `Body`s from `::read` that produce the full content.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CollectingBody {
     inner: watch::Receiver<CollectingBodyInner>,
 }

@@ -575,7 +575,7 @@ fn test_length_locked_at_lookup() {
     // A *new* lookup after the stream finishes should immediately see the correct length.
     let key = new_key();
 
-    let body = "hello beautiful world".as_bytes();
+    let body = "hello world".as_bytes();
     let mut writer = insert(key.clone(), Duration::from_secs(115))
         .execute()
         .unwrap();

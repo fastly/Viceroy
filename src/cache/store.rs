@@ -47,6 +47,7 @@ pub struct ObjectMeta {
     soft_purge: AtomicBool,
 }
 
+
 impl ObjectMeta {
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
@@ -121,7 +122,24 @@ impl ObjectMeta {
         }
     }
 }
-
+impl Clone for ObjectMeta {
+    fn clone(&self) -> Self {
+        ObjectMeta {
+            inserted: self.inserted,
+            initial_age: self.initial_age,
+            max_age: self.max_age,
+            stale_while_revalidate: self.stale_while_revalidate,
+            request_headers: self.request_headers.clone(),
+            vary_rule: self.vary_rule.clone(),
+            user_metadata: self.user_metadata.clone(),
+            length: self.length,
+            surrogate_keys: self.surrogate_keys.clone(),
+            soft_purge: AtomicBool::new(
+                self.soft_purge.load(std::sync::atomic::Ordering::SeqCst),
+                ),
+            }
+        }
+}
 /// Object(s) indexed by a CacheKey.
 #[derive(Debug, Default)]
 pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
@@ -500,7 +518,7 @@ impl Obligation {
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
         self.completed = true;
-        data.into()
+        (*data).clone().into()
     }
 
     /// Fulfill the obligation by freshening the existing entry.
@@ -554,6 +572,23 @@ impl Drop for Obligation {
 pub(crate) struct CacheData {
     meta: ObjectMeta,
     body: CollectingBody,
+}
+
+impl Clone for CacheData {
+    fn clone(&self) -> Self {
+        // Resolve the length question at clone time.
+        // After this, the cloned CacheData's meta.length will be the single source of truth
+
+        let resolved_length = self.length();
+        let meta = ObjectMeta {
+            length: resolved_length,
+            ..self.meta.clone()
+        };
+        CacheData {
+            meta,
+            body: self.body.clone(),
+        }
+    }
 }
 
 /// A holder for the get_body options.
@@ -669,7 +704,7 @@ impl CacheData {
 
     /// Return the length of this object, if the final or expected length is known.
     pub fn length(&self) -> Option<u64> {
-        self.body.length().or(self.meta.length)
+        self.meta.length.or_else(|| self.body.length())
     }
 }
 

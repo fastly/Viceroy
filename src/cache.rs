@@ -243,7 +243,7 @@ impl CacheEntry {
 /// A successful retrieval of an item from the cache.
 #[derive(Debug)]
 pub struct Found {
-    data: Arc<CacheData>,
+    data: CacheData,
 
     /// The handle for the last body used to read from this Found.
     ///
@@ -253,28 +253,27 @@ pub struct Found {
     /// still valid, to find an outstanding read.
     pub last_body_handle: Option<BodyHandle>,
 
-    /// The length of the cached object, snapshotted at lookup time.
-    ///
-    /// On Compute, length is locked-in at lookup time: it is either known immediately or never
-    /// known. Viceroy mirrors this behavior by capturing the length once when `Found` is created,
-    /// rather than re-querying the (potentially still-streaming) body on each call.
-    length: Option<u64>,
+    // Length is snapshoted at lookup time.
+    // CacheData::length() consults the live streamed body, which can transition from none to
+    // some as the body completes. This cannot happen on Compute. length is either known at lookup or
+    // never known. We capture it once here so Found::length() returns a stable value when it is called.
+    known_length: Option<u64>,
 }
 
-impl From<Arc<CacheData>> for Found {
-    fn from(data: Arc<CacheData>) -> Self {
-        let length = data.length();
+impl From<CacheData> for Found {
+    fn from(data: CacheData) -> Self {
+        let known_length = data.length();
         Found {
             data,
             last_body_handle: None,
-            length,
+            known_length,
         }
     }
 }
 
 impl Found {
     fn get_body(&self) -> GetBodyBuilder<'_> {
-        self.data.as_ref().body()
+        self.data.body()
     }
 
     /// Access the metadata of the cached object.
@@ -284,7 +283,7 @@ impl Found {
 
     /// The length of the cached object, if known at lookup time.
     pub fn length(&self) -> Option<u64> {
-        self.length
+        self.known_length
     }
 }
 
@@ -319,7 +318,7 @@ impl Cache {
             .get_with_by_ref(key, async { Default::default() })
             .await
             .get(headers)
-            .map(|data| Found::from(data));
+            .map(|data| Found::from((*data).clone()));
         CacheEntry {
             key: key.clone(),
             found,
@@ -343,7 +342,7 @@ impl Cache {
             .await;
         CacheEntry {
             key: key.clone(),
-            found: found.map(|v| v.into()),
+            found: found.map(|v| Found::from((*v).clone())),
             go_get: obligation,
             always_use_requested_range: false,
         }
