@@ -30,6 +30,9 @@ pub fn transfer_encoding_is_supported(headers: &HeaderMap) -> bool {
     }
 }
 
+/// Determine whether the response is using manual framing headers, and remove
+/// `Content-Length` or `Transfer-Encoding` if we need to fall back to letting
+/// hyper do its automatic insertion of the appropriate headers.
 pub fn apply_response_framing(response: &mut Response<Body>) {
     let mut framing_headers_mode = response
         .extensions()
@@ -67,6 +70,9 @@ pub fn apply_response_framing(response: &mut Response<Body>) {
     }
 }
 
+/// Determine whether the request is using manual framing headers, and remove
+/// `Content-Length` or `Transfer-Encoding` if we need to fall back to letting
+/// hyper do its automatic insertion of the appropriate headers.
 pub fn apply_request_framing(req: &mut Request<Body>) {
     let mut framing_headers_mode = req
         .extensions()
