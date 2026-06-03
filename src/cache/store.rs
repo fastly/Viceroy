@@ -47,7 +47,6 @@ pub struct ObjectMeta {
     soft_purge: AtomicBool,
 }
 
-
 impl ObjectMeta {
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
@@ -134,11 +133,9 @@ impl Clone for ObjectMeta {
             user_metadata: self.user_metadata.clone(),
             length: self.length,
             surrogate_keys: self.surrogate_keys.clone(),
-            soft_purge: AtomicBool::new(
-                self.soft_purge.load(std::sync::atomic::Ordering::SeqCst),
-                ),
-            }
+            soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
         }
+    }
 }
 /// Object(s) indexed by a CacheKey.
 #[derive(Debug, Default)]
@@ -574,11 +571,12 @@ pub(crate) struct CacheData {
     body: CollectingBody,
 }
 
+// Resolve the length question at clone time.
+// After this, the cloned CacheData's meta.length will be the single source of truth.
+// The cloned body shares the same watch channel and will eventually report a length as well,
+// but found Found::length() bypasses CacheData.length() entirely and reads known_length directly.
 impl Clone for CacheData {
     fn clone(&self) -> Self {
-        // Resolve the length question at clone time.
-        // After this, the cloned CacheData's meta.length will be the single source of truth
-
         let resolved_length = self.length();
         let meta = ObjectMeta {
             length: resolved_length,
@@ -704,7 +702,7 @@ impl CacheData {
 
     /// Return the length of this object, if the final or expected length is known.
     pub fn length(&self) -> Option<u64> {
-        self.meta.length.or_else(|| self.body.length())
+        self.body.length().or(self.meta.length)
     }
 }
 
