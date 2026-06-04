@@ -252,21 +252,13 @@ pub struct Found {
     /// We mirror the BodyHandle here when we create it; we can later check whether the handle is
     /// still valid, to find an outstanding read.
     pub last_body_handle: Option<BodyHandle>,
-
-    // Length is snapshoted at lookup time.
-    // CacheData::length() consults the live streamed body, which can transition from none to
-    // some as the body completes. This cannot happen on Compute. length is either known at lookup or
-    // never known. We capture it once here so Found::length() returns a stable value when it is called.
-    known_length: Option<u64>,
 }
 
 impl From<CacheData> for Found {
     fn from(data: CacheData) -> Self {
-        let known_length = data.length();
         Found {
             data,
             last_body_handle: None,
-            known_length,
         }
     }
 }
@@ -283,7 +275,7 @@ impl Found {
 
     /// The length of the cached object, if known at lookup time.
     pub fn length(&self) -> Option<u64> {
-        self.known_length
+        self.data.get_meta().length()
     }
 }
 
