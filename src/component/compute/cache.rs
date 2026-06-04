@@ -6,7 +6,7 @@ use {
         error::Error,
         linking::{ComponentCtx, SandboxView},
         sandbox::{PeekableTask, PendingCacheTask, Sandbox},
-        wiggle_abi::types::{CacheBusyHandle, CacheHandle},
+        wiggle_abi::types::{AsyncItemHandle, CacheBusyHandle, CacheHandle},
     },
     bytes::Bytes,
     http::HeaderMap,
@@ -296,6 +296,16 @@ impl api::HostReplaceEntry for ComponentCtx {
 
     fn drop(&mut self, _entry: Resource<api::ReplaceEntry>) -> wasmtime::Result<()> {
         Ok(())
+    }
+
+    fn step(
+        &mut self,
+        _handle: Resource<api::ReplaceEntry>,
+    ) -> wasmtime::Result<Option<Resource<api::Pollable>>> {
+        Err(Error::Unsupported {
+            msg: "Cache API primitives not yet supported",
+        }
+        .into())
     }
 }
 
@@ -596,6 +606,21 @@ impl api::HostEntry for ComponentCtx {
 
     fn drop(&mut self, _entry: Resource<api::Entry>) -> wasmtime::Result<()> {
         Ok(())
+    }
+
+    fn step(
+        &mut self,
+        entry: Resource<api::Entry>,
+    ) -> wasmtime::Result<Option<Resource<api::Pollable>>> {
+        let cache_handle = CacheHandle::from(entry);
+        let async_handle = cache_handle.into();
+        let is_ready = self.sandbox_mut().async_item_mut(async_handle)?.is_ready();
+
+        if is_ready {
+            Ok(None)
+        } else {
+            Ok(Some(AsyncItemHandle::from(async_handle).into()))
+        }
     }
 }
 

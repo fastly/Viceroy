@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use crate::cache::CacheEntry;
 use crate::downstream::DownstreamRequest;
 use crate::execute::NextRequest;
+use crate::http::PendingHeaders;
 use crate::object_store::{KvStoreError, ObjectValue};
 use crate::{body::Body, error::Error, streaming_body::StreamingBody};
 use anyhow::anyhow;
@@ -152,7 +153,7 @@ impl PendingCacheTask {
 pub enum AsyncItem {
     Body(Body),
     StreamingBody(StreamingBody),
-    PendingReq(PeekableTask<Response<Body>>),
+    PendingReq(PendingResponse),
     PendingDownstream(PendingDownstreamReqTask),
     PendingKvLookup(PendingKvLookupTask),
     PendingKvInsert(PendingKvInsertTask),
@@ -275,14 +276,14 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_pending_req(&self) -> Option<&PeekableTask<Response<Body>>> {
+    pub fn as_pending_req(&self) -> Option<&PendingResponse> {
         match self {
             Self::PendingReq(req) => Some(req),
             _ => None,
         }
     }
 
-    pub fn as_pending_req_mut(&mut self) -> Option<&mut PeekableTask<Response<Body>>> {
+    pub fn as_pending_req_mut(&mut self) -> Option<&mut PendingResponse> {
         match self {
             Self::PendingReq(req) => Some(req),
             _ => None,
@@ -310,7 +311,7 @@ impl AsyncItem {
         }
     }
 
-    pub fn into_pending_req(self) -> Option<PeekableTask<Response<Body>>> {
+    pub fn into_pending_req(self) -> Option<PendingResponse> {
         match self {
             Self::PendingReq(req) => Some(req),
             _ => None,
@@ -347,13 +348,16 @@ impl AsyncItem {
     }
 
     pub fn is_ready(&mut self) -> bool {
-        self.await_ready().now_or_never().is_some()
+        match self {
+            Self::PendingReq(req) => req.is_ready(),
+            other => other.await_ready().now_or_never().is_some(),
+        }
     }
 }
 
 impl From<PeekableTask<Response<Body>>> for AsyncItem {
     fn from(req: PeekableTask<Response<Body>>) -> Self {
-        Self::PendingReq(req)
+        Self::PendingReq(PendingResponse::new(req))
     }
 }
 
@@ -440,6 +444,77 @@ impl<T: Send + 'static> PeekableTask<T> {
             Some(res)
         } else {
             None
+        }
+    }
+}
+
+/// An asynchronously-waited-for response, along with header modifications to apply when the
+/// [Response] arrives.
+#[derive(Debug)]
+pub struct PendingResponse {
+    task: PeekableTask<Response<Body>>,
+
+    /// Headers to apply to the response to the request.
+    headers_resp: Box<PendingHeaders>,
+
+    /// Headers to apply to the synthetic response made by the `recv_or_else` callback.
+    headers_err: Box<PendingHeaders>,
+}
+
+impl PendingResponse {
+    pub fn new(task: PeekableTask<Response<Body>>) -> Self {
+        Self {
+            task,
+            headers_resp: Default::default(),
+            headers_err: Default::default(),
+        }
+    }
+
+    pub async fn await_ready(&mut self) {
+        self.task.await_ready().await
+    }
+
+    pub fn headers_resp_mut(&mut self) -> &mut PendingHeaders {
+        &mut self.headers_resp
+    }
+
+    pub fn headers_err_mut(&mut self) -> &mut PendingHeaders {
+        &mut self.headers_err
+    }
+
+    pub fn is_ready(&mut self) -> bool {
+        self.await_ready().now_or_never().is_some()
+    }
+
+    /// Wait until the request completes and we have the response or request error.
+    ///
+    /// The pending headers will be applied to the returned [Response].
+    pub async fn recv(self) -> Result<Response<Body>, Error> {
+        let mut resp = self.task.recv().await?;
+        self.headers_resp.apply(resp.headers_mut());
+        Ok(resp)
+    }
+
+    /// Similar to [PendingResponse::recv], but supports converting any request errors
+    /// into an appropriate [Response].
+    ///
+    /// The pending headers will be applied after conversion so that the returned [Response]
+    /// always contains them.
+    pub async fn recv_or_else<F>(self, f: F) -> Response<Body>
+    where
+        F: Fn(Error) -> Response<Body>,
+    {
+        let resp = self.task.recv().await.map_err(f);
+
+        match resp {
+            Ok(mut resp) => {
+                self.headers_resp.apply(resp.headers_mut());
+                resp
+            }
+            Err(mut resp) => {
+                self.headers_err.apply(resp.headers_mut());
+                resp
+            }
         }
     }
 }

@@ -18,12 +18,12 @@ use {
         wiggle_abi::{
             fastly_http_downstream::FastlyHttpDownstream,
             fastly_http_req::FastlyHttpReq,
-            headers::HttpHeaders,
+            headers::{HttpHeadersRead, HttpHeadersWrite},
             types::{
                 BackendConfigOptions, BodyHandle, CacheOverrideTag, ClientCertVerifyResult,
                 ContentEncodings, DynamicBackendConfig, FramingHeadersMode, HttpVersion,
                 InspectInfo, InspectInfoMask, MultiValueCursor, MultiValueCursorResult,
-                PendingRequestHandle, RequestHandle, ResponseHandle,
+                PendingRequestHandle, PendingResponseKind, RequestHandle, ResponseHandle,
             },
         },
     },
@@ -205,7 +205,7 @@ impl FastlyHttpReq for Sandbox {
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
-    fn redirect_to_websocket_proxy(
+    async fn redirect_to_websocket_proxy(
         &mut self,
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
@@ -219,12 +219,12 @@ impl FastlyHttpReq for Sandbox {
             request_info: None,
         };
 
-        self.redirect_downstream_to_backend(redirect_info)?;
+        self.redirect_downstream_to_backend(redirect_info).await?;
         Ok(())
     }
 
     #[allow(unused_variables)] // FIXME ACF 2022-10-03: Remove this directive once implemented.
-    fn redirect_to_grip_proxy(
+    async fn redirect_to_grip_proxy(
         &mut self,
         memory: &mut GuestMemory<'_>,
         backend_name: GuestPtr<str>,
@@ -238,11 +238,11 @@ impl FastlyHttpReq for Sandbox {
             request_info: None,
         };
 
-        self.redirect_downstream_to_pushpin(redirect_info)?;
+        self.redirect_downstream_to_pushpin(redirect_info).await?;
         Ok(())
     }
 
-    fn redirect_to_websocket_proxy_v2(
+    async fn redirect_to_websocket_proxy_v2(
         &mut self,
         memory: &mut GuestMemory<'_>,
         req_handle: RequestHandle,
@@ -258,11 +258,11 @@ impl FastlyHttpReq for Sandbox {
             request_info: Some(HandoffRequestInfo::from_parts(req)),
         };
 
-        self.redirect_downstream_to_backend(redirect_info)?;
+        self.redirect_downstream_to_backend(redirect_info).await?;
         Ok(())
     }
 
-    fn redirect_to_grip_proxy_v2(
+    async fn redirect_to_grip_proxy_v2(
         &mut self,
         memory: &mut GuestMemory<'_>,
         req_handle: RequestHandle,
@@ -278,7 +278,7 @@ impl FastlyHttpReq for Sandbox {
             request_info: Some(HandoffRequestInfo::from_parts(req)),
         };
 
-        self.redirect_downstream_to_pushpin(redirect_info)?;
+        self.redirect_downstream_to_pushpin(redirect_info).await?;
         Ok(())
     }
 
@@ -717,7 +717,7 @@ impl FastlyHttpReq for Sandbox {
         value: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
         let headers = &mut self.request_parts_mut(req_handle)?.headers;
-        HttpHeaders::insert(headers, memory, name, value)
+        HttpHeadersWrite::insert(headers, memory, name, value)
     }
 
     fn header_append(
@@ -728,7 +728,7 @@ impl FastlyHttpReq for Sandbox {
         value: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
         let headers = &mut self.request_parts_mut(req_handle)?.headers;
-        HttpHeaders::append(headers, memory, name, value)
+        HttpHeadersWrite::append(headers, memory, name, value)
     }
 
     fn header_remove(
@@ -738,7 +738,7 @@ impl FastlyHttpReq for Sandbox {
         name: GuestPtr<[u8]>,
     ) -> Result<(), Error> {
         let headers = &mut self.request_parts_mut(req_handle)?.headers;
-        HttpHeaders::remove(headers, memory, name)
+        HttpHeadersWrite::remove(headers, memory, name)
     }
 
     fn method_get(
@@ -986,6 +986,77 @@ impl FastlyHttpReq for Sandbox {
         Ok(self.insert_pending_request(task))
     }
 
+    fn pending_req_header_insert(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+        name: GuestPtr<[u8]>,
+        value: GuestPtr<[u8]>,
+        target: PendingResponseKind,
+    ) -> Result<(), Error> {
+        let pending = self.pending_request_mut(h)?;
+
+        match target {
+            PendingResponseKind::Any => {
+                HttpHeadersWrite::insert(pending.headers_resp_mut(), memory, name, value)?;
+                HttpHeadersWrite::insert(pending.headers_err_mut(), memory, name, value)
+            }
+            PendingResponseKind::Response => {
+                HttpHeadersWrite::insert(pending.headers_resp_mut(), memory, name, value)
+            }
+            PendingResponseKind::Error => {
+                HttpHeadersWrite::insert(pending.headers_err_mut(), memory, name, value)
+            }
+        }
+    }
+
+    fn pending_req_header_append(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+        name: GuestPtr<[u8]>,
+        value: GuestPtr<[u8]>,
+        target: PendingResponseKind,
+    ) -> Result<(), Error> {
+        let pending = self.pending_request_mut(h)?;
+
+        match target {
+            PendingResponseKind::Any => {
+                HttpHeadersWrite::append(pending.headers_resp_mut(), memory, name, value)?;
+                HttpHeadersWrite::append(pending.headers_err_mut(), memory, name, value)
+            }
+            PendingResponseKind::Response => {
+                HttpHeadersWrite::append(pending.headers_resp_mut(), memory, name, value)
+            }
+            PendingResponseKind::Error => {
+                HttpHeadersWrite::append(pending.headers_err_mut(), memory, name, value)
+            }
+        }
+    }
+
+    fn pending_req_header_remove(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        h: PendingRequestHandle,
+        name: GuestPtr<[u8]>,
+        target: PendingResponseKind,
+    ) -> Result<(), Error> {
+        let pending = self.pending_request_mut(h)?;
+
+        match target {
+            PendingResponseKind::Any => {
+                HttpHeadersWrite::remove(pending.headers_resp_mut(), memory, name)?;
+                HttpHeadersWrite::remove(pending.headers_err_mut(), memory, name)
+            }
+            PendingResponseKind::Response => {
+                HttpHeadersWrite::remove(pending.headers_resp_mut(), memory, name)
+            }
+            PendingResponseKind::Error => {
+                HttpHeadersWrite::remove(pending.headers_err_mut(), memory, name)
+            }
+        }
+    }
+
     // note: The first value in the return tuple represents whether the request is done: 0 when not
     // done, 1 when done.
     async fn pending_req_poll(
@@ -1069,19 +1140,16 @@ impl FastlyHttpReq for Sandbox {
         )?;
 
         let outcome = match item {
-            AsyncItem::PendingReq(task) => match task {
-                PeekableTask::Complete(res) => match res {
-                    Ok(res) => {
-                        let (resp_handle, body_handle) = self.insert_response(res);
-                        (done_index, resp_handle, body_handle)
-                    }
-                    Err(_) => (
-                        done_index,
-                        INVALID_RESPONSE_HANDLE.into(),
-                        INVALID_BODY_HANDLE.into(),
-                    ),
-                },
-                _ => panic!("Pending request was not completed"),
+            AsyncItem::PendingReq(task) => match task.recv().await {
+                Ok(res) => {
+                    let (resp_handle, body_handle) = self.insert_response(res);
+                    (done_index, resp_handle, body_handle)
+                }
+                Err(_) => (
+                    done_index,
+                    INVALID_RESPONSE_HANDLE.into(),
+                    INVALID_BODY_HANDLE.into(),
+                ),
             },
             _ => panic!("AsyncItem was not a pending request"),
         };

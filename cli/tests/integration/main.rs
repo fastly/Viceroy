@@ -21,6 +21,7 @@ mod invalid_status_code;
 mod kv_store;
 mod logging;
 mod memory;
+mod pending_req;
 mod profiling;
 mod request;
 mod response;

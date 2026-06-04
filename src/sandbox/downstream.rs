@@ -2,18 +2,11 @@
 
 use {
     crate::{
-        body::Body,
-        downstream::DownstreamResponse,
-        error::Error,
-        framing::{content_length_is_valid, transfer_encoding_is_supported},
-        handoff::HandoffInfo,
-        headers::filter_outgoing_headers,
-        sandbox::ViceroyResponseMetadata,
-        wiggle_abi::types::FramingHeadersMode,
+        body::Body, downstream::DownstreamResponse, error::Error, handoff::HandoffInfo,
+        sandbox::async_item::PendingResponse,
     },
     hyper::http::response::Response,
-    std::mem,
-    tokio::sync::oneshot::Sender,
+    tokio::sync::mpsc::Sender,
 };
 
 /// Downstream response states.
@@ -24,10 +17,8 @@ use {
 /// [send]: struct.Sandbox.html#method.send_downstream_response
 /// [set]: struct.Sandbox.html#method.set_downstream_response_sender
 pub enum DownstreamResponseState {
-    /// No channel to send the response has been opened yet.
-    Closed,
     /// A channel has been opened, but no response has been sent yet.
-    Pending(Sender<DownstreamResponse>),
+    Unsent(Sender<DownstreamResponse>),
     /// The guest has initiated a proxy to Pushpin; the response will come from there.
     HandingOffToPushpin,
     /// The guest has initiated a proxy to a Backend; the response will come from there.
@@ -42,11 +33,11 @@ impl DownstreamResponseState {
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     /// [sender]: https://docs.rs/tokio/latest/tokio/sync/oneshot/struct.Sender.html
     pub fn new(sender: Sender<DownstreamResponse>) -> Self {
-        DownstreamResponseState::Pending(sender)
+        DownstreamResponseState::Unsent(sender)
     }
 
     pub fn is_unsent(&self) -> bool {
-        matches!(self, Self::Pending(_))
+        matches!(self, Self::Unsent(_))
     }
 
     /// Send a [`Response`][resp] downstream.
@@ -58,122 +49,88 @@ impl DownstreamResponseState {
     /// This method will panic if the associated receiver was dropped prematurely.
     ///
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
-    pub fn send(&mut self, mut response: Response<Body>) -> Result<(), Error> {
-        use DownstreamResponseState::{
-            Closed, HandingOffToBackend, HandingOffToPushpin, Pending, Sent,
+    pub async fn send(&mut self, response: Response<Body>) -> Result<(), Error> {
+        let Self::Unsent(sender) = self else {
+            return Err(Error::DownstreamRespSending);
         };
 
-        let mut framing_headers_mode = response
-            .extensions()
-            .get::<ViceroyResponseMetadata>()
-            .map(|metadata: &ViceroyResponseMetadata| metadata.framing_headers_mode)
-            .unwrap_or(FramingHeadersMode::Automatic);
-
-        if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
-            if !content_length_is_valid(response.headers()) {
-                tracing::warn!(
-                    "Downstream response has malformed Content-Length header, falling back to automatic framing."
-                );
-                framing_headers_mode = FramingHeadersMode::Automatic;
-            } else if !transfer_encoding_is_supported(response.headers()) {
-                tracing::warn!(
-                    "Downstream response has unsupported Transfer-Encoding header, falling back to automatic framing."
-                );
-                framing_headers_mode = FramingHeadersMode::Automatic;
-            } else if !response
-                .headers()
-                .contains_key(hyper::header::CONTENT_LENGTH)
-                && !response
-                    .headers()
-                    .contains_key(hyper::header::TRANSFER_ENCODING)
-            {
-                tracing::warn!(
-                    "Downstream response has neither Content-Length nor Transfer-Encoding header, falling back to automatic framing."
-                );
-                framing_headers_mode = FramingHeadersMode::Automatic;
-            }
-        }
-        if framing_headers_mode != FramingHeadersMode::ManuallyFromHeaders {
-            filter_outgoing_headers(response.headers_mut());
-        }
-
-        // Supporting 103 Early Hints responses is currently infeasible, as Hyper does not
-        // support sending multiple responses on a single connection. But we don't want
-        // to generate errors for them either. Early Hints will be dropped, but logged
-        // so that people will know they *did work*, even though they won't reach
-        // the client.
+        // Only 103 Early Hints responses are allowed to be sent by the guest.
         //
-        // Other 1xx status codes, however, are not allowed and generate an InvalidArgument
-        // error.
+        // Other 1xx status codes are not allowed and generate an `InvalidArgument` error.
         if response.status().as_u16() == 103 {
-            // We'll do these at different log levels in case someone wants to squelch some.
-            tracing::warn!(
-                "Guest returned 103 Early Hints response which will not be sent to the client"
-            );
-            tracing::info!("{:#?}", response);
+            let _ = sender.send(DownstreamResponse::Http(response)).await;
             return Ok(());
         } else if response.status().is_informational() {
             return Err(Error::InvalidArgument);
         }
 
         // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
-        match mem::replace(self, Sent) {
-            Closed => panic!("downstream response channel was closed"),
-            Pending(sender) => sender
-                .send(DownstreamResponse::Http(response))
-                .map_err(|_| ())
-                .expect("response receiver is open"),
-            Sent | HandingOffToPushpin | HandingOffToBackend => {
-                return Err(Error::DownstreamRespSending);
-            }
-        }
+        sender
+            .send(DownstreamResponse::Http(response))
+            .await
+            .map_err(|_| ())
+            .expect("response receiver is open");
+        *self = Self::Sent;
 
         Ok(())
     }
 
-    pub fn redirect_to_pushpin(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {
-        use DownstreamResponseState::{
-            Closed, HandingOffToBackend, HandingOffToPushpin, Pending, Sent,
+    /// Ensure the downstream response sender is closed, and send the provided response if it
+    /// isn't.
+    pub fn send_close(&mut self, response: Response<Body>) {
+        let Self::Unsent(sender) = self else {
+            return;
         };
 
-        // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
-        match mem::replace(self, HandingOffToPushpin) {
-            Closed => panic!("downstream response channel was closed"),
-            Pending(sender) => sender
-                .send(DownstreamResponse::HandoffToPushpin(redirect_info))
-                .map_err(|_| ())
-                .expect("response receiver is open"),
-            Sent | HandingOffToPushpin | HandingOffToBackend => {
-                return Err(Error::DownstreamRespSending);
-            }
-        }
-
-        Ok(())
+        let _ = sender.try_send(DownstreamResponse::Http(response));
+        *self = Self::Sent;
     }
 
-    pub fn redirect_to_backend(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {
-        use DownstreamResponseState::{
-            Closed, HandingOffToBackend, HandingOffToPushpin, Pending, Sent,
+    pub async fn send_pending(&mut self, pending: PendingResponse) -> Result<(), Error> {
+        let Self::Unsent(sender) = self else {
+            return Err(Error::DownstreamRespSending);
         };
 
-        // Mark this `DownstreamResponse` as having been sent, and match on the previous value.
-        match mem::replace(self, HandingOffToBackend) {
-            Closed => panic!("downstream response channel was closed"),
-            Pending(sender) => sender
-                .send(DownstreamResponse::HandoffToBackend(redirect_info))
-                .map_err(|_| ())
-                .expect("response receiver is open"),
-            Sent | HandingOffToPushpin | HandingOffToBackend => {
-                return Err(Error::DownstreamRespSending);
-            }
-        }
+        // Send and transfer to `Sent`:
+        sender
+            .send(DownstreamResponse::Pending(pending.into()))
+            .await
+            .map_err(|_| ())
+            .expect("response receiver is open");
+        *self = Self::Sent;
 
         Ok(())
     }
 
-    /// Close the `DownstreamResponse`, potentially without sending any response.
-    #[allow(unused)]
-    pub fn close(&mut self) {
-        *self = DownstreamResponseState::Closed;
+    pub async fn redirect_to_pushpin(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {
+        let Self::Unsent(sender) = self else {
+            return Err(Error::DownstreamRespSending);
+        };
+
+        // Send and transfer to `HandingOffToPushpin`:
+        sender
+            .send(DownstreamResponse::HandoffToPushpin(redirect_info))
+            .await
+            .map_err(|_| ())
+            .expect("response receiver is open");
+        *self = Self::HandingOffToPushpin;
+
+        Ok(())
+    }
+
+    pub async fn redirect_to_backend(&mut self, redirect_info: HandoffInfo) -> Result<(), Error> {
+        let Self::Unsent(sender) = self else {
+            return Err(Error::DownstreamRespSending);
+        };
+
+        // Send and transfer to `HandingOffToBackend`:
+        sender
+            .send(DownstreamResponse::HandoffToBackend(redirect_info))
+            .await
+            .map_err(|_| ())
+            .expect("response receiver is open");
+        *self = Self::HandingOffToBackend;
+
+        Ok(())
     }
 }

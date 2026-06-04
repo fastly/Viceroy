@@ -394,13 +394,14 @@ impl http_req::HostRequest for ComponentCtx {
         Ok(())
     }
 
-    fn redirect_to_websocket_proxy(
+    async fn redirect_to_websocket_proxy(
         &mut self,
         handle: Resource<http_req::Request>,
         backend: Resource<String>,
     ) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
         crate::component::http_req::redirect_to_websocket_proxy(&mut self.sandbox, handle, backend)
+            .await
     }
 
     fn set_framing_headers_mode(
@@ -434,13 +435,14 @@ impl http_req::HostRequest for ComponentCtx {
         Ok(())
     }
 
-    fn redirect_to_grip_proxy(
+    async fn redirect_to_grip_proxy(
         &mut self,
         req_handle: Resource<http_req::Request>,
         backend: Resource<String>,
     ) -> Result<(), types::Error> {
         let backend = self.wasi_table.get(&backend).unwrap();
         crate::component::http_req::redirect_to_grip_proxy(&mut self.sandbox, req_handle, backend)
+            .await
     }
 
     fn drop(&mut self, _request: Resource<http_req::Request>) -> wasmtime::Result<()> {

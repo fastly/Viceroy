@@ -1,7 +1,7 @@
 use {
     crate::{
         component::{
-            bindings::fastly::compute::{http_body, http_resp, http_types, types},
+            bindings::fastly::compute::{http_body, http_req, http_resp, http_types, types},
             compute::headers::get_names,
         },
         error::Error,
@@ -23,7 +23,7 @@ use crate::component::compute::headers::get_values;
 const MAX_HEADER_NAME_LEN: usize = (1 << 16) - 1;
 
 impl http_resp::Host for ComponentCtx {
-    fn send_downstream(
+    async fn send_downstream(
         &mut self,
         h: Resource<http_resp::Response>,
         b: Resource<http_body::Body>,
@@ -35,11 +35,11 @@ impl http_resp::Host for ComponentCtx {
             let body = self.sandbox_mut().take_body(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.sandbox_mut().send_downstream_response(resp)?;
+        self.sandbox_mut().send_downstream_response(resp).await?;
         Ok(())
     }
 
-    fn send_downstream_streaming(
+    async fn send_downstream_streaming(
         &mut self,
         h: Resource<http_resp::Response>,
         b: Resource<http_body::Body>,
@@ -51,7 +51,106 @@ impl http_resp::Host for ComponentCtx {
             let body = self.sandbox_mut().begin_streaming(b.into())?;
             Response::from_parts(resp_parts, body)
         }; // Set the downstream response, and return.
-        self.sandbox_mut().send_downstream_response(resp)?;
+        self.sandbox_mut().send_downstream_response(resp).await?;
+        Ok(())
+    }
+
+    async fn send_downstream_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+    ) -> Result<(), types::Error> {
+        let session = self.sandbox_mut();
+        let pending = session.take_pending_request(h.into())?;
+        session.send_pending_response(pending).await?;
+        Ok(())
+    }
+
+    fn insert_header_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+        name: String,
+        value: Vec<u8>,
+        target: http_resp::PendingResponseKind,
+    ) -> Result<(), types::Error> {
+        let session = self.sandbox_mut();
+        let pending = session.pending_request_mut(h.into())?;
+
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
+
+        match target {
+            http_resp::PendingResponseKind::Any => {
+                pending
+                    .headers_resp_mut()
+                    .insert(name.clone(), value.clone());
+                pending.headers_err_mut().insert(name, value);
+            }
+            http_resp::PendingResponseKind::Response => {
+                pending.headers_resp_mut().insert(name, value);
+            }
+            http_resp::PendingResponseKind::Error => {
+                pending.headers_err_mut().insert(name, value);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn append_header_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+        name: String,
+        value: Vec<u8>,
+        target: http_resp::PendingResponseKind,
+    ) -> Result<(), types::Error> {
+        let session = self.sandbox_mut();
+        let pending = session.pending_request_mut(h.into())?;
+
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+        let value = HeaderValue::from_bytes(value.as_slice())?;
+
+        match target {
+            http_resp::PendingResponseKind::Any => {
+                pending
+                    .headers_resp_mut()
+                    .append(name.clone(), value.clone());
+                pending.headers_err_mut().append(name, value);
+            }
+            http_resp::PendingResponseKind::Response => {
+                pending.headers_resp_mut().append(name, value);
+            }
+            http_resp::PendingResponseKind::Error => {
+                pending.headers_err_mut().append(name, value);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn remove_header_pending(
+        &mut self,
+        h: Resource<http_req::PendingResponse>,
+        name: String,
+        target: http_resp::PendingResponseKind,
+    ) -> Result<(), types::Error> {
+        let session = self.sandbox_mut();
+        let pending = session.pending_request_mut(h.into())?;
+
+        let name = HeaderName::from_bytes(name.as_bytes())?;
+
+        match target {
+            http_resp::PendingResponseKind::Any => {
+                pending.headers_resp_mut().remove(name.clone());
+                pending.headers_err_mut().remove(name);
+            }
+            http_resp::PendingResponseKind::Response => {
+                pending.headers_resp_mut().remove(name);
+            }
+            http_resp::PendingResponseKind::Error => {
+                pending.headers_err_mut().remove(name);
+            }
+        }
+
         Ok(())
     }
 

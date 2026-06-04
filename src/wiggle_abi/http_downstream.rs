@@ -4,7 +4,7 @@ use std::time::Duration;
 use crate::error::Error;
 use crate::sandbox::{AsyncItemHandle, Sandbox};
 use crate::wiggle_abi::fastly_http_downstream::FastlyHttpDownstream;
-use crate::wiggle_abi::headers::HttpHeaders;
+use crate::wiggle_abi::headers::HttpHeadersRead;
 use crate::wiggle_abi::types::{
     BodyHandle, ClientCertVerifyResult, MultiValueCursor, MultiValueCursorResult,
     NextRequestOptions, NextRequestOptionsMask, RequestHandle, RequestPromiseHandle,

@@ -1141,6 +1141,9 @@ interface http-resp {
   };
   use http-body.{body};
 
+  /// Handle that can be used to asynchronously wait for a response from a sent request.
+  use async-io.{pollable as pending-response};
+
   /// An HTTP response.
   resource response {
     /// Create a new `response`.
@@ -1241,6 +1244,25 @@ interface http-resp {
     get-remote-port: func() -> option<u16>;
   }
 
+  /// Control for under which conditions an operation should be applied to the result of
+  /// a `pending-response`.
+  ///
+  /// This is primarily useful for allowing consumers of `send-downstream-pending` to
+  /// control whether a requested header change (`insert-header-pending` et al.) are
+  /// applied to only the actual origin response, the synthetic 5XX response generated
+  /// in lieu of an `error-with-detail`, or both.
+  enum pending-response-kind {
+    /// Apply the queued change to the response sent downstream, regardless of whether
+    /// it originally came from the origin or was a synthetic 5XX response.
+    any,
+
+    /// Only apply the queued change to an actual response to the request.
+    response,
+
+    /// Only apply the queued change to the synthetic response made when the request fails.
+    error,
+  }
+
   /// Sends a response to the client that made the request passed to `http-incoming.handle`.
   ///
   /// This method returns as soon as the response header begins sending to the client, and
@@ -1259,6 +1281,57 @@ interface http-resp {
   send-downstream-streaming: func(
     response: response,
     body: borrow<body>,
+  ) -> result<_, error>;
+
+  /// Send a pending response back downstream in reply to an incoming request.
+  ///
+  /// This will cause Compute to wait in the background for the pending response to
+  /// resolve into its headers and body, and then forward them back downstream.
+  ///
+  /// If the pending request fails while sending and a response never materializes,
+  /// Compute will generate a 5XX response to send in its stead.
+  send-downstream-pending: func(
+    handle: pending-response
+  ) -> result<_, error>;
+
+  /// Sets a response header to the given value on a pending response.
+  ///
+  /// This will discard any previous values for the given header name, including any
+  /// pending header changes previously queued via other `insert-header-pending` or
+  /// `append-header-pending` calls for the same header name.
+  ///
+  /// The `target` argument controls under which conditions this header is applied.
+  insert-header-pending: func(
+    pending: borrow<pending-response>,
+    name: string,
+    value: list<u8>,
+    target: pending-response-kind,
+  ) -> result<_, error>;
+
+  /// Adds a response header with given value to a pending response.
+  ///
+  /// Unlike `insert-header-pending`, this does not discard existing values for
+  /// the same header name, but will instead result in multiple headers of the
+  /// same name in the final response, each with their own values.
+  ///
+  /// The `target` argument controls under which conditions this header is applied.
+  append-header-pending: func(
+    pending: borrow<pending-response>,
+    name: string,
+    value: list<u8>,
+    target: pending-response-kind,
+  ) -> result<_, error>;
+
+  /// Removes all response headers of the given name from a pending response.
+  ///
+  /// This will also remove any changes previously queued via `insert-header-pending`
+  /// or `append-header-pending` for the same header name.
+  ///
+  /// The `target` argument controls under which conditions this header is applied.
+  remove-header-pending: func(
+    pending: borrow<pending-response>,
+    name: string,
+    target: pending-response-kind,
   ) -> result<_, error>;
 
   /// Closes the `response`, releasing any associated resources.
@@ -2182,6 +2255,7 @@ interface cache {
   use types.{error};
   use http-body.{body};
   use http-req.{request};
+  use async-io.{pollable};
 
   /// The outcome of a cache lookup (either bare or as part of a cache transaction)
   resource entry {
@@ -2294,6 +2368,11 @@ interface cache {
     /// Useful if there is an error before streaming is possible, for example if a backend is
     /// unreachable.
     transaction-cancel: func() -> result<_, error>;
+
+    /// Returns a `pollable` representing the next step of work for this `entry`. The `pollable` can be used to wait until this `entry` is unblocked.
+    ///
+    /// The `entry` may require `step`s to complete. When this returns `none`, the entry is ready.
+    step: func() -> option<pollable>;
   }
   /// Handle that can be used to check whether or not a cache lookup is waiting on another client.
   use async-io.{pollable as pending-entry};
@@ -2352,6 +2431,11 @@ interface cache {
     get-user-metadata: func(
       max-len: u64,
     ) -> result<option<list<u8>>, error>;
+
+    /// Returns a `pollable` representing the next step of work for this `replace-entry`. The `pollable` can be used to wait until this `replace-entry` is unblocked.
+    ///
+    /// The `replace-entry` may require `step`s to complete. When this returns `none`, the entry is ready.
+    step: func() -> option<pollable>;
   }
 
   type object-length = u64;
@@ -2561,6 +2645,7 @@ interface http-cache {
   use http-resp.{response, response-with-body};
   use backend.{backend};
   use cache.{lookup-state, object-length, duration-ns, cache-hit-count};
+  use async-io.{pollable};
 
   /// An HTTP Cache transaction.
   resource entry {
@@ -2759,6 +2844,11 @@ interface http-cache {
     /// requests. Consider using `transaction-record-not-cacheable` to make lookups for this request
     /// bypass the cache.
     transaction-abandon: func() -> result<_, error>;
+
+    /// Returns a `pollable` representing the next step of work for this `entry`. The `pollable` can be used to wait until this `entry` is unblocked.
+    ///
+    /// The `entry` may require `step`s to complete. When this returns `none`, the entry is ready.
+    step: func() -> option<pollable>;
   }
 
   /// The suggested action to take for spec-recommended behavior following

@@ -1,14 +1,16 @@
-use {
-    crate::{error::Error, wiggle_abi::MultiValueWriter, wiggle_abi::types},
-    http::{HeaderMap, HeaderValue, header::HeaderName},
-    wiggle::{GuestMemory, GuestPtr},
-};
+use http::{HeaderMap, HeaderValue, header::HeaderName};
+use wiggle::{GuestMemory, GuestPtr};
+
+use crate::error::Error;
+use crate::http::PendingHeaders;
+use crate::wiggle_abi::MultiValueWriter;
+use crate::wiggle_abi::types;
 
 /// This constant reflects a similar constant within Hyper, which will panic
 /// if given header names longer than this value.
 pub const MAX_HEADER_NAME_LEN: u32 = (1 << 16) - 1;
 
-pub(crate) trait HttpHeaders {
+pub(crate) trait HttpHeadersRead {
     fn names_get(
         &self,
         memory: &mut GuestMemory<'_>,
@@ -36,7 +38,9 @@ pub(crate) trait HttpHeaders {
         cursor: types::MultiValueCursor,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<types::MultiValueCursorResult, Error>;
+}
 
+pub(crate) trait HttpHeadersWrite {
     fn values_set(
         &mut self,
         memory: &GuestMemory<'_>,
@@ -61,7 +65,7 @@ pub(crate) trait HttpHeaders {
     fn remove(&mut self, memory: &GuestMemory<'_>, name: GuestPtr<[u8]>) -> Result<(), Error>;
 }
 
-impl HttpHeaders for HeaderMap<HeaderValue> {
+impl HttpHeadersRead for HeaderMap<HeaderValue> {
     fn names_get(
         &self,
         memory: &mut GuestMemory<'_>,
@@ -132,7 +136,9 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
 
         values_iter.write_values(memory, b'\0', buf.as_array(buf_len), cursor, nwritten_out)
     }
+}
 
+impl HttpHeadersWrite for HeaderMap<HeaderValue> {
     fn values_set(
         &mut self,
         memory: &GuestMemory<'_>,
@@ -205,6 +211,61 @@ impl HttpHeaders for HeaderMap<HeaderValue> {
 
         let name = HeaderName::from_bytes(memory.as_slice(name)?.ok_or(Error::SharedMemory)?)?;
         let _ = self.remove(name).ok_or(Error::InvalidArgument)?;
+        Ok(())
+    }
+}
+
+impl HttpHeadersWrite for PendingHeaders {
+    fn values_set(
+        &mut self,
+        _memory: &GuestMemory<'_>,
+        _name: GuestPtr<[u8]>,
+        _values: GuestPtr<[u8]>,
+    ) -> Result<(), Error> {
+        Err(Error::Unsupported {
+            msg: "no hostcall allows multi-value set on PendingHeaders",
+        })
+    }
+
+    fn insert(
+        &mut self,
+        memory: &GuestMemory<'_>,
+        name: GuestPtr<[u8]>,
+        value: GuestPtr<[u8]>,
+    ) -> Result<(), Error> {
+        if name.len() > MAX_HEADER_NAME_LEN {
+            return Err(Error::InvalidArgument);
+        }
+
+        let name = HeaderName::from_bytes(memory.as_slice(name)?.ok_or(Error::SharedMemory)?)?;
+        let value = HeaderValue::from_bytes(memory.as_slice(value)?.ok_or(Error::SharedMemory)?)?;
+        self.insert(name, value);
+        Ok(())
+    }
+
+    fn append(
+        &mut self,
+        memory: &GuestMemory<'_>,
+        name: GuestPtr<[u8]>,
+        value: GuestPtr<[u8]>,
+    ) -> Result<(), Error> {
+        if name.len() > MAX_HEADER_NAME_LEN {
+            return Err(Error::InvalidArgument);
+        }
+
+        let name = HeaderName::from_bytes(memory.as_slice(name)?.ok_or(Error::SharedMemory)?)?;
+        let value = HeaderValue::from_bytes(memory.as_slice(value)?.ok_or(Error::SharedMemory)?)?;
+        self.append(name, value);
+        Ok(())
+    }
+
+    fn remove(&mut self, memory: &GuestMemory<'_>, name: GuestPtr<[u8]>) -> Result<(), Error> {
+        if name.len() > MAX_HEADER_NAME_LEN {
+            return Err(Error::InvalidArgument);
+        }
+
+        let name = HeaderName::from_bytes(memory.as_slice(name)?.ok_or(Error::SharedMemory)?)?;
+        self.remove(name);
         Ok(())
     }
 }

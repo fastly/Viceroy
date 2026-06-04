@@ -3,10 +3,9 @@ use crate::{
     cache::CacheOverride,
     config::Backend,
     error::Error,
-    framing::{content_length_is_valid, transfer_encoding_is_supported},
-    headers::filter_outgoing_headers,
+    http::framing::apply_request_framing,
     sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
-    wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
+    wiggle_abi::types::ContentEncodings,
 };
 use futures::Future;
 use http::{HeaderValue, Version, uri};
@@ -343,35 +342,7 @@ pub fn send_request(
         })
         .unwrap_or(false);
 
-    let mut framing_headers_mode = req
-        .extensions()
-        .get::<ViceroyRequestMetadata>()
-        .map(|vrm| vrm.framing_headers_mode)
-        .unwrap_or(FramingHeadersMode::Automatic);
-
-    if framing_headers_mode == FramingHeadersMode::ManuallyFromHeaders {
-        if !content_length_is_valid(req.headers()) {
-            warn!(
-                "Backend request has malformed Content-Length header, falling back to automatic framing."
-            );
-            framing_headers_mode = FramingHeadersMode::Automatic;
-        } else if !transfer_encoding_is_supported(req.headers()) {
-            warn!(
-                "Backend request has unsupported Transfer-Encoding header, falling back to automatic framing."
-            );
-            framing_headers_mode = FramingHeadersMode::Automatic;
-        } else if !req.headers().contains_key(header::CONTENT_LENGTH)
-            && !req.headers().contains_key(header::TRANSFER_ENCODING)
-        {
-            warn!(
-                "Backend request has neither Content-Length nor Transfer-Encoding header, falling back to automatic framing."
-            );
-            framing_headers_mode = FramingHeadersMode::Automatic;
-        }
-    }
-    if framing_headers_mode != FramingHeadersMode::ManuallyFromHeaders {
-        filter_outgoing_headers(req.headers_mut());
-    }
+    apply_request_framing(&mut req);
 
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;

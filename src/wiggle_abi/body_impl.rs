@@ -2,7 +2,7 @@
 
 use http::{HeaderName, HeaderValue};
 
-use crate::wiggle_abi::headers::HttpHeaders;
+use crate::wiggle_abi::headers::{HttpHeadersRead, HttpHeadersWrite};
 
 use {
     crate::{
@@ -144,7 +144,7 @@ impl FastlyHttpBody for Sandbox {
         } else {
             let body = self.body_mut(body_handle)?;
             let trailers = &mut body.trailers;
-            HttpHeaders::append(trailers, memory, name, value)
+            HttpHeadersWrite::append(trailers, memory, name, value)
         }
     }
 
