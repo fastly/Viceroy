@@ -46,7 +46,6 @@ pub struct ObjectMeta {
     // This can only transition false -> true.
     soft_purge: AtomicBool,
 }
-
 impl ObjectMeta {
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
@@ -87,6 +86,10 @@ impl ObjectMeta {
     pub fn user_metadata(&self) -> Bytes {
         self.user_metadata.clone()
     }
+
+    pub fn length(&self) -> Option<u64> {
+        self.length
+    }
 }
 
 impl ObjectMeta {
@@ -121,7 +124,22 @@ impl ObjectMeta {
         }
     }
 }
-
+impl Clone for ObjectMeta {
+    fn clone(&self) -> Self {
+        ObjectMeta {
+            inserted: self.inserted,
+            initial_age: self.initial_age,
+            max_age: self.max_age,
+            stale_while_revalidate: self.stale_while_revalidate,
+            request_headers: self.request_headers.clone(),
+            vary_rule: self.vary_rule.clone(),
+            user_metadata: self.user_metadata.clone(),
+            length: self.length,
+            surrogate_keys: self.surrogate_keys.clone(),
+            soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
+        }
+    }
+}
 /// Object(s) indexed by a CacheKey.
 #[derive(Debug, Default)]
 pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
@@ -341,16 +359,15 @@ impl CacheKeyObjects {
         options: WriteOptions,
         body: Body,
         clear_obligation: Option<Variant>,
-    ) -> Arc<CacheData> {
+    ) -> CacheData {
         let meta = ObjectMeta::new(options, request_headers);
         let vary_rule = meta.vary_rule().clone();
 
         let variant = meta.variant();
         let body = CollectingBody::new(body, meta.length);
-        let object = Arc::new(CacheData { body, meta });
-
-        // We return the updated object as well
-        let result = Arc::clone(&object);
+        let data = CacheData { meta, body };
+        let result = data.clone();
+        let object = Arc::new(data);
 
         self.0.send_modify(|cache_key_objects| {
             if let Some(clear_obligation) = clear_obligation
@@ -556,6 +573,24 @@ pub(crate) struct CacheData {
     body: CollectingBody,
 }
 
+// Resolve the length question at clone time.
+// After this, the cloned CacheData's meta.length will be the single source of truth.
+// The cloned body shares the same watch channel and will eventually report a length as well,
+// but found Found::length() bypasses CacheData.length() entirely and reads known_length directly.
+impl Clone for CacheData {
+    fn clone(&self) -> Self {
+        let resolved_length = self.length();
+        let meta = ObjectMeta {
+            length: resolved_length,
+            ..self.meta.clone()
+        };
+        CacheData {
+            meta,
+            body: self.body.clone(),
+        }
+    }
+}
+
 /// A holder for the get_body options.
 pub struct GetBodyBuilder<'a> {
     cache_data: &'a CacheData,
@@ -668,7 +703,7 @@ impl CacheData {
     }
 
     /// Return the length of this object, if the final or expected length is known.
-    pub fn length(&self) -> Option<u64> {
+    fn length(&self) -> Option<u64> {
         self.body.length().or(self.meta.length)
     }
 }
