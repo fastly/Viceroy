@@ -356,4 +356,14 @@ impl http_cache::HostEntry for ComponentCtx {
         }
         .into())
     }
+
+    fn step(
+        &mut self,
+        _entry: Resource<http_cache::Entry>,
+    ) -> wasmtime::Result<Option<Resource<http_cache::Pollable>>> {
+        Err(Error::Unsupported {
+            msg: "HTTP Cache API primitives not yet supported",
+        }
+        .into())
+    }
 }

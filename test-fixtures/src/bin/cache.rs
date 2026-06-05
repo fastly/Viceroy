@@ -40,6 +40,7 @@ fn main() {
     run_test!(test_vary_combine);
 
     run_test!(test_length_from_body);
+    run_test!(test_length_locked_at_lookup);
     run_test!(test_inconsistent_body_length);
     run_test!(test_nonconcurrent_range);
     run_test!(test_concurrent_range);
@@ -566,6 +567,44 @@ fn test_length_from_body() {
 
     let got = poll_known_length(&key);
     assert_eq!(got.known_length().unwrap(), body.len() as u64);
+}
+
+fn test_length_locked_at_lookup() {
+    // Length is locked-in at lookup time: a Found whose lookup happened while the body was still
+    // streaming must always report None for length, even after the stream completes.
+    // A *new* lookup after the stream finishes should immediately see the correct length.
+    let key = new_key();
+
+    let body = "hello world".as_bytes();
+    let mut writer = insert(key.clone(), Duration::from_secs(115))
+        .execute()
+        .unwrap();
+
+    // Lookup while the body is still streaming: length must be None.
+    let mid_stream = lookup(key.clone()).execute().unwrap().unwrap();
+    assert!(
+        mid_stream.known_length().is_none(),
+        "length must be None while body is still streaming"
+    );
+
+    writer.write_all(body).unwrap();
+    writer.finish().unwrap();
+
+    // The original Found must still report None after the stream completes.
+    // poll_known_length re-looks up until a new Found with known length appears, which confirms
+    // the body is fully collected by this point.
+    let post_stream = poll_known_length(&key);
+    assert_eq!(
+        post_stream.known_length(),
+        Some(body.len() as u64),
+        "a new lookup after body completion must report the correct length"
+    );
+
+    // The original mid-stream Found must remain locked at None.
+    assert!(
+        mid_stream.known_length().is_none(),
+        "length must remain None on the original Found even after body completes"
+    );
 }
 
 fn test_inconsistent_body_length() {

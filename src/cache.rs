@@ -243,7 +243,7 @@ impl CacheEntry {
 /// A successful retrieval of an item from the cache.
 #[derive(Debug)]
 pub struct Found {
-    data: Arc<CacheData>,
+    data: CacheData,
 
     /// The handle for the last body used to read from this Found.
     ///
@@ -254,8 +254,8 @@ pub struct Found {
     pub last_body_handle: Option<BodyHandle>,
 }
 
-impl From<Arc<CacheData>> for Found {
-    fn from(data: Arc<CacheData>) -> Self {
+impl From<CacheData> for Found {
+    fn from(data: CacheData) -> Self {
         Found {
             data,
             last_body_handle: None,
@@ -265,7 +265,7 @@ impl From<Arc<CacheData>> for Found {
 
 impl Found {
     fn get_body(&self) -> GetBodyBuilder<'_> {
-        self.data.as_ref().body()
+        self.data.body()
     }
 
     /// Access the metadata of the cached object.
@@ -273,9 +273,9 @@ impl Found {
         self.data.get_meta()
     }
 
-    /// The length of the cached object, if known.
+    /// The length of the cached object, if known at lookup time.
     pub fn length(&self) -> Option<u64> {
-        self.data.length()
+        self.data.get_meta().length()
     }
 }
 
@@ -310,10 +310,7 @@ impl Cache {
             .get_with_by_ref(key, async { Default::default() })
             .await
             .get(headers)
-            .map(|data| Found {
-                data,
-                last_body_handle: None,
-            });
+            .map(|data| Found::from((*data).clone()));
         CacheEntry {
             key: key.clone(),
             found,
@@ -337,7 +334,7 @@ impl Cache {
             .await;
         CacheEntry {
             key: key.clone(),
-            found: found.map(|v| v.into()),
+            found: found.map(|v| Found::from((*v).clone())),
             go_get: obligation,
             always_use_requested_range: false,
         }
