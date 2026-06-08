@@ -21,6 +21,10 @@ test: test-crates trap-test  ## Run all tests.
 test-crates: fix-build
 	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
 
+.PHONY: test-crates-lto
+test-crates-lto: fix-build
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all --profile=test-lto
+
 .PHONY: fix-build
 fix-build:
 	cd test-fixtures && $(VICEROY_CARGO) build --target=wasm32-wasip1
