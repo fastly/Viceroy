@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
-use hyper::http::uri::PathAndQuery;
 use hyper::http::HeaderValue;
+use hyper::http::uri::PathAndQuery;
 use hyper::{Body as HyperBody, Request, Response, Uri};
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 use super::{AsyncResp, TestServer, TestService};
@@ -41,6 +42,8 @@ impl TestBackends {
                     .unwrap_or_else(|| PathAndQuery::from_static("/")),
                 override_host: backend_config.override_host.clone(),
                 cert_host: backend_config.cert_host.clone(),
+                first_byte_timeout: backend_config.first_byte_timeout,
+                between_bytes_timeout: backend_config.between_bytes_timeout,
                 use_sni: backend_config.use_sni,
                 test_service: None,
                 test_server: None,
@@ -55,7 +58,7 @@ impl TestBackends {
     /// Get [`viceroy_lib::config::Backends`] for the defined test backends and their test servers.
     ///
     /// Panics if the test servers have not been started, as the ephemeral ports bound during test
-    /// server startup are required in order to provide complete complete backend configurations.
+    /// server startup are required in order to provide complete backend configurations.
     pub async fn backend_configs(&self) -> viceroy_lib::config::Backends {
         let inner = self.inner.lock().await;
         let mut backends = viceroy_lib::config::Backends::new();
@@ -74,8 +77,11 @@ impl TestBackends {
                 cert_host: backend.cert_host.clone(),
                 use_sni: backend.use_sni,
                 grpc: false,
+                first_byte_timeout: backend.first_byte_timeout,
+                between_bytes_timeout: backend.between_bytes_timeout,
                 client_cert: None,
                 ca_certs: vec![],
+                health: viceroy_lib::config::BackendHealth::Unknown,
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
         }
@@ -89,6 +95,8 @@ impl TestBackends {
             name: name.to_string(),
             path: "/".to_string(),
             override_host: None,
+            first_byte_timeout: None,
+            between_bytes_timeout: None,
             use_sni: true,
             test_service: None,
         }
@@ -204,6 +212,8 @@ pub struct TestBackend {
     override_host: Option<HeaderValue>,
     cert_host: Option<String>,
     use_sni: bool,
+    first_byte_timeout: Option<Duration>,
+    between_bytes_timeout: Option<Duration>,
     test_service: Option<TestService>,
     test_server: Option<Arc<TestServer>>,
 }
@@ -214,6 +224,8 @@ pub struct TestBackendBuilder {
     name: String,
     path: String,
     override_host: Option<String>,
+    first_byte_timeout: Option<Duration>,
+    between_bytes_timeout: Option<Duration>,
     use_sni: bool,
     test_service: Option<TestService>,
 }
@@ -234,6 +246,18 @@ impl TestBackendBuilder {
     /// Set the `use_sni` parameter on this backend (`true` by default).
     pub fn use_sni(mut self, use_sni: bool) -> Self {
         self.use_sni = use_sni;
+        self
+    }
+
+    /// Set the first byte timeout on requests through this backend.
+    pub fn first_byte_timeout(mut self, timeout: Duration) -> Self {
+        self.first_byte_timeout = Some(timeout);
+        self
+    }
+
+    /// Set the first byte timeout on requests through this backend.
+    pub fn between_bytes_timeout(mut self, timeout: Duration) -> Self {
+        self.between_bytes_timeout = Some(timeout);
         self
     }
 
@@ -272,12 +296,10 @@ impl TestBackendBuilder {
     ///
     /// Panics if:
     ///
-    /// * The `TestBackends` that created this builder no longer exists, or its test servers have
-    /// already been started
-    ///
-    /// * The `path` does not parse as a valid `PathAndQuery`
-    ///
-    /// * The `override_host` does not parse as a valid `HeaderValue`
+    ///   * The `TestBackends` that created this builder no longer exists, or its test servers have
+    ///     already been started
+    ///   * The `path` does not parse as a valid `PathAndQuery`
+    ///   * The `override_host` does not parse as a valid `HeaderValue`
     pub async fn build(self) {
         let inner_arc = self.inner.upgrade().expect("TestBackends dropped");
         let path = self.path.parse().expect("invalid backend path");
@@ -295,6 +317,8 @@ impl TestBackendBuilder {
                 override_host,
                 cert_host: None,
                 use_sni: self.use_sni,
+                first_byte_timeout: self.first_byte_timeout,
+                between_bytes_timeout: self.between_bytes_timeout,
                 test_service: self.test_service,
                 test_server: None,
             },

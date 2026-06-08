@@ -1,7 +1,7 @@
 //! Common values and types used by test fixtures
 
 use futures::stream::StreamExt;
-use hyper::{service, Body as HyperBody, Request, Response, Server, Uri};
+use hyper::{Body as HyperBody, Request, Response, Server, Uri, service};
 use std::{
     collections::HashSet,
     convert::Infallible,
@@ -10,18 +10,20 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::EnvironmentVariables;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
+    ExecuteCtx, ProfilingStrategy, ViceroyService,
     body::Body,
     config::{
-        Acls, DeviceDetection, Dictionaries, FastlyConfig, Geolocation, ObjectStores, SecretStores,
-        ShieldingSites,
+        Acls, DeviceDetection, Dictionaries, FakeValidFastlyKeys, FastlyConfig, Geolocation,
+        ObjectStores, SecretStores, ShieldingSites,
     },
-    ExecuteCtx, ProfilingStrategy, ViceroyService,
 };
+use wasmtime::WasmFeatures;
 
 pub use self::backends::TestBackends;
 
@@ -88,12 +90,15 @@ pub struct Test {
     object_stores: ObjectStores,
     secret_stores: SecretStores,
     shielding_sites: ShieldingSites,
+    fake_valid_fastly_keys: FakeValidFastlyKeys,
     capture_logs: Arc<Mutex<dyn Write + Send>>,
     log_stdout: bool,
     log_stderr: bool,
     via_hyper: bool,
     unknown_import_behavior: UnknownImportBehavior,
     adapt_component: bool,
+    profiling_strategy: ProfilingStrategy,
+    guest_profile_config: Option<viceroy_lib::GuestProfileConfig>,
 }
 
 impl Test {
@@ -113,12 +118,15 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
+            profiling_strategy: ProfilingStrategy::None,
+            guest_profile_config: None,
         }
     }
 
@@ -138,12 +146,15 @@ impl Test {
             object_stores: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
+            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
             capture_logs: Arc::new(Mutex::new(std::io::stdout())),
             log_stdout: false,
             log_stderr: false,
             via_hyper: false,
             unknown_import_behavior: Default::default(),
             adapt_component: false,
+            profiling_strategy: ProfilingStrategy::None,
+            guest_profile_config: None,
         }
     }
 
@@ -160,6 +171,7 @@ impl Test {
             object_stores: config.object_stores().to_owned(),
             secret_stores: config.secret_stores().to_owned(),
             shielding_sites: config.shielding_sites().to_owned(),
+            fake_valid_fastly_keys: config.fake_valid_fastly_keys().to_owned(),
             ..self
         })
     }
@@ -213,6 +225,53 @@ impl Test {
             .test_service(service);
         if let Some(override_host) = override_host {
             builder = builder.override_host(override_host);
+        }
+        builder.build().await;
+        self
+    }
+
+    /// Add a backend definition to this test with an asynchronous test server function and
+    /// (optionally) a first and between-byte timeout.
+    ///
+    /// The `name` is the static backend name that can be passed as, for example, the argument to
+    /// `Request::send()`.
+    ///
+    /// The `path` is the path that will be prepended to the URLs of requests sent to this
+    /// backend. Note that the host and port used to send requests to this backend will be
+    /// automatically determined when the test servers are started.
+    ///
+    /// `override_host` optionally sets the corresponding parameter in the backend definition.
+    ///
+    /// `service` is the asynchronous function that the test server will run on each request this
+    /// backend receives in order to determine what response to send.
+    pub async fn async_backend_with_timeouts<ServiceFn>(
+        self,
+        name: &str,
+        url: &str,
+        override_host: Option<&str>,
+        first_byte_timeout: Option<Duration>,
+        between_bytes_timeout: Option<Duration>,
+        service: ServiceFn,
+    ) -> Self
+    where
+        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Send + Sync + 'static,
+    {
+        let uri: Uri = url.parse().expect("invalid backend URL");
+        let mut builder = self
+            .backends
+            .test_backend(name)
+            .path(uri.path())
+            .use_sni(true)
+            .async_test_service(service);
+        if let Some(override_host) = override_host {
+            builder = builder.override_host(override_host);
+        }
+        if let Some(timeout) = first_byte_timeout {
+            builder = builder.first_byte_timeout(timeout);
+        }
+        if let Some(timeout) = between_bytes_timeout {
+            builder = builder.between_bytes_timeout(timeout);
         }
         builder.build().await;
         self
@@ -292,6 +351,12 @@ impl Test {
         self
     }
 
+    /// Enable guest profiling with the specified configuration.
+    pub fn with_guest_profiling(mut self, config: viceroy_lib::GuestProfileConfig) -> Self {
+        self.guest_profile_config = Some(config);
+        self
+    }
+
     /// Pass the given requests through this test, returning the associated responses.
     ///
     /// A `Test` can be used repeatedly against different requests, either individually (as with
@@ -334,26 +399,29 @@ impl Test {
             self.backends.start_servers().await;
         }
 
-        let ctx = ExecuteCtx::new(
+        let ctx = ExecuteCtx::build(
             &self.module_path,
-            ProfilingStrategy::None,
+            self.profiling_strategy,
             HashSet::new(),
-            None,
+            self.guest_profile_config.clone(),
             self.unknown_import_behavior,
             self.adapt_component,
+            WasmFeatures::default(),
         )?
         .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)
         .with_device_detection(self.device_detection.clone())
         .with_dictionaries(self.dictionaries.clone())
-        .with_environment_variables(self.environment_variables.clone())
+        .with_environment(self.environment_variables.clone())
         .with_geolocation(self.geolocation.clone())
         .with_object_stores(self.object_stores.clone())
         .with_secret_stores(self.secret_stores.clone())
         .with_shielding_sites(self.shielding_sites.clone())
+        .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
         .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
-        .with_log_stdout(self.log_stdout);
+        .with_log_stdout(self.log_stdout)
+        .finish()?;
 
         if self.via_hyper {
             let svc = ViceroyService::new(ctx);
@@ -508,11 +576,15 @@ impl Drop for TestServer {
         }
     }
 }
+type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
+
+pub type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
+type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]
 enum TestService {
-    Sync(Arc<dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync>),
-    Async(Arc<dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync>),
+    Sync(Arc<SyncService>),
+    Async(Arc<AsyncService>),
 }
 
 impl std::fmt::Debug for TestService {
@@ -540,7 +612,7 @@ impl TestService {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
                         let mut body = Box::new(body); // for pinning
-                                                       // read out all of the bytes from the body into a vector, then re-assemble the request
+                        // read out all of the bytes from the body into a vector, then re-assemble the request
                         let mut body_bytes = Vec::new();
                         while let Some(chunk) = body.next().await {
                             body_bytes.extend_from_slice(&chunk.unwrap());
@@ -587,5 +659,3 @@ impl TestService {
         }
     }
 }
-
-type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;

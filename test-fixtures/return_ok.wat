@@ -3,6 +3,10 @@
     (func $response_new
       (param i32)
       (result i32)))
+  (import "fastly_http_body" "new"
+    (func $body_new
+      (param i32)
+      (result i32)))
   (import "fastly_http_resp" "status_set"
     (func $response_set_status
       (param i32) (param i32)
@@ -19,6 +23,7 @@
   ;; we're going to fix a few memory locations as constants, just to avoid
   ;; some other messiness, even though it's bad software engineering.
   (global $response_handle_buffer i32 (i32.const 4))
+  (global $body_handle_buffer i32 (i32.const 8))
 
   (func $main (export "_start")
     (i32.const 200)
@@ -28,7 +33,7 @@
     unreachable
     )
 
-  ;; Send a resposne back to the test harness, using the status code
+  ;; Send a response back to the test harness, using the status code
   ;; provided in the first argument. This message will have no body,
   ;; and no headers, just the response code. It will fail catastrophically
   ;; (i.e., end this execution) if anything goes wrong in the process.
@@ -36,6 +41,11 @@
       ;; create the response
       (global.get $response_handle_buffer)
       (call $response_new)
+      (call $maybe_error_die)
+
+      ;; create an empty body
+      (global.get $body_handle_buffer)
+      (call $body_new)
       (call $maybe_error_die)
 
       ;; set the status
@@ -48,7 +58,11 @@
       ;; send it to the client
       (global.get $response_handle_buffer)
       (i32.load)
-      (i32.const 0) ;; empty body
+
+      ;; empty body
+      (global.get $body_handle_buffer)
+      (i32.load)
+
       (i32.const 0) ;; not streaming
       (call $response_send)
       (call $maybe_error_die)

@@ -1,14 +1,10 @@
-use fastly::handle::BodyHandle;
 use fastly::http::StatusCode;
 use fastly::security::{inspect, InspectConfig};
 use fastly::{Error, Request, Response};
 
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
-    let (req, body) = req.into_handles();
-    let body = body.unwrap_or_else(BodyHandle::new);
-
-    let inspectconf = InspectConfig::new(&req, &body)
+    let inspectconf = InspectConfig::from_request(&req)
         .corp("junichi-lab")
         .workspace("lab");
 

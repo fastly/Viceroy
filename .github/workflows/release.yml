@@ -9,7 +9,6 @@ jobs:
   build:
     strategy:
       matrix:
-        rust-toolchain: ["1.83"]
         os: [ubuntu-24.04, macos-14, windows-2022]
         arch: [amd64, arm64]
         exclude:
@@ -41,7 +40,7 @@ jobs:
           submodules: true
 
       - name: Install Rust
-        run: rustup toolchain install ${{ matrix.rust-toolchain }} --target ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+        run: rustup target add ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
         shell: bash
 
       - name: Install C cross-compilation toolchain
@@ -58,7 +57,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release --workspace --exclude viceroy-component-adapter --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+          cargo build --release --workspace --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
       - name: Strip symbols (linux)
         if: ${{ matrix.name == 'linux' }}
@@ -100,3 +99,21 @@ jobs:
             })
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish-lib:
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+    uses: fastly/devex-reusable-workflows/.github/workflows/publish-rust-crates-io-v1.yml@main
+    with:
+      crate_name: viceroy-lib
+      expected_version: ${{ github.ref_name }}
+  publish-bin:
+    needs: publish-lib
+    permissions:
+      id-token: write
+      contents: read
+    uses: fastly/devex-reusable-workflows/.github/workflows/publish-rust-crates-io-v1.yml@main
+    with:
+      crate_name: viceroy
+      expected_version: ${{ github.ref_name }}

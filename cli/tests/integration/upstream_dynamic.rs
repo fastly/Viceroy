@@ -4,8 +4,8 @@ use {
         viceroy_test,
     },
     hyper::{
-        header::{self, HeaderValue},
         Request, Response, StatusCode,
+        header::{self, HeaderValue},
     },
 };
 

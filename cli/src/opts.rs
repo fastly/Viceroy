@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use viceroy_lib::{config::UnknownImportBehavior, GuestProfileConfig};
+use viceroy_lib::{GuestProfileConfig, config::UnknownImportBehavior};
 
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
@@ -12,7 +12,8 @@ use {
         net::SocketAddr,
         path::{Path, PathBuf},
     },
-    viceroy_lib::{config::ExperimentalModule, Error, ProfilingStrategy},
+    viceroy_lib::{Error, ProfilingStrategy, config::ExperimentalModule},
+    wasmtime::WasmFeatures,
 };
 
 // Command-line arguments for the Viceroy CLI.
@@ -102,6 +103,10 @@ pub struct SharedArgs {
     /// (microseconds), and "ns" (nanoseconds).
     #[arg(long = "profile", value_name = "STRATEGY", value_parser = check_wasmtime_profiler_mode)]
     profile: Option<Profile>,
+    /// Port running local Pushpin proxy. If not provided, Pushpin functionality
+    /// is disabled.
+    #[arg(long = "local-pushpin-proxy-port")]
+    local_pushpin_proxy_port: Option<u16>,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -120,6 +125,15 @@ pub struct SharedArgs {
     /// components before running them.
     #[arg(long = "adapt")]
     adapt: bool,
+    /// Enable the Wasm Exception Handling feature.
+    #[arg(long)]
+    wasm_exceptions: bool,
+    /// Enable the Wasm GC feature.
+    #[arg(long)]
+    wasm_gc: bool,
+    /// Enable component-model GC integration.
+    #[arg(long)]
+    wasm_cm_gc: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -183,6 +197,11 @@ impl SharedArgs {
         }
     }
 
+    /// Port running local Pushpin proxy.
+    pub fn local_pushpin_proxy_port(&self) -> Option<u16> {
+        self.local_pushpin_proxy_port
+    }
+
     /// Configuration for guest profiling if enabled
     pub fn guest_profile_config(&self) -> Option<GuestProfileConfig> {
         if let Some(Profile::Guest {
@@ -222,6 +241,20 @@ impl SharedArgs {
 
     pub fn adapt(&self) -> bool {
         self.adapt
+    }
+
+    pub fn wasm_features(&self) -> WasmFeatures {
+        let mut wasm_features = WasmFeatures::default();
+        if self.wasm_exceptions {
+            wasm_features.insert(WasmFeatures::EXCEPTIONS);
+        }
+        if self.wasm_gc {
+            wasm_features.insert(WasmFeatures::GC);
+        }
+        if self.wasm_cm_gc {
+            wasm_features.insert(WasmFeatures::CM_GC);
+        }
+        wasm_features
     }
 }
 
@@ -325,25 +358,25 @@ fn parse_profile_sample_duration(s: &str) -> Result<Duration, Error> {
         return Ok(Duration::from_secs(val));
     }
 
-    if let Some(num) = s.strip_suffix("s") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_secs(val));
-        }
+    if let Some(num) = s.strip_suffix("s")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_secs(val));
     }
-    if let Some(num) = s.strip_suffix("ms") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_millis(val));
-        }
+    if let Some(num) = s.strip_suffix("ms")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_millis(val));
     }
-    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs")) {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_micros(val));
-        }
+    if let Some(num) = s.strip_suffix("us").or(s.strip_suffix("μs"))
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_micros(val));
     }
-    if let Some(num) = s.strip_suffix("ns") {
-        if let Ok(val) = num.parse() {
-            return Ok(Duration::from_nanos(val));
-        }
+    if let Some(num) = s.strip_suffix("ns")
+        && let Ok(val) = num.parse()
+    {
+        return Ok(Duration::from_nanos(val));
     }
 
     Err(Error::ProfilingStrategy)
@@ -385,7 +418,7 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
 mod opts_tests {
     use {
         super::{Commands, Opts},
-        clap::{error::ErrorKind, Parser},
+        clap::{Parser, error::ErrorKind},
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         std::path::PathBuf,
     };
