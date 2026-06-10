@@ -307,6 +307,7 @@
         $too_many_requests
         ))
 
+
 (typename $backend_config_options
     (flags (@witx repr u32)
        $reserved
@@ -327,7 +328,24 @@
        $keepalive
        $pooling_limits
        $prefer_ipv4
+       $healthcheck
        ))
+
+(typename $healthcheck_config
+    (record
+        (field $interval_ms u64)
+        (field $timeout_ms u64)
+        (field $host (@witx pointer (@witx char8)))
+        (field $host_len u32)
+        (field $method (@witx pointer (@witx char8)))
+        (field $method_len u32)
+        (field $path (@witx pointer (@witx char8)))
+        (field $path_len u32)
+        (field $expected_status u32)
+        (field $window u32)
+        (field $threshold u32)
+        (field $initial u32)
+    ))
 
 (typename $dynamic_backend_config
   (record
@@ -357,6 +375,7 @@
     (field $max_connections u32)
     (field $max_use u32)
     (field $max_lifetime_ms $timeout_ms)
+    (field $healthcheck (@witx pointer $healthcheck_config))
     ))
 
 ;;; TLS client certificate verified result from downstream.

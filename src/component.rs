@@ -121,6 +121,7 @@ pub(crate) mod bindings {
 
             "fastly:compute/kv-store.entry": super::compute::kv_store::Entry,
             "fastly:compute/backend.dynamic-backend-options": super::compute::backend::BackendBuilder,
+            "fastly:compute/backend.healthcheck-options": super::compute::backend::HealthcheckBuilder,
             "fastly:compute/backend.backend": String,
             "fastly:compute/erl.rate-counter": String,
             "fastly:compute/erl.penalty-box": String,

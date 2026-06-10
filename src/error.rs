@@ -1,6 +1,9 @@
 //! Error types.
 
-use crate::{handoff::HandoffInfo, wiggle_abi::types::FastlyStatus};
+use crate::{
+    component::compute::backend::HealthcheckCreationError, handoff::HandoffInfo,
+    wiggle_abi::types::FastlyStatus,
+};
 use hyper::StatusCode;
 use std::error::Error as StdError;
 use std::io;
@@ -47,6 +50,9 @@ pub enum Error {
 
     #[error(transparent)]
     HyperError(#[from] hyper::Error),
+
+    #[error(transparent)]
+    HealthcheckCreationError(#[from] HealthcheckCreationError),
 
     #[error("Backend connection error for '{backend_name}' ({uri}): {source}")]
     BackendConnectionError {
@@ -237,7 +243,7 @@ impl Error {
     pub fn to_fastly_status(&self) -> FastlyStatus {
         match self {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
-            Error::InvalidArgument => FastlyStatus::Inval,
+            Error::InvalidArgument | Error::HealthcheckCreationError(_) => FastlyStatus::Inval,
             Error::ValueAbsent => FastlyStatus::None,
             Error::Unsupported { .. } | Error::NotAvailable(_) => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
