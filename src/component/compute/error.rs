@@ -1,5 +1,8 @@
 use {
-    crate::component::bindings::fastly::compute::{http_req, kv_store::KvError, types},
+    crate::component::{
+        bindings::fastly::compute::{http_req, kv_store::KvError, types},
+        compute::backend::HealthcheckCreationError,
+    },
     crate::{
         config::ClientCertError,
         error::{self, HandleError},
@@ -196,6 +199,12 @@ impl From<DictionaryError> for types::Error {
     }
 }
 
+impl From<HealthcheckCreationError> for types::Error {
+    fn from(_: HealthcheckCreationError) -> Self {
+        types::Error::InvalidArgument
+    }
+}
+
 impl From<error::Error> for types::Error {
     fn from(err: error::Error) -> Self {
         use error::Error;
@@ -229,6 +238,7 @@ impl From<error::Error> for types::Error {
             Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::CacheError(e) => e.into(),
+            Error::HealthcheckCreationError(e) => e.into(),
             Error::ValueAbsent => panic!("`ValueAbsent` should not be used in components"),
             Error::LimitExceeded { .. } => types::Error::LimitExceeded,
             // All other hostcall errors map to a generic `ERROR` value.

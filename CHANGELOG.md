@@ -2,6 +2,7 @@
 
 - Fix adapter codegen to avoid memory shift overflow, and support SIMD instructions. ([#629](https://github.com/fastly/Viceroy/pull/629))
 - Add support for sending `PendingRequestHandle` downstream ([#631](https://github.com/fastly/Viceroy/pull/631))
+- Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
 
 ## 0.18.0 (2026-05-21)
 

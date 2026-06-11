@@ -2049,6 +2049,72 @@ interface backend {
     /// The Compute platform defaults to `true`, and will attempt IPv6 first if a AAAA record
     /// is present.
     prefer-ipv6: func(value: bool);
+  
+    /// Adds a created healthcheck builder to this dynamic backend to be used when checking if the backend
+    /// is healthy. A healthcheck can be created with the default HealthcheckBuilder::new(host: String)
+    /// and additional options can be set through that. 
+    healthcheck: func(value: healthcheck-options);
+  }
+
+  /// Options for `register-dynamic-backend` with healthchecks
+  resource healthcheck-options {
+    /// Constructs an options resource with default values for all other possible fields for the
+    /// healthcheck except host which should be provided. Will return an error if the host 
+    /// is an invalid value.
+    new: static func(host: string) -> result<healthcheck-options, error>;
+
+    /// Set the Host header to set when making the request (e.g. example.com).
+    /// 
+    /// A common mistake is setting the wrong host header, which causes the health check to fail. 
+    host: func(value: string) -> result<_, error>;
+
+    /// Set an HTTP verb (i.e., HEAD, GET, or POST) to use when performing the health check.
+    /// 
+    /// Defaults to "GET".
+    method: func(value: string) -> result<_, error>;
+
+    /// Set a path to visit on your origins when performing the check. Use a unique path. 
+    /// For example, use /website-healthcheck.txt, not / or /healthcheck. 
+    /// 
+    /// Defaults to "/".
+    path: func(value: string) -> result<_, error>;
+
+    /// Sets the HTTP status code that signifies a healthy state.  
+    /// 
+    /// Defaults to 200.
+    expected-status: func(value: u16) -> result<_, error>;
+
+    /// Set the number of most recent health check queries to keep. 
+    /// Must not be greater than 15. 
+    /// 
+    /// Defaults to 5.
+    window: func(value: u32) -> result<_, error>;
+
+    /// Set the number of health checks that must be successful within the window
+    /// to be considered healthy. Must not be greater than the current window. 
+    /// 
+    /// Defaults to 3.
+    threshold: func(value: u32) -> result<_, error>;
+
+    /// Set the number of successes to assume are successful when beginning a health check.
+    /// Must not be greater than the current window. 
+    /// 
+    /// Defaults to 4.
+    initial: func(value: u32) -> result<_, error>;
+
+    /// Set the interval in milliseconds where a health check should be performed. 
+    /// Times must be 1 second to 1 hour inclusive. Must be less 
+    /// than the current timeout_ms. 
+    /// 
+    /// Defaults to 15000ms.
+    interval-ms: func(value: u64) -> result<_, error>;
+
+    /// Set the time in milliseconds in which to perform the health check. 
+    /// Note that querying the health check renews the timer. Must not be less 
+    /// than the current interval_ms. 
+    /// 
+    /// Defaults to 5000ms.
+    timeout-ms: func(value: u64) -> result<_, error>;
   }
 
   type timeout-ms = u32;
