@@ -137,7 +137,13 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    let offset = offset.checked_add(OFFSET as u32).unwrap();
+                    // When the offset + OFFSET overflows, it means the user code is using
+                    // the last 2 pages of 4G memory, which is way beyond what xqd can
+                    // allocate. We use saturating_add instead of checked_add here to
+                    // avoid the compiler crash, in case this load instruction is unreachable.
+                    // If the code is reachable, the original and adapted code will both crash,
+                    // so there is no observable divergence.
+                    let offset = offset.saturating_add(OFFSET as u32);
                     let instr = Instr::Load(Load {
                         memory,
                         kind,
@@ -150,7 +156,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    let offset = offset.checked_add(OFFSET as u32).unwrap();
+                    let offset = offset.saturating_add(OFFSET as u32);
                     let instr = Instr::Store(Store {
                         memory,
                         kind,
@@ -158,12 +164,23 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     });
                     instrs.push((instr, loc));
                 }
-                Instr::AtomicFence(_)
-                | Instr::AtomicNotify(_)
+                Instr::LoadSimd(LoadSimd {
+                    memory,
+                    kind,
+                    arg: MemArg { align, offset },
+                }) => {
+                    let offset = offset.saturating_add(OFFSET as u32);
+                    let instr = Instr::LoadSimd(LoadSimd {
+                        memory,
+                        kind,
+                        arg: MemArg { align, offset },
+                    });
+                    instrs.push((instr, loc));
+                }
+                Instr::AtomicNotify(_)
                 | Instr::AtomicWait(_)
                 | Instr::AtomicRmw(_)
                 | Instr::Cmpxchg(_) => todo!(),
-                Instr::LoadSimd(_) => todo!(),
                 _ => instrs.push((instr, loc)),
             }
         }
