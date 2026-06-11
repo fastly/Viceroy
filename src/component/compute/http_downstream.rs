@@ -342,6 +342,20 @@ impl http_downstream::Host for ComponentCtx {
     ) -> Result<Option<String>, types::Error> {
         Ok(None)
     }
+
+    fn downstream_visits_this_service(&mut self) -> Result<u64, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`downstream_visits_this_service` not yet supported",
+        }
+        .into())
+    }
+
+    fn downstream_visits_this_pop(&mut self) -> Result<u64, types::Error> {
+        Err(Error::Unsupported {
+            msg: "`downstream_visits_this_pop` not yet supported",
+        }
+        .into())
+    }
 }
 
 impl http_downstream::HostExtraNextRequestOptions for ComponentCtx {

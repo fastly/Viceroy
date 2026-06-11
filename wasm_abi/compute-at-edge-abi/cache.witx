@@ -81,7 +81,9 @@
 (typename $cache_write_options_mask
     (flags (@witx repr u32)
         $reserved
-        $request_headers ;;; Only allowed for non-transactional `insert`
+        ;;; Only allowed for non-transactional `insert`.
+        ;;; In a transaction, the request headers are passed at `lookup` time, and cannot be changed later.
+        $request_headers
         $vary_rule
         $initial_age_ns
         $stale_while_revalidate_ns

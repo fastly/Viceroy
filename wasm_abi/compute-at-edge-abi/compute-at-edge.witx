@@ -482,7 +482,9 @@
     ;;; pending header changes previously queued via other `pending_req_header_insert`
     ;;; or `pending_req_header_append` calls for the same header name.
     ;;;
-    ;;; The `target` argument controls under which conditions this header is applied.
+    ;;; When using `send_downstream_pending`, the pending header changes will also
+    ;;; be applied to the synthetic 5XX response generated in the event of a backend
+    ;;; request error.
     (@interface func (export "pending_req_header_insert")
         (param $h $pending_request_handle)
         (param $name (list u8))
@@ -497,7 +499,9 @@
     ;;; the same header name, but will instead result in multiple headers of the
     ;;; same name in the final response, each with their own values.
     ;;;
-    ;;; The `target` argument controls under which conditions this header is applied.
+    ;;; When using `send_downstream_pending`, the pending header changes will also
+    ;;; be applied to the synthetic 5XX response generated in the event of a backend
+    ;;; request error.
     (@interface func (export "pending_req_header_append")
         (param $h $pending_request_handle)
         (param $name (list u8))
@@ -511,7 +515,9 @@
     ;;; This will also remove any changes previously queued via `pending_req_header_insert`
     ;;; or `pending_req_header_append` for the same header name.
     ;;;
-    ;;; The `target` argument controls under which conditions this header is applied.
+    ;;; When using `send_downstream_pending`, the pending header changes will also
+    ;;; be applied to the synthetic 5XX response generated in the event of a backend
+    ;;; request error.
     (@interface func (export "pending_req_header_remove")
         (param $h $pending_request_handle)
         (param $name (list u8))
@@ -903,6 +909,12 @@
         (param $nwritten_out (@witx pointer (@witx usize)))
         (result $err (expected (error $fastly_status)))
     )
+
+    (@interface func (export "downstream_visits_this_service")
+        (result $err (expected $num_hops (error $fastly_status))))
+
+    (@interface func (export "downstream_visits_this_pop")
+        (result $err (expected $num_hops (error $fastly_status))))
 )
 
 (module $fastly_http_resp
@@ -1201,6 +1213,9 @@
 )
 
 (module $fastly_image_optimizer
+    ;; Sends a request to Image Optimizer.
+    ;;
+    ;; The `origin_image_request` resource is consumed, and may not be used afterwards.
     (@interface func (export "transform_image_optimizer_request")
         (param $origin_image_request $request_handle)
         (param $origin_image_request_body $body_handle)
