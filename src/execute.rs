@@ -590,19 +590,24 @@ impl ExecuteCtx {
                     };
 
                     let backend_uri = backend.uri.clone();
-                    let tls_handoff_config = if backend_uri.scheme_str() == Some("https") {
-                        Some(HandoffTlsConfig {
-                            ca_certs: backend.ca_certs.clone(),
-                            client_cert: backend.client_cert.clone(),
-                            use_sni: backend.use_sni,
-                            cert_host: backend.cert_host.clone(),
-                            dns_name_fallback: backend.uri.host().unwrap_or_default().to_string(),
-                            is_grpc: backend.grpc,
-                            base_tls_config: tls_config.clone(), // Pass the builder from self
-                        })
-                    } else {
-                        None
-                    };
+                    let tls_handoff_config =
+                        if matches!(backend_uri.scheme_str(), Some("https" | "wss")) {
+                            Some(HandoffTlsConfig {
+                                ca_certs: backend.ca_certs.clone(),
+                                client_cert: backend.client_cert.clone(),
+                                use_sni: backend.use_sni,
+                                cert_host: backend.cert_host.clone(),
+                                dns_name_fallback: backend
+                                    .uri
+                                    .host()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                is_grpc: backend.grpc,
+                                base_tls_config: tls_config.clone(), // Pass the builder from self
+                            })
+                        } else {
+                            None
+                        };
 
                     let backend_host = backend_uri
                         .authority()
