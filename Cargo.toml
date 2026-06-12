@@ -103,6 +103,23 @@ default-members = [ "cli" ]
 # toward making the test suite not take forever
 opt-level = 1
 
+[profile.release-lto-stripped]
+# This profile is only used to produce binaries for actual releases,
+# since the build time is signficantly extended due to the use of
+# 'fat' LTO and a single codegen unit.
+inherits = "release"
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+
+[profile.test-lto]
+# This profile is only used to test builds for actual releases,
+# since the build time is signficantly extended due to the use of
+# 'fat' LTO and a single codegen unit.
+inherits = "dev"
+lto = "fat"
+codegen-units = 1
+
 [workspace.dependencies]
 anyhow = "1.0.31"
 base64 = "0.21.2"
