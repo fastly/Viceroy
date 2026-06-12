@@ -470,6 +470,23 @@ impl FastlyHttpDownstream for Sandbox {
     ) -> Result<(), Error> {
         self.absent_metadata_value(handle)
     }
+
+    fn downstream_visits_this_service(
+        &mut self,
+        _memory: &mut GuestMemory<'_>,
+    ) -> Result<u32, Error> {
+        Err(Error::Unsupported {
+            msg: "`downstream_visits_this_service` not yet supported",
+        }
+        .into())
+    }
+
+    fn downstream_visits_this_pop(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        Err(Error::Unsupported {
+            msg: "`downstream_visits_this_pop` not yet supported",
+        }
+        .into())
+    }
 }
 
 trait MetadataView {

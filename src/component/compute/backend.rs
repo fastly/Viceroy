@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use {
     crate::component::bindings::fastly::compute::{backend, http_types, types},
+    crate::error::Error,
     crate::linking::ComponentCtx,
     crate::wiggle_abi::types::SecretHandle,
     wasmtime::component::Resource,
@@ -369,8 +370,137 @@ impl backend::HostDynamicBackendOptions for ComponentCtx {
         self.table().get_mut(&config).unwrap().prefer_ipv6 = value;
     }
 
+    fn healthcheck(
+        &mut self,
+        _config: Resource<backend::DynamicBackendOptions>,
+        _hc_config: Resource<backend::HealthcheckOptions>,
+    ) -> wasmtime::Result<()> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
     fn drop(&mut self, options: Resource<backend::DynamicBackendOptions>) -> wasmtime::Result<()> {
         self.table().delete(options)?;
         Ok(())
+    }
+}
+
+impl backend::HostHealthcheckOptions for ComponentCtx {
+    fn new(
+        &mut self,
+        _host: String,
+    ) -> Result<Resource<backend::HealthcheckOptions>, types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn host(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: String,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn method(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: String,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn path(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: String,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn expected_status(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: u16,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn window(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: u32,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn threshold(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: u32,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn initial(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: u32,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn interval_ms(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: u64,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn timeout_ms(
+        &mut self,
+        _config: Resource<backend::HealthcheckOptions>,
+        _value: u64,
+    ) -> Result<(), types::Error> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
+    }
+
+    fn drop(&mut self, _config: Resource<backend::HealthcheckOptions>) -> wasmtime::Result<()> {
+        Err(Error::Unsupported {
+            msg: "Healthcheck API not yet supported",
+        }
+        .into())
     }
 }

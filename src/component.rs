@@ -11,6 +11,7 @@ pub(crate) mod bindings {
             default: tracing,
 
             "fastly:compute/backend.[constructor]dynamic-backend-options": tracing | trappable,
+            "fastly:compute/backend.[method]dynamic-backend-options.healthcheck": tracing | trappable,
             "fastly:compute/shielding.[constructor]shield-backend-options": tracing | trappable,
             "fastly:compute/cache.[constructor]extra-lookup-options": tracing | trappable,
             "fastly:compute/cache.[constructor]extra-replace-options": tracing | trappable,

@@ -22,6 +22,24 @@ impl image_optimizer::Host for ComponentCtx {
             io_transform_config,
         )
     }
+
+    fn send_to_image_optimizer(
+        &mut self,
+        origin_image_request: Resource<http_req::Request>,
+        origin_image_request_body: Option<Resource<http_body::Body>>,
+        origin_image_request_backend: Resource<String>,
+        io_transform_config: image_optimizer::ImageOptimizerTransformOptions,
+    ) -> Result<http_resp::ResponseWithBody, types::Error> {
+        let origin_image_request_backend =
+            self.wasi_table.get(&origin_image_request_backend).unwrap();
+        crate::component::image_optimizer::transform_image_optimizer_request(
+            &mut self.sandbox,
+            origin_image_request,
+            origin_image_request_body,
+            origin_image_request_backend,
+            io_transform_config,
+        )
+    }
 }
 
 impl image_optimizer::HostExtraImageOptimizerTransformOptions for ComponentCtx {

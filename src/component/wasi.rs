@@ -409,3 +409,47 @@ impl wasi::cli::exit::Host for ComponentCtx {
         wasmtime_wasi::p2::bindings::cli::exit::Host::exit_with_code(&mut self.cli(), status_code)
     }
 }
+
+impl wasi::cli::terminal_input::HostTerminalInput for ComponentCtx {
+    fn drop(
+        &mut self,
+        _handle: Resource<wasi::cli::terminal_input::TerminalInput>,
+    ) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+impl wasi::cli::terminal_input::Host for ComponentCtx {}
+
+impl wasi::cli::terminal_output::HostTerminalOutput for ComponentCtx {
+    fn drop(
+        &mut self,
+        _handle: Resource<wasi::cli::terminal_output::TerminalOutput>,
+    ) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+impl wasi::cli::terminal_output::Host for ComponentCtx {}
+
+impl wasi::cli::terminal_stdin::Host for ComponentCtx {
+    fn get_terminal_stdin(&mut self) -> Option<Resource<wasi::cli::terminal_input::TerminalInput>> {
+        None
+    }
+}
+
+impl wasi::cli::terminal_stdout::Host for ComponentCtx {
+    fn get_terminal_stdout(
+        &mut self,
+    ) -> Option<Resource<wasi::cli::terminal_output::TerminalOutput>> {
+        None
+    }
+}
+
+impl wasi::cli::terminal_stderr::Host for ComponentCtx {
+    fn get_terminal_stderr(
+        &mut self,
+    ) -> Option<Resource<wasi::cli::terminal_output::TerminalOutput>> {
+        None
+    }
+}

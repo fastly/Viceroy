@@ -165,6 +165,7 @@ pub struct DynamicBackendConfig {
     pub max_connections: u32,
     pub max_use: u32,
     pub max_lifetime_ms: u32,
+    pub healthcheck: *const HealthcheckConfig,
 }
 
 impl Default for DynamicBackendConfig {
@@ -196,6 +197,43 @@ impl Default for DynamicBackendConfig {
             max_connections: 0,
             max_use: 0,
             max_lifetime_ms: 0,
+            healthcheck: std::ptr::null(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct HealthcheckConfig {
+    pub interval_ms: u64,
+    pub timeout_ms: u64,
+
+    pub host: *const u8,
+    pub host_len: u32,
+    pub method: *const u8,
+    pub method_len: u32,
+    pub path: *const u8,
+    pub path_len: u32,
+    pub expected_status: u32,
+    pub window: u32,
+    pub threshold: u32,
+    pub initial: u32,
+}
+
+impl Default for HealthcheckConfig {
+    fn default() -> Self {
+        HealthcheckConfig {
+            interval_ms: 0,
+            timeout_ms: 0,
+            host: std::ptr::null(),
+            host_len: 0,
+            method: std::ptr::null(),
+            method_len: 0,
+            path: std::ptr::null(),
+            path_len: 0,
+            expected_status: 0,
+            window: 0,
+            threshold: 0,
+            initial: 0,
         }
     }
 }
@@ -240,6 +278,7 @@ bitflags::bitflags! {
         const KEEPALIVE = 1 << 15;
         const POOLING_LIMITS = 1 << 16;
         const PREFER_IPV4 = 1 << 17;
+        const HEALTHCHECK = 1 << 18;
     }
 }
 
@@ -670,6 +709,15 @@ pub mod fastly_http_downstream {
                     *main_ptr!(req_handle_out) = res.0.take_handle();
                     *main_ptr!(body_handle_out) = res.1.take_handle();
                 }
+
+                // We just created a new `Request` so forget the
+                // recently consumed one.
+                crate::State::with::<FastlyStatus>(|state| {
+                    state
+                        .recently_consumed_image_optimizer_request_handle
+                        .set(INVALID_HANDLE);
+                    Ok(())
+                });
 
                 FastlyStatus::OK
             }
@@ -1385,6 +1433,32 @@ pub mod fastly_http_downstream {
             }
         )
     }
+
+    #[export_name = "fastly_http_downstream#downstream_visits_this_service"]
+    pub fn downstream_visits_this_service(count: *mut u32) -> FastlyStatus {
+        match http_downstream::downstream_visits_this_service() {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(count) = u32::try_from(res).unwrap_or(u32::MAX);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_http_downstream#downstream_visits_this_pop"]
+    pub fn downstream_visits_this_pop(count: *mut u32) -> FastlyStatus {
+        match http_downstream::downstream_visits_this_pop() {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(count) = u32::try_from(res).unwrap_or(u32::MAX);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
 }
 
 pub mod fastly_http_req {
@@ -2043,6 +2117,16 @@ pub mod fastly_http_req {
                 unsafe {
                     *main_ptr!(req_handle_out) = res.take_handle();
                 }
+
+                // We just created a new `Request` so forget the
+                // recently consumed one.
+                crate::State::with::<FastlyStatus>(|state| {
+                    state
+                        .recently_consumed_image_optimizer_request_handle
+                        .set(INVALID_HANDLE);
+                    Ok(())
+                });
+
                 FastlyStatus::OK
             }
             Err(e) => e.into(),
@@ -2403,6 +2487,46 @@ pub mod fastly_http_req {
         if config_mask.contains(BackendConfigOptions::GRPC) {
             builder.grpc(true);
         }
+        if config_mask.contains(BackendConfigOptions::HEALTHCHECK) {
+            let hcd_config = unsafe_main_ptr!((*config).healthcheck);
+
+            macro_rules! make_hcd_str {
+                ($ptr_field:ident, $len_field:ident) => {
+                    unsafe {
+                        crate::make_str!(
+                            main_ptr!((*hcd_config).$ptr_field),
+                            (*hcd_config).$len_field
+                        )
+                    }
+                };
+            }
+            // Set the strings from HealthcheckConfig first
+            let host = make_hcd_str!(host, host_len);
+            let method = make_hcd_str!(method, method_len);
+            let path = make_hcd_str!(path, path_len);
+
+            let hcd_builder = match backend::HealthcheckOptions::new(host) {
+                Ok(builder) => builder,
+                Err(e) => return e.into(),
+            };
+
+            let result: Result<(), FastlyStatus> = (|| {
+                hcd_builder.method(method)?;
+                hcd_builder.path(path)?;
+                hcd_builder.expected_status(unsafe { (*hcd_config).expected_status as u16 })?;
+                hcd_builder.window(unsafe { (*hcd_config).window })?;
+                hcd_builder.threshold(unsafe { (*hcd_config).threshold })?;
+                hcd_builder.initial(unsafe { (*hcd_config).initial })?;
+                hcd_builder.interval_ms(unsafe { (*hcd_config).interval_ms })?;
+                hcd_builder.timeout_ms(unsafe { (*hcd_config).timeout_ms })?;
+                Ok(())
+            })();
+
+            match result {
+                Ok(_) => builder.healthcheck(hcd_builder),
+                Err(err) => return err.into(),
+            }
+        }
 
         let res = backend::register_dynamic_backend(name_prefix, target, builder);
         let res = res.map(|_backend| ());
@@ -2691,6 +2815,22 @@ pub mod fastly_http_req {
 
     #[export_name = "fastly_http_req#close"]
     pub fn close(req_handle: RequestHandle) -> FastlyStatus {
+        // If `handle` is the handle that we recently consumed in
+        // `cache_busy_handle_wait`, don't close it, as it's already closed.
+        let status = crate::State::with::<FastlyStatus>(|state| {
+            let old = state
+                .recently_consumed_image_optimizer_request_handle
+                .replace(INVALID_HANDLE);
+            if req_handle == old {
+                Err(FastlyStatus::BADF)
+            } else {
+                Ok(())
+            }
+        });
+        if status == FastlyStatus::BADF {
+            return FastlyStatus::OK;
+        }
+
         let req_handle = unsafe { http_req::Request::from_handle(req_handle) };
         convert_result(http_req::close(req_handle))
     }
@@ -5054,6 +5194,7 @@ pub mod fastly_shielding {
             const RESERVED = 1 << 0;
             const CACHE_KEY = 1 << 1;
             const FIRST_BYTE_TIMEOUT = 1 << 2;
+            const BETWEEN_BYTES_TIMEOUT = 1 << 3;
         }
     }
 
@@ -5062,6 +5203,7 @@ pub mod fastly_shielding {
         pub cache_key: *const u8,
         pub cache_key_len: u32,
         pub first_byte_timeout_ms: u32,
+        pub between_bytes_timeout: u32,
     }
 
     impl Default for ShieldBackendConfig {
@@ -5070,6 +5212,7 @@ pub mod fastly_shielding {
                 cache_key: std::ptr::null(),
                 cache_key_len: 0,
                 first_byte_timeout_ms: 0,
+                between_bytes_timeout: 0,
             }
         }
     }
@@ -5145,6 +5288,10 @@ pub mod fastly_shielding {
             let adapted_options = host::ShieldBackendOptions::new();
             if options_mask.contains(ShieldBackendOptions::FIRST_BYTE_TIMEOUT) {
                 adapted_options.set_first_byte_timeout(unsafe { (*options).first_byte_timeout_ms });
+            }
+            if options_mask.contains(ShieldBackendOptions::BETWEEN_BYTES_TIMEOUT) {
+                adapted_options
+                    .set_between_bytes_timeout(unsafe { (*options).between_bytes_timeout });
             }
             if options_mask.contains(ShieldBackendOptions::CACHE_KEY) {
                 let s = unsafe {
@@ -5246,7 +5393,7 @@ mod fastly_image_optimizer {
 
     #[export_name = "fastly_image_optimizer#transform_image_optimizer_request"]
     pub fn transform_image_optimizer_request(
-        req_handle: RequestHandle,
+        raw_req_handle: RequestHandle,
         body_handle: BodyHandle,
         origin_image_backend: *const u8,
         origin_image_backend_len: usize,
@@ -5271,9 +5418,9 @@ mod fastly_image_optimizer {
                 Some(crate::bindings::fastly::compute::http_body::Body::from_handle(body_handle))
             }
         };
-        let req_handle = ManuallyDrop::new(unsafe {
-            crate::bindings::fastly::compute::http_req::Request::from_handle(req_handle)
-        });
+        let req_handle = unsafe {
+            crate::bindings::fastly::compute::http_req::Request::from_handle(raw_req_handle)
+        };
 
         let io_transform_config = unsafe_main_ptr!(io_transform_config);
         macro_rules! make_string {
@@ -5301,12 +5448,17 @@ mod fastly_image_optimizer {
             extra: None,
         };
 
-        let res = image_optimizer::transform_image_optimizer_request(
-            &req_handle,
-            body_handle,
-            &backend,
-            &options,
-        );
+        let res =
+            image_optimizer::send_to_image_optimizer(req_handle, body_handle, &backend, &options);
+
+        // Remember that we just consumed `req_handle` so that if there's
+        // a subsequent call to `close`, we can avoid double-closing it.
+        crate::State::with::<FastlyStatus>(|state| {
+            state
+                .recently_consumed_image_optimizer_request_handle
+                .set(raw_req_handle);
+            Ok(())
+        });
 
         std::mem::forget(options);
 
