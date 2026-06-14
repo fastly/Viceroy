@@ -22,7 +22,7 @@ test-crates: fix-build
 
 .PHONY: fix-build
 fix-build:
-	cd test-fixtures && $(VICEROY_CARGO) build --target=wasm32-wasi
+	cd test-fixtures && $(VICEROY_CARGO) build --target=wasm32-wasip1
 
 .PHONY: trap-test
 trap-test: fix-build

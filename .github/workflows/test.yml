@@ -19,8 +19,8 @@ jobs:
     - name: Install Rust
       run: rustup update --no-self-update stable && rustup default stable
       shell: bash
-    - name: Add wasm32-wasi Rust target
-      run: rustup target add wasm32-wasi
+    - name: Add wasm32-wasip1 Rust target
+      run: rustup target add wasm32-wasip1
     - name: Cache cargo
       uses: actions/cache@v3
       with:
@@ -58,8 +58,8 @@ jobs:
     - name: Install Rust
       run: rustup update --no-self-update stable && rustup default stable
       shell: bash
-    - name: Add wasm32-wasi Rust target
-      run: rustup target add wasm32-wasi
+    - name: Add wasm32-wasip1 Rust target
+      run: rustup target add wasm32-wasip1
     - name: Cache cargo
       uses: actions/cache@v3
       with:
