@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust: [stable, beta, nightly]
-    runs-on: ubuntu-latest
+    runs-on: forge-amd64-medium
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
