@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         # Windows disabled: incompatible with wasm32-wasip1 + wasmtime 13.0.0
-        platform: [ubuntu-20.04, macos-13]
+        platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -50,7 +50,7 @@ jobs:
     strategy:
       matrix:
         # Windows disabled: incompatible with wasm32-wasip1 + wasmtime 13.0.0
-        platform: [ubuntu-20.04, macos-13]
+        platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -78,7 +78,7 @@ jobs:
       shell: bash
 
   package-check:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
