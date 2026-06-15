@@ -11,7 +11,7 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-2019]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -47,10 +47,11 @@ jobs:
   # Run the trap test in an isolated job. It needs different cargo features than the usual build, so
   # it entails rebuilding the whole workspace if we combine them in a single job. This way, we
   # achieve some parallelism via Actions jobs.
+  # Note: Windows excluded - wasmtime-fiber cannot unwind panics in Windows fiber contexts
   trap-test:
     strategy:
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-2022]
+        platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
