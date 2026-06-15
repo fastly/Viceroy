@@ -9,8 +9,7 @@ jobs:
   test:
     strategy:
       matrix:
-        # Windows disabled: incompatible with wasm32-wasip1 + wasmtime 13.0.0
-        platform: [ubuntu-latest, macos-latest]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -49,8 +48,7 @@ jobs:
   trap-test:
     strategy:
       matrix:
-        # Windows disabled: incompatible with wasm32-wasip1 + wasmtime 13.0.0
-        platform: [ubuntu-latest, macos-latest]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
