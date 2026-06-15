@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         # Windows disabled: incompatible with wasm32-wasip1 + wasmtime 13.0.0
-        platform: [ubuntu-20.04, macos-11]
+        platform: [ubuntu-20.04, macos-13]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -50,7 +50,7 @@ jobs:
     strategy:
       matrix:
         # Windows disabled: incompatible with wasm32-wasip1 + wasmtime 13.0.0
-        platform: [ubuntu-20.04, macos-11]
+        platform: [ubuntu-20.04, macos-13]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
