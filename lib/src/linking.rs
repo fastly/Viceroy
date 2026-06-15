@@ -5,7 +5,7 @@ use {
     anyhow::Context,
     std::{collections::HashSet, time::Duration},
     wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},
-    wasmtime_wasi::{WasiCtxBuilder, WasiP1Ctx},
+    wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder},
     wasmtime_wasi_nn::WasiNnCtx,
 };
 
@@ -154,7 +154,7 @@ fn make_wasi_ctx(
     wasi_ctx.inherit_stdout();
     wasi_ctx.inherit_stderr();
 
-    Ok(WasiP1Ctx::new(wasi_ctx.build()))
+    Ok(wasi_ctx.build_p1())
 }
 
 pub fn link_host_functions(
