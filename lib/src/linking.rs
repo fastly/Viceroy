@@ -1,9 +1,7 @@
 //! Linking and name resolution.
 
 use {
-    crate::{
-        config::ExperimentalModule, execute::ExecuteCtx, session::Session, wiggle_abi, Error,
-    },
+    crate::{config::ExperimentalModule, execute::ExecuteCtx, session::Session, wiggle_abi, Error},
     anyhow::Context,
     std::{collections::HashSet, time::Duration},
     wasmtime::{GuestProfiler, Linker, Store, UpdateDeadline},

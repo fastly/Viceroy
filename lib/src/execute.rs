@@ -549,8 +549,8 @@ impl ExecuteCtx {
         let all_args: Vec<&str> = std::iter::once(program_name)
             .chain(args.iter().map(|s| s.as_str()))
             .collect();
-        let mut store =
-            create_store_with_args(&self, session, profiler, &all_args).map_err(ExecutionError::Context)?;
+        let mut store = create_store_with_args(&self, session, profiler, &all_args)
+            .map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre
