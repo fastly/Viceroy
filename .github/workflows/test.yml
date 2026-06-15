@@ -5,6 +5,8 @@ on:
 name: Test
 env:
   CACHE_GENERATION: 0
+  RUST_BACKTRACE: full
+  RUST_LIB_BACKTRACE: 1
 jobs:
   test:
     strategy:
