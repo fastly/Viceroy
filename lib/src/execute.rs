@@ -16,7 +16,7 @@ use {
         config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
-        linking::{create_store, link_host_functions, WasmCtx},
+        linking::{create_store, create_store_with_args, link_host_functions, WasmCtx},
         object_store::ObjectStores,
         secret_store::SecretStores,
         session::Session,
@@ -545,11 +545,12 @@ impl ExecuteCtx {
                 vec![(program_name.to_string(), self.module.clone())],
             )
         });
-        let mut store = create_store(&self, session, profiler).map_err(ExecutionError::Context)?;
-        store.data_mut().wasi().push_arg(program_name)?;
-        for arg in args {
-            store.data_mut().wasi().push_arg(arg)?;
-        }
+        // Build args list: program_name followed by all provided args
+        let all_args: Vec<&str> = std::iter::once(program_name)
+            .chain(args.iter().map(|s| s.as_str()))
+            .collect();
+        let mut store =
+            create_store_with_args(&self, session, profiler, &all_args).map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre
