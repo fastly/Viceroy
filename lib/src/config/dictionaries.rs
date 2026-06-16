@@ -8,6 +8,9 @@ use {
     },
 };
 
+/// A type alias for dictionary names.
+pub type DictionaryName = String;
+
 /// A single Dictionary definition.
 ///
 /// A Dictionary consists of a file and format, but more fields may be added in the future.

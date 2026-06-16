@@ -801,3 +801,26 @@ impl<E, F: Future<Output = Result<(), E>>> Future for CpuTimeTracking<F> {
         result
     }
 }
+
+// Stellate-specific types for custom integrations
+
+/// Handle to a running guest instance.
+pub type GuestHandle = tokio::task::JoinHandle<Result<(), anyhow::Error>>;
+
+/// Trait for listening to endpoint events.
+#[async_trait::async_trait]
+pub trait EndpointListener: Send + Sync {
+    /// Called when an endpoint is added.
+    async fn on_endpoint_added(&self, endpoint: &str);
+    /// Called when an endpoint is removed.
+    async fn on_endpoint_removed(&self, endpoint: &str);
+}
+
+/// Trait for monitoring endpoints.
+#[async_trait::async_trait]
+pub trait EndpointsMonitor: Send + Sync {
+    /// Start monitoring endpoints.
+    async fn start(&self) -> Result<(), Error>;
+    /// Stop monitoring endpoints.
+    async fn stop(&self) -> Result<(), Error>;
+}

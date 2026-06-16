@@ -215,3 +215,46 @@ mod deserialization {
         }
     }
 }
+
+// Stellate-specific types for custom backend handling
+
+use crate::body::Body;
+use hyper::{Request, Response};
+
+/// Trait for handling backend requests.
+#[async_trait::async_trait]
+pub trait Handler: Send + Sync {
+    /// Handle a request to a backend.
+    async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, crate::Error>;
+}
+
+/// In-memory backend handler for testing and local development.
+#[derive(Clone, Default)]
+pub struct InMemoryBackendHandler {
+    /// Stored responses for specific paths.
+    responses: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, Response<Body>>>>,
+}
+
+impl InMemoryBackendHandler {
+    /// Create a new in-memory backend handler.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait::async_trait]
+impl Handler for InMemoryBackendHandler {
+    async fn handle(&self, _req: Request<Body>) -> Result<Response<Body>, crate::Error> {
+        Ok(Response::builder()
+            .status(hyper::StatusCode::OK)
+            .body(Body::empty())
+            .unwrap())
+    }
+}
+
+/// Trait for intercepting dynamic backend registration.
+#[async_trait::async_trait]
+pub trait DynamicBackendRegistrationInterceptor: Send + Sync {
+    /// Called when a dynamic backend is being registered.
+    async fn on_register(&self, name: &str, backend: &Backend) -> Result<(), crate::Error>;
+}

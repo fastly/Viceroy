@@ -21,7 +21,7 @@ mod limits;
 /// Types and deserializers for dictionaries configuration settings.
 mod dictionaries;
 
-pub use self::dictionaries::{Dictionary, LoadedDictionary};
+pub use self::dictionaries::{Dictionary, DictionaryName, LoadedDictionary};
 
 pub type Dictionaries = HashMap<String, Dictionary>;
 
@@ -32,7 +32,10 @@ pub use crate::acl::Acls;
 /// Types and deserializers for backend configuration settings.
 mod backends;
 
-pub use self::backends::{Backend, ClientCertError, ClientCertInfo};
+pub use self::backends::{
+    Backend, ClientCertError, ClientCertInfo, DynamicBackendRegistrationInterceptor, Handler,
+    InMemoryBackendHandler,
+};
 
 pub type Backends = HashMap<String, Arc<Backend>>;
 
@@ -49,7 +52,7 @@ pub use self::geolocation::Geolocation;
 /// Types and deserializers for object store configuration settings.
 mod object_store;
 
-pub use crate::object_store::ObjectStores;
+pub use crate::object_store::{ObjectKey, ObjectStoreKey, ObjectStores};
 
 /// Types and deserializers for secret store configuration settings.
 mod secret_store;
