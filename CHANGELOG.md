@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Internal unification of native/guest profiling config. (#[597](https://github.com/fastly/Viceroy/pull/597))
+
 ## 0.19.0 (2026-06-16)
 
 - Fix adapter codegen to avoid memory shift overflow, and support SIMD instructions. ([#629](https://github.com/fastly/Viceroy/pull/629))

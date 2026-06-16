@@ -43,18 +43,18 @@ impl ViceroyService {
     /// ```no_run
     /// # use std::collections::HashSet;
     /// # use wasmtime::WasmFeatures;
-    /// use viceroy_lib::{Error, ExecuteCtx, ProfilingStrategy, ViceroyService};
+    /// use viceroy_lib::{Error, ExecuteCtx, ProfilingConfig, ViceroyService};
+    /// # use viceroy_lib::config::UnknownImportBehavior;
     /// # fn f() -> Result<(), Error> {
     /// let adapt_core_wasm = false;
     /// let wasm_features = WasmFeatures::default();
     /// let ctx = ExecuteCtx::new(
     ///     "path/to/a/file.wasm",
-    ///     ProfilingStrategy::None,
+    ///     ProfilingConfig::None,
     ///     HashSet::new(),
-    ///     None,
-    ///     Default::default(),
+    ///     UnknownImportBehavior::LinkError,
     ///     adapt_core_wasm,
-    ///     wasm_features
+    ///     wasm_features,
     /// )?;
     /// let svc = ViceroyService::new(ctx);
     /// # Ok(())

@@ -7,7 +7,7 @@ use {
     },
     hyper::StatusCode,
     std::time::Duration,
-    viceroy_lib::GuestProfileConfig,
+    viceroy_lib::ProfilingConfig,
 };
 
 viceroy_test!(guest_profiling_works, |is_component| {
@@ -18,7 +18,7 @@ viceroy_test!(guest_profiling_works, |is_component| {
 
     let resp = Test::using_fixture("noop.wasm")
         .adapt_component(is_component)
-        .with_guest_profiling(GuestProfileConfig {
+        .with_profiling(ProfilingConfig::Guest {
             path: profile_dir.clone(),
             sample_period: Duration::from_micros(50),
         })
