@@ -16,7 +16,7 @@ use {
         config::{Backends, DeviceDetection, Dictionaries, ExperimentalModule, Geolocation},
         downstream::prepare_request,
         error::ExecutionError,
-        linking::{create_store, create_store_with_args, link_host_functions, WasmCtx},
+        linking::{create_store, link_host_functions, WasmCtx},
         object_store::ObjectStores,
         secret_store::SecretStores,
         session::Session,
@@ -36,7 +36,7 @@ use {
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
     wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
-    wasmtime_wasi::I32Exit,
+    wasi_common::I32Exit,
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
@@ -545,11 +545,11 @@ impl ExecuteCtx {
                 vec![(program_name.to_string(), self.module.clone())],
             )
         });
-        // Build full args list: program_name followed by user args
-        let mut full_args = vec![program_name.to_string()];
-        full_args.extend(args.iter().cloned());
-        let mut store = create_store_with_args(&self, session, profiler, &full_args)
-            .map_err(ExecutionError::Context)?;
+        let mut store = create_store(&self, session, profiler).map_err(ExecutionError::Context)?;
+        store.data_mut().wasi().push_arg(program_name)?;
+        for arg in args {
+            store.data_mut().wasi().push_arg(arg)?;
+        }
 
         let instance = self
             .instance_pre
