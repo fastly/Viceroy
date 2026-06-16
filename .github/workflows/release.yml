@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust-toolchain: [stable]
-        os: [ubuntu-22.04, macos-12, windows-2022]
+        os: [ubuntu-22.04, macos-14, windows-2022]
         arch: [amd64, arm64]
         exclude:
           - os: windows-2022
@@ -19,7 +19,7 @@ jobs:
           - os: ubuntu-22.04
             name: linux
             rust_abi: unknown-linux-gnu
-          - os: macos-12
+          - os: macos-14
             name: darwin
             rust_abi: apple-darwin
           - os: windows-2022

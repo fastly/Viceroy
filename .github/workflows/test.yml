@@ -11,7 +11,7 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-22.04, windows-2022, macos-12]
+        platform: [ubuntu-22.04, windows-2022, macos-14]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
@@ -51,7 +51,7 @@ jobs:
   trap-test:
     strategy:
       matrix:
-        platform: [ubuntu-22.04, macos-12, windows-2022]
+        platform: [ubuntu-22.04, macos-14, windows-2022]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
