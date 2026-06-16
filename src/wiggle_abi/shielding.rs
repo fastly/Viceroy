@@ -96,6 +96,7 @@ impl fastly_shielding::FastlyShielding for Sandbox {
             client_cert: None,
             ca_certs: Vec::new(),
             health: crate::config::BackendHealth::Unknown,
+            handler: None,
         };
 
         if !self.add_backend(&new_name, new_backend) {

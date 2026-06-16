@@ -145,6 +145,7 @@ pub(crate) async fn register_dynamic_backend(
         client_cert,
         ca_certs,
         health: crate::config::BackendHealth::Unknown,
+        handler: None,
     };
 
     if !sandbox.add_backend(name, new_backend) {

@@ -77,6 +77,7 @@ impl TestBackends {
                 client_cert: None,
                 ca_certs: vec![],
                 health: viceroy_lib::config::BackendHealth::Unknown,
+                handler: None,
             };
             backends.insert(name.to_string(), Arc::new(backend_config));
         }

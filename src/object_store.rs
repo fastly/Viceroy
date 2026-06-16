@@ -183,6 +183,24 @@ impl ObjectStores {
         Ok(())
     }
 
+    /// Simplified insert with default options (Overwrite mode, no TTL, no metadata, no generation).
+    pub fn insert_simple(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+        obj: Vec<u8>,
+    ) -> Result<(), KvStoreError> {
+        self.insert(
+            obj_store_key,
+            obj_key,
+            obj,
+            KvInsertMode::Overwrite,
+            None, // generation
+            None, // metadata
+            None, // ttl
+        )
+    }
+
     pub fn delete(
         &self,
         obj_store_key: ObjectStoreKey,

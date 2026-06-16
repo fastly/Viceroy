@@ -1222,6 +1222,29 @@ impl ExecuteCtxBuilder {
         self.inner.local_pushpin_proxy_port = local_pushpin_proxy_port;
         self
     }
+
+    // Stellate-specific builder methods
+
+    /// Set the endpoints monitor for this execution context.
+    pub fn with_endpoints(mut self, endpoints: EndpointsMonitor) -> Self {
+        self.inner.endpoints_monitor = endpoints;
+        self
+    }
+
+    /// Set the in-memory cache for this execution context.
+    pub fn with_in_memory_cache(mut self, cache: InMemoryCache) -> Self {
+        self.inner.in_memory_cache = cache;
+        self
+    }
+
+    /// Set the dynamic backend interceptor for this execution context.
+    pub fn with_dynamic_backend_interceptor(
+        mut self,
+        interceptor: Box<dyn DynamicBackendRegistrationInterceptor>,
+    ) -> Self {
+        self.inner.dynamic_backend_interceptor = Some(Arc::new(interceptor));
+        self
+    }
 }
 
 fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {

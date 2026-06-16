@@ -586,6 +586,7 @@ impl FastlyHttpReq for Sandbox {
             client_cert,
             ca_certs,
             health: crate::config::BackendHealth::Unknown,
+            handler: None,
         };
 
         if !self.add_backend(&name, new_backend) {

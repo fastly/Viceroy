@@ -29,6 +29,7 @@ pub(crate) fn backend_for_shield(
         client_cert: None,
         ca_certs: Vec::new(),
         health: crate::config::BackendHealth::Unknown,
+        handler: None,
     };
 
     if !sandbox.add_backend(&new_name, new_backend) {

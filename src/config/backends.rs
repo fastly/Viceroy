@@ -30,6 +30,8 @@ pub struct Backend {
     pub client_cert: Option<ClientCertInfo>,
     pub ca_certs: Vec<rustls::Certificate>,
     pub health: BackendHealth,
+    /// Optional in-memory handler for mocking backend responses.
+    pub handler: Option<Handler>,
 }
 
 /// A map of [`Backend`] definitions, keyed by their name.
@@ -192,6 +194,7 @@ mod deserialization {
                 grpc,
                 ca_certs,
                 health,
+                handler: None,
             })
         }
     }
