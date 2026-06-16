@@ -1,285 +1,267 @@
-use super::{
-    fastly_cache::FastlyCache,
-    types::{self},
-    Error,
-};
-use crate::{body::Body, error::HandleError, in_memory_cache::not_found_handle, session::Session};
-use tracing::{event, Level};
+use crate::session::Session;
+
+use super::fastly_cache::FastlyCache;
+use super::{types, Error};
 
 #[allow(unused_variables)]
 impl FastlyCache for Session {
     fn lookup<'a>(
         &mut self,
-        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_key: wiggle::GuestPtr<[u8]>,
         options_mask: types::CacheLookupOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
+        options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        let primary_key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-        let options: types::CacheLookupOptions = options.read().unwrap();
-        let empty_headers = http::HeaderMap::new();
-        let headers = if options_mask.contains(types::CacheLookupOptionsMask::REQUEST_HEADERS) {
-            &self.request_parts(options.request_headers)?.headers
-        } else {
-            &empty_headers
-        };
-
-        Ok(self
-            .cache
-            .get_entry(&primary_key, headers)
-            .unwrap_or(not_found_handle()))
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn insert<'a>(
         &mut self,
-        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_key: wiggle::GuestPtr<[u8]>,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        // TODO: Skipped over all the sanity checks usually done by similar code (see `req_impl`).
-        let options: types::CacheWriteOptions = options.read().unwrap();
-        let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-        let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
-            Some(self.request_parts(options.request_headers)?)
-        } else {
-            None
-        };
-
-        let cache_handle = self.cache.insert(key, options_mask, options, parts)?;
-        Ok(self.insert_cache_body(cache_handle))
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    /// Stub delegating to regular lookup.
+    fn replace(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_key: wiggle::GuestPtr<[u8]>,
+        options_mask: types::CacheReplaceOptionsMask,
+        abi_options: wiggle::GuestPtr<types::CacheReplaceOptions>,
+    ) -> Result<types::CacheReplaceHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_age_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_body(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+        options_mask: types::CacheGetBodyOptionsMask,
+        options: &types::CacheGetBodyOptions,
+    ) -> Result<types::BodyHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_hits(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<u64, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_length(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<u64, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_max_age_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_stale_while_revalidate_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_state(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+    ) -> Result<types::CacheLookupState, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_get_user_metadata(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+        out_ptr: wiggle::GuestPtr<u8>,
+        out_len: u32,
+        nwritten_out: wiggle::GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn replace_insert(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_handle: types::CacheReplaceHandle,
+        options_mask: types::CacheWriteOptionsMask,
+        abi_options: wiggle::GuestPtr<types::CacheWriteOptions>,
+    ) -> Result<types::BodyHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
     fn transaction_lookup<'a>(
         &mut self,
-        cache_key: &wiggle::GuestPtr<'a, [u8]>,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_key: wiggle::GuestPtr<[u8]>,
         options_mask: types::CacheLookupOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheLookupOptions>,
+        options: wiggle::GuestPtr<types::CacheLookupOptions>,
     ) -> Result<types::CacheHandle, Error> {
-        // Check if the entry already exists.
-        let handle = self.lookup(cache_key, options_mask, options)?;
-        if handle == not_found_handle() {
-            let key: Vec<u8> = cache_key.as_slice().unwrap().unwrap().to_vec();
-            let handle = self.cache.cache_entries.write().unwrap().push(None);
-            self.cache.pending_tx.write().unwrap().insert(handle, key);
-            Ok(handle)
-        } else {
-            Ok(handle)
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    /// Stub delegating to regular insert.
+    fn transaction_lookup_async<'a>(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        cache_key: wiggle::GuestPtr<[u8]>,
+        options_mask: types::CacheLookupOptionsMask,
+        options: wiggle::GuestPtr<types::CacheLookupOptions>,
+    ) -> Result<types::CacheBusyHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
+    fn cache_busy_handle_wait(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheBusyHandle,
+    ) -> Result<types::CacheHandle, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
+
     fn transaction_insert<'a>(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        let key = self
-            .cache
-            .pending_tx
-            .read()
-            .unwrap()
-            .get(&handle)
-            .map(ToOwned::to_owned);
-
-        if let Some(pending_tx_key) = key {
-            let options: types::CacheWriteOptions = options.read().unwrap();
-            let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
-                Some(self.request_parts(options.request_headers)?)
-            } else {
-                None
-            };
-
-            let cache_handle =
-                self.cache
-                    .insert(pending_tx_key.to_owned(), options_mask, options, parts)?;
-
-            Ok(self.insert_cache_body(cache_handle))
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn transaction_insert_and_stream_back<'a>(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(types::BodyHandle, types::CacheHandle), Error> {
-        let key = self
-            .cache
-            .pending_tx
-            .read()
-            .unwrap()
-            .get(&handle)
-            .map(ToOwned::to_owned);
-
-        if let Some(pending_tx_key) = key {
-            let options: types::CacheWriteOptions = options.read().unwrap();
-            let parts = if options_mask.contains(types::CacheWriteOptionsMask::REQUEST_HEADERS) {
-                Some(self.request_parts(options.request_headers)?)
-            } else {
-                None
-            };
-
-            let cache_handle =
-                self.cache
-                    .insert(pending_tx_key.to_owned(), options_mask, options, parts)?;
-
-            Ok((self.insert_cache_body(cache_handle), cache_handle))
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn transaction_update<'a>(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
         options_mask: types::CacheWriteOptionsMask,
-        options: &wiggle::GuestPtr<'a, types::CacheWriteOptions<'a>>,
+        options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<(), Error> {
-        event!(Level::ERROR, "Tx update not implemented");
-        Err(Error::Unsupported {
-            msg: "Tx update not implemented",
-        })
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn transaction_cancel(&mut self, handle: types::CacheHandle) -> Result<(), Error> {
-        event!(Level::ERROR, "Tx cancel not implemented");
-        Err(Error::Unsupported {
-            msg: "Tx cancel not implemented",
-        })
+    fn transaction_cancel(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheHandle,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn close(&mut self, handle: types::CacheHandle) -> Result<(), Error> {
-        Ok(())
+    fn close_busy(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheBusyHandle,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_state(&mut self, handle: types::CacheHandle) -> Result<types::CacheLookupState, Error> {
-        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
-            // Entry found.
-            let mut state = types::CacheLookupState::FOUND;
+    fn close(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheHandle,
+    ) -> Result<(), Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
+    }
 
-            if entry.is_stale() {
-                state |= types::CacheLookupState::STALE;
-                // Stale but found entries should be refreshed.
-                state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
-            }
-
-            if entry.is_usable() {
-                state |= types::CacheLookupState::USABLE;
-            } else {
-                // If not usable, caller must insert / refresh the cache entry.
-                state |= types::CacheLookupState::MUST_INSERT_OR_UPDATE
-            }
-
-            Ok(state)
-        } else {
-            // Entry not found, entry must be inserted.
-            Ok(types::CacheLookupState::MUST_INSERT_OR_UPDATE)
-        }
+    fn get_state(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheHandle,
+    ) -> Result<types::CacheLookupState, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn get_user_metadata<'a>(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
-        user_metadata_out_ptr: &wiggle::GuestPtr<'a, u8>,
-        user_metadata_out_len: u32, // TODO: Is this the maximum allowed length?
-        nwritten_out: &wiggle::GuestPtr<'a, u32>,
+        user_metadata_out_ptr: wiggle::GuestPtr<u8>,
+        user_metadata_out_len: u32,
+        nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
-        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
-            if entry.user_metadata.len() > user_metadata_out_len as usize {
-                nwritten_out.write(entry.user_metadata.len().try_into().unwrap_or(0))?;
-                return Err(Error::BufferLengthError {
-                    buf: "user_metadata_out",
-                    len: "user_metadata_out_len",
-                });
-            }
-
-            let user_metadata_len = u32::try_from(entry.user_metadata.len())
-                .expect("smaller than user_metadata_out_len means it must fit");
-
-            let mut metadata_out = user_metadata_out_ptr
-                .as_array(user_metadata_len)
-                .as_slice_mut()?
-                .ok_or(Error::SharedMemory)?;
-
-            metadata_out.copy_from_slice(&entry.user_metadata);
-            nwritten_out.write(user_metadata_len)?;
-
-            Ok(())
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn get_body(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        let body = self
-            .cache
-            .cache_entries
-            .read()
-            .unwrap()
-            .get(handle)
-            .and_then(|entry| entry.as_ref().map(|entry| entry.body_bytes.clone()));
-
-        if let Some(body) = body {
-            // Re-insert a body into the session to allow subsequent reads.
-            let body_handle = self.insert_body(Body::from(body));
-            Ok(body_handle)
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn get_length(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheObjectLength, Error> {
-        event!(Level::ERROR, "Cache entry length get not implemented.");
-        Err(Error::Unsupported {
-            msg: "Cache entry length get not implemented.",
-        })
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn get_max_age_ns(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
-            Ok(types::CacheDurationNs::from(entry.max_age_ns.unwrap_or(0)))
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
     fn get_stale_while_revalidate_ns(
         &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
-            Ok(types::CacheDurationNs::from(entry.swr_ns.unwrap_or(0)))
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_age_ns(&mut self, handle: types::CacheHandle) -> Result<types::CacheDurationNs, Error> {
-        if let Some(Some(entry)) = self.cache.cache_entries.read().unwrap().get(handle) {
-            Ok(types::CacheDurationNs::from(entry.age_ns()))
-        } else {
-            Err(HandleError::InvalidCacheHandle(handle).into())
-        }
+    fn get_age_ns(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheHandle,
+    ) -> Result<types::CacheDurationNs, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 
-    fn get_hits(&mut self, handle: types::CacheHandle) -> Result<types::CacheHitCount, Error> {
-        event!(Level::ERROR, "Cache entry get_hits not implemented.");
-        Err(Error::Unsupported {
-            msg: "Cache entry get_hits not implemented.",
-        })
+    fn get_hits(
+        &mut self,
+        memory: &mut wiggle::GuestMemory<'_>,
+        handle: types::CacheHandle,
+    ) -> Result<types::CacheHitCount, Error> {
+        Err(Error::NotAvailable("Cache API primitives"))
     }
 }

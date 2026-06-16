@@ -1,10 +1,12 @@
 use crate::{wiggle_abi::types, Error};
-use cranelift_entity::PrimaryMap;
 use http::{request::Parts, HeaderMap};
 use std::{
     collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
     fmt::Display,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc, RwLock,
+    },
     time::Instant,
 };
 use tracing::{event, Level};
@@ -20,7 +22,10 @@ type PrimaryCacheKey = Vec<u8>;
 pub struct InMemoryCache {
     /// Cache entries, indexable by handle.
     /// `None` indicates a deleted entry OR a tx marker.
-    pub cache_entries: Arc<RwLock<PrimaryMap<types::CacheHandle, Option<CacheEntry>>>>,
+    pub cache_entries: Arc<RwLock<HashMap<u32, Option<CacheEntry>>>>,
+
+    /// Next handle ID to assign
+    next_handle_id: Arc<AtomicU32>,
 
     /// Primary cache key to a list of variants.
     pub key_candidates: Arc<RwLock<BTreeMap<PrimaryCacheKey, Vec<types::CacheHandle>>>>,
@@ -67,8 +72,9 @@ impl InMemoryCache {
             let entry_lock = self.cache_entries.write().unwrap();
 
             candidates.iter().find_map(|candidate_handle| {
+                let handle_id: u32 = (*candidate_handle).into();
                 entry_lock
-                    .get(*candidate_handle)
+                    .get(&handle_id)
                     .and_then(|candidate_entry| {
                         candidate_entry.as_ref().and_then(|entry| {
                             (entry.vary_matches(headers) && entry.is_usable())
@@ -79,108 +85,19 @@ impl InMemoryCache {
         })
     }
 
-    pub fn insert<'a>(
+    /// Insert a cache entry with pre-extracted options.
+    pub fn insert_with_options(
         &self,
         key: PrimaryCacheKey,
-        options_mask: types::CacheWriteOptionsMask,
-        options: types::CacheWriteOptions,
+        max_age_ns: u64,
+        swr_ns: Option<u64>,
+        initial_age_ns: Option<u64>,
+        surrogate_keys: Vec<String>,
+        user_metadata: Vec<u8>,
+        vary: BTreeMap<String, Option<String>>,
         request_parts: Option<&Parts>,
     ) -> Result<types::CacheHandle, Error> {
-        // Cache writes must contain max-age.
-        let max_age_ns = options.max_age_ns;
-
-        // Example on how the bitmask works: The data the guest gives us via the ABI (here, `CacheWriteOptions`)
-        // doesn't have option semantics, so we can't distinguish between unset and zero values,
-        // We check the bitmask for if it's set, else we'd always get `Some(0)` here.
-        let swr_ns = options_mask
-            .contains(types::CacheWriteOptionsMask::STALE_WHILE_REVALIDATE_NS)
-            .then(|| options.stale_while_revalidate_ns);
-
-        let surrogate_keys = if options_mask.contains(types::CacheWriteOptionsMask::SURROGATE_KEYS)
-        {
-            // Unclear if needed.
-            // if options.surrogate_keys_len == 0 {
-            //     return Err(Error::InvalidArgument);
-            // }
-
-            let byte_slice = options
-                .surrogate_keys_ptr
-                .as_array(options.surrogate_keys_len)
-                .to_vec()?;
-
-            match String::from_utf8(byte_slice) {
-                Ok(s) => s
-                    .split_whitespace()
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>(),
-
-                Err(_) => return Err(Error::InvalidArgument),
-            }
-        } else {
-            vec![]
-        };
-
-        let user_metadata = if options_mask.contains(types::CacheWriteOptionsMask::USER_METADATA) {
-            if options.user_metadata_len == 0 {
-                return Err(Error::InvalidArgument);
-            }
-
-            let byte_slice = options
-                .user_metadata_ptr
-                .as_array(options.user_metadata_len)
-                .to_vec()?;
-
-            byte_slice
-        } else {
-            vec![]
-        };
-
-        let vary = if options_mask.contains(types::CacheWriteOptionsMask::VARY_RULE) {
-            if options.vary_rule_len == 0 {
-                return Err(Error::InvalidArgument);
-            }
-
-            let byte_slice = options
-                .vary_rule_ptr
-                .as_array(options.vary_rule_len)
-                .to_vec()?;
-
-            let vary_rules = match String::from_utf8(byte_slice) {
-                Ok(s) => s
-                    .split_whitespace()
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>(),
-
-                Err(_) => return Err(Error::InvalidArgument),
-            };
-
-            if let Some(req_parts) = request_parts {
-                let mut map = BTreeMap::new();
-
-                // Extract necessary vary headers.
-                for vary in vary_rules {
-                    // Dear reader, if you think this sucks... then you'd be right.
-                    // (Just supposed to work right now)
-                    let value = req_parts
-                        .headers
-                        .get(&vary)
-                        .map(|h| h.to_str().unwrap().to_string());
-
-                    map.insert(vary, value);
-                }
-
-                map
-            } else {
-                // Or invalid argument?
-                BTreeMap::new()
-            }
-        } else {
-            BTreeMap::new()
-        };
-
-        let initial_age_ns = options_mask
-            .contains(types::CacheWriteOptionsMask::INITIAL_AGE_NS)
-            .then(|| options.initial_age_ns);
+        let _ = request_parts; // May be used for vary matching in the future
 
         let entry = CacheEntry {
             key: key.clone(),
@@ -188,7 +105,7 @@ impl InMemoryCache {
             vary,
             initial_age_ns,
             max_age_ns: Some(max_age_ns),
-            swr_ns: swr_ns,
+            swr_ns,
             created_at: Instant::now(),
             user_metadata,
             surrogate_keys: surrogate_keys.into_iter().collect(),
@@ -207,10 +124,11 @@ impl InMemoryCache {
                 // Overwrite entry.
                 event!(Level::TRACE, "Overwriting cache entry {}", handle);
 
+                let handle_id: u32 = handle.into();
                 self.cache_entries
                     .write()
                     .unwrap()
-                    .get_mut(handle)
+                    .get_mut(&handle_id)
                     .map(|old_entry| old_entry.replace(entry));
 
                 handle
@@ -218,7 +136,9 @@ impl InMemoryCache {
 
             None => {
                 // Write new entry.
-                let new_entry_handle = self.cache_entries.write().unwrap().push(Some(entry));
+                let new_handle_id = self.next_handle_id.fetch_add(1, Ordering::SeqCst);
+                let new_entry_handle = types::CacheHandle::from(new_handle_id);
+                self.cache_entries.write().unwrap().insert(new_handle_id, Some(entry));
                 event!(Level::TRACE, "Wrote new cache entry {}", new_entry_handle);
 
                 // Write handle key candidate mapping.
@@ -330,7 +250,8 @@ impl Display for InMemoryCache {
         writeln!(f, "Cache State:")?;
         writeln!(f, "{}Entries:", Self::indent(1))?;
 
-        for (handle, entry) in self.cache_entries.read().unwrap().iter() {
+        for (handle_id, entry) in self.cache_entries.read().unwrap().iter() {
+            let handle = types::CacheHandle::from(*handle_id);
             match entry {
                 Some(entry) => self.fmt_entry(f, handle, entry)?,
                 None => writeln!(f, "{}[{}]: Purged", Self::indent(2), handle,)?,

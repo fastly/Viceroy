@@ -1,5 +1,6 @@
 use crate::{
     body::{Body, Chunk},
+    cache::CacheOverride,
     config::Backend,
     error::Error,
     headers::filter_outgoing_headers,
@@ -9,9 +10,10 @@ use crate::{
 use futures::Future;
 use http::{uri, HeaderValue, Version};
 use hyper::{client::HttpConnector, header, Client, HeaderMap, Request, Response, Uri};
-use rustls::client::{ServerName, WantsTransparencyPolicyOrClientCert};
+use rustls::client::ServerName;
 use std::{
     io,
+    net::SocketAddr,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -37,8 +39,8 @@ static GZIP_VALUES: [HeaderValue; 2] = [
 /// SNI.
 #[derive(Clone)]
 pub struct TlsConfig {
-    partial_config:
-        rustls::ConfigBuilder<rustls::ClientConfig, WantsTransparencyPolicyOrClientCert>,
+    partial_config: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    default_roots: rustls::RootCertStore,
 }
 
 impl TlsConfig {
@@ -58,11 +60,12 @@ impl TlsConfig {
             warn!("no CA certificates available");
         }
 
-        let partial_config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(roots);
+        let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
 
-        Ok(TlsConfig { partial_config })
+        Ok(TlsConfig {
+            partial_config,
+            default_roots: roots,
+        })
     }
 }
 
@@ -95,8 +98,23 @@ impl BackendConnector {
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 pub enum Connection {
-    Http(TcpStream),
-    Https(Box<TlsStream<TcpStream>>),
+    Http(TcpStream, ConnMetadata),
+    Https(Box<TlsStream<TcpStream>>, ConnMetadata),
+}
+
+impl Connection {
+    fn metadata(&self) -> &ConnMetadata {
+        match self {
+            Connection::Http(_, md) => &md,
+            Connection::Https(_, md) => &md,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConnMetadata {
+    pub direct_pass: bool,
+    pub remote_addr: SocketAddr,
 }
 
 impl hyper::service::Service<Uri> for BackendConnector {
@@ -117,17 +135,37 @@ impl hyper::service::Service<Uri> for BackendConnector {
         // the future for establishing the TCP connection. we create this outside of the `async`
         // block to avoid capturing `http`
         let connect_fut = self.http.call(backend.uri.clone());
+        let mut custom_roots = rustls::RootCertStore::empty();
+        let (added, ignored) = custom_roots.add_parsable_certificates(&self.backend.ca_certs);
+        if ignored > 0 {
+            tracing::warn!(
+                "Ignored {} certificates in provided CA certificate.",
+                ignored
+            );
+        }
+        let config = if self.backend.ca_certs.is_empty() {
+            config
+                .partial_config
+                .with_root_certificates(config.default_roots)
+        } else {
+            tracing::trace!("Using {} certificates from provided CA certificate.", added);
+            config.partial_config.with_root_certificates(custom_roots)
+        };
 
         Box::pin(async move {
             let tcp = connect_fut.await.map_err(Box::new)?;
 
-            if backend.uri.scheme_str() == Some("https") {
+            let remote_addr = tcp.peer_addr()?;
+            let metadata = ConnMetadata {
+                direct_pass: false,
+                remote_addr,
+            };
+
+            let conn = if backend.uri.scheme_str() == Some("https") {
                 let mut config = if let Some(certed_key) = &backend.client_cert {
-                    config
-                        .partial_config
-                        .with_client_auth_cert(certed_key.certs(), certed_key.key())?
+                    config.with_client_auth_cert(certed_key.certs(), certed_key.key())?
                 } else {
-                    config.partial_config.with_no_client_auth()
+                    config.with_no_client_auth()
                 };
                 config.enable_sni = backend.use_sni;
                 if backend.grpc {
@@ -166,10 +204,12 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     }
                 }
 
-                Ok(Connection::Https(Box::new(tls)))
+                Connection::Https(Box::new(tls), metadata)
             } else {
-                Ok(Connection::Http(tcp))
-            }
+                Connection::Http(tcp, metadata)
+            };
+
+            Ok(conn)
         })
     }
 }
@@ -265,30 +305,35 @@ pub fn send_request(
     req.headers_mut().insert(hyper::header::HOST, host);
     *req.uri_mut() = uri;
 
-    let handler = backend.handler.clone(); // Haxx
     let h2only = backend.grpc;
-
     async move {
-        let basic_response = if let Some(handler) = handler {
-            handler.handle(req).await
-        } else {
-            let mut builder = Client::builder();
+        let mut builder = Client::builder();
 
-            if req.version() == Version::HTTP_2 {
-                builder.http2_only(true);
-            }
+        if req.version() == Version::HTTP_2 {
+            builder.http2_only(true);
+        }
 
-            builder
-                .set_host(false)
-                .http2_only(h2only)
-                .build(connector)
-                .request(req)
-                .await
-                .map_err(|e| {
-                    eprintln!("Error: {:?}", e);
-                    e
-                })?
-        };
+        let is_pass = req
+            .extensions()
+            .get::<CacheOverride>()
+            .map(CacheOverride::is_pass)
+            .unwrap_or_default();
+
+        let mut basic_response = builder
+            .set_host(false)
+            .http2_only(h2only)
+            .build(connector)
+            .request(req)
+            .await
+            .map_err(|e| {
+                eprintln!("Error: {:?}", e);
+                e
+            })?;
+
+        if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
+            // This is used later to create similar behaviour between Compute and Viceroy.
+            md.direct_pass = is_pass;
+        }
 
         if try_decompression
             && basic_response
@@ -316,6 +361,7 @@ pub fn send_request(
 /// The type ultimately yielded by a `PendingRequest`.
 
 /// An asynchronous request awaiting a response.
+#[allow(unused)]
 #[derive(Debug)]
 pub enum PendingRequest {
     // NB: we use channels rather than a `JoinHandle` in order to support the `poll` API.
@@ -336,7 +382,7 @@ pub struct SelectTarget {
 
 impl hyper::client::connect::Connection for Connection {
     fn connected(&self) -> hyper::client::connect::Connected {
-        hyper::client::connect::Connected::new()
+        hyper::client::connect::Connected::new().extra(self.metadata().clone())
     }
 }
 
@@ -347,8 +393,8 @@ impl AsyncRead for Connection {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<(), io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_read(cx, buf),
-            Connection::Https(s) => Pin::new(s).poll_read(cx, buf),
+            Connection::Http(s, _) => Pin::new(s).poll_read(cx, buf),
+            Connection::Https(s, _) => Pin::new(s).poll_read(cx, buf),
         }
     }
 }
@@ -360,22 +406,22 @@ impl AsyncWrite for Connection {
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_write(cx, buf),
-            Connection::Https(s) => Pin::new(s).poll_write(cx, buf),
+            Connection::Http(s, _) => Pin::new(s).poll_write(cx, buf),
+            Connection::Https(s, _) => Pin::new(s).poll_write(cx, buf),
         }
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_flush(cx),
-            Connection::Https(s) => Pin::new(s).poll_flush(cx),
+            Connection::Http(s, _) => Pin::new(s).poll_flush(cx),
+            Connection::Https(s, _) => Pin::new(s).poll_flush(cx),
         }
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         match Pin::get_mut(self) {
-            Connection::Http(s) => Pin::new(s).poll_shutdown(cx),
-            Connection::Https(s) => Pin::new(s).poll_shutdown(cx),
+            Connection::Http(s, _) => Pin::new(s).poll_shutdown(cx),
+            Connection::Https(s, _) => Pin::new(s).poll_shutdown(cx),
         }
     }
 }

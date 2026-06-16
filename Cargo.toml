@@ -34,8 +34,12 @@ url = "2.3.1"
 async-trait = "0.1.74"
 
 # Wasmtime dependencies
-wasi-common = "17.0.0"
-wasmtime = "17.0.0"
-wasmtime-wasi = "17.0.0"
-wasmtime-wasi-nn = "17.0.0"
-wiggle = "17.0.0"
+wasmtime = "25.0.0"
+wasmtime-wasi = "25.0.0"
+wasmtime-wasi-nn = "25.0.0"
+wiggle = "25.0.0"
+wat = "1.212.0"
+wasmparser = "0.217.0"
+wasm-encoder = { version = "0.217.0", features = ["wasmparser"] }
+wit-component = "0.217.0"
+pin-project = "1.0.8"

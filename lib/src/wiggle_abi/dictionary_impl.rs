@@ -9,7 +9,7 @@ use {
             types::{DictionaryHandle, FastlyStatus},
         },
     },
-    wiggle::GuestPtr,
+    wiggle::{GuestMemory, GuestPtr},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -34,42 +34,49 @@ impl DictionaryError {
 }
 
 impl FastlyDictionary for Session {
-    fn open(&mut self, name: &GuestPtr<str>) -> Result<DictionaryHandle, Error> {
-        self.dictionary_handle(&name.as_str()?.ok_or(Error::SharedMemory)?)
+    fn open(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        name: GuestPtr<str>,
+    ) -> Result<DictionaryHandle, Error> {
+        self.dictionary_handle(memory.as_str(name)?.ok_or(Error::SharedMemory)?)
     }
 
     fn get(
         &mut self,
+        memory: &mut GuestMemory<'_>,
         dictionary: DictionaryHandle,
-        key: &GuestPtr<str>,
-        buf: &GuestPtr<u8>,
+        key: GuestPtr<str>,
+        buf: GuestPtr<u8>,
         buf_len: u32,
-    ) -> Result<u32, Error> {
-        let dict = self
-            .dictionary(dictionary)?
-            .contents()
-            .map_err(|err| Error::Other(err.into()))?;
+        nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let dict = &self.dictionary(dictionary)?.contents;
 
-        let key: &str = &key.as_str()?.ok_or(Error::SharedMemory)?;
-        let item_bytes = dict
-            .get(key)
-            .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
-            .as_bytes();
+        let item_bytes = {
+            let key = memory.as_str(key)?.ok_or(Error::SharedMemory)?;
+            dict.get(key)
+                .ok_or_else(|| DictionaryError::UnknownDictionaryItem(key.to_owned()))?
+                .as_bytes()
+        };
 
-        if item_bytes.len() > buf_len as usize {
+        if item_bytes.len() > usize::try_from(buf_len).expect("buf_len must fit in usize") {
+            // Write out the number of bytes necessary to fit this item, or zero on overflow to
+            // signal an error condition. This is probably unnecessary, as config store entries
+            // may be at most 8000 utf-8 characters large.
+            memory.write(nwritten_out, u32::try_from(item_bytes.len()).unwrap_or(0))?;
             return Err(Error::BufferLengthError {
                 buf: "dictionary_item",
                 len: "dictionary_item_max_len",
             });
         }
-        let item_len = u32::try_from(item_bytes.len())
-            .expect("smaller than dictionary_item_max_len means it must fit");
 
-        let mut buf_slice = buf
-            .as_array(item_len)
-            .as_slice_mut()?
-            .ok_or(Error::SharedMemory)?;
-        buf_slice.copy_from_slice(item_bytes);
-        Ok(item_len)
+        // We know the conversion of item_bytes.len() to u32 will succeed, as it's <= buf_len.
+        let item_len = u32::try_from(item_bytes.len()).unwrap();
+
+        memory.write(nwritten_out, item_len)?;
+        memory.copy_from_slice(item_bytes, buf.as_array(item_len))?;
+
+        Ok(())
     }
 }

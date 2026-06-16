@@ -13,13 +13,17 @@
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(dead_code)))))]
 #![cfg_attr(not(debug_assertions), doc(test(attr(allow(unused_variables)))))]
 
+pub mod adapt;
 pub mod body;
+pub mod cache;
 pub mod config;
 pub mod error;
 pub mod logging;
 pub mod session;
 
+mod acl;
 mod async_io;
+pub mod component;
 mod downstream;
 mod execute;
 mod headers;
@@ -30,12 +34,13 @@ mod secret_store;
 mod service;
 mod streaming_body;
 mod upstream;
-mod wiggle_abi;
+pub mod wiggle_abi;
 
 pub use {
     async_trait,
     error::Error,
-    execute::{EndpointListener, EndpointsMonitor, ExecuteCtx, GuestHandle},
+    execute::ExecuteCtx,
+    execute::GuestProfileConfig,
     http, hyper,
     in_memory_cache::InMemoryCache,
     service::ViceroyService,

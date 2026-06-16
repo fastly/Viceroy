@@ -23,7 +23,7 @@ bytes = "^1.2.1"
 bytesize = "^1.1.0"
 cfg-if = "^1.0"
 clap = { workspace = true }
-cranelift-entity = "^0.88.1"
+cranelift-entity = "0.112.3"
 fastly-shared = "=0.10.5"
 flate2 = "^1.0.24"
 futures = { workspace = true }
@@ -47,12 +47,17 @@ toml = "^0.5.9"
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 url = { workspace = true }
-wasi-common = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-nn = { workspace = true }
 wiggle = { workspace = true }
-async-trait.workspace = true
+pin-project = { workspace = true }
+wasmparser = { workspace = true }
+wasm-encoder = { workspace = true }
+wit-component = { workspace = true }
+wat = { workspace = true }
+base64 = { workspace = true }
+async-trait = "0.1.59"
 
 [dev-dependencies]
 tempfile = "3.6.0"

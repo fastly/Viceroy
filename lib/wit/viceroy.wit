@@ -1,0 +1,5 @@
+package fastly:viceroy;
+
+world compute {
+	include fastly:api/compute;
+}

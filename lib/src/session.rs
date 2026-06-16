@@ -4,45 +4,65 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvLookupTask,
+    AsyncItem, PeekableTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
+    PendingKvLookupTask,
 };
 
-use crate::{
-    config::DynamicBackendRegistrationInterceptor, execute::EndpointsMonitor,
-    in_memory_cache::InMemoryCache,
-};
+use std::collections::HashMap;
+use std::future::Future;
+use std::io::Write;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use crate::object_store::KvStoreError;
+
 use {
     self::downstream::DownstreamResponse,
     crate::{
+        acl::{Acl, Acls},
         body::Body,
-        config::{
-            Backend, Backends, DeviceDetection, Dictionaries, Dictionary, DictionaryName,
-            Geolocation,
-        },
+        config::{Backend, Backends, DeviceDetection, Dictionaries, Geolocation, LoadedDictionary},
         error::{Error, HandleError},
         logging::LogEndpoint,
-        object_store::{ObjectKey, ObjectStoreError, ObjectStoreKey, ObjectStores},
+        object_store::{ObjectKey, ObjectStoreKey, ObjectStores, ObjectValue},
         secret_store::{SecretLookup, SecretStores},
         streaming_body::StreamingBody,
         upstream::{SelectTarget, TlsConfig},
         wiggle_abi::types::{
-            self, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
-            ObjectStoreHandle, PendingKvDeleteHandle, PendingKvInsertHandle, PendingKvLookupHandle,
-            PendingRequestHandle, RequestHandle, ResponseHandle, SecretHandle, SecretStoreHandle,
+            self, AclHandle, BodyHandle, ContentEncodings, DictionaryHandle, EndpointHandle,
+            KvInsertMode, KvStoreDeleteHandle, KvStoreHandle, KvStoreInsertHandle,
+            KvStoreListHandle, KvStoreLookupHandle, PendingKvDeleteHandle, PendingKvInsertHandle,
+            PendingKvListHandle, PendingKvLookupHandle, PendingRequestHandle, RequestHandle,
+            ResponseHandle, SecretHandle, SecretStoreHandle,
         },
+        ExecuteCtx,
     },
     cranelift_entity::{entity_impl, PrimaryMap},
     futures::future::{self, FutureExt},
     http::{request, response, HeaderMap, Request, Response},
-    std::{collections::HashMap, future::Future, net::IpAddr, path::PathBuf, sync::Arc},
     tokio::sync::oneshot::Sender,
 };
+
+const NGWAF_ALLOW_VERDICT: &str = "allow";
+const REGION_NONE: &[u8] = b"none";
 
 /// Data specific to an individual request, including any host-side
 /// allocations on behalf of the guest processing the request.
 pub struct Session {
-    /// The downstream IP address for this session.
-    downstream_client_ip: IpAddr,
+    /// The downstream IP address and port for this session.
+    downstream_client_addr: SocketAddr,
+    /// The IP address and port that received this session.
+    downstream_server_addr: SocketAddr,
+    /// The amount of time we've spent on this session in microseconds.
+    pub active_cpu_time_us: Arc<AtomicU64>,
+    /// The compliance region that this request was received in.
+    ///
+    /// For now this is just always `"none"`, but we place the field in the session
+    /// to make it easier to implement custom configuration values later on.
+    downstream_compliance_region: Vec<u8>,
     /// Handle for the downstream request "parts". NB the backing parts data can be mutated
     /// or even removed from the relevant map.
     downstream_req_handle: RequestHandle,
@@ -72,10 +92,18 @@ pub struct Session {
     /// [parts]: https://docs.rs/http/latest/http/response/struct.Parts.html
     /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
     resp_parts: PrimaryMap<ResponseHandle, Option<response::Parts>>,
+    /// Where to direct logging endpoint messages.
+    capture_logs: Arc<Mutex<dyn Write + Send>>,
     /// A handle map for logging endpoints.
     log_endpoints: PrimaryMap<EndpointHandle, LogEndpoint>,
     /// A by-name map for logging endpoints.
     log_endpoints_by_name: HashMap<Vec<u8>, EndpointHandle>,
+    /// The ACLs configured for this execution.
+    ///
+    /// Populated prior to guest execution, and never modified.
+    acls: Arc<Acls>,
+    /// Active ACL handles.
+    acl_handles: PrimaryMap<AclHandle, Arc<Acl>>,
     /// The backends configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -84,19 +112,16 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     device_detection: Arc<DeviceDetection>,
+    /// The NGWAF verdict to return when using the `inspect` hostcall.
+    ngwaf_verdict: String,
     /// The Geolocations configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
     geolocation: Arc<Geolocation>,
     /// The backends dynamically added by the program. This is separated from
-    /// `backends` because we do not want one session to affect the backends
+    /// `backends` because we do not want one session to effect the backends
     /// available to any other session.
     dynamic_backends: Backends,
-    /// If set, intercepts dynamic backend registrations and allows to modify them on the fly.
-    /// Useful in combination with in-memory backend handlers to allow handling dynamic backends
-    /// in memory as well.
-    pub(crate) dynamic_backend_interceptor:
-        Option<Arc<Box<dyn DynamicBackendRegistrationInterceptor>>>,
     /// The TLS configuration for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -105,18 +130,16 @@ pub struct Session {
     ///
     /// Populated prior to guest execution, and never modified.
     dictionaries: Arc<Dictionaries>,
-    /// The dictionaries configured for this execution.
-    ///
-    /// Populated prior to guest execution, and never modified.
-    dictionaries_by_name: PrimaryMap<DictionaryHandle, DictionaryName>,
+    /// The dictionaries that have been opened by the guest.
+    loaded_dictionaries: PrimaryMap<DictionaryHandle, LoadedDictionary>,
     /// The ObjectStore configured for this execution.
     ///
     /// Populated prior to guest execution and can be modified during requests.
-    pub(crate) object_store: Arc<ObjectStores>,
+    pub(crate) kv_store: ObjectStores,
     /// The object stores configured for this execution.
     ///
     /// Populated prior to guest execution.
-    object_store_by_name: PrimaryMap<ObjectStoreHandle, ObjectStoreKey>,
+    kv_store_by_name: PrimaryMap<KvStoreHandle, ObjectStoreKey>,
     /// The secret stores configured for this execution.
     ///
     /// Populated prior to guest execution, and never modified.
@@ -135,8 +158,6 @@ pub struct Session {
     config_path: Arc<Option<PathBuf>>,
     /// The ID for the client request being processed.
     req_id: u64,
-    /// The cache state to use.
-    pub(crate) cache: InMemoryCache,
 }
 
 impl Session {
@@ -146,18 +167,19 @@ impl Session {
         req_id: u64,
         req: Request<Body>,
         resp_sender: Sender<Response<Body>>,
-        client_ip: IpAddr,
+        server_addr: SocketAddr,
+        client_addr: SocketAddr,
+        active_cpu_time_us: Arc<AtomicU64>,
+        ctx: &ExecuteCtx,
+        acls: Arc<Acls>,
         backends: Arc<Backends>,
         device_detection: Arc<DeviceDetection>,
         geolocation: Arc<Geolocation>,
         tls_config: TlsConfig,
         dictionaries: Arc<Dictionaries>,
         config_path: Arc<Option<PathBuf>>,
-        object_store: Arc<ObjectStores>,
+        kv_store: ObjectStores,
         secret_stores: Arc<SecretStores>,
-        endpoints: EndpointsMonitor,
-        dynamic_backend_interceptor: Option<Arc<Box<dyn DynamicBackendRegistrationInterceptor>>>,
-        cache: InMemoryCache,
     ) -> Session {
         let (parts, body) = req.into_parts();
         let downstream_req_original_headers = parts.headers.clone();
@@ -169,52 +191,55 @@ impl Session {
         let downstream_req_body_handle = async_items.push(Some(AsyncItem::Body(body))).into();
 
         Session {
-            downstream_client_ip: client_ip,
+            downstream_server_addr: server_addr,
+            downstream_client_addr: client_addr,
+            downstream_compliance_region: Vec::from(REGION_NONE),
             downstream_req_handle,
             downstream_req_body_handle,
             downstream_req_original_headers,
+            active_cpu_time_us,
             async_items,
             req_parts,
             resp_parts: PrimaryMap::new(),
             downstream_resp: DownstreamResponse::new(resp_sender),
+            capture_logs: ctx.capture_logs(),
             log_endpoints: PrimaryMap::new(),
             log_endpoints_by_name: HashMap::new(),
+            acls,
+            acl_handles: PrimaryMap::new(),
             backends,
             device_detection,
             geolocation,
+            ngwaf_verdict: NGWAF_ALLOW_VERDICT.to_string(),
             dynamic_backends: Backends::default(),
             tls_config,
             dictionaries,
-            dictionaries_by_name: PrimaryMap::new(),
-            object_store,
-            object_store_by_name: PrimaryMap::new(),
+            loaded_dictionaries: PrimaryMap::new(),
+            kv_store,
+            kv_store_by_name: PrimaryMap::new(),
             secret_stores,
             secret_stores_by_name: PrimaryMap::new(),
             secrets_by_name: PrimaryMap::new(),
             config_path,
             req_id,
-            dynamic_backend_interceptor,
-            cache,
         }
-        .write_endpoints(endpoints)
-    }
-
-    // Todo: Haxx, it's better to run this code in the constructor and initialize `log_endpoints_by_name` and `log_endpoints`.
-    fn write_endpoints(mut self, endpoints: EndpointsMonitor) -> Self {
-        for (name, sender) in endpoints.endpoints.read().unwrap().iter() {
-            let endpoint = LogEndpoint::new(name, Some(sender.clone()));
-            let handle = self.log_endpoints.push(endpoint);
-            self.log_endpoints_by_name.insert(name.to_owned(), handle);
-        }
-
-        self
     }
 
     // ----- Downstream Request API -----
 
     /// Retrieve the downstream client IP address associated with this session.
-    pub fn downstream_client_ip(&self) -> &IpAddr {
-        &self.downstream_client_ip
+    pub fn downstream_client_ip(&self) -> IpAddr {
+        self.downstream_client_addr.ip()
+    }
+
+    /// Retrieve the IP address the downstream client connected to for this session.
+    pub fn downstream_server_ip(&self) -> IpAddr {
+        self.downstream_server_addr.ip()
+    }
+
+    /// Retrieve the compliance region that received the request for this session.
+    pub fn downstream_compliance_region(&self) -> &[u8] {
+        self.downstream_compliance_region.as_slice()
     }
 
     /// Retrieve the handle corresponding to the downstream request.
@@ -270,12 +295,6 @@ impl Session {
     /// [body]: ../body/struct.Body.html
     pub fn insert_body(&mut self, body: Body) -> BodyHandle {
         self.async_items.push(Some(AsyncItem::Body(body))).into()
-    }
-
-    pub fn insert_cache_body(&mut self, cache_handle: types::CacheHandle) -> BodyHandle {
-        self.async_items
-            .push(Some(AsyncItem::CachingBody(cache_handle)))
-            .into()
     }
 
     /// Get a reference to a [`Body`][body], given its [`BodyHandle`][handle].
@@ -359,25 +378,6 @@ impl Session {
         } else {
             false
         }
-    }
-
-    pub fn is_caching_body(&self, handle: BodyHandle) -> bool {
-        if let Some(Some(body)) = self.async_items.get(handle.into()) {
-            body.is_caching()
-        } else {
-            false
-        }
-    }
-
-    pub fn caching_body_handle(
-        &mut self,
-        handle: BodyHandle,
-    ) -> Result<types::CacheHandle, HandleError> {
-        self.async_items
-            .get_mut(handle.into())
-            .and_then(|item| item.as_ref().map(|item| item.resolve_cache_handle()))
-            .flatten()
-            .ok_or(HandleError::InvalidBodyHandle(handle))
     }
 
     /// Get a mutable reference to the streaming body `Sender`, if and only if the provided
@@ -581,7 +581,7 @@ impl Session {
         if let Some(handle) = self.log_endpoints_by_name.get(name).copied() {
             return handle;
         }
-        let endpoint = LogEndpoint::new(name, None);
+        let endpoint = LogEndpoint::new(name, self.capture_logs.clone());
         let handle = self.log_endpoints.push(endpoint);
         self.log_endpoints_by_name.insert(name.to_owned(), handle);
         handle
@@ -599,6 +599,17 @@ impl Session {
         self.log_endpoints
             .get(handle)
             .ok_or(HandleError::InvalidEndpointHandle(handle))
+    }
+
+    // ----- ACLs API -----
+
+    pub fn acl_handle_by_name(&mut self, name: &str) -> Option<AclHandle> {
+        let acl = self.acls.get_acl(name)?;
+        Some(self.acl_handles.push(acl.clone()))
+    }
+
+    pub fn acl_by_handle(&self, handle: AclHandle) -> Option<Arc<Acl>> {
+        self.acl_handles.get(handle).map(Arc::clone)
     }
 
     // ----- Backends API -----
@@ -656,9 +667,9 @@ impl Session {
 
     /// Look up a dictionary-handle by name.
     pub fn dictionary_handle(&mut self, name: &str) -> Result<DictionaryHandle, Error> {
-        let dict = DictionaryName::new(name.to_string());
-        if self.dictionaries.contains_key(&dict) {
-            Ok(self.dictionaries_by_name.push(dict))
+        if let Some(dict) = self.dictionaries.get(name) {
+            let loaded = dict.load().map_err(|err| Error::Other(err.into()))?;
+            Ok(self.loaded_dictionaries.push(loaded))
         } else {
             Err(Error::DictionaryError(
                 crate::wiggle_abi::DictionaryError::UnknownDictionary(name.to_owned()),
@@ -667,10 +678,9 @@ impl Session {
     }
 
     /// Look up a dictionary by dictionary-handle.
-    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&Dictionary, HandleError> {
-        self.dictionaries_by_name
+    pub fn dictionary(&self, handle: DictionaryHandle) -> Result<&LoadedDictionary, HandleError> {
+        self.loaded_dictionaries
             .get(handle)
-            .and_then(|name| self.dictionaries.get(name))
             .ok_or(HandleError::InvalidDictionaryHandle(handle))
     }
 
@@ -685,23 +695,43 @@ impl Session {
         self.geolocation.lookup(addr).map(|data| data.to_string())
     }
 
-    // ----- Object Store API -----
-    pub fn obj_store_handle(&mut self, key: &str) -> Result<ObjectStoreHandle, Error> {
+    // ----- NGWAF Inspect API -----
+
+    /// Retrieve the compliance region that received the request for this session.
+    pub fn ngwaf_response(&self) -> String {
+        format!(
+            r#"{{"waf_response":200,"redirect_url":"","tags":[],"verdict":"{}","decision_ms":0}}"#,
+            self.ngwaf_verdict
+        )
+    }
+
+    // ----- KV Store API -----
+    pub fn kv_store_handle(&mut self, key: &str) -> Result<KvStoreHandle, Error> {
         let obj_key = ObjectStoreKey::new(key);
-        Ok(self.object_store_by_name.push(obj_key))
+        Ok(self.kv_store_by_name.push(obj_key))
     }
 
-    pub fn get_obj_store_key(&self, handle: ObjectStoreHandle) -> Option<&ObjectStoreKey> {
-        self.object_store_by_name.get(handle)
+    pub fn get_kv_store_key(&self, handle: KvStoreHandle) -> Option<&ObjectStoreKey> {
+        self.kv_store_by_name.get(handle)
     }
 
-    pub fn obj_insert(
+    pub fn kv_insert(
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
         obj: Vec<u8>,
-    ) -> Result<(), ObjectStoreError> {
-        self.object_store.insert(obj_store_key, obj_key, obj)
+        mode: Option<KvInsertMode>,
+        generation: Option<u64>,
+        metadata: Option<Vec<u8>>,
+        ttl: Option<Duration>,
+    ) -> Result<(), KvStoreError> {
+        let mode = match mode {
+            None => KvInsertMode::Overwrite,
+            Some(m) => m,
+        };
+
+        self.kv_store
+            .insert(obj_store_key, obj_key, obj, mode, generation, metadata, ttl)
     }
 
     /// Insert a [`PendingKvInsert`] into the session.
@@ -711,7 +741,7 @@ impl Session {
     pub fn insert_pending_kv_insert(
         &mut self,
         pending: PendingKvInsertTask,
-    ) -> PendingKvInsertHandle {
+    ) -> KvStoreInsertHandle {
         self.async_items
             .push(Some(AsyncItem::PendingKvInsert(pending)))
             .into()
@@ -750,12 +780,12 @@ impl Session {
             .ok_or(HandleError::InvalidPendingKvInsertHandle(handle))
     }
 
-    pub fn obj_delete(
+    pub fn kv_delete(
         &self,
         obj_store_key: ObjectStoreKey,
         obj_key: ObjectKey,
-    ) -> Result<(), ObjectStoreError> {
-        self.object_store.delete(obj_store_key, obj_key)
+    ) -> Result<(), KvStoreError> {
+        self.kv_store.delete(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingKvDelete`] into the session.
@@ -806,10 +836,10 @@ impl Session {
 
     pub fn obj_lookup(
         &self,
-        obj_store_key: &ObjectStoreKey,
-        obj_key: &ObjectKey,
-    ) -> Result<Vec<u8>, ObjectStoreError> {
-        self.object_store.lookup(obj_store_key, obj_key)
+        obj_store_key: ObjectStoreKey,
+        obj_key: ObjectKey,
+    ) -> Result<ObjectValue, KvStoreError> {
+        self.kv_store.lookup(obj_store_key, obj_key)
     }
 
     /// Insert a [`PendingLookup`] into the session.
@@ -856,6 +886,61 @@ impl Session {
             .and_then(Option::as_ref)
             .and_then(AsyncItem::as_pending_kv_lookup)
             .ok_or(HandleError::InvalidPendingKvLookupHandle(handle))
+    }
+
+    pub fn kv_list(
+        &self,
+        obj_store_key: ObjectStoreKey,
+        cursor: Option<String>,
+        prefix: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<Vec<u8>, KvStoreError> {
+        let limit = limit.unwrap_or(1000);
+
+        self.kv_store.list(obj_store_key, cursor, prefix, limit)
+    }
+
+    /// Insert a [`PendingList`] into the session.
+    ///
+    /// This method returns a new [`PendingKvListHandle`], which can then be used to access
+    /// and mutate the pending list.
+    pub fn insert_pending_kv_list(&mut self, pending: PendingKvListTask) -> PendingKvListHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingKvList(pending)))
+            .into()
+    }
+
+    /// Take ownership of a [`PendingList`], given its [`PendingKvListHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a pending list in the
+    /// session.
+    pub fn take_pending_kv_list(
+        &mut self,
+        handle: PendingKvListHandle,
+    ) -> Result<PendingKvListTask, HandleError> {
+        // check that this is a pending request before removing it
+        let _ = self.pending_kv_list(handle)?;
+
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_kv_list)
+            .ok_or(HandleError::InvalidPendingKvListHandle(handle))
+    }
+
+    /// Get a reference to a [`PendingList`], given its [`PendingKvListHandle`].
+    ///
+    /// Returns a [`HandleError`] if the handle is not associated with a list in the
+    /// session.
+    pub fn pending_kv_list(
+        &self,
+        handle: PendingKvListHandle,
+    ) -> Result<&PendingKvListTask, HandleError> {
+        self.async_items
+            .get(handle.into())
+            .and_then(Option::as_ref)
+            .and_then(AsyncItem::as_pending_kv_list)
+            .ok_or(HandleError::InvalidPendingKvListHandle(handle))
     }
 
     // ----- Secret Store API -----
@@ -1170,5 +1255,65 @@ impl From<PendingKvDeleteHandle> for AsyncItemHandle {
 impl From<AsyncItemHandle> for PendingKvDeleteHandle {
     fn from(h: AsyncItemHandle) -> PendingKvDeleteHandle {
         PendingKvDeleteHandle::from(h.as_u32())
+    }
+}
+
+impl From<PendingKvListHandle> for AsyncItemHandle {
+    fn from(h: PendingKvListHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for PendingKvListHandle {
+    fn from(h: AsyncItemHandle) -> PendingKvListHandle {
+        PendingKvListHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreLookupHandle> for AsyncItemHandle {
+    fn from(h: KvStoreLookupHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreLookupHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreLookupHandle {
+        KvStoreLookupHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreInsertHandle> for AsyncItemHandle {
+    fn from(h: KvStoreInsertHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreInsertHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreInsertHandle {
+        KvStoreInsertHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreDeleteHandle> for AsyncItemHandle {
+    fn from(h: KvStoreDeleteHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreDeleteHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreDeleteHandle {
+        KvStoreDeleteHandle::from(h.as_u32())
+    }
+}
+
+impl From<KvStoreListHandle> for AsyncItemHandle {
+    fn from(h: KvStoreListHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for KvStoreListHandle {
+    fn from(h: AsyncItemHandle) -> KvStoreListHandle {
+        KvStoreListHandle::from(h.as_u32())
     }
 }

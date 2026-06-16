@@ -96,6 +96,9 @@ pub enum Error {
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
 
     #[error(transparent)]
+    KvStoreError(#[from] crate::object_store::KvStoreError),
+
+    #[error(transparent)]
     SecretStoreError(#[from] crate::wiggle_abi::SecretStoreError),
 
     #[error{"Expected UTF-8"}]
@@ -159,7 +162,7 @@ impl Error {
             Error::BufferLengthError { .. } => FastlyStatus::Buflen,
             Error::InvalidArgument => FastlyStatus::Inval,
             Error::ValueAbsent => FastlyStatus::None,
-            Error::Unsupported { .. } => FastlyStatus::Unsupported,
+            Error::Unsupported { .. } | Error::NotAvailable(_) => FastlyStatus::Unsupported,
             Error::HandleError { .. } => FastlyStatus::Badf,
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
             Error::UnknownBackend(_) | Error::InvalidClientCert(_) => FastlyStatus::Inval,
@@ -182,6 +185,7 @@ impl Error {
             Error::DictionaryError(e) => e.to_fastly_status(),
             Error::DeviceDetectionError(e) => e.to_fastly_status(),
             Error::ObjectStoreError(e) => e.into(),
+            Error::KvStoreError(e) => e.into(),
             Error::SecretStoreError(e) => e.into(),
             Error::Again => FastlyStatus::Again,
             // All other hostcall errors map to a generic `ERROR` value.
@@ -199,7 +203,6 @@ impl Error {
             | Error::InvalidMethod(_)
             | Error::InvalidUri(_)
             | Error::IoError(_)
-            | Error::NotAvailable(_)
             | Error::Other(_)
             | Error::ProfilingStrategy
             | Error::StreamingChunkSend
@@ -253,10 +256,6 @@ pub enum HandleError {
     #[error("Invalid body handle: {0}")]
     InvalidBodyHandle(crate::wiggle_abi::types::BodyHandle),
 
-    /// A cache handle was not valid.
-    #[error("Invalid cache handle: {0}")]
-    InvalidCacheHandle(crate::wiggle_abi::types::CacheHandle),
-
     /// A logging endpoint handle was not valid.
     #[error("Invalid endpoint handle: {0}")]
     InvalidEndpointHandle(crate::wiggle_abi::types::EndpointHandle),
@@ -277,6 +276,10 @@ pub enum HandleError {
     #[error("Invalid pending KV delete handle: {0}")]
     InvalidPendingKvDeleteHandle(crate::wiggle_abi::types::PendingKvDeleteHandle),
 
+    /// A list handle was not valid.
+    #[error("Invalid pending KV list handle: {0}")]
+    InvalidPendingKvListHandle(crate::wiggle_abi::types::PendingKvListHandle),
+
     /// A dictionary handle was not valid.
     #[error("Invalid dictionary handle: {0}")]
     InvalidDictionaryHandle(crate::wiggle_abi::types::DictionaryHandle),
@@ -296,6 +299,10 @@ pub enum HandleError {
     /// An async item handle was not valid.
     #[error("Invalid async item handle: {0}")]
     InvalidAsyncItemHandle(crate::wiggle_abi::types::AsyncItemHandle),
+
+    /// An acl handle was not valid.
+    #[error("Invalid acl handle: {0}")]
+    InvalidAclHandle(crate::wiggle_abi::types::AclHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.
@@ -354,6 +361,13 @@ pub enum FastlyConfigError {
     },
 
     #[error("invalid configuration for '{name}': {err}")]
+    InvalidAclDefinition {
+        name: String,
+        #[source]
+        err: AclConfigError,
+    },
+
+    #[error("invalid configuration for '{name}': {err}")]
     InvalidBackendDefinition {
         name: String,
         #[source]
@@ -397,6 +411,24 @@ pub enum FastlyConfigError {
     InvalidManifestVersion(#[from] semver::SemVerError),
 }
 
+/// Errors that may occur while validating acl configurations.
+#[derive(Debug, thiserror::Error)]
+pub enum AclConfigError {
+    /// An I/O error that occurred while processing a file.
+    #[error(transparent)]
+    IoError(std::io::Error),
+
+    /// An error occurred parsing JSON.
+    #[error(transparent)]
+    JsonError(serde_json::error::Error),
+
+    #[error("acl must be a TOML table or string")]
+    InvalidType,
+
+    #[error("missing 'file' field")]
+    MissingFile,
+}
+
 /// Errors that may occur while validating backend configurations.
 #[derive(Debug, thiserror::Error)]
 pub enum BackendConfigError {
@@ -418,6 +450,12 @@ pub enum BackendConfigError {
     #[error("'cert_host' field was not a string")]
     InvalidCertHostEntry,
 
+    #[error("'ca_certificate' field is empty")]
+    EmptyCACert,
+
+    #[error("'ca_certificate' field was invalid: {0}")]
+    InvalidCACertEntry(String),
+
     #[error("'use_sni' field was not a boolean")]
     InvalidUseSniEntry,
 
@@ -438,6 +476,9 @@ pub enum BackendConfigError {
 
     #[error("unrecognized key '{0}'")]
     UnrecognizedKey(String),
+
+    #[error(transparent)]
+    ClientCertError(#[from] crate::config::ClientCertError),
 }
 
 /// Errors that may occur while validating dictionary configurations.
@@ -629,6 +670,8 @@ pub enum ObjectStoreConfigError {
     NoFileOrData(String),
     #[error("The `data` value for the object `{0}` is not a string.")]
     DataNotAString(String),
+    #[error("The `metadata` value for the object `{0}` is not a string.")]
+    MetadataNotAString(String),
     #[error("The `file` value for the object `{0}` is not a string.")]
     FileNotAString(String),
     #[error("The `key` key for an object is not set. It must be used.")]
@@ -641,8 +684,24 @@ pub enum ObjectStoreConfigError {
     NotATable,
     #[error("There was an error when manipulating the ObjectStore: {0}.")]
     ObjectStoreError(#[from] crate::object_store::ObjectStoreError),
+    #[error("There was an error when manipulating the KvStore: {0}.")]
+    KvStoreError(#[from] crate::object_store::KvStoreError),
     #[error("Invalid `key` value used: {0}.")]
     KeyValidationError(#[from] crate::object_store::KeyValidationError),
+    #[error("'{0}' is not a valid format for the config store. Supported format(s) are: 'json'.")]
+    InvalidFileFormat(String),
+    #[error("When using a top-level 'file' to load data, both 'file' and 'format' must be set.")]
+    OnlyOneFormatOrFileSet,
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON Object."
+    )]
+    FileWrongFormat,
+    #[error("Item value under key named '{key}' is of the wrong format. The value is expected to be a JSON String.")]
+    FileValueWrongFormat { key: String },
+    #[error("Item value under key named '{key}' is of the wrong format. 'data' and 'file' are mutually exclusive.")]
+    BothDataAndFilePresent { key: String },
+    #[error("Item value under key named '{key}' is of the wrong format. One of 'data' or 'file' must be present.")]
+    MissingDataOrFile { key: String },
 }
 
 /// Errors that may occur while validating secret store configurations.
@@ -652,6 +711,14 @@ pub enum SecretStoreConfigError {
     #[error(transparent)]
     IoError(std::io::Error),
 
+    #[error("'{0}' is not a valid format for the secret store. Supported format(s) are: 'json'.")]
+    InvalidFileFormat(String),
+    #[error("When using a top-level 'file' to load data, both 'file' and 'format' must be set.")]
+    OnlyOneFormatOrFileSet,
+    #[error(
+        "The file is of the wrong format. The file is expected to contain a single JSON object."
+    )]
+    FileWrongFormat,
     #[error("The `file` and `data` keys for the object `{0}` are set. Only one can be used.")]
     FileAndData(String),
     #[error("The `file` or `data` key for the object `{0}` is not set. One must be used.")]

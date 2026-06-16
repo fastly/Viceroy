@@ -3,16 +3,16 @@
 use {
     super::types::{PurgeOptions, PurgeOptionsMask},
     crate::{error::Error, session::Session, wiggle_abi::fastly_purge::FastlyPurge},
-    wiggle::GuestPtr,
+    wiggle::{GuestMemory, GuestPtr},
 };
 
 impl FastlyPurge for Session {
-    #[allow(unused_variables)] // FIXME FDE 2022-09-26: Remove this directive once implemented.
-    fn purge_surrogate_key<'a>(
+    fn purge_surrogate_key(
         &mut self,
-        surrogate_key: &GuestPtr<'a, str>,
-        options_mask: PurgeOptionsMask,
-        options: &GuestPtr<'a, PurgeOptions<'a>>,
+        _memory: &mut GuestMemory<'_>,
+        _surrogate_key: GuestPtr<str>,
+        _options_mask: PurgeOptionsMask,
+        _options: GuestPtr<PurgeOptions>,
     ) -> Result<(), Error> {
         Err(Error::NotAvailable("FastlyPurge"))
     }
