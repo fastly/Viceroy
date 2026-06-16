@@ -1,5 +1,5 @@
 use crate::common::{Test, TestResult};
-use hyper::{body::to_bytes, StatusCode};
+use hyper::{StatusCode, body::to_bytes};
 
 /// Run a program that tests its args. This checks that we're populating the argument list with the
 /// singleton "compute-app" value.
@@ -11,11 +11,13 @@ async fn empty_ok_response_by_default_after_args() -> TestResult {
     let resp = Test::using_fixture("args.wasm").against_empty().await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 
     Ok(())
 }
@@ -34,9 +36,11 @@ async fn empty_ok_response_by_default_after_args_component() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
 }

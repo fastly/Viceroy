@@ -27,12 +27,24 @@ version 0.34 or above supports local testing, and the workflow is documented
 
 To install Viceroy as a standalone tool, you'll need to first
 [install Rust](https://www.rust-lang.org/tools/install) if you haven't already.
-Then run `cargo install viceroy`, which will download and build the latest
+Then run `cargo install --locked viceroy`, which will download and build the latest
 Viceroy release.
+
+### As a prebuilt binary
+
+To avoid compiling from source, you can download a prebuilt binary for your
+platform from the [releases page], or install one with
+[`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall):
+
+```
+cargo binstall viceroy
+```
+
+[releases page]: https://github.com/fastly/Viceroy/releases
 
 ## Usage as a library
 
-Viceroy can be used as a [Rust library](https://docs.rs/viceroy-lib/). This is useful if you want to run integration tests in the same codebase. We provide a helper method [`handle_request`](https://docs.rs/viceroy-lib/0.2.6/viceroy_lib/struct.ExecuteCtx.html#method.handle_request). Before you build or test your code, we recommend to set the release flag e.g. `cargo test --release` otherwise, the execution will be very slow. This has to do with the Cranelift compiler, which is extremely slow when compiled in debug mode. Besides that, if you use Github Actions don't forget to setup a build [cache](https://github.com/actions/cache/blob/main/examples.md#rust---cargo) for Rust. This will speed up your build times a lot.
+Viceroy can be used as a [Rust library](https://docs.rs/viceroy-lib/). This is useful if you want to run integration tests in the same codebase. We provide a helper method [`handle_request`](https://docs.rs/viceroy-lib/0.2.6/viceroy_lib/struct.ExecuteCtx.html#method.handle_request). Before you build or test your code, we recommend to set the release flag e.g. `cargo test --release` otherwise, the execution will be very slow. This has to do with the Cranelift compiler, which is extremely slow when compiled in debug mode. Besides that, if you use GitHub Actions don't forget to set up a build [cache](https://github.com/actions/cache/blob/main/examples.md#rust---cargo) for Rust. This will speed up your build times a lot.
 
 ## Usage as a standalone tool
 
@@ -58,12 +70,12 @@ the URL in your web browser.
 Viceroy can also be used as a test runner for running Rust unit tests for Compute applications in the following way:
 
 1. Ensure the `viceroy` command is available in your path
-2. Add the following to your project's `.cargo/config`:
+2. Add the following to your project's `.cargo/config.toml`:
 ```
 [build]
-target = "wasm32-wasi"
+target = "wasm32-wasip1"
 
-[target.wasm32-wasi]
+[target.wasm32-wasip1]
 runner = "viceroy run -C fastly.toml -- "
 ```
 3. Install [cargo-nextest](https://nexte.st/book/installation.html)

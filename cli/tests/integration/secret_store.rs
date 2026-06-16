@@ -2,18 +2,22 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::{body::to_bytes, StatusCode};
+use hyper::{StatusCode, body::to_bytes};
 use viceroy_lib::config::FastlyConfig;
 use viceroy_lib::error::{FastlyConfigError, SecretStoreConfigError};
 
 viceroy_test!(secret_store_works, |is_component| {
+    // SAFETY: This isn't actually safe, but this is just a test and we haven't
+    // seen problems so far.
+    unsafe { std::env::set_var("ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A", "my-env-value") };
+
     const FASTLY_TOML: &str = r#"
         name = "secret-store"
         description = "secret store test"
         authors = ["Jill Bryson <jbryson@fastly.com>", "Rose McDowall <rmcdowall@fastly.com>"]
         language = "rust"
         [local_server]
-        secret_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/kv-store.txt"}]
+        secret_stores.store_one = [{key = "first", data = "This is some data"},{key = "second", file = "../test-fixtures/data/kv-store.txt"},{key = "fourth", env = "ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A"}]
         secret_stores.store_two = {file = "../test-fixtures/data/json-secret_store.json", format = "json"}
     "#;
 
@@ -24,11 +28,16 @@ viceroy_test!(secret_store_works, |is_component| {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(to_bytes(resp.into_body())
-        .await
-        .expect("can read body")
-        .to_vec()
-        .is_empty());
+    assert!(
+        to_bytes(resp.into_body())
+            .await
+            .expect("can read body")
+            .to_vec()
+            .is_empty()
+    );
+
+    // SAFETY: See the comment above about `set_var`.
+    unsafe { std::env::remove_var("ENV_3D397809_C6DB_446E_BB73_F2B1E87A0F2A") };
 
     Ok(())
 });
@@ -58,7 +67,9 @@ async fn bad_config_store_not_array() -> TestResult {
             err: SecretStoreConfigError::NotAnArray,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotAnArray"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotAnArray"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -72,7 +83,9 @@ async fn bad_config_store_not_table() -> TestResult {
             err: SecretStoreConfigError::NotATable,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotATable"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NotATable"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -86,7 +99,9 @@ async fn bad_config_no_key() -> TestResult {
             err: SecretStoreConfigError::NoKey,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoKey"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoKey"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -101,36 +116,71 @@ async fn bad_config_key_not_string() -> TestResult {
             err: SecretStoreConfigError::KeyNotAString,
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::KeyNotAString"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::KeyNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bad_config_no_data_or_file() -> TestResult {
+async fn bad_config_no_store_field() -> TestResult {
     const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first"}]"#;
     match bad_config_test(TOML_FRAGMENT) {
         Err(FastlyConfigError::InvalidSecretStoreDefinition {
-            err: SecretStoreConfigError::NoFileOrData(_),
+            err: SecretStoreConfigError::FileDataEnvNotSet(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoFileOrData"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::NoFileOrData"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bad_config_both_data_and_file() -> TestResult {
-    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first", file = "file.txt", data = "This is some data"}]"#;
-    match bad_config_test(TOML_FRAGMENT) {
-        Err(FastlyConfigError::InvalidSecretStoreDefinition {
-            err: SecretStoreConfigError::FileAndData(_),
-            ..
-        }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileAndData"),
-        _ => panic!("Expected an error"),
+async fn bad_config_store_fields_not_exclusive() -> TestResult {
+    use std::fmt::Write as _;
+
+    fn build_toml_fragment(data: bool, file: bool, env: bool) -> String {
+        let mut s = String::from(r#"secret_stores.store_one = [{ key = "first""#);
+        if data {
+            write!(s, r#", data = "This is some data""#).unwrap();
+        }
+        if file {
+            write!(s, r#", file = "file.txt""#).unwrap();
+        }
+        if env {
+            write!(s, r#", env = "ENV_5CD829D9_4DAD_406A_8524_A810650E614E""#).unwrap();
+        }
+        s.push_str("}]");
+        s
+    }
+
+    // iterate all combinations of data, file, env that have 2 or more fields set
+    for &data in &[false, true] {
+        for &file in &[false, true] {
+            for &env in &[false, true] {
+                if [data, file, env].into_iter().filter(|b| *b).count() < 2 {
+                    continue;
+                }
+
+                let toml = build_toml_fragment(data, file, env);
+
+                match bad_config_test(&toml) {
+                    Err(FastlyConfigError::InvalidSecretStoreDefinition {
+                        err: SecretStoreConfigError::FileDataEnvExclusive(_),
+                        ..
+                    }) => {}
+                    Err(_) => panic!(
+                        "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileDataEnvExclusive"
+                    ),
+                    Ok(_) => panic!("Expected an error, but got Ok"),
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -143,7 +193,9 @@ async fn bad_config_data_not_string() -> TestResult {
             err: SecretStoreConfigError::DataNotAString(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::DataNotAString"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::DataNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -157,7 +209,25 @@ async fn bad_config_file_not_string() -> TestResult {
             err: SecretStoreConfigError::FileNotAString(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileNotAString"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::FileNotAString"
+        ),
+        _ => panic!("Expected an error"),
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bad_config_env_not_string() -> TestResult {
+    const TOML_FRAGMENT: &str = r#"secret_stores.store_one = [{key = "first", env = 1}]"#;
+    match bad_config_test(TOML_FRAGMENT) {
+        Err(FastlyConfigError::InvalidSecretStoreDefinition {
+            err: SecretStoreConfigError::EnvNotAString(_),
+            ..
+        }) => (),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::EnvNotAString"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -172,7 +242,9 @@ async fn bad_config_file_nonexistent() -> TestResult {
             err: SecretStoreConfigError::IoError(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::IoError"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::IoError"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -199,7 +271,9 @@ async fn bad_config_invalid_secret_name() -> TestResult {
             err: SecretStoreConfigError::InvalidSecretName(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())
@@ -213,7 +287,9 @@ async fn bad_config_secret_name_too_long() -> TestResult {
             err: SecretStoreConfigError::InvalidSecretName(_),
             ..
         }) => (),
-        Err(_) => panic!("Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"),
+        Err(_) => panic!(
+            "Expected a FastlyConfigError::InvalidSecretStoreDefinition with SecretStoreConfigError::InvalidSecretName"
+        ),
         _ => panic!("Expected an error"),
     }
     Ok(())

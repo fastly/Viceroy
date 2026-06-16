@@ -147,7 +147,7 @@
 
   ;; extend the heap by the given number of kilobytes. because WebAssembly
   ;; only allows us to operate in terms of 64kb pages, this necessarily
-  ;; rounds up. if this operationg fails we return a 500 error and quit
+  ;; rounds up. if this operation fails we return a 500 error and quit
   ;; immediately
   (func $extend_heap (param $size_in_kb i32)
     (local $original_heap_page_count i32)
@@ -237,7 +237,7 @@
                             ;; rest of this block is just the return
         (return))
 
-      ;; wheee! we get to add a header.
+      ;; whee! we get to add a header.
       ;; first step in adding the header: figure out the name of the
       ;; field. this involves using our little int2str helper function,
       ;; which takes the value and a memory offset and returns the offset
@@ -341,7 +341,7 @@
       (call $maybe_error_die)
     )
 
-  ;; get the size the user wants from the provided header
+  ;; get the size that the user wants from the provided header
   ;; we're going to cheat a bit, here, and assume that the only
   ;; reason we might get an error is because the user didn't pass
   ;; this header. so if they didn't pass a header, or really if any
@@ -374,7 +374,7 @@
      (call $to_int))
 
 
-  ;; Send OK back to the test harness; this thing is exitting normally
+  ;; Send OK back to the test harness; this thing is exiting normally
   (func $send_response (param $result i32)
       ;; set the status
       (global.get $response_handle_buffer)

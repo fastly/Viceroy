@@ -4,8 +4,8 @@ use {
         viceroy_test,
     },
     hyper::{
-        header::{self, HeaderValue},
         Request, Response, StatusCode,
+        header::{self, HeaderValue},
     },
 };
 
@@ -109,7 +109,7 @@ viceroy_test!(upstream_sync, |is_component| {
     );
 
     ////////////////////////////////////////////////////////////////////////////////////
-    // Test that non-existent backends produce an error
+    // Test that nonexistent backends produce an error
     ////////////////////////////////////////////////////////////////////////////////////
 
     let resp = test
