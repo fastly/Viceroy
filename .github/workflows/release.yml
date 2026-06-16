@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         rust-toolchain: [stable]
-        os: [ubuntu-20.04, macos-13, windows-2022]
+        os: [ubuntu-20.04, macos-11, windows-2022]
         arch: [amd64, arm64]
         exclude:
           - os: windows-2022
@@ -19,7 +19,7 @@ jobs:
           - os: ubuntu-20.04
             name: linux
             rust_abi: unknown-linux-gnu
-          - os: macos-13
+          - os: macos-11
             name: darwin
             rust_abi: apple-darwin
           - os: windows-2022
@@ -86,7 +86,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   publish:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: publish
         uses: actions/github-script@v6
