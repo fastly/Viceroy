@@ -42,7 +42,10 @@ macro_rules! main_ptr {
 #[cfg(feature = "noshift")]
 macro_rules! unsafe_main_ptr {
     ($ptr:expr) => {{
-        $ptr
+        // Always wrap `$ptr` in `unsafe` for consistency with the
+        // `not(feature = "noshift")` version.
+        #[allow(unused_unsafe)]
+        unsafe { $ptr }
     }};
 }
 #[cfg(feature = "noshift")]
