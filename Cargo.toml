@@ -138,11 +138,11 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "39.0.2", features = ["call-hook"] }
-wasmtime-wasi = "39.0.2"
-wasmtime-wasi-io = "39.0.2"
-wasmtime-wasi-nn = "39.0.2"
-wiggle = "39.0.2"
+wasmtime = { version =  "45.0.1", features = ["anyhow", "call-hook"] }
+wasmtime-wasi = "45.0.1"
+wasmtime-wasi-io = "45.0.1"
+wasmtime-wasi-nn = "45.0.1"
+wiggle = "45.0.1"
 wat = "1.250.0"
 wasmparser = "0.250.0"
 wasm-encoder = { version = "0.250.0", features = ["wasmparser"] }
