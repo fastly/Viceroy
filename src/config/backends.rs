@@ -248,3 +248,45 @@ mod deserialization {
         }
     }
 }
+
+// Stellate-specific types for backend handling
+
+use crate::body::Body;
+use hyper::{Request, Response};
+
+/// A wrapper for an in-memory backend handler.
+#[derive(Clone)]
+pub struct Handler {
+    handler: Arc<Box<dyn InMemoryBackendHandler>>,
+}
+
+impl Handler {
+    pub fn new(handler: Box<dyn InMemoryBackendHandler>) -> Self {
+        Self {
+            handler: Arc::new(handler),
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>) -> Response<Body> {
+        self.handler.handle(req).await
+    }
+}
+
+impl std::fmt::Debug for Handler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handler")
+            .field("handler", &"opaque handler function".to_string())
+            .finish()
+    }
+}
+
+/// Trait for handling backend requests in-memory.
+#[async_trait::async_trait]
+pub trait InMemoryBackendHandler: Send + Sync + 'static {
+    async fn handle(&self, req: Request<Body>) -> Response<Body>;
+}
+
+/// Trait for intercepting dynamic backend registration.
+pub trait DynamicBackendRegistrationInterceptor: Send + Sync + 'static {
+    fn register(&self, backend: Backend) -> Backend;
+}

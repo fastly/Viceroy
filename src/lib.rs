@@ -31,6 +31,7 @@ mod execute;
 mod framing;
 mod handoff;
 mod headers;
+mod in_memory_cache;
 mod linking;
 mod object_store;
 mod secret_store;
@@ -42,6 +43,14 @@ mod upstream;
 pub mod wiggle_abi;
 
 pub use {
-    error::Error, execute::ExecuteCtx, execute::GuestProfileConfig, execute::WasmFeatures,
-    service::ViceroyService, upstream::BackendConnector, wasmtime::ProfilingStrategy,
+    error::Error,
+    execute::{EndpointListener, EndpointsMonitor, ExecuteCtx, GuestHandle, GuestProfileConfig, WasmFeatures},
+    in_memory_cache::InMemoryCache,
+    service::ViceroyService,
+    upstream::BackendConnector,
+    wasmtime::ProfilingStrategy,
 };
+
+pub use async_trait;
+pub use http;
+pub use hyper;

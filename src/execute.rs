@@ -10,12 +10,13 @@ use {
         cache::Cache,
         component as compute,
         config::{
-            Backends, DeviceDetection, Dictionaries, ExperimentalModule, FakeValidFastlyKeys,
-            Geolocation, UnknownImportBehavior,
+            Backends, DeviceDetection, Dictionaries, DynamicBackendRegistrationInterceptor,
+            ExperimentalModule, FakeValidFastlyKeys, Geolocation, UnknownImportBehavior,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
         handoff::{HandoffConfig, HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
+        in_memory_cache::InMemoryCache,
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
         object_store::ObjectStores,
         sandbox::Sandbox,
@@ -31,20 +32,21 @@ use {
     hyper::{Request, Response},
     pin_project::pin_project,
     std::{
-        collections::HashSet,
+        collections::{BTreeMap, HashSet},
         fmt, fs,
         io::Write,
         net::{Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
         pin::Pin,
         sync::{
-            Arc, Mutex,
+            Arc, Mutex, RwLock,
             atomic::{AtomicBool, AtomicU64, Ordering},
         },
         thread::{self, JoinHandle},
         time::{Duration, Instant, SystemTime},
     },
     tokio::sync::Mutex as AsyncMutex,
+    tokio::sync::mpsc::{self, Receiver, Sender as MpscSender},
     tokio::sync::oneshot::{self, Sender},
     tracing::{Instrument, Level, error, event, info, info_span, warn},
     wasmtime::{
@@ -76,6 +78,51 @@ impl Instance {
             Instance::Component(_, _) => panic!("unwrap_module called on a component"),
         }
     }
+}
+
+// Stellate-specific types for programmatic access
+
+/// A monitor for logging endpoints. Messages written to the contained endpoints will instead be
+/// directed at the wrapped channel, allowing programmatic access to the logs on the receiver side.
+#[derive(Clone, Default)]
+pub struct EndpointsMonitor {
+    pub endpoints: Arc<RwLock<BTreeMap<Vec<u8>, MpscSender<Vec<u8>>>>>,
+}
+
+impl EndpointsMonitor {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Registers a listener for the given endpoint name.
+    /// Any messages the invocation sends to this endpoint will be captured by this listener.
+    pub fn register_listener<T: Into<Vec<u8>>>(&self, name: T) -> EndpointListener {
+        let (sender, receiver) = mpsc::channel(100);
+        self.endpoints.write().unwrap().insert(name.into(), sender);
+        EndpointListener { receiver }
+    }
+}
+
+/// Listener for endpoint messages.
+pub struct EndpointListener {
+    receiver: Receiver<Vec<u8>>,
+}
+
+impl EndpointListener {
+    /// Drains and returns all (raw) messages from this listener.
+    /// Will _not_ block and wait for messages.
+    pub fn messages(&mut self) -> Vec<Vec<u8>> {
+        let mut messages = Vec::new();
+        while let Ok(msg) = self.receiver.try_recv() {
+            messages.push(msg);
+        }
+        messages
+    }
+}
+
+/// Handle to a running guest task.
+pub struct GuestHandle {
+    pub(crate) handle: tokio::task::JoinHandle<Result<(), ExecutionError>>,
 }
 
 #[derive(Clone)]
@@ -166,6 +213,13 @@ pub struct ExecuteCtx {
     epoch_increment_stop: Arc<AtomicBool>,
     /// Configuration for guest profiling if enabled
     guest_profile_config: Option<Arc<GuestProfileConfig>>,
+    // Stellate-specific fields
+    /// Endpoints to monitor for messages.
+    endpoints_monitor: EndpointsMonitor,
+    /// In-memory cache for local testing.
+    in_memory_cache: InMemoryCache,
+    /// If set, intercepts dynamic backend registrations.
+    dynamic_backend_interceptor: Option<Arc<Box<dyn DynamicBackendRegistrationInterceptor>>>,
 }
 
 impl ExecuteCtx {
@@ -318,6 +372,10 @@ impl ExecuteCtx {
             guest_profile_config: guest_profile_config.map(Arc::new),
             cache: Arc::new(Cache::default()),
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
+            // Stellate-specific fields
+            endpoints_monitor: EndpointsMonitor::new(),
+            in_memory_cache: InMemoryCache::new(),
+            dynamic_backend_interceptor: None,
         };
 
         Ok(ExecuteCtxBuilder { inner })
@@ -393,6 +451,55 @@ impl ExecuteCtx {
     /// Gets the TLS configuration
     pub fn tls_config(&self) -> &TlsConfig {
         &self.tls_config
+    }
+
+    // Stellate-specific builder methods
+
+    /// Set the endpoints monitor for this execution context.
+    pub fn with_endpoints(mut self, endpoints: EndpointsMonitor) -> Self {
+        self.endpoints_monitor = endpoints;
+        self
+    }
+
+    /// Set the in-memory cache for this execution context.
+    pub fn with_in_memory_cache(mut self, cache: InMemoryCache) -> Self {
+        self.in_memory_cache = cache;
+        self
+    }
+
+    /// Set the dynamic backend interceptor for this execution context.
+    pub fn with_dynamic_backend_interceptor(
+        mut self,
+        interceptor: Box<dyn DynamicBackendRegistrationInterceptor>,
+    ) -> Self {
+        self.dynamic_backend_interceptor = Some(Arc::new(interceptor));
+        self
+    }
+
+    /// Get the endpoints monitor for this execution context.
+    pub fn endpoints_monitor(&self) -> &EndpointsMonitor {
+        &self.endpoints_monitor
+    }
+
+    /// Get the in-memory cache for this execution context.
+    pub fn in_memory_cache(&self) -> &InMemoryCache {
+        &self.in_memory_cache
+    }
+
+    /// Runs a guest handle to completion and returns any error that might have occurred.
+    pub async fn run_to_completion(handle: GuestHandle) -> Option<anyhow::Error> {
+        match handle.handle.await.expect("guest worker finished") {
+            Ok(_) => None,
+            Err(ExecutionError::WasmTrap(e)) => {
+                event!(
+                    Level::ERROR,
+                    "There was an error running the guest to completion {}",
+                    e.to_string()
+                );
+                Some(e)
+            }
+            Err(e) => panic!("failed to run guest: {}", e),
+        }
     }
 
     async fn maybe_receive_response(
