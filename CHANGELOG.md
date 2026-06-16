@@ -1,9 +1,10 @@
-## Unreleased
+## 0.19.0 (2026-06-16)
 
 - Fix adapter codegen to avoid memory shift overflow, and support SIMD instructions. ([#629](https://github.com/fastly/Viceroy/pull/629))
 - Add support for sending `PendingRequestHandle` downstream ([#631](https://github.com/fastly/Viceroy/pull/631))
 - Update to the latest WITs and adapter. ([#637](https://github.com/fastly/Viceroy/pull/637))
 - Fix to correctly apply TLS when using `wss:` URL schema with WebSockets passthrough ([#636](https://github.com/fastly/Viceroy/pull/636))
+- Add support for `first_byte_timeout` and `between_bytes_timeout` on backends ([#622](https://github.com/fastly/Viceroy/pull/622))
 
 ## 0.18.0 (2026-05-21)
 
