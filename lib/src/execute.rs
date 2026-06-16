@@ -35,8 +35,8 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
-    wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
     wasi_common::I32Exit,
+    wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
