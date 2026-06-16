@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
+- Update to Wasmtime 45. ([#642](https://github.com/fastly/Viceroy/pull/642))
 
 ## 0.19.0 (2026-06-16)
 
