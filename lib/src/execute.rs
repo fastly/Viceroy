@@ -35,8 +35,8 @@ use {
     },
     tokio::sync::oneshot::{self, Sender},
     tracing::{event, info, info_span, Instrument, Level},
-    wasmtime_wasi::I32Exit,
     wasmtime::{Engine, InstancePre, Linker, Module, ProfilingStrategy},
+    wasmtime_wasi::I32Exit,
 };
 
 pub const EPOCH_INTERRUPTION_PERIOD: Duration = Duration::from_micros(50);
@@ -548,7 +548,8 @@ impl ExecuteCtx {
         // Build full args list: program_name followed by user args
         let mut full_args = vec![program_name.to_string()];
         full_args.extend(args.iter().cloned());
-        let mut store = create_store_with_args(&self, session, profiler, &full_args).map_err(ExecutionError::Context)?;
+        let mut store = create_store_with_args(&self, session, profiler, &full_args)
+            .map_err(ExecutionError::Context)?;
 
         let instance = self
             .instance_pre

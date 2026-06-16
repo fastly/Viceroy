@@ -1,10 +1,7 @@
 //! Linking and name resolution.
 
 use {
-    crate::{
-        config::ExperimentalModule, execute::ExecuteCtx, session::Session,
-        wiggle_abi, Error,
-    },
+    crate::{config::ExperimentalModule, execute::ExecuteCtx, session::Session, wiggle_abi, Error},
     anyhow::Context,
     std::collections::HashSet,
     std::time::Duration,
@@ -123,7 +120,11 @@ pub(crate) fn create_store_with_args(
 }
 
 /// Constructs a fresh `WasiP1Ctx` for _each_ incoming request.
-fn make_wasi_ctx(ctx: &ExecuteCtx, session: &Session, args: &[String]) -> Result<WasiP1Ctx, anyhow::Error> {
+fn make_wasi_ctx(
+    ctx: &ExecuteCtx,
+    session: &Session,
+    args: &[String],
+) -> Result<WasiP1Ctx, anyhow::Error> {
     let mut wasi_ctx = WasiCtxBuilder::new();
 
     // Viceroy provides the same `FASTLY_*` environment variables that the production
