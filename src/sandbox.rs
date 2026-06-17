@@ -65,10 +65,19 @@ struct TeeWriter {
 
 impl Write for TeeWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // Write to stdout
+        // Write the full formatted message to stdout
         self.stdout.lock().unwrap().write_all(buf)?;
-        // Send to channel (best effort, ignore send errors)
-        let _ = self.channel.try_send(buf.to_vec());
+
+        // For the channel, strip the "endpoint_name :: " prefix
+        // The format is: "name :: json_content\n"
+        if let Some(pos) = buf.windows(4).position(|w| w == b" :: ") {
+            let json_start = pos + 4;
+            let json_end = buf.len().saturating_sub(1); // remove trailing newline
+            if json_start < json_end {
+                let _ = self.channel.try_send(buf[json_start..json_end].to_vec());
+            }
+        }
+
         Ok(buf.len())
     }
 
