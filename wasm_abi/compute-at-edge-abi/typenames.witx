@@ -151,6 +151,7 @@
         $stale_while_revalidate
         $pci))
 (typename $num_bytes (@witx usize))
+(typename $num_hops (@witx usize))
 (typename $header_count u32)
 (typename $is_done u32)
 (typename $done_idx u32)

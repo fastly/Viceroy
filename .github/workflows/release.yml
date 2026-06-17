@@ -1,27 +1,29 @@
-name: Main
+name: Release
 
 on:
   push:
     tags:
       - "v*.*.*"
 
+  workflow_dispatch:
+
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        runner: [ubuntu24.04-8cpu-32ram, macos-14, windows-2022]
         arch: [amd64, arm64]
         exclude:
-          - os: windows-2022
+          - runner: windows-2022
             arch: arm64
         include:
-          - os: ubuntu-24.04
+          - runner: ubuntu24.04-8cpu-32ram
             name: linux
             rust_abi: unknown-linux-gnu
-          - os: macos-14
+          - runner: macos-14
             name: darwin
             rust_abi: apple-darwin
-          - os: windows-2022
+          - runner: windows-2022
             name: windows
             rust_abi: pc-windows-msvc
             extension: .exe
@@ -30,7 +32,7 @@ jobs:
           - arch: amd64
             rust_arch: x86_64
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     outputs:
       draft_release_id: ${{ steps.release.outputs.id }}
     steps:
@@ -57,34 +59,27 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release --workspace --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
-
-      - name: Strip symbols (linux)
-        if: ${{ matrix.name == 'linux' }}
-        run: |
-          ${{ matrix.rust_arch }}-linux-gnu-strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
-
-      - name: Strip symbols (non-linux)
-        if: ${{ matrix.name != 'linux' }}
-        run: |
-          strip target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy${{ matrix.extension }}
+          cargo build --profile=release-lto-stripped --workspace --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
       - name: Package
         run: |
-          cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release
+          cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release-lto-stripped
           tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
 
       - name: Release
+        if: github.event_name == 'push'
         id: release
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           files: |
-            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
+            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release-lto-stripped/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish:
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
       - name: publish
@@ -99,8 +94,10 @@ jobs:
             })
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish-lib:
     needs: build
+    if: github.event_name == 'push'
     permissions:
       id-token: write
       contents: read
@@ -108,8 +105,10 @@ jobs:
     with:
       crate_name: viceroy-lib
       expected_version: ${{ github.ref_name }}
+
   publish-bin:
     needs: publish-lib
+    if: github.event_name == 'push'
     permissions:
       id-token: write
       contents: read

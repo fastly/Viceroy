@@ -9,6 +9,7 @@ jobs:
     strategy:
       matrix:
         platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-14, macos-15]
+      fail-fast: false
     runs-on: ${{ matrix.platform }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -61,6 +62,29 @@ jobs:
       uses: mozilla-actions/sccache-action@v0.0.9
     - name: trap-test
       run: make trap-test-ci
+      shell: bash
+
+  # Run the LTO test in an isolated job. It uses a large amount of RAM
+  # and the differences between it and the regular build are not
+  # platform-dependent.
+  lto-test:
+    runs-on: ubuntu24.04-8cpu-32ram
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+        key: cargo-lto-test-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+    - name: lto-test
+      run: make test-crates-lto
       shell: bash
 
   package-check:

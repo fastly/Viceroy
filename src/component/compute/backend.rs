@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use {
     crate::component::bindings::fastly::compute::{backend, http_types, types},
+    crate::error::Error,
     crate::linking::ComponentCtx,
     crate::wiggle_abi::types::SecretHandle,
     wasmtime::component::Resource,

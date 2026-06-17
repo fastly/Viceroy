@@ -1541,6 +1541,17 @@ pub(crate) struct State {
     /// consumed.
     pub(crate) recently_consumed_cache_replace_handle: Cell<u32>,
 
+    /// Work around code that expects `transform_image_optimizer_request`
+    /// to only borrow the request handle.
+    ///
+    /// `transform_image_optimizer_request` consumes its handle, however
+    /// historically it didn't, leading code to do an extra `close` after
+    /// calling it. To avoid this use of a dangling handle,
+    /// `transform_image_optimizer_request` records the handle it consumed
+    /// so that `close` can check if it's closing a handle that has just
+    /// been consumed.
+    pub(crate) recently_consumed_image_optimizer_request_handle: Cell<u32>,
+
     /// Another canary constant located at the end of the structure to catch
     /// memory corruption coming from the bottom.
     magic2: u32,
@@ -1586,7 +1597,7 @@ const fn temporary_data_size() -> usize {
     start -= size_of::<Descriptors>();
 
     // Remove miscellaneous metadata also stored in state.
-    let misc = 14;
+    let misc = 15;
     start -= misc * size_of::<usize>();
 
     // Everything else is the `command_data` allocation.
@@ -1705,6 +1716,7 @@ impl State {
             request_body: Cell::new(None),
             recently_consumed_cache_busy_handle: Cell::new(INVALID_HANDLE),
             recently_consumed_cache_replace_handle: Cell::new(INVALID_HANDLE),
+            recently_consumed_image_optimizer_request_handle: Cell::new(INVALID_HANDLE),
         });
     }
 

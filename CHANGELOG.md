@@ -1,7 +1,18 @@
 ## Unreleased
 
+- Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
+
+## 0.19.0 (2026-06-16)
+
+- Fix adapter codegen to avoid memory shift overflow, and support SIMD instructions. ([#629](https://github.com/fastly/Viceroy/pull/629))
 - Add support for sending `PendingRequestHandle` downstream ([#631](https://github.com/fastly/Viceroy/pull/631))
 - Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
+- Update to the latest WITs and adapter. ([#637](https://github.com/fastly/Viceroy/pull/637))
+- Fix to correctly apply TLS when using `wss:` URL schema with WebSockets passthrough ([#636](https://github.com/fastly/Viceroy/pull/636))
+- Add support for `first_byte_timeout` and `between_bytes_timeout` on backends ([#622](https://github.com/fastly/Viceroy/pull/622))
+- Add cargo-binstall metadata so `cargo binstall viceroy` can fetch a prebuilt binary ([#625](https://github.com/fastly/Viceroy/pull/625))
+- Snapshot cache `Found` length at lookup time so `poll_known_length` matches production Compute behavior ([#630](https://github.com/fastly/Viceroy/pull/630))
+- Add `release-lto-stripped` cargo profile, reducing the size of release binaries ([#632](https://github.com/fastly/Viceroy/pull/632))
 
 ## 0.18.0 (2026-05-21)
 
