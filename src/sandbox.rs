@@ -16,6 +16,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::mpsc::Sender as MpscSender;
 
 use crate::cache::{Cache, CacheEntry};
 use crate::linking::Limiter;
@@ -54,6 +55,27 @@ use {
 const NEXT_REQ_ACCEPT_MAX: usize = 5;
 const NEXT_REQ_TIMEOUT: Duration = Duration::from_secs(10);
 const NGWAF_ALLOW_VERDICT: &str = "allow";
+
+/// A writer that writes to both stdout (or another writer) and an async channel.
+/// Used to capture log messages for the EndpointsMonitor.
+struct TeeWriter {
+    stdout: Arc<Mutex<dyn Write + Send>>,
+    channel: MpscSender<Vec<u8>>,
+}
+
+impl Write for TeeWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // Write to stdout
+        self.stdout.lock().unwrap().write_all(buf)?;
+        // Send to channel (best effort, ignore send errors)
+        let _ = self.channel.try_send(buf.to_vec());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stdout.lock().unwrap().flush()
+    }
+}
 
 pub struct RequestParts {
     parts: Option<request::Parts>,
@@ -598,7 +620,22 @@ impl Sandbox {
         if let Some(handle) = self.log_endpoints_by_name.get(name).copied() {
             return handle;
         }
-        let endpoint = LogEndpoint::new(name, self.capture_logs.clone());
+
+        // Check if there's a registered endpoint listener in the EndpointsMonitor
+        let writer: Arc<Mutex<dyn Write + Send>> = {
+            let endpoints = self.ctx.endpoints_monitor().endpoints.read().unwrap();
+            if let Some(sender) = endpoints.get(name) {
+                // Create a writer that sends to both stdout and the channel
+                Arc::new(Mutex::new(TeeWriter {
+                    stdout: self.capture_logs.clone(),
+                    channel: sender.clone(),
+                }))
+            } else {
+                self.capture_logs.clone()
+            }
+        };
+
+        let endpoint = LogEndpoint::new(name, writer);
         let handle = self.log_endpoints.push(endpoint);
         self.log_endpoints_by_name.insert(name.to_owned(), handle);
         handle
