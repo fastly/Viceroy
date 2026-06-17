@@ -43,6 +43,7 @@ mod upstream;
 pub mod wiggle_abi;
 
 pub use {
+    cache::Cache,
     error::Error,
     execute::{EndpointListener, EndpointsMonitor, ExecuteCtx, GuestHandle, GuestProfileConfig, WasmFeatures},
     in_memory_cache::InMemoryCache,

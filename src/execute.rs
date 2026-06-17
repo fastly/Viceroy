@@ -493,6 +493,12 @@ impl ExecuteCtx {
         self.dynamic_backend_interceptor.as_ref()
     }
 
+    /// Set the cache for this execution context.
+    pub fn with_cache(mut self, cache: Arc<Cache>) -> Self {
+        self.cache = cache;
+        self
+    }
+
     /// Runs a guest handle to completion and returns any error that might have occurred.
     pub async fn run_to_completion(handle: GuestHandle) -> Option<anyhow::Error> {
         match handle.handle.await.expect("guest worker finished") {
@@ -1250,6 +1256,12 @@ impl ExecuteCtxBuilder {
         interceptor: Box<dyn DynamicBackendRegistrationInterceptor>,
     ) -> Self {
         self.inner.dynamic_backend_interceptor = Some(Arc::new(interceptor));
+        self
+    }
+
+    /// Set the cache for this execution context.
+    pub fn with_cache(mut self, cache: Arc<Cache>) -> Self {
+        self.inner.cache = cache;
         self
     }
 }
