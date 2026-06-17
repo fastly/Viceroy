@@ -664,6 +664,14 @@ impl Sandbox {
             return false;
         }
 
+        // Call the interceptor if one is set, allowing it to modify the backend
+        // (e.g., to inject a custom handler for testing)
+        let info = if let Some(interceptor) = self.ctx.dynamic_backend_interceptor() {
+            interceptor.register(info)
+        } else {
+            info
+        };
+
         self.dynamic_backends
             .insert(name.to_string(), Arc::new(info));
 
