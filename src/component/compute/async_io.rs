@@ -4,9 +4,9 @@ use {
         linking::{ComponentCtx, SandboxView},
         wiggle_abi,
     },
-    anyhow::bail,
     futures::FutureExt,
     std::time::Duration,
+    wasmtime::bail,
     wasmtime::component::Resource,
 };
 

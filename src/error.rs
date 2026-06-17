@@ -188,6 +188,12 @@ pub enum Error {
     BetweenBytesTimeout,
 }
 
+impl From<wasmtime::Error> for Error {
+    fn from(err: wasmtime::Error) -> Self {
+        Self::Other(err.into())
+    }
+}
+
 impl Error {
     /// Map this error onto an appropriate 5XX response code during proxying.
     pub fn as_status_code(&self) -> StatusCode {
@@ -433,19 +439,19 @@ pub(crate) enum ExecutionError {
     ///
     /// [call]: https://docs.rs/wasmtime/latest/wasmtime/struct.Func.html#method.call
     #[error("WebAssembly execution trapped: {0}")]
-    WasmTrap(anyhow::Error),
+    WasmTrap(wasmtime::Error),
 
     /// Errors thrown when trying to instantiate a guest context.
     #[error("Error creating context: {0}")]
-    Context(anyhow::Error),
+    Context(wasmtime::Error),
 
     /// Errors thrown when type-checking WebAssembly before instantiation
     #[error("Error type-checking WebAssembly instantiation: {0}")]
-    Typechecking(anyhow::Error),
+    Typechecking(wasmtime::Error),
 
     /// Errors thrown when trying to instantiate a guest module.
     #[error("Error instantiating WebAssembly: {0}")]
-    Instantiation(anyhow::Error),
+    Instantiation(wasmtime::Error),
 }
 
 /// Errors that can occur while parsing a `fastly.toml` file.

@@ -207,7 +207,7 @@ impl FastlyAbi for Sandbox {
 }
 
 impl UserErrorConversion for Sandbox {
-    fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, anyhow::Error> {
+    fn fastly_status_from_error(&mut self, e: Error) -> Result<FastlyStatus, wasmtime::Error> {
         match e {
             Error::UnknownBackend(ref backend) => {
                 let config_path = self.config_path();
@@ -250,7 +250,7 @@ impl UserErrorConversion for Sandbox {
 
         match e {
             // If a Fatal Error was encountered, propagate the error message out.
-            Error::FatalError(msg) => Err(anyhow::Error::new(Error::FatalError(msg))),
+            Error::FatalError(msg) => Err(wasmtime::Error::new(Error::FatalError(msg))),
             // Propagate the actionable error to the guest.
             _ => Ok(e.to_fastly_status()),
         }
