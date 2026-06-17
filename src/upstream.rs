@@ -8,7 +8,7 @@ use crate::{
     sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
     wiggle_abi::types::{ContentEncodings, FramingHeadersMode},
 };
-use futures::Future;
+use futures::{Future, future::Either};
 use http::{HeaderValue, Version, uri};
 use hyper::{Client, HeaderMap, Request, Response, Uri, client::HttpConnector, header};
 use rustls::client::ServerName;
@@ -325,6 +325,12 @@ pub fn send_request(
     backend_name: &str,
     tls_config: &TlsConfig,
 ) -> impl Future<Output = Result<Response<Body>, Error>> + use<> {
+    // If the backend has a handler, use it instead of making a real HTTP request
+    if let Some(handler) = &backend.handler {
+        let handler = handler.clone();
+        return Either::Left(async move { Ok(handler.handle(req).await) });
+    }
+
     let connector = BackendConnector::new(backend.clone(), tls_config.clone());
 
     let host = canonical_host_header(req.headers(), req.uri(), backend);
@@ -379,7 +385,7 @@ pub fn send_request(
     let h2only = backend.grpc;
     let backend_name = backend_name.to_string();
     let backend_uri = backend.uri.to_string();
-    async move {
+    Either::Right(async move {
         let mut builder = Client::builder();
 
         if req.version() == Version::HTTP_2 {
@@ -433,7 +439,7 @@ pub fn send_request(
         } else {
             Ok(basic_response.map(Body::from))
         }
-    }
+    })
 }
 
 /// The type ultimately yielded by a `PendingRequest`.
