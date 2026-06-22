@@ -870,6 +870,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fst-http-cache"
+version = "0.1.0"
+source = "git+ssh://git@github.com/fastly/fst-cache-semantics#2475ce903c0838bffe795a46c548e626e14af073"
+dependencies = [
+ "bytes",
+ "http 0.2.12",
+ "http-body",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2801,6 +2811,7 @@ dependencies = [
  "cranelift-entity 0.123.10",
  "fastly-shared",
  "flate2",
+ "fst-http-cache",
  "futures",
  "http 0.2.12",
  "http-body",

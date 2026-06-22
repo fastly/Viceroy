@@ -120,11 +120,14 @@ fn load_write_options(
     if !options_mask.is_empty() {
         return Err(Error::NotAvailable("unknown cache write option"));
     }
+    // TODO: fix when stale_if_error is added to core cache API
+    let stale_if_error = Duration::ZERO;
 
     Ok(WriteOptions {
         max_age,
         initial_age,
         stale_while_revalidate,
+        stale_if_error,
         vary_rule,
         user_metadata,
         length,

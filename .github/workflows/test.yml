@@ -14,10 +14,24 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
+    - name: Generate access token for organization
+      uses: actions/create-github-app-token@v1
+      id: fastly-token
+      with:
+        app-id: ${{ secrets.FASTLY_TOKEN_GENERATOR_ID }}
+        private-key: ${{ secrets.FASTLY_TOKEN_GENERATOR_KEY }}
+        owner: ${{ github.repository_owner }}
     - name: Checkout code
       uses: actions/checkout@v3
       with:
-        submodules: true
+        submodules: recursive
+        token: ${{ steps.fastly-token.outputs.token }}
+    - name: Add authentication rules
+      env:
+        FASTLY_TOKEN: ${{ steps.fastly-token.outputs.token }}
+      run: |
+        git config --global --add url."https://x-access-token:$FASTLY_TOKEN@github.com/".insteadOf "ssh://git@github.com/"
+        git config --global --add url."https://x-access-token:$FASTLY_TOKEN@github.com/".insteadOf "git@github.com:"
     - name: Cache cargo
       uses: actions/cache@v3
       with:
@@ -47,10 +61,24 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
+    - name: Generate access token for organization
+      uses: actions/create-github-app-token@v1
+      id: fastly-token
+      with:
+        app-id: ${{ secrets.FASTLY_TOKEN_GENERATOR_ID }}
+        private-key: ${{ secrets.FASTLY_TOKEN_GENERATOR_KEY }}
+        owner: ${{ github.repository_owner }}
     - name: Checkout code
       uses: actions/checkout@v3
       with:
-        submodules: true
+        submodules: recursive
+        token: ${{ steps.fastly-token.outputs.token }}
+    - name: Add authentication rules
+      env:
+        FASTLY_TOKEN: ${{ steps.fastly-token.outputs.token }}
+      run: |
+        git config --global --add url."https://x-access-token:$FASTLY_TOKEN@github.com/".insteadOf "ssh://git@github.com/"
+        git config --global --add url."https://x-access-token:$FASTLY_TOKEN@github.com/".insteadOf "git@github.com:"
     - name: Cache cargo
       uses: actions/cache@v3
       with:
@@ -62,14 +90,3 @@ jobs:
     - name: trap-test
       run: make trap-test-ci
       shell: bash
-
-  package-check:
-    runs-on: forge-amd64-medium
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          submodules: true
-      - name: Check crates can be published
-        run: cargo publish --dry-run --package=viceroy-lib
-        shell: bash

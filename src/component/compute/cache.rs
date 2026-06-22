@@ -41,6 +41,8 @@ fn load_write_options(options: &api::WriteOptions) -> Result<WriteOptions, Error
         } else {
             Duration::ZERO
         };
+    // TODO: fix when stale_if_error is added to the core cache API
+    let stale_if_error = Duration::ZERO;
 
     let vary_rule = if let Some(vary_rule) = &options.vary_rule {
         vary_rule.parse()?
@@ -81,6 +83,7 @@ fn load_write_options(options: &api::WriteOptions) -> Result<WriteOptions, Error
         max_age,
         initial_age,
         stale_while_revalidate,
+        stale_if_error,
         vary_rule,
         user_metadata,
         length,

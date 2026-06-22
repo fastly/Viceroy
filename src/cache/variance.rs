@@ -70,6 +70,10 @@ impl VaryRule {
             signature: buf.into(),
         }
     }
+    // Returns the headers that contribute to this VaryRule.
+    pub fn headers(&self) -> &[HeaderName] {
+        &self.headers
+    }
 }
 
 /// The portion of a cache key that is defined by request and response.

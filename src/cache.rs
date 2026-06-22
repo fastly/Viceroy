@@ -1,9 +1,8 @@
-use core::str;
-use std::{collections::HashSet, sync::Arc, time::Duration};
-
 use bytes::Bytes;
+use core::str;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use crate::{
     body::Body,
@@ -11,6 +10,7 @@ use crate::{
     wiggle_abi::types::{BodyHandle, CacheOverrideTag, FastlyStatus},
 };
 
+use fst_http_cache::cache as fhc;
 use http::{HeaderMap, HeaderValue};
 
 mod store;
@@ -230,7 +230,7 @@ impl CacheEntry {
     pub async fn update(&mut self, options: WriteOptions) -> Result<(), crate::Error> {
         let go_get = self.go_get.take().ok_or(Error::NotRevalidatable)?;
         match go_get.update(options).await {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
             Err((go_get, err)) => {
                 // On failure, preserve the obligation.
                 self.go_get = Some(go_get);
@@ -276,6 +276,35 @@ impl Found {
     /// The length of the cached object, if known at lookup time.
     pub fn length(&self) -> Option<u64> {
         self.data.get_meta().length()
+    }
+}
+
+impl fhc::Found for Found {
+    type Error = Error;
+
+    // Maps the native object metadata into the format expected by the fst-http-cache.
+    fn meta(&self) -> fhc::CacheObjectMetadata {
+        let meta = self.data.get_meta();
+        fhc::CacheObjectMetadata {
+            max_age: meta.max_age(),
+            age: meta.age(),
+            length: meta.length(),
+            user_metadata: meta.user_metadata(),
+            stale_if_error: meta.stale_if_error(),
+            vary_rule: meta.vary_rule().headers().to_vec(),
+            stale_while_revalidate: meta.stale_while_revalidate(),
+        }
+    }
+
+    // Returns the number of times this cached item has been accessed.
+    fn hits(&self) -> u64 {
+        // Not currently implemented within Viceroy, so default to return 0.
+        return 0;
+    }
+
+    // Extracts the readable body stream out the cache handle.
+    async fn get_body(&self) -> Result<impl http_body::Body + Send, Self::Error> {
+        self.data.body().build().await.map_err(|_| Error::Missing)
     }
 }
 
@@ -369,12 +398,56 @@ impl Cache {
     }
 }
 
+impl fhc::Cache for Cache {
+    type Error = Error;
+    type Found = Found;
+    type Insert = store::Obligation;
+    type Update = store::Obligation;
+
+    // Translates an external cache lookup option into a Viceroy-native non-transactional lookup.
+    async fn lookup(
+        &self,
+        options: fhc::LookupOptions<'_>,
+    ) -> Result<Option<Self::Found>, Self::Error> {
+        // Convert the raw byte slice into  a CacheKey.
+        let key = CacheKey::try_from(options.cache_key)?;
+        // Execute the native lookup function.
+        let entry = self.lookup(&key, options.headers).await;
+        // Expose the found entry, if it exists.
+        Ok(entry.found)
+    }
+
+    async fn transaction_lookup(
+        &self,
+        options: fhc::LookupOptions<'_>,
+    ) -> Result<fhc::LookupResult<Self>, Self::Error> {
+        // Convert the raw byte slice into a CacheKey
+        let key = CacheKey::try_from(options.cache_key)?;
+        // Execute the native transactional lookup function
+        let entry = self.transaction_lookup(&key, options.headers, true).await;
+        let go_get = entry.go_get.map(|obligation| {
+            // if there is a found entry, we must update, otherwise we need to insert.
+            if entry.found.is_some() {
+                fhc::GoGet::Update(obligation)
+            } else {
+                fhc::GoGet::Insert(obligation)
+            }
+        });
+        // Return the found entry and obligation, if any.
+        Ok(fhc::LookupResult {
+            found: entry.found,
+            go_get,
+        })
+    }
+}
+
 /// Options that can be applied to a write, e.g. insert or transaction_insert.
 #[derive(Default, Clone)]
 pub struct WriteOptions {
     pub max_age: Duration,
     pub initial_age: Duration,
     pub stale_while_revalidate: Duration,
+    pub stale_if_error: Duration,
     pub vary_rule: VaryRule,
     pub user_metadata: Bytes,
     pub length: Option<u64>,
@@ -389,6 +462,7 @@ impl WriteOptions {
             max_age,
             initial_age: Duration::ZERO,
             stale_while_revalidate: Duration::ZERO,
+            stale_if_error: Duration::ZERO,
             vary_rule: VaryRule::default(),
             user_metadata: Bytes::new(),
             length: None,

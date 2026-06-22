@@ -12,10 +12,24 @@ jobs:
         rust: [stable, beta, nightly]
     runs-on: forge-amd64-medium
     steps:
+    - name: Generate access token for organization
+      uses: actions/create-github-app-token@v1
+      id: fastly-token
+      with:
+        app-id: ${{ secrets.FASTLY_TOKEN_GENERATOR_ID }}
+        private-key: ${{ secrets.FASTLY_TOKEN_GENERATOR_KEY }}
+        owner: ${{ github.repository_owner }}
     - name: Checkout code
       uses: actions/checkout@v5
       with:
-        submodules: true
+        submodules: recursive
+        token: ${{ steps.fastly-token.outputs.token }}
     - name: Install Rust
       run: rustup default ${{ matrix.rust }}
+    - name: Add authentication rules
+      env:
+        FASTLY_TOKEN: ${{ steps.fastly-token.outputs.token }}
+      run: |
+        git config --global --add url."https://x-access-token:$FASTLY_TOKEN@github.com/".insteadOf "ssh://git@github.com/"
+        git config --global --add url."https://x-access-token:$FASTLY_TOKEN@github.com/".insteadOf "git@github.com:"
     - run: make ci

@@ -11,9 +11,15 @@ use tokio::sync::watch;
 
 use http::HeaderMap;
 
-use crate::{body::Body, collecting_body::CollectingBody};
+use crate::{
+    body::{Body, Chunk},
+    collecting_body::CollectingBody,
+    streaming_body::StreamingBody,
+};
 
 use super::{Found, SurrogateKeySet, WriteOptions, variance::Variant};
+
+use fst_http_cache::cache as fhc;
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -33,6 +39,7 @@ pub struct ObjectMeta {
     max_age: Duration,
     /// stale-while-revalidate period; after max_age.
     stale_while_revalidate: Duration,
+    stale_if_error: Duration,
 
     request_headers: HeaderMap,
     vary_rule: VaryRule,
@@ -90,6 +97,14 @@ impl ObjectMeta {
     pub fn length(&self) -> Option<u64> {
         self.length
     }
+
+    pub fn stale_if_error(&self) -> Duration {
+        self.stale_if_error
+    }
+
+    pub fn stale_while_revalidate(&self) -> Duration {
+        self.stale_while_revalidate
+    }
 }
 
 impl ObjectMeta {
@@ -100,6 +115,7 @@ impl ObjectMeta {
             max_age,
             initial_age,
             stale_while_revalidate,
+            stale_if_error,
             user_metadata,
             length,
             // There is no API that returns whether a cache entry has sensitive data.
@@ -114,6 +130,7 @@ impl ObjectMeta {
             inserted,
             initial_age,
             stale_while_revalidate,
+            stale_if_error,
             max_age,
             request_headers,
             vary_rule,
@@ -131,6 +148,7 @@ impl Clone for ObjectMeta {
             initial_age: self.initial_age,
             max_age: self.max_age,
             stale_while_revalidate: self.stale_while_revalidate,
+            stale_if_error: self.stale_if_error,
             request_headers: self.request_headers.clone(),
             vary_rule: self.vary_rule.clone(),
             user_metadata: self.user_metadata.clone(),
@@ -524,7 +542,7 @@ impl Obligation {
     pub(super) async fn update(
         mut self,
         options: WriteOptions,
-    ) -> Result<(), (Self, crate::Error)> {
+    ) -> Result<Found, (Self, crate::Error)> {
         let Some(present) = &self.present else {
             return Err((self, Error::NotRevalidatable.into()));
         };
@@ -534,13 +552,26 @@ impl Obligation {
         };
         let request_headers = std::mem::take(&mut self.request_headers);
         let variant = std::mem::take(&mut self.variant);
-        let _ = self
+        let found: Found = self
             .object
-            .insert(request_headers, options, body, Some(variant));
+            .insert(request_headers, options, body, Some(variant))
+            .into();
         // Mild optimization: avoid re-acquiring the lock when we drop.
         // We've already cleared the obligation flag.
         self.completed = true;
-        Ok(())
+        Ok(found)
+    }
+
+    /// Return the metadata for the cached object.
+    pub fn meta(&self) -> Option<&ObjectMeta> {
+        self.present.as_ref().map(|data| data.get_meta())
+    }
+
+    /// Return a readable body for the existing cached object, if present.
+    pub fn body(&self) -> Option<Result<Body, crate::Error>> {
+        self.present
+            .as_ref()
+            .map(|data| data.body.read().map_err(Into::into))
     }
 }
 
@@ -563,6 +594,114 @@ impl Drop for Obligation {
                 false
             }
         });
+    }
+}
+
+impl fhc::InsertObligation for Obligation {
+    type Error = Error;
+    type Found = super::Found;
+
+    // Fulfills a cache insertion obligation by by concurrently streaming incoming network data
+    // directly into Viceroy's memory engine while simultaneously echoing it back to the client.
+    async fn insert_and_stream_back<B>(
+        self,
+        meta: fhc::CacheObjectMetadata,
+        options: fhc::InsertOptions,
+        body: B,
+    ) -> Result<Self::Found, Self::Error>
+    where
+        B: http_body::Body + Send + 'static,
+        B::Data: Send,
+        B::Error: Send,
+    {
+        // Allocate a channel.
+        let (mut cache_tx, cache_rx) = StreamingBody::new();
+        // Spawn an independent, async background worker to drive the raw data.
+        // Decouples the network streaming loop from the sync interface method.
+        tokio::task::spawn(async move {
+            // Pin to safeguard internal futures during polling.
+            let mut body = std::pin::pin!(body);
+            loop {
+                // Poll the network chunk stream to pull incoming payload tickets.
+                match std::future::poll_fn(|cx| body.as_mut().poll_data(cx)).await {
+                    Some(Ok(mut chunk)) => {
+                        use bytes::Buf;
+                        let bytes = chunk.copy_to_bytes(chunk.remaining());
+                        // Error catching for empty chunks.
+                        if !bytes.is_empty() {
+                            // Replicate the data where you write a copy to both output streams.
+                            let _ = cache_tx.send_chunk(bytes).await;
+                        }
+                    }
+                    Some(Err(_)) => break,
+                    None => break,
+                }
+            }
+            if let Ok(Some(trailers)) =
+                std::future::poll_fn(|cx| body.as_mut().poll_trailers(cx)).await
+            {
+                cache_tx.trailers.extend(trailers);
+            }
+            // Signal completion to close the write handle and prevent stream starvation.
+            let _ = cache_tx.finish();
+        });
+        // Map the metadata configuration parameters into WriteOptions.
+        let write_options = WriteOptions {
+            max_age: meta.max_age,
+            initial_age: meta.age,
+            stale_while_revalidate: meta.stale_while_revalidate,
+            stale_if_error: meta.stale_if_error,
+            vary_rule: VaryRule::new(meta.vary_rule.iter()),
+            user_metadata: meta.user_metadata,
+            length: meta.length,
+            sensitive_data: options.sensitive_data,
+            edge_max_age: options.edge_max_age,
+            surrogate_keys: Default::default(),
+        };
+        // Commit the cache insertion and return the Result <Self::Found, Self::Error>.
+        Ok(self.insert(write_options, Body::from(Chunk::from(cache_rx))))
+    }
+}
+
+impl fhc::UpdateObligation for Obligation {
+    // fetch the obligation metadata and update CacheObjectMetadata.
+    fn meta(&self) -> fhc::CacheObjectMetadata {
+        let meta = self
+            .meta()
+            .expect("Update Obligation should always have a present entry");
+        fhc::CacheObjectMetadata {
+            max_age: meta.max_age(),
+            age: meta.age(),
+            length: meta.length(),
+            user_metadata: meta.user_metadata(),
+            stale_if_error: meta.stale_if_error(),
+            vary_rule: meta.vary_rule().headers().to_vec(),
+            stale_while_revalidate: meta.stale_while_revalidate(),
+        }
+    }
+
+    async fn update_and_stream_back(
+        self,
+        meta: fhc::CacheObjectMetadata,
+        options: fhc::InsertOptions,
+    ) -> Result<Self::Found, Self::Error> {
+        // Update write options with provided meta.
+        let write_options = WriteOptions {
+            max_age: meta.max_age,
+            initial_age: meta.age,
+            stale_while_revalidate: meta.stale_while_revalidate,
+            stale_if_error: meta.stale_if_error,
+            vary_rule: VaryRule::new(meta.vary_rule.iter()),
+            user_metadata: meta.user_metadata,
+            length: meta.length,
+            sensitive_data: options.sensitive_data,
+            edge_max_age: options.edge_max_age,
+            surrogate_keys: Default::default(),
+        };
+        self.update(write_options).await.map_err(|(_, e)| match e {
+            crate::Error::CacheError(err) => err,
+            _ => Error::Missing,
+        })
     }
 }
 
