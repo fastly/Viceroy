@@ -19,7 +19,9 @@ jobs:
       matrix:
         runner:
           - ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+          - ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
           - ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
+          - ${{ case(vars.MACOS_RUNNER_AMD64 != '', vars.MACOS_RUNNER_AMD64, 'macos-26-intel') }}
           - ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
       fail-fast: false
     runs-on: ${{ matrix.runner }}
@@ -59,7 +61,9 @@ jobs:
       matrix:
         runner:
           - ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+          - ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
           - ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
+          - ${{ case(vars.MACOS_RUNNER_AMD64 != '', vars.MACOS_RUNNER_AMD64, 'macos-26-intel') }}
           - ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
     runs-on: ${{ matrix.runner }}
     env:
