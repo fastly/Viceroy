@@ -131,16 +131,32 @@ impl CacheKeyObjects {
     pub fn get(&self, request_headers: &HeaderMap) -> Option<Arc<CacheData>> {
         let key_objects = self.0.borrow();
 
+        tracing::debug!(
+            "CacheKeyObjects::get() - vary_rules.len(): {}, objects.len(): {}",
+            key_objects.vary_rules.len(),
+            key_objects.objects.len()
+        );
+
         for vary_rule in key_objects.vary_rules.iter() {
             let response_key = vary_rule.variant(request_headers);
-            if let Some(object) = key_objects
-                .objects
-                .get(&response_key)
-                .and_then(|v| v.present.clone())
-            {
-                return Some(object);
+            tracing::debug!(
+                "  Checking vary_rule, variant signature len: {}",
+                response_key.signature.len()
+            );
+            if let Some(cache_value) = key_objects.objects.get(&response_key) {
+                tracing::debug!(
+                    "    Found cache_value, present: {}, obligated: {}",
+                    cache_value.present.is_some(),
+                    cache_value.obligated
+                );
+                if let Some(data) = cache_value.present.clone() {
+                    return Some(data);
+                }
+            } else {
+                tracing::debug!("    No cache_value for this variant");
             }
         }
+        tracing::debug!("  No matching entry found");
         None
     }
 
@@ -342,10 +358,17 @@ impl CacheKeyObjects {
         body: Body,
         clear_obligation: Option<Variant>,
     ) -> Arc<CacheData> {
-        let meta = ObjectMeta::new(options, request_headers);
+        let meta = ObjectMeta::new(options, request_headers.clone());
         let vary_rule = meta.vary_rule().clone();
 
         let variant = meta.variant();
+
+        tracing::debug!(
+            "CacheKeyObjects::insert() - variant signature len: {}, vary_rule headers: {:?}",
+            variant.signature.len(),
+            request_headers.keys().map(|k| k.as_str()).collect::<Vec<_>>()
+        );
+
         let body = CollectingBody::new(body, meta.length);
         let object = Arc::new(CacheData { body, meta });
 
@@ -353,6 +376,11 @@ impl CacheKeyObjects {
         let result = Arc::clone(&object);
 
         self.0.send_modify(|cache_key_objects| {
+            tracing::debug!(
+                "  Before insert: vary_rules.len(): {}, objects.len(): {}",
+                cache_key_objects.vary_rules.len(),
+                cache_key_objects.objects.len()
+            );
             if let Some(clear_obligation) = clear_obligation
                 && let Some(v) = cache_key_objects.objects.get_mut(&clear_obligation)
             {
@@ -380,6 +408,12 @@ impl CacheKeyObjects {
                 .entry(variant)
                 .or_default()
                 .present = Some(object);
+
+            tracing::debug!(
+                "  After insert: vary_rules.len(): {}, objects.len(): {}",
+                cache_key_objects.vary_rules.len(),
+                cache_key_objects.objects.len()
+            );
         });
 
         result
