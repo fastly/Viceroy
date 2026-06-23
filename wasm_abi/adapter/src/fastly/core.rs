@@ -2527,7 +2527,7 @@ pub mod fastly_http_req {
                 Err(err) => return err.into(),
             }
         }
-
+        
         let res = backend::register_dynamic_backend(name_prefix, target, builder);
         let res = res.map(|_backend| ());
 

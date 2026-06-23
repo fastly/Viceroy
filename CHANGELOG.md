@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
+- Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
 
 ## 0.19.0 (2026-06-16)
 
