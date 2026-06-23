@@ -28,53 +28,37 @@ jobs:
     needs: prep-release
     strategy:
       matrix:
-        runner:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - macos-26
-          - macos-26-intel
-          - windows-2025
-        arch:
-          - amd64
-          - arm64
-        exclude:
-          - runner: ubuntu-24.04
-            arch: arm64
-
-          - runner: ubuntu-24.04-arm
-            arch: amd64
-
-          - runner: macos-26
-            arch: amd64
-
-          - runner: macos-26-intel
-            arch: arm64
-
-          - runner: windows-2025
-            arch: arm64
         include:
-          - runner: ubuntu-24.04
-            name: linux
+          - name: linux
+            arch: amd64
+            runner: ubuntu-24.04
             rust_abi: unknown-linux-gnu
+            rust_arch: x86_64
 
-          - runner: ubuntu-24.04-arm
-            name: linux
+          - name: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
             rust_abi: unknown-linux-gnu
-
-          - runner: macos-26
-            name: darwin
-            rust_abi: apple-darwin
-
-          - runner: windows-2025
-            name: windows
-            rust_abi: pc-windows-msvc
-            extension: .exe
-
-          - arch: arm64
             rust_arch: aarch64
 
-          - arch: amd64
+          - name: darwin
+            arch: amd64
+            runner: macos-26-intel
+            rust_abi: apple-darwin
             rust_arch: x86_64
+
+          - name: darwin
+            arch: arm64
+            runner: macos-26
+            rust_abi: apple-darwin
+            rust_arch: aarch64
+
+          - name: windows
+            arch: amd64
+            runner: windows-2025
+            rust_abi: pc-windows-msvc
+            rust_arch: x86_64
+            extension: .exe
 
     runs-on: ${{ matrix.runner }}
     permissions:
