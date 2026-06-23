@@ -7,55 +7,86 @@ on:
 
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  prep-release:
+    runs-on: ${{ case(vars.LINUX_RUNNER_SMALL != '', vars.LINUX_RUNNER_SMALL, 'ubuntu-slim') }}
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release
+        run: |
+          gh release create ${TAG} --draft=true --target ${{ github.sha }}
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+
   build:
+    needs: prep-release
     strategy:
       matrix:
-        runner: [ubuntu24.04-8cpu-32ram, macos-14, windows-2022]
-        arch: [amd64, arm64]
+        runner:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-26
+          - macos-26-intel
+          - windows-2025
+        arch:
+          - amd64
+          - arm64
         exclude:
-          - runner: windows-2022
+          - runner: ubuntu-24.04
+            arch: arm64
+
+          - runner: ubuntu-24.04-arm
+            arch: amd64
+
+          - runner: macos-26
+            arch: amd64
+
+          - runner: macos-26-intel
+            arch: arm64
+
+          - runner: windows-2025
             arch: arm64
         include:
-          - runner: ubuntu24.04-8cpu-32ram
+          - runner: ubuntu-24.04
             name: linux
             rust_abi: unknown-linux-gnu
-          - runner: macos-14
+
+          - runner: ubuntu-24.04-arm
+            name: linux
+            rust_abi: unknown-linux-gnu
+
+          - runner: macos-26
             name: darwin
             rust_abi: apple-darwin
-          - runner: windows-2022
+
+          - runner: windows-2025
             name: windows
             rust_abi: pc-windows-msvc
             extension: .exe
+
           - arch: arm64
             rust_arch: aarch64
+
           - arch: amd64
             rust_arch: x86_64
 
     runs-on: ${{ matrix.runner }}
-    outputs:
-      draft_release_id: ${{ steps.release.outputs.id }}
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          submodules: true
+          persist-credentials: false
 
       - name: Install Rust
         run: rustup target add ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
-        shell: bash
-
-      - name: Install C cross-compilation toolchain
-        if: ${{ matrix.name == 'linux' && matrix.arch != 'amd64' }}
-        run: |
-          sudo apt-get update
-          sudo apt install -f -y gcc-${{ matrix.rust_arch }}-linux-gnu
-          echo CC=${{ matrix.rust_arch }}-linux-gnu-gcc >> $GITHUB_ENV
-          echo RUSTFLAGS='-C linker=${{ matrix.rust_arch }}-linux-gnu-gcc' >> $GITHUB_ENV
-
-      - name: Extract tag name
-        uses: olegtarasov/get-tag@v2.1.2
-        id: tagName
 
       - name: Build
         run: |
@@ -64,36 +95,30 @@ jobs:
       - name: Package
         run: |
           cd target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release-lto-stripped
-          tar czf viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
-
-      - name: Release
-        if: github.event_name == 'push'
-        id: release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: true
-          files: |
-            target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release-lto-stripped/viceroy_${{ steps.tagName.outputs.tag }}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz
+          tar czf viceroy_${TAG}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz viceroy${{ matrix.extension }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
+      - name: Upload to release
+        run: |
+          gh release upload ${TAG} target/${{ matrix.rust_arch }}-${{ matrix.rust_abi }}/release-lto-stripped/viceroy_${TAG}_${{ matrix.name }}-${{ matrix.arch }}.tar.gz --clobber
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
 
   publish:
     needs: build
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - name: publish
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.repos.updateRelease({
-              release_id: ${{ needs.build.outputs.draft_release_id }},
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              draft: false
-            })
+      - name: Publish release
+        run: |
+          gh release edit ${TAG} --draft=false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
 
   publish-lib:
     needs: build

@@ -1,38 +1,53 @@
 name: Test
 
-on: [pull_request]
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 env:
   CACHE_GENERATION: 0
+
 jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-14, macos-15]
+        runner:
+          - ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+          - ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
+          - ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
       fail-fast: false
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
-        submodules: true
+        persist-credentials: false
+
     - name: Cache cargo
-      uses: actions/cache@v3
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
           ~/.cargo/registry
-        key: ${{ matrix.platform }}-cargo-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.runner }}-cargo-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.9
+      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+
     - name: Check formatting
       run: cargo fmt --all -- --check
-      shell: bash
+
     - name: test
       run: make ci
-      shell: bash
+
     - name: adapter
       run: cd wasm_abi/adapter && cargo build --release -p viceroy-component-adapter --target wasm32-unknown-unknown
 
@@ -42,58 +57,67 @@ jobs:
   trap-test:
     strategy:
       matrix:
-        platform: [ubuntu-22.04, ubuntu-24.04, windows-2022, macos-14, macos-15]
-    runs-on: ${{ matrix.platform }}
+        runner:
+          - ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+          - ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
+          - ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
+    runs-on: ${{ matrix.runner }}
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
-        submodules: true
+        persist-credentials: false
+
     - name: Cache cargo
-      uses: actions/cache@v3
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
           ~/.cargo/registry
-        key: ${{ matrix.platform }}-cargo-trap-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.runner }}-cargo-trap-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.9
+      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+
     - name: trap-test
       run: make trap-test-ci
-      shell: bash
 
   # Run the LTO test in an isolated job. It uses a large amount of RAM
   # and the differences between it and the regular build are not
-  # platform-dependent.
+  # runner-dependent.
   lto-test:
-    runs-on: ubuntu24.04-8cpu-32ram
+    runs-on: ${{ case(vars.LINUX_RUNNER_LARGE_AMD64 != '', vars.LINUX_RUNNER_LARGE_AMD64, 'ubuntu24.04-8cpu-32ram') }}
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        persist-credentials: false
+
     - name: Cache cargo
-      uses: actions/cache@v3
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
           ~/.cargo/registry
         key: cargo-lto-test-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.9
+      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+
     - name: lto-test
       run: make test-crates-lto
-      shell: bash
 
   package-check:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          submodules: true
+          persist-credentials: false
+
       - name: Check crates can be published
         run: cargo publish --dry-run --package=viceroy-lib
-        shell: bash

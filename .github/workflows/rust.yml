@@ -1,21 +1,33 @@
-name: Test Rust versions
+name: Test using various Rust versions
 
 on:
   schedule:
     - cron: "2 13 * * 1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     strategy:
       matrix:
-        rust: [stable, beta, nightly]
-    runs-on: ubuntu-latest
+        rust:
+          - stable
+          - beta
+          - nightly
+    runs-on: ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
-        submodules: true
+        persist-credentials: false
+
     - name: Install Rust
       run: rustup default ${{ matrix.rust }}
+
     - run: make ci
