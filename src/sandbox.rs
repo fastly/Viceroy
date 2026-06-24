@@ -4,8 +4,9 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingCacheTask, PendingDownstreamReqTask, PendingKvDeleteTask,
-    PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask, PendingResponse,
+    AsyncItem, HttpCacheEntry, PeekableTask, PendingCacheTask, PendingDownstreamReqTask,
+    PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
+    PendingResponse,
 };
 
 use std::collections::HashMap;
@@ -20,7 +21,8 @@ use std::time::Duration;
 use crate::cache::{Cache, CacheEntry};
 use crate::linking::Limiter;
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode};
+use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode, HttpCacheHandle};
+use fst_http_cache::HttpCache;
 
 use {
     self::downstream::DownstreamResponseState,
@@ -1094,6 +1096,11 @@ impl Sandbox {
         Ok(())
     }
 
+    pub fn insert_http_cache_entry(&mut self, entry: HttpCacheEntry) -> AsyncItemHandle {
+        self.async_items
+            .push(Some(AsyncItem::HttpCacheEntry(entry)))
+    }
+
     // ------- Core Cache API ------
 
     /// Insert a pending cache operation: CacheHandle or CacheBusyHandle
@@ -1158,6 +1165,10 @@ impl Sandbox {
     /// Access the cache.
     pub fn cache(&self) -> &Arc<Cache> {
         self.ctx.cache()
+    }
+
+    pub fn http_cache(&self) -> &HttpCache<Arc<Cache>> {
+        self.ctx.http_cache()
     }
 
     // -------- Scheduling APIs ----------
@@ -1650,5 +1661,17 @@ impl From<CacheBusyHandle> for CacheHandle {
     fn from(h: CacheBusyHandle) -> CacheHandle {
         let raw: u32 = h.into();
         CacheHandle::from(raw)
+    }
+}
+
+impl From<HttpCacheHandle> for AsyncItemHandle {
+    fn from(h: HttpCacheHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for HttpCacheHandle {
+    fn from(h: AsyncItemHandle) -> HttpCacheHandle {
+        HttpCacheHandle::from(h.as_u32())
     }
 }

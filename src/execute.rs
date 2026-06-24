@@ -24,6 +24,7 @@ use {
         shielding_site::ShieldingSites,
         upstream::TlsConfig,
     },
+    fst_http_cache::HttpCache,
     futures::{
         Future,
         task::{Context, Poll},
@@ -162,6 +163,8 @@ pub struct ExecuteCtx {
     fake_valid_fastly_keys: FakeValidFastlyKeys,
     /// The cache for this service.
     cache: Arc<Cache>,
+    /// The HTTP cache for this service
+    http_cache: HttpCache<Arc<Cache>>,
     /// Extra environment variables.
     environment: EnvironmentVariables,
     /// Senders waiting for new requests for reusable sandboxes.
@@ -298,6 +301,8 @@ impl ExecuteCtx {
                 engine_clone.increment_epoch();
             }
         }));
+        // HttpCache takes ownership of an Arc<Cache>, so both fields must share the same instance
+        let cache = Arc::new(Cache::default());
 
         let inner = Self {
             engine,
@@ -322,7 +327,9 @@ impl ExecuteCtx {
             epoch_increment_thread,
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(Arc::new),
-            cache: Arc::new(Cache::default()),
+            cache: Arc::clone(&cache),
+            http_cache: HttpCache::new(cache),
+
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };
 
@@ -1011,6 +1018,10 @@ impl ExecuteCtx {
 
     pub fn cache(&self) -> &Arc<Cache> {
         &self.cache
+    }
+
+    pub fn http_cache(&self) -> &HttpCache<Arc<Cache>> {
+        &self.http_cache
     }
 
     pub fn config_path(&self) -> Option<&Path> {

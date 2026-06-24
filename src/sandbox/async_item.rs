@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use crate::cache::Cache;
 use crate::cache::CacheEntry;
 use crate::downstream::DownstreamRequest;
 use crate::execute::NextRequest;
@@ -10,6 +11,7 @@ use anyhow::anyhow;
 use futures::Future;
 use futures::FutureExt;
 use http::Response;
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
 #[derive(Debug)]
@@ -160,6 +162,7 @@ pub enum AsyncItem {
     PendingKvDelete(PendingKvDeleteTask),
     PendingKvList(PendingKvListTask),
     PendingCache(PendingCacheTask),
+    HttpCacheEntry(HttpCacheEntry),
     Ready,
 }
 
@@ -332,6 +335,27 @@ impl AsyncItem {
         }
     }
 
+    pub fn as_http_cache_entry(&self) -> Option<&HttpCacheEntry> {
+        match self {
+            Self::HttpCacheEntry(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    pub fn as_http_cache_entry_mut(&mut self) -> Option<&mut HttpCacheEntry> {
+        match self {
+            Self::HttpCacheEntry(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    pub fn into_http_cache_entry(self) -> Option<HttpCacheEntry> {
+        match self {
+            Self::HttpCacheEntry(e) => Some(e),
+            _ => None,
+        }
+    }
+
     pub async fn await_ready(&mut self) {
         match self {
             Self::StreamingBody(body) => body.await_ready().await,
@@ -343,6 +367,7 @@ impl AsyncItem {
             Self::PendingKvDelete(req) => req.0.await_ready().await,
             Self::PendingKvList(req) => req.0.await_ready().await,
             Self::PendingCache(req) => req.0.await_ready().await,
+            Self::HttpCacheEntry(_) => (),
             Self::Ready => (),
         }
     }
@@ -516,5 +541,13 @@ impl PendingResponse {
                 resp
             }
         }
+    }
+}
+
+pub type HttpCacheEntry = fst_http_cache::HttpCacheEntry<Arc<Cache>>;
+
+impl From<HttpCacheEntry> for AsyncItem {
+    fn from(e: HttpCacheEntry) -> Self {
+        Self::HttpCacheEntry(e)
     }
 }
