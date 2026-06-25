@@ -1,21 +1,39 @@
 name: Changelog
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ case(vars.LINUX_RUNNER_SMALL != '', vars.LINUX_RUNNER_SMALL, 'ubuntu-slim') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # We want to check modified files from base_ref (merge target) to the current commit,
           # so we need the full history of the current branch.
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Check for skip label
-        id: check-skip
+      - id: check-skip
+        name: Check for skip label
         run: |
           if [[ "${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}" == "true" ]]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -31,7 +49,7 @@ jobs:
           # --exit-code exits 1 if there are differences, or 0 if there are no differences.
           # So: this command exits 1 if CHANGELOG.md was changed between the base and HEAD,
           # or 0 if there are no diffs.
-          if git diff --quiet origin/"${{ github.base_ref }}"...HEAD -- CHANGELOG.md; then
+          if git diff --quiet origin/"${GITHUB_BASE_REF}"...HEAD -- CHANGELOG.md; then
             echo "::error::No changelog entry found. Please add an entry to CHANGELOG.md or add the 'skip-changelog' label if this change does not require a changelog entry."
             exit 1
           else

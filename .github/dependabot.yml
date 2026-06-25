@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: all
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - github_actions
+    groups:
+      gha-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
