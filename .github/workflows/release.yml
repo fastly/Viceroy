@@ -24,7 +24,7 @@ jobs:
 
       - name: Create draft release
         run: |
-          gh release create ${TAG} --draft=true --target ${{ github.sha }}
+          gh release create ${TAG} --draft=true --target ${{ github.sha }} --title ${TAG}
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
