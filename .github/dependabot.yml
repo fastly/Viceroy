@@ -19,6 +19,7 @@ updates:
       interval: weekly
     labels:
       - github_actions
+      - skip-changelog
     groups:
       gha-dependencies:
         patterns:
