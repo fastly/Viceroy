@@ -122,28 +122,28 @@ codegen-units = 1
 
 [workspace.dependencies]
 anyhow = "1.0.31"
-base64 = "0.21.2"
+base64 = "0.22.1"
 clap = { version = "^4.0.18", features = ["derive"] }
-hyper = { version = "=0.14.26", features = ["full"] }
-itertools = "0.10.5"
+hyper = { version = "=1.10.1", features = ["full"] }
+itertools = "0.14.0"
 pin-project = "1.0.8"
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
-rustls-pemfile = "1.0.3"
+rustls-pemfile = "2.2.0"
 serde_json = "1.0.59"
 tokio = { version = "1.49.0", features = ["full"] }
-tokio-rustls = "0.24.1"
+tokio-rustls = "0.26.4"
 tracing = "0.1.37"
 tracing-futures = "0.2.5"
 futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "39.0.2", features = ["call-hook"] }
-wasmtime-wasi = "39.0.2"
-wasmtime-wasi-io = "39.0.2"
-wasmtime-wasi-nn = "39.0.2"
-wiggle = "39.0.2"
+wasmtime = { version =  "45.0.2", features = ["call-hook"] }
+wasmtime-wasi = "44.0.3"
+wasmtime-wasi-io = "44.0.3"
+wasmtime-wasi-nn = "44.0.3"
+wiggle = "44.0.3"
 wat = "1.250.0"
-wasmparser = "0.250.0"
-wasm-encoder = { version = "0.250.0", features = ["wasmparser"] }
-wit-component = "0.250.0"
+wasmparser = "0.252.0"
+wasm-encoder = { version = "0.252.0", features = ["wasmparser"] }
+wit-component = "0.252.0"
