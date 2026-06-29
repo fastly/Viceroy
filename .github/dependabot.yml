@@ -6,6 +6,8 @@ updates:
       interval: weekly
     allow:
       - dependency-type: all
+    labels:
+      - skip-changelog
     groups:
       cargo-dependencies:
         patterns:
@@ -18,7 +20,8 @@ updates:
     schedule:
       interval: weekly
     labels:
-      - github_actions
+      - github-actions
+      - skip-changelog
     groups:
       gha-dependencies:
         patterns:
