@@ -897,11 +897,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "fst-cache"
+version = "0.1.0"
+source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=139c624a2add5bb8cd9bdbeef8f10706131514cb#139c624a2add5bb8cd9bdbeef8f10706131514cb"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "http 0.2.12",
+ "http-body",
+ "moka",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "fst-http-cache"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=484877069929a93fe60252a982da3da710a204e4#484877069929a93fe60252a982da3da710a204e4"
+source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=139c624a2add5bb8cd9bdbeef8f10706131514cb#139c624a2add5bb8cd9bdbeef8f10706131514cb"
 dependencies = [
  "bytes",
+ "fst-cache",
  "http 0.2.12",
  "http-body",
 ]
@@ -2948,6 +2964,7 @@ dependencies = [
  "cranelift-entity 0.123.11",
  "fastly-shared",
  "flate2",
+ "fst-cache",
  "fst-http-cache",
  "futures",
  "http 0.2.12",
