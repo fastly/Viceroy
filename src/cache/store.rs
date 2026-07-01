@@ -19,8 +19,6 @@ use crate::{
 
 use super::{Found, SurrogateKeySet, WriteOptions, variance::Variant};
 
-use fst_http_cache::cache as fhc;
-
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
 pub struct ObjectMeta {
@@ -597,7 +595,7 @@ impl Drop for Obligation {
     }
 }
 
-impl fhc::InsertObligation for Obligation {
+impl fst_cache::InsertObligation for Obligation {
     type Error = Error;
     type Found = super::Found;
 
@@ -605,8 +603,8 @@ impl fhc::InsertObligation for Obligation {
     // directly into Viceroy's memory engine while simultaneously echoing it back to the client.
     async fn insert_and_stream_back<B>(
         self,
-        meta: fhc::CacheObjectMetadata,
-        options: fhc::InsertOptions,
+        meta: fst_cache::CacheObjectMetadata,
+        options: fst_cache::InsertOptions,
         body: B,
     ) -> Result<Self::Found, Self::Error>
     where
@@ -663,13 +661,13 @@ impl fhc::InsertObligation for Obligation {
     }
 }
 
-impl fhc::UpdateObligation for Obligation {
+impl fst_cache::UpdateObligation for Obligation {
     // fetch the obligation metadata and update CacheObjectMetadata.
-    fn meta(&self) -> fhc::CacheObjectMetadata {
+    fn meta(&self) -> fst_cache::CacheObjectMetadata {
         let meta = self
             .meta()
             .expect("Update Obligation should always have a present entry");
-        fhc::CacheObjectMetadata {
+        fst_cache::CacheObjectMetadata {
             max_age: meta.max_age(),
             age: meta.age(),
             length: meta.length(),
@@ -682,8 +680,8 @@ impl fhc::UpdateObligation for Obligation {
 
     async fn update_and_stream_back(
         self,
-        meta: fhc::CacheObjectMetadata,
-        options: fhc::InsertOptions,
+        meta: fst_cache::CacheObjectMetadata,
+        options: fst_cache::InsertOptions,
     ) -> Result<Self::Found, Self::Error> {
         // Update write options with provided meta.
         let write_options = WriteOptions {
