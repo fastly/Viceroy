@@ -28,7 +28,7 @@ fn test_version_set_and_get() {
 
     unsafe {
         // Test that one successfully gets the default version.
-        new(&mut req1);
+        let _ = new(&mut req1);
         let stat = version_get(req1, &mut version1);
         assert_eq!(stat, FastlyStatus::OK);
 

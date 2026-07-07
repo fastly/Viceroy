@@ -223,46 +223,130 @@ impl http_downstream::Host for ComponentCtx {
 
     fn downstream_bot_analyzed(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
-        Ok(false)
+        let headers = self
+            .sandbox()
+            .downstream_original_headers(h.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?;
+        Ok(headers
+            .get("x-fastly-bot-analyzed")
+            .map(|a| a == "true")
+            .unwrap_or_default())
     }
 
     fn downstream_bot_detected(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
     ) -> Result<bool, types::Error> {
-        Ok(false)
+        let headers = self
+            .sandbox()
+            .downstream_original_headers(h.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?;
+        Ok(headers
+            .get("x-fastly-bot-detected")
+            .map(|a| a == "true")
+            .unwrap_or_default())
     }
 
     fn downstream_bot_name(
         &mut self,
-        _h: Resource<http_req::Request>,
-        _max_len: u64,
+        h: Resource<http_req::Request>,
+        max_len: u64,
     ) -> Result<Option<String>, types::Error> {
-        Ok(None)
+        let headers = self
+            .sandbox()
+            .downstream_original_headers(h.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?;
+        let name = headers
+            .get("x-fastly-bot-name")
+            .and_then(|n| n.to_str().ok())
+            .map(|n| n.to_string());
+        if let Some(name) = &name
+            && name.len() > max_len as usize
+        {
+            Err(types::Error::LimitExceeded)
+        } else {
+            Ok(name)
+        }
     }
 
     fn downstream_bot_category(
         &mut self,
-        _h: Resource<http_req::Request>,
-        _max_len: u64,
+        h: Resource<http_req::Request>,
+        max_len: u64,
     ) -> Result<Option<String>, types::Error> {
-        Ok(None)
+        let headers = self
+            .sandbox()
+            .downstream_original_headers(h.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?;
+        let name = headers
+            .get("x-fastly-bot-category")
+            .and_then(|n| n.to_str().ok())
+            .map(|n| n.to_string());
+        if let Some(name) = &name
+            && name.len() > max_len as usize
+        {
+            Err(types::Error::LimitExceeded)
+        } else {
+            Ok(name)
+        }
     }
 
     fn downstream_bot_category_kind(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
     ) -> Result<Option<http_downstream::BotCategory>, types::Error> {
-        Ok(None)
+        let kind = self
+            .sandbox()
+            .downstream_original_headers(h.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?
+            .get("x-fastly-bot-category")
+            .and_then(|n| n.to_str().ok());
+        if let Some(kind) = kind {
+            use http_downstream::BotCategory::*;
+            Ok(Some(match kind.to_lowercase().as_ref() {
+                "none" | "0" => http_downstream::BotCategory::None,
+                "suspected" | "1" => Suspected,
+                "accessibility" | "2" => Accessibility,
+                "ai-crawler" | "3" => AiCrawler,
+                "ai-fetcher" | "4" => AiFetcher,
+                "content-fetcher" | "5" => ContentFetcher,
+                "monitoring-site-tools" | "6" => MonitoringSiteTools,
+                "online-marketing" | "7" => OnlineMarketing,
+                "page-preview" | "8" => PagePreview,
+                "platform-integration" | "9" => PlatformIntegrations,
+                "research" | "10" => Research,
+                "search-engine-crawler" | "11" => SearchEngineCrawler,
+                "search-engine-optimization" | "12" => SearchEngineOptimization,
+                "security-tools" | "13" => SecurityTools,
+                other => {
+                    let k = if other == "headless" {
+                        14
+                    } else {
+                        other.parse().map_err(|_| types::Error::GenericError)?
+                    };
+                    let resource = ExtraBotCategory { raw: k };
+                    self.table()
+                        .push(resource)
+                        .map_err(|_| types::Error::GenericError)
+                        .map(|handle| http_downstream::BotCategory::Extra(handle))?
+                }
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     fn downstream_bot_verified(
         &mut self,
-        _h: Resource<http_req::Request>,
+        h: Resource<http_req::Request>,
     ) -> Result<Option<bool>, types::Error> {
-        Ok(None)
+        let headers = self
+            .sandbox()
+            .downstream_original_headers(h.into())?
+            .ok_or(Error::MissingDownstreamMetadata)?;
+        Ok(headers.get("x-fastly-bot-analyzed").map(|a| a == "true"))
     }
 
     fn downstream_resvpnproxy_is_anonymous(
