@@ -10,7 +10,6 @@ use crate::{
     wiggle_abi::types::{BodyHandle, CacheOverrideTag, FastlyStatus},
 };
 
-use fst_http_cache::cache as fhc;
 use http::{HeaderMap, HeaderValue};
 
 mod store;
@@ -279,13 +278,13 @@ impl Found {
     }
 }
 
-impl fhc::Found for Found {
+impl fst_cache::Found for Found {
     type Error = Error;
 
     // Maps the native object metadata into the format expected by the fst-http-cache.
-    fn meta(&self) -> fhc::CacheObjectMetadata {
+    fn meta(&self) -> fst_cache::CacheObjectMetadata {
         let meta = self.data.get_meta();
-        fhc::CacheObjectMetadata {
+        fst_cache::CacheObjectMetadata {
             max_age: meta.max_age(),
             age: meta.age(),
             length: meta.length(),
@@ -303,7 +302,7 @@ impl fhc::Found for Found {
     }
 
     // Extracts the readable body stream out the cache handle.
-    async fn get_body(&self) -> Result<impl http_body::Body + Send, Self::Error> {
+    async fn get_body(&self) -> Result<impl fst_cache::Body, Self::Error> {
         self.data.body().build().await.map_err(|_| Error::Missing)
     }
 }
@@ -398,7 +397,7 @@ impl Cache {
     }
 }
 
-impl fhc::Cache for Cache {
+impl fst_cache::Cache for Cache {
     type Error = Error;
     type Found = Found;
     type Insert = store::Obligation;
@@ -407,7 +406,7 @@ impl fhc::Cache for Cache {
     // Translates an external cache lookup option into a Viceroy-native non-transactional lookup.
     async fn lookup(
         &self,
-        options: fhc::LookupOptions<'_>,
+        options: fst_cache::LookupOptions<'_>,
     ) -> Result<Option<Self::Found>, Self::Error> {
         // Convert the raw byte slice into  a CacheKey.
         let key = CacheKey::try_from(options.cache_key)?;
@@ -419,8 +418,8 @@ impl fhc::Cache for Cache {
 
     async fn transaction_lookup(
         &self,
-        options: fhc::LookupOptions<'_>,
-    ) -> Result<fhc::LookupResult<Self>, Self::Error> {
+        options: fst_cache::LookupOptions<'_>,
+    ) -> Result<fst_cache::LookupResult<Self>, Self::Error> {
         // Convert the raw byte slice into a CacheKey
         let key = CacheKey::try_from(options.cache_key)?;
         // Execute the native transactional lookup function
@@ -428,13 +427,13 @@ impl fhc::Cache for Cache {
         let go_get = entry.go_get.map(|obligation| {
             // if there is a found entry, we must update, otherwise we need to insert.
             if entry.found.is_some() {
-                fhc::GoGet::Update(obligation)
+                fst_cache::GoGet::Update(obligation)
             } else {
-                fhc::GoGet::Insert(obligation)
+                fst_cache::GoGet::Insert(obligation)
             }
         });
         // Return the found entry and obligation, if any.
-        Ok(fhc::LookupResult {
+        Ok(fst_cache::LookupResult {
             found: entry.found,
             go_get,
         })
