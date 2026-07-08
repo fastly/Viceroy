@@ -149,7 +149,22 @@
         $pass
         $ttl
         $stale_while_revalidate
-        $pci))
+        $pci
+        ;;; Maximum time to wait for a request-collapsing lookup to complete.
+        $lookup_timeout
+        ))
+;;; An override for response caching behavior.
+;;; Fields correspond to cache_override_tag, when set.
+;;; Surrogate_keys is untagged; an empty value inidicates no override;
+(typename $cache_override
+    (record
+        (field $ttl u32)
+        (field $stale_while_revalidate u32)
+        (field $surrogate_keys (@witx pointer (@witx char8)))
+        (field $surrogate_keys_len u32)
+        (field $lookup_timeout_ms u32)
+    ))
+
 (typename $num_bytes (@witx usize))
 (typename $num_hops (@witx usize))
 (typename $header_count u32)
