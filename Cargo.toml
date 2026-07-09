@@ -34,7 +34,7 @@ bytesize = "^1.1.0"
 cfg-if = "^1.0"
 clap = { workspace = true }
 cranelift-entity = "^0.123.0"
-fastly-shared = "^0.11.5"
+fastly-shared = "^0.13.0"
 flate2 = "^1.0.24"
 futures = { workspace = true }
 http = "^0.2.8"
@@ -83,7 +83,7 @@ test-fatalerror-config = []
 
 [workspace]
 members = [
-    "cli",
+    "cli"
 ]
 resolver = "3"
 

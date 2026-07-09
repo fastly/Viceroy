@@ -1141,13 +1141,13 @@ pub mod fastly_http_downstream {
     #[export_name = "fastly_http_downstream#downstream_bot_detected"]
     pub fn downstream_bot_detected(
         req_handle: RequestHandle,
-        bot_analyzed_out: *mut u32,
+        bot_detected_out: *mut u32,
     ) -> FastlyStatus {
         let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
         match http_downstream::downstream_bot_detected(&req_handle) {
             Ok(res) => {
                 unsafe {
-                    *main_ptr!(bot_analyzed_out) = u32::from(res);
+                    *main_ptr!(bot_detected_out) = u32::from(res);
                 }
                 FastlyStatus::OK
             }
@@ -2527,7 +2527,7 @@ pub mod fastly_http_req {
                 Err(err) => return err.into(),
             }
         }
-        
+
         let res = backend::register_dynamic_backend(name_prefix, target, builder);
         let res = res.map(|_backend| ());
 

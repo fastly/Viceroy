@@ -2,6 +2,7 @@
 
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
 - Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
+- Add support for headers-based bot detection mocking, as well as headless bots in the API, updated to v0.13.0 of Fastly crate ([#658](https://github.com/fastly/Viceroy/pull/658))
 
 ## 0.19.0 (2026-06-16)
 
@@ -135,12 +136,12 @@
   messaging) features like HTTP streaming or WebSockets-over-HTTP.
 
   Requests forwarded this way will be replayed:
-   - Method, headers, path, and query of the forwarded request will be based on
-     the request whose handle is passed to `redirect_to_grip_proxy_v2` (or from
-     the downstream request if `redirect_to_grip_proxy` was called).
-   - The request header `pushpin-route` will be added, its value set to the backend name.
-   - Request body of the forwarded request will contain the full body of the
-     downstream request.
+  - Method, headers, path, and query of the forwarded request will be based on
+    the request whose handle is passed to `redirect_to_grip_proxy_v2` (or from
+    the downstream request if `redirect_to_grip_proxy` was called).
+  - The request header `pushpin-route` will be added, its value set to the backend name.
+  - Request body of the forwarded request will contain the full body of the
+    downstream request.
 
   This mechanism expects Pushpin to be configured with `accept_pushpin_route`
   to be set to `true` and for its routes to be set up properly. This is
@@ -252,8 +253,8 @@
 
 - Add support for supplying client certificates in fastly.toml, through the use of the
   `client_cert_info` table, which must have one of a "certificate" or "certificate_file"
-  key, as well as one of a "key" and "key_file" key. The "_file" variants can be used to
-  point to certificate/key files on disk, whereas the non-"_file" variants should be
+  key, as well as one of a "key" and "key_file" key. The "\_file" variants can be used to
+  point to certificate/key files on disk, whereas the non-"\_file" variants should be
   multi-line string constants in the toml. In all cases, they should be in PEM format.
 - Restore compatibility with older glibc versions in release artifacts
 
@@ -374,7 +375,7 @@
 - Fill downstream_client_request_id in ([#282](https://github.com/fastly/Viceroy/pull/282))
 - Bump to wasmtime-10.0.0 ([#279](https://github.com/fastly/Viceroy/pull/279))
 - Add a stub for downstream_client_request_id ([#276](https://github.com/fastly/Viceroy/pull/276))
--  Fix various warnings ([#271](https://github.com/fastly/Viceroy/pull/271))
+- Fix various warnings ([#271](https://github.com/fastly/Viceroy/pull/271))
 - ⛽ -> ⏲️ Switch from fuel to epoch interruptions. ([#273](https://github.com/fastly/Viceroy/pull/273))
 - Bump wasmtime dependencies to 9.0.1 ([#272](https://github.com/fastly/Viceroy/pull/272))
 - ⏩ none should not be defined in cache_override_tag witx ([#269](https://github.com/fastly/Viceroy/pull/269))
@@ -383,7 +384,7 @@
 
 ## 0.5.1 (2023-05-17)
 
--  Update crates and add http_keepalive_mode_set ([#266](https://github.com/fastly/Viceroy/pull/266))
+- Update crates and add http_keepalive_mode_set ([#266](https://github.com/fastly/Viceroy/pull/266))
 
 ## 0.5.0 (2023-05-11)
 
@@ -395,21 +396,27 @@
 - Add documentation explaining how to run rust unit tests w/ viceroy ([#242](https://github.com/fastly/Viceroy/pull/242))
 
 ## 0.4.5 (2023-04-13)
--  Remove validation on config store and dictionary names ([#248](https://github.com/fastly/Viceroy/pull/248))
+
+- Remove validation on config store and dictionary names ([#248](https://github.com/fastly/Viceroy/pull/248))
 
 ## 0.4.4 (2023-04-11)
+
 - feat: Allow local KV Stores to be defined using `[local_server.kv_stores]` ([#245](https://github.com/fastly/Viceroy/pull/245))
 
 ## 0.4.3 (2023-04-04)
+
 - Add the `fastly_backend` module to the wiggle abi ([#243](https://github.com/fastly/Viceroy/pull/243))
 
 ## 0.4.2 (2023-03-30)
+
 - Allow config-stores to be defined using `[local_server.config_stores]` ([#240](https://github.com/fastly/Viceroy/pull/240))
 
 ## 0.4.1 (2023-03-23)
+
 - Add `fastly_backend` interfaces for backend introspection ([#236](https://github.com/fastly/Viceroy/pull/236))
 
 ## 0.4.0 (2023-03-17)
+
 - Add a run-mode that executes the input program once and then exits ([#211](https://github.com/fastly/Viceroy/pull/211))
 - Update to Wasmtime 6.0.0 ([#226](https://github.com/fastly/Viceroy/pull/226))
 - Make object and secret store config names consistent ([#206](https://github.com/fastly/Viceroy/pull/206))
@@ -417,21 +424,25 @@
 - Split out run-mode and serve mode into subcommands ([#229](https://github.com/fastly/Viceroy/pull/229))
 
 ## 0.3.5 (2023-01-20)
+
 - Add support for Secret Store ([#210](https://github.com/fastly/Viceroy/pull/210))
 
 ## 0.3.4 (2023-01-19)
+
 - Update to Wasmtime 4.0.0
   ([#217](https://github.com/fastly/Viceroy/pull/217))
 - Set fixed release build images to improve compatibility of precompiled release artifacts
   ([#216](https://github.com/fastly/Viceroy/pull/216))
 
 ## 0.3.3 (2023-01-18)
+
 - Support the streaming body `finish()` method introduced in version 0.9.0 of the Rust SDK
   ([#203](https://github.com/fastly/Viceroy/pull/203))
 - Update to wasmtime 3.0.0 and enable experimental wasi-nn interface
   ([#209](https://github.com/fastly/Viceroy/pull/209))
 
 ## 0.3.2 (2022-11-17)
+
 - Add geolocation implementation to Viceroy
   ([#165](https://github.com/fastly/Viceroy/pull/165))
 - Implement async select hostcalls for Viceroy
@@ -455,6 +466,7 @@
   ([#187](https://github.com/fastly/Viceroy/pull/187))
 
 ## 0.3.0 (2022-10-11)
+
 - Tagged but not released due to invalid metadata added in
   [#173](https://github.com/fastly/Viceroy/pull/189). See
   [#189](https://github.com/fastly/Viceroy/pull/189) for more details
@@ -523,6 +535,7 @@
 ## 0.2.3 (2021-08-23)
 
 ### Additions
+
 - Added the close functionality for `RequestHandle`, `ResponseHandle`,
   `BodyHandle`, and `StreamingBodyHandle` in the upcoming Rust Compute `0.8.0` SDK
   release ([#65](https://github.com/fastly/Viceroy/pull/65))
@@ -530,6 +543,7 @@
 - Added the ability to do host overrides from the TOML configuration ([#48](https://github.com/fastly/Viceroy/pull/48))
 
 ### Changes
+
 - Viceroy now tracks the latest stable Rust which as of this release is 1.54.0
 
 ## 0.2.2 (2021-07-15)
