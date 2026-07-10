@@ -103,7 +103,7 @@ fn test_select() -> Result<(), Error> {
     ];
     let mut ready_idx = 0;
     unsafe {
-        fastly_sys::fastly_async_io::select(handles.as_ptr(), handles.len(), 20, &mut ready_idx);
+        let _ = fastly_sys::fastly_async_io::select(handles.as_ptr(), handles.len(), 20, &mut ready_idx);
     };
     if ready_idx == u32::MAX {
         append_header(&mut ds_resp, "Ready-Index", "timeout");
