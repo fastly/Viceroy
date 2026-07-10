@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.20.0 (2026-07-09)
 
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
