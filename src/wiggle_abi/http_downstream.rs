@@ -369,7 +369,7 @@ impl FastlyHttpDownstream for Sandbox {
             .ok_or(Error::MissingDownstreamMetadata)?
             .get("x-fastly-bot-name")
             .and_then(|n| n.to_str().ok())
-            .unwrap_or("");
+            .ok_or(Error::ValueAbsent)?;
         let name_len = name.len();
         match u32::try_from(name_len) {
             Ok(name_len) if name_len <= bot_name_max_len => {
@@ -402,7 +402,7 @@ impl FastlyHttpDownstream for Sandbox {
             .ok_or(Error::MissingDownstreamMetadata)?
             .get("x-fastly-bot-category")
             .and_then(|n| n.to_str().ok())
-            .unwrap_or("");
+            .ok_or(Error::ValueAbsent)?;
         let category_len = category.len();
         match u32::try_from(category_len) {
             Ok(category_len) if category_len <= bot_category_max_len => {
@@ -465,18 +465,13 @@ impl FastlyHttpDownstream for Sandbox {
         _memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
     ) -> Result<u32, Error> {
-        let headers = self
+        Ok(self
             .downstream_original_headers(handle)?
-            .ok_or(Error::MissingDownstreamMetadata)?;
-        if let Some(verified) = headers
+            .ok_or(Error::MissingDownstreamMetadata)?
             .get("x-fastly-bot-verified")
             .map(|a| a == "true")
             .map(|a| if a { 1 } else { 0 })
-        {
-            Ok(verified)
-        } else {
-            Err(Error::ValueAbsent)
-        }
+            .ok_or(Error::ValueAbsent)?)
     }
 
     fn downstream_resvpnproxy_is_anonymous(
