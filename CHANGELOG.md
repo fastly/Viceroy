@@ -1,4 +1,4 @@
-## Unreleased
+## 0.20.1 (2026-07-16)
 
 - Fix wiggle abi implementation for bot detection mocking. ([#664](https://github.com/fastly/Viceroy/pull/664))
 
