@@ -139,7 +139,7 @@ url = "2.3.1"
 
 # Wasmtime dependencies
 wasmtime = { version =  "39.0.2", features = ["call-hook"] }
-wasmtime-wasi = "39.0.2"
+wasmtime-wasi = "44.0.2"
 wasmtime-wasi-io = "39.0.2"
 wasmtime-wasi-nn = "39.0.2"
 wiggle = "39.0.2"
