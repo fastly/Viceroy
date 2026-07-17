@@ -5,8 +5,8 @@ mod downstream;
 
 pub use async_item::{
     AsyncItem, HttpCacheEntry, PeekableTask, PendingCacheTask, PendingDownstreamReqTask,
-    PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
-    PendingResponse,
+    PendingHttpCacheTask, PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask,
+    PendingKvLookupTask, PendingResponse,
 };
 
 use std::collections::HashMap;
@@ -1096,9 +1096,44 @@ impl Sandbox {
         Ok(())
     }
 
-    pub fn insert_http_cache_entry(&mut self, entry: HttpCacheEntry) -> AsyncItemHandle {
+    /// Add a new (pending) HTTP cache entry
+    pub fn insert_http_cache_op(&mut self, entry: PendingHttpCacheTask) -> AsyncItemHandle {
         self.async_items
-            .push(Some(AsyncItem::HttpCacheEntry(entry)))
+            .push(Some(AsyncItem::PendingHttpCache(entry)))
+    }
+
+    /// Get exclusive access to an HTTP cache entry, which may require blocking until the entry is
+    /// available.
+    pub(crate) async fn http_cache_entry_mut(
+        &mut self,
+        handle: HttpCacheHandle,
+    ) -> Result<&mut HttpCacheEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_http_cache_mut)
+            .map(PendingHttpCacheTask::as_mut)
+            .ok_or(HandleError::InvalidHttpCacheHandle(handle))?
+            .await
+            .as_mut()
+            .map_err(|e| {
+                tracing::error!("in completion of HTTP cache lookup: {e}");
+                HandleError::InvalidHttpCacheHandle(handle)
+            })
+    }
+
+    /// Take ownership of a `CacheEntry` given its handle.
+    ///
+    /// Returns a `HandleError` if the handle is not associated with an HTTP cache lookup.
+    pub(crate) fn take_http_cache_entry(
+        &mut self,
+        handle: HttpCacheHandle,
+    ) -> Result<PendingHttpCacheTask, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_http_cache)
+            .ok_or(HandleError::InvalidHttpCacheHandle(handle))
     }
 
     // ------- Core Cache API ------
@@ -1167,7 +1202,7 @@ impl Sandbox {
         self.ctx.cache()
     }
 
-    pub fn http_cache(&self) -> &HttpCache<Arc<Cache>> {
+    pub fn http_cache(&self) -> &Arc<HttpCache<Arc<Cache>>> {
         self.ctx.http_cache()
     }
 

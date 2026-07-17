@@ -164,7 +164,7 @@ pub struct ExecuteCtx {
     /// The cache for this service.
     cache: Arc<Cache>,
     /// The HTTP cache for this service
-    http_cache: HttpCache<Arc<Cache>>,
+    http_cache: Arc<HttpCache<Arc<Cache>>>,
     /// Extra environment variables.
     environment: EnvironmentVariables,
     /// Senders waiting for new requests for reusable sandboxes.
@@ -328,7 +328,7 @@ impl ExecuteCtx {
             epoch_increment_stop,
             guest_profile_config: guest_profile_config.map(Arc::new),
             cache: Arc::clone(&cache),
-            http_cache: HttpCache::new(cache),
+            http_cache: Arc::new(HttpCache::new(cache)),
 
             pending_reuse: Arc::new(AsyncMutex::new(vec![])),
         };
@@ -1020,7 +1020,7 @@ impl ExecuteCtx {
         &self.cache
     }
 
-    pub fn http_cache(&self) -> &HttpCache<Arc<Cache>> {
+    pub fn http_cache(&self) -> &Arc<HttpCache<Arc<Cache>>> {
         &self.http_cache
     }
 

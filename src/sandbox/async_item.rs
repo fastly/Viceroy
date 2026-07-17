@@ -147,6 +147,26 @@ impl PendingCacheTask {
     }
 }
 
+/// An async item, waiting for a cache lookup to complete.
+#[derive(Debug)]
+pub struct PendingHttpCacheTask(PeekableTask<HttpCacheEntry>);
+impl PendingHttpCacheTask {
+    pub fn new(t: PeekableTask<HttpCacheEntry>) -> PendingHttpCacheTask {
+        PendingHttpCacheTask(t)
+    }
+    pub fn task(self) -> PeekableTask<HttpCacheEntry> {
+        self.0
+    }
+
+    /// Get a mutable reference to the HttpCacheEntry, possibly blocking until it becomes available.
+    pub async fn as_mut(&mut self) -> &mut Result<HttpCacheEntry, Error> {
+        self.0.await_ready().await;
+        self.0
+            .get_mut()
+            .expect("internal error: PeekableTask was not ready after AwaitReady")
+    }
+}
+
 /// Represents either a full body, or the write end of a streaming body.
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
@@ -162,7 +182,7 @@ pub enum AsyncItem {
     PendingKvDelete(PendingKvDeleteTask),
     PendingKvList(PendingKvListTask),
     PendingCache(PendingCacheTask),
-    HttpCacheEntry(HttpCacheEntry),
+    PendingHttpCache(PendingHttpCacheTask),
     Ready,
 }
 
@@ -335,23 +355,23 @@ impl AsyncItem {
         }
     }
 
-    pub fn as_http_cache_entry(&self) -> Option<&HttpCacheEntry> {
+    pub fn as_pending_http_cache(&self) -> Option<&PendingHttpCacheTask> {
         match self {
-            Self::HttpCacheEntry(e) => Some(e),
+            Self::PendingHttpCache(e) => Some(e),
             _ => None,
         }
     }
 
-    pub fn as_http_cache_entry_mut(&mut self) -> Option<&mut HttpCacheEntry> {
+    pub fn as_pending_http_cache_mut(&mut self) -> Option<&mut PendingHttpCacheTask> {
         match self {
-            Self::HttpCacheEntry(e) => Some(e),
+            Self::PendingHttpCache(e) => Some(e),
             _ => None,
         }
     }
 
-    pub fn into_http_cache_entry(self) -> Option<HttpCacheEntry> {
+    pub fn into_pending_http_cache(self) -> Option<PendingHttpCacheTask> {
         match self {
-            Self::HttpCacheEntry(e) => Some(e),
+            Self::PendingHttpCache(e) => Some(e),
             _ => None,
         }
     }
@@ -367,7 +387,7 @@ impl AsyncItem {
             Self::PendingKvDelete(req) => req.0.await_ready().await,
             Self::PendingKvList(req) => req.0.await_ready().await,
             Self::PendingCache(req) => req.0.await_ready().await,
-            Self::HttpCacheEntry(_) => (),
+            Self::PendingHttpCache(req) => req.0.await_ready().await,
             Self::Ready => (),
         }
     }
@@ -546,8 +566,8 @@ impl PendingResponse {
 
 pub type HttpCacheEntry = fst_http_cache::HttpCacheEntry<Arc<Cache>>;
 
-impl From<HttpCacheEntry> for AsyncItem {
-    fn from(e: HttpCacheEntry) -> Self {
-        Self::HttpCacheEntry(e)
+impl From<PendingHttpCacheTask> for AsyncItem {
+    fn from(e: PendingHttpCacheTask) -> Self {
+        Self::PendingHttpCache(e)
     }
 }

@@ -79,6 +79,9 @@ pub enum Error {
     InvalidUri(#[from] http::uri::InvalidUri),
 
     #[error(transparent)]
+    InvalidTargetUri(#[from] cache_semantics::TargetUriError),
+
+    #[error(transparent)]
     IoError(#[from] std::io::Error),
 
     #[error("Limit exceeded: {msg}")]
@@ -305,6 +308,7 @@ impl Error {
             | Error::InvalidHeaderValue(_)
             | Error::InvalidMethod(_)
             | Error::InvalidUri(_)
+            | Error::InvalidTargetUri(_)
             | Error::IoError(_)
             | Error::MissingDownstreamMetadata
             | Error::Other(_)
@@ -416,6 +420,9 @@ pub enum HandleError {
     /// A cache handle was not valid.
     #[error("Invalid cache handle: {0}")]
     InvalidCacheHandle(crate::wiggle_abi::types::CacheHandle),
+
+    #[error("Invalid HTTP cache handle: {0}")]
+    InvalidHttpCacheHandle(crate::wiggle_abi::types::HttpCacheHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.
@@ -946,4 +953,25 @@ pub enum NonHttpResponse {
     HandoffToPushpin(HandoffInfo),
     #[error("graceful Backend handoff")]
     HandoffToBackend(HandoffInfo),
+}
+
+impl<C> From<fst_http_cache::Error<C>> for Error
+where
+    C: fst_cache::Cache<Error = crate::cache::Error>,
+{
+    fn from(value: fst_http_cache::Error<C>) -> Self {
+        match value {
+            fst_http_cache::Error::CacheError(err) => Error::CacheError(err),
+            fst_http_cache::Error::TargetUri(target_uri_error) => {
+                Error::InvalidTargetUri(target_uri_error)
+            }
+            fst_http_cache::Error::EncodeResponseHead(error) => Error::Other(anyhow::format_err!(
+                "internal error in preparing HTTP cache entry: {}",
+                error
+            )),
+            fst_http_cache::Error::NoInsertObligation => {
+                Error::CacheError(crate::cache::Error::CannotWrite)
+            }
+        }
+    }
 }
