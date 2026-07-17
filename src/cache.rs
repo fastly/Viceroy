@@ -2,7 +2,7 @@ use bytes::Bytes;
 use core::str;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     body::Body,
@@ -15,6 +15,7 @@ use http::{HeaderMap, HeaderValue};
 mod store;
 mod variance;
 
+pub use fst_cache::{SurrogateKey, SurrogateKeySet};
 use store::{CacheData, CacheKeyObjects, GetBodyBuilder, ObjectMeta, Obligation};
 pub use variance::VaryRule;
 
@@ -292,6 +293,7 @@ impl fst_cache::Found for Found {
             stale_if_error: meta.stale_if_error(),
             vary_rule: meta.vary_rule().headers().to_vec(),
             stale_while_revalidate: meta.stale_while_revalidate(),
+            surrogate_keys: meta.surrogate_keys().clone(),
         }
     }
 
@@ -534,95 +536,6 @@ impl CacheOverride {
     }
 }
 
-/// Maximum length of surrogate keys (when combined with spaces).
-const MAX_SURROGATE_KEYS_LENGTH: usize = 16 * 1024;
-/// Maximum length of a single surrogate key.
-const MAX_SURROGATE_KEY_LENGTH: usize = 1024;
-
-#[derive(Debug, Default, Clone)]
-pub struct SurrogateKeySet(HashSet<SurrogateKey>);
-
-impl std::fmt::Display for SurrogateKeySet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{")?;
-        for (i, item) in self.0.iter().enumerate() {
-            if i == 0 {
-                write!(f, "{item}")?;
-            } else {
-                write!(f, " {item}")?;
-            }
-        }
-        write!(f, "}}")
-    }
-}
-
-impl TryFrom<&[u8]> for SurrogateKeySet {
-    type Error = crate::Error;
-
-    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        if s.len() > MAX_SURROGATE_KEYS_LENGTH {
-            return Err(
-                Error::InvalidArgument("surrogate key set exceeds maximum length (16Ki)").into(),
-            );
-        }
-        let result: Result<HashSet<_>, _> = s
-            .split(|c| *c == b' ')
-            .filter(|sk| !sk.is_empty())
-            .map(SurrogateKey::try_from)
-            .collect();
-        Ok(SurrogateKeySet(result?))
-    }
-}
-
-impl std::str::FromStr for SurrogateKeySet {
-    type Err = crate::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.as_bytes().try_into()
-    }
-}
-
-/// A validated surrogate key: a non-empty string containing only visible ASCII characters.
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct SurrogateKey(String);
-
-impl std::fmt::Display for SurrogateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl TryFrom<&[u8]> for SurrogateKey {
-    type Error = Error;
-
-    fn try_from(b: &[u8]) -> Result<Self, Self::Error> {
-        if b.len() > MAX_SURROGATE_KEY_LENGTH {
-            return Err(Error::InvalidArgument(
-                "surrogate key exceeds maximum length (1024)",
-            ));
-        }
-
-        if !b.iter().all(|c| c.is_ascii_graphic()) {
-            return Err(Error::InvalidArgument(
-                "surrogate key contains characters other than graphical ASCII",
-            ));
-        }
-        let s = unsafe {
-            // All graphic ASCII characters are equivalent to the corresponding UTF-8 codepoints.
-            str::from_utf8_unchecked(b)
-        };
-        Ok(SurrogateKey(s.to_owned()))
-    }
-}
-
-impl std::str::FromStr for SurrogateKey {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.as_bytes().try_into()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
@@ -682,16 +595,6 @@ mod tests {
                 assert_eq!(got, value);
             });
         }
-    }
-
-    #[test]
-    fn parse_surrogate_keys() {
-        let keys: SurrogateKeySet = "keyA keyB".parse().unwrap();
-        let key_a: SurrogateKey = "keyA".parse().unwrap();
-        let key_b: SurrogateKey = "keyB".parse().unwrap();
-        assert_eq!(keys.0.len(), 2);
-        assert!(keys.0.contains(&key_a));
-        assert!(keys.0.contains(&key_b));
     }
 
     #[tokio::test]

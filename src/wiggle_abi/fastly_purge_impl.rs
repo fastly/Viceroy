@@ -26,7 +26,11 @@ impl FastlyPurge for Sandbox {
         let key = memory
             .as_str(surrogate_key)?
             .ok_or(Error::SharedMemory)?
-            .parse()?;
+            .parse()
+            .map_err(|e| {
+                tracing::warn!("invalid surrogate key provided: {e}");
+                Error::InvalidArgument
+            })?;
         let purged = self.cache().purge(key, soft_purge);
         tracing::debug!("{purged} variants purged");
         Ok(())

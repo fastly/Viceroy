@@ -6,9 +6,10 @@ use bytes::Bytes;
 use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::{CacheKey, SurrogateKeySet, VaryRule, WriteOptions};
+use crate::cache::{CacheKey, VaryRule, WriteOptions};
 use crate::sandbox::{PeekableTask, PendingCacheTask, Sandbox};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
+use fst_cache::SurrogateKeySet;
 
 use super::fastly_cache::FastlyCache;
 use super::{Error, types};
@@ -111,7 +112,10 @@ fn load_write_options(
             .surrogate_keys_ptr
             .as_array(options.surrogate_keys_len);
         let surrogate_keys_bytes = memory.as_slice(slice)?.ok_or(Error::SharedMemory)?;
-        surrogate_keys_bytes.try_into()?
+        surrogate_keys_bytes.try_into().map_err(|e| {
+            tracing::warn!("invalid surrogate keys provided: {e}");
+            Error::InvalidArgument
+        })?
     } else {
         SurrogateKeySet::default()
     };

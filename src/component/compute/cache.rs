@@ -74,7 +74,10 @@ fn load_write_options(options: &api::WriteOptions) -> Result<WriteOptions, Error
     }
 
     let surrogate_keys = if let Some(surrogate_keys) = &options.surrogate_keys {
-        surrogate_keys.as_bytes().try_into()?
+        surrogate_keys.parse().map_err(|e| {
+            tracing::warn!("invalid surrogate keys provided: {e}");
+            Error::InvalidArgument
+        })?
     } else {
         SurrogateKeySet::default()
     };

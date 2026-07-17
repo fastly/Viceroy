@@ -103,6 +103,10 @@ impl ObjectMeta {
     pub fn stale_while_revalidate(&self) -> Duration {
         self.stale_while_revalidate
     }
+
+    pub fn surrogate_keys(&self) -> &SurrogateKeySet {
+        &self.surrogate_keys
+    }
 }
 
 impl ObjectMeta {
@@ -438,7 +442,7 @@ impl CacheKeyObjects {
                         return Some((variant, value));
                     };
 
-                    if !present.get_meta().surrogate_keys.0.contains(key) {
+                    if !present.get_meta().surrogate_keys.contains(key) {
                         // Doesn't have this surrogate key; keep it.
                         return Some((variant, value));
                     }
@@ -675,6 +679,7 @@ impl fst_cache::UpdateObligation for Obligation {
             stale_if_error: meta.stale_if_error(),
             vary_rule: meta.vary_rule().headers().to_vec(),
             stale_while_revalidate: meta.stale_while_revalidate(),
+            surrogate_keys: meta.surrogate_keys.clone(),
         }
     }
 

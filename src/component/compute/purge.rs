@@ -12,7 +12,10 @@ impl purge::Host for ComponentCtx {
         options: purge::PurgeOptions,
     ) -> Result<(), types::Error> {
         let soft_purge = options.soft_purge;
-        let surrogate_key = surrogate_key.parse()?;
+        let surrogate_key = surrogate_key.parse().map_err(|e| {
+            tracing::warn!("invalid surrogate key provided: {e}");
+            Error::InvalidArgument
+        })?;
         let purged = self.sandbox().cache().purge(surrogate_key, soft_purge);
         tracing::debug!("{purged} variants purged");
         Ok(())
