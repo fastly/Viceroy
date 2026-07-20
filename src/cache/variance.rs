@@ -76,6 +76,12 @@ impl VaryRule {
     }
 }
 
+impl Into<Vec<HeaderName>> for VaryRule {
+    fn into(self) -> Vec<HeaderName> {
+        self.headers
+    }
+}
+
 /// The portion of a cache key that is defined by request and response.
 ///
 /// A `vary_by` directive indicates that a cached object should only be matched if the headers

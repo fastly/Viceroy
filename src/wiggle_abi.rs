@@ -48,6 +48,26 @@ macro_rules! multi_value_result {
     }};
 }
 
+/// Get a [`GuestPtr`] to a field of a struct, adjusting the offset and type of a pointer to that struct.
+macro_rules! ptr_to_field {
+    ($base:expr, $offset:expr, $field_ty:ty) => {{
+        $base
+            .cast::<u8>()
+            .add($offset)
+            .map(|field_ptr| field_ptr.cast::<$field_ty>())
+    }};
+}
+
+/// Get a [`GuestPtr`] to a slice represented by a pointer/length pair of fields on a struct.
+macro_rules! ptr_to_slice_from_fields {
+    ($memory:expr, $base:expr, $ptr_offset:expr, $len_offset:expr, $elt_ty:ty) => {{
+        let ptr = $memory.read(ptr_to_field!($base, $ptr_offset, u32)?)?;
+        let len = $memory.read(ptr_to_field!($base, $len_offset, u32)?)?;
+        let slice_guest_ptr: wiggle::GuestPtr<[$elt_ty]> = wiggle::GuestPtr::new((ptr, len));
+        slice_guest_ptr
+    }};
+}
+
 mod acl;
 mod anti_abuse_impl;
 mod backend_impl;
