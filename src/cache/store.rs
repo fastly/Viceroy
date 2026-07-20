@@ -39,6 +39,8 @@ pub struct ObjectMeta {
     stale_while_revalidate: Duration,
     stale_if_error: Duration,
 
+    sensitive_data: bool,
+
     request_headers: HeaderMap,
     vary_rule: VaryRule,
 
@@ -54,7 +56,10 @@ pub struct ObjectMeta {
 impl ObjectMeta {
     /// Retrieve the current age of this object.
     pub fn age(&self) -> Duration {
-        // Age in this cache, plus age upon insertion
+        // Age in this cache, plus age upon insertion.
+        // TODO: This should get pinned for each transaction, w/ times being relative to the
+        // transaction time.
+        // As-is, a lookup result could "shift" between phases as more time passes.
         self.inserted.elapsed() + self.initial_age
     }
 
@@ -92,6 +97,10 @@ impl ObjectMeta {
         self.user_metadata.clone()
     }
 
+    pub fn sensitive_data(&self) -> bool {
+        self.sensitive_data
+    }
+
     pub fn length(&self) -> Option<u64> {
         self.length
     }
@@ -120,9 +129,9 @@ impl ObjectMeta {
             stale_if_error,
             user_metadata,
             length,
-            // There is no API that returns whether a cache entry has sensitive data.
-            // Viceroy doesn't change any behavior w/rt sensitive data; so, we ignore it here.
-            sensitive_data: _,
+            // The sensitive-data bit is only reported back in the HTTP cache API, but it is
+            // visible there.
+            sensitive_data,
             // Similarly, edge_max_age has no effect and cannot be read.
             edge_max_age: _,
             surrogate_keys,
@@ -139,6 +148,7 @@ impl ObjectMeta {
             user_metadata,
             length,
             surrogate_keys,
+            sensitive_data,
             soft_purge: AtomicBool::new(false),
         }
     }
@@ -156,10 +166,12 @@ impl Clone for ObjectMeta {
             user_metadata: self.user_metadata.clone(),
             length: self.length,
             surrogate_keys: self.surrogate_keys.clone(),
+            sensitive_data: self.sensitive_data,
             soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
         }
     }
 }
+
 /// Object(s) indexed by a CacheKey.
 #[derive(Debug, Default)]
 pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
@@ -657,7 +669,7 @@ impl fst_cache::InsertObligation for Obligation {
             user_metadata: meta.user_metadata,
             length: meta.length,
             sensitive_data: options.sensitive_data,
-            edge_max_age: options.edge_max_age,
+            edge_max_age: options.edge_max_age.unwrap_or(meta.max_age),
             surrogate_keys: Default::default(),
         };
         // Commit the cache insertion and return the Result <Self::Found, Self::Error>.
@@ -698,13 +710,19 @@ impl fst_cache::UpdateObligation for Obligation {
             user_metadata: meta.user_metadata,
             length: meta.length,
             sensitive_data: options.sensitive_data,
-            edge_max_age: options.edge_max_age,
+            edge_max_age: options.edge_max_age.unwrap_or(meta.max_age),
             surrogate_keys: Default::default(),
         };
         self.update(write_options).await.map_err(|(_, e)| match e {
             crate::Error::CacheError(err) => err,
             _ => Error::Missing,
         })
+    }
+
+    fn sensitive_data(&self) -> bool {
+        self.meta()
+            .expect("Update Obligation should always have a present entry")
+            .sensitive_data
     }
 }
 

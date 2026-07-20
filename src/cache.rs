@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use core::str;
+use fst_cache::LifecycleStage;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 use std::{sync::Arc, time::Duration};
@@ -306,6 +307,22 @@ impl fst_cache::Found for Found {
     // Extracts the readable body stream out the cache handle.
     async fn get_body(&self) -> Result<impl fst_cache::Body, Self::Error> {
         self.data.body().build().await.map_err(|_| Error::Missing)
+    }
+
+    fn sensitive_data(&self) -> bool {
+        self.data.get_meta().sensitive_data()
+    }
+
+    fn lifecycle_stage(&self) -> LifecycleStage {
+        let meta = self.data.get_meta();
+        if meta.is_fresh() {
+            LifecycleStage::Fresh
+        } else if meta.is_usable() {
+            LifecycleStage::StaleWhileRevalidate
+        } else {
+            // Note that we don't yet support stale-if-error in Viceroy.
+            LifecycleStage::Expired
+        }
     }
 }
 

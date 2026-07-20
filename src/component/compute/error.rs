@@ -202,6 +202,7 @@ impl From<error::Error> for types::Error {
         match err {
             Error::BufferLengthError { .. } => types::Error::BufferLen(0),
             Error::InvalidArgument => types::Error::InvalidArgument,
+            Error::InvalidTargetUri(_) => types::Error::InvalidArgument,
             Error::Unsupported { .. } => types::Error::Unsupported,
             Error::HandleError { .. } => panic!("`HandleError` should not be used in components"),
             Error::InvalidStatusCode { .. } => types::Error::InvalidArgument,

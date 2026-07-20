@@ -266,7 +266,7 @@ checksum = "2e93abca9e28e0a1b9877922aacb20576e05d4679ffa78c3d6dc22a26a216659"
 [[package]]
 name = "cache-semantics"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=22f70fe938a85f57517a4acd1af84bdc76df951b#22f70fe938a85f57517a4acd1af84bdc76df951b"
+source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=4c0157e3a52c46840241938274fdf675c7edfca1#4c0157e3a52c46840241938274fdf675c7edfca1"
 dependencies = [
  "anyhow",
  "clap",
@@ -994,7 +994,7 @@ dependencies = [
 [[package]]
 name = "fst-cache"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=22f70fe938a85f57517a4acd1af84bdc76df951b#22f70fe938a85f57517a4acd1af84bdc76df951b"
+source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=4c0157e3a52c46840241938274fdf675c7edfca1#4c0157e3a52c46840241938274fdf675c7edfca1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1009,7 +1009,7 @@ dependencies = [
 [[package]]
 name = "fst-http-cache"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=22f70fe938a85f57517a4acd1af84bdc76df951b#22f70fe938a85f57517a4acd1af84bdc76df951b"
+source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=4c0157e3a52c46840241938274fdf675c7edfca1#4c0157e3a52c46840241938274fdf675c7edfca1"
 dependencies = [
  "bytes",
  "cache-semantics",
@@ -2810,7 +2810,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -3261,6 +3261,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "bytesize",
+ "cache-semantics",
  "cfg-if",
  "clap",
  "cranelift-entity 0.123.12",
