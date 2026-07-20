@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Implement HTTP cache API
 - Add support for sending `PendingRequestHandle` downstream ([#631](https://github.com/fastly/Viceroy/pull/631))
 
 ## 0.18.0 (2026-05-21)
