@@ -266,7 +266,6 @@ checksum = "2e93abca9e28e0a1b9877922aacb20576e05d4679ffa78c3d6dc22a26a216659"
 [[package]]
 name = "cache-semantics"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=4c0157e3a52c46840241938274fdf675c7edfca1#4c0157e3a52c46840241938274fdf675c7edfca1"
 dependencies = [
  "anyhow",
  "clap",
@@ -994,7 +993,6 @@ dependencies = [
 [[package]]
 name = "fst-cache"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=4c0157e3a52c46840241938274fdf675c7edfca1#4c0157e3a52c46840241938274fdf675c7edfca1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1009,13 +1007,13 @@ dependencies = [
 [[package]]
 name = "fst-http-cache"
 version = "0.1.0"
-source = "git+ssh://git@github.com/fastly/fst-cache-semantics?rev=4c0157e3a52c46840241938274fdf675c7edfca1#4c0157e3a52c46840241938274fdf675c7edfca1"
 dependencies = [
  "bytes",
  "cache-semantics",
  "fst-cache",
  "http 0.2.12",
  "http-body",
+ "serde",
  "serde_json",
  "sha2",
  "time",

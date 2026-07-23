@@ -846,13 +846,12 @@ impl FastlyHttpCache for Sandbox {
         surrogate_keys_out_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let surrogate_keys = self
+        let meta = self
             .http_cache_entry_mut(cache_handle)
             .await?
             .get_cache_meta()
-            .map(|meta| &meta.surrogate_keys)
             .ok_or(Error::ValueAbsent)?;
-        let abi_surrogate_keys = surrogate_keys_to_abi(&surrogate_keys);
+        let abi_surrogate_keys = surrogate_keys_to_abi(&meta.surrogate_keys);
 
         let surrogate_keys_out: GuestPtr<[u8]> =
             GuestPtr::new((surrogate_keys_out_ptr.offset(), surrogate_keys_out_len));
@@ -888,13 +887,12 @@ impl FastlyHttpCache for Sandbox {
         vary_rule_out_len: u32,
         nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        let vary_rule = self
+        let meta = self
             .http_cache_entry_mut(cache_handle)
             .await?
             .get_cache_meta()
-            .map(|meta| &meta.vary_rule)
             .ok_or(Error::ValueAbsent)?;
-        let abi_vary_rule = vary_rule_to_abi(vary_rule);
+        let abi_vary_rule = vary_rule_to_abi(&meta.vary_rule);
 
         let vary_rule_out: GuestPtr<[u8]> =
             GuestPtr::new((vary_rule_out_ptr.offset(), vary_rule_out_len));

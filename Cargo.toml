@@ -71,9 +71,9 @@ wiggle = { workspace = true }
 base64 = { workspace = true }
 moka = { version = "0.12.12", features = ["future"] }
 walrus = "0.23.3"
-fst-cache = { git="ssh://git@github.com/fastly/fst-cache-semantics", rev="4c0157e3a52c46840241938274fdf675c7edfca1" }
-fst-http-cache = { git="ssh://git@github.com/fastly/fst-cache-semantics",rev="4c0157e3a52c46840241938274fdf675c7edfca1" }
-cache-semantics = { git="ssh://git@github.com/fastly/fst-cache-semantics",rev="4c0157e3a52c46840241938274fdf675c7edfca1" }
+fst-cache = { path = "../cache-semantics/fst-cache" }
+fst-http-cache = { path = "../cache-semantics/fst-http-cache" }
+cache-semantics = { path = "../cache-semantics/cache-semantics" }
 
 
 [dev-dependencies]

@@ -972,6 +972,9 @@ where
             fst_http_cache::Error::NoInsertObligation => {
                 Error::CacheError(crate::cache::Error::CannotWrite)
             }
+            fst_http_cache::Error::NoUpdateObligation => {
+                Error::CacheError(crate::cache::Error::CannotWrite)
+            }
         }
     }
 }
