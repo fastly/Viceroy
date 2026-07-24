@@ -32,6 +32,9 @@ impl FromStr for VaryRule {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Ok(VaryRule::default());
+        }
         let headers: Result<Vec<HeaderName>, InvalidHeaderName> =
             s.split(" ").map(HeaderName::try_from).collect();
         Ok(VaryRule::new(headers?.iter()))

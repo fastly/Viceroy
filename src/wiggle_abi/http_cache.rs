@@ -292,10 +292,10 @@ impl FastlyHttpCache for Sandbox {
 
         // We have to copy Parts here because we can't borrow the response parts and the cache
         // entry from &self at the same time.
-        let response = self.response_parts(response_handle)?;
+        let parts = self.response_parts(response_handle)?;
         let mut response = http::response::Response::new(read_body);
-        *response.status_mut() = response.status();
-        *response.headers_mut() = response.headers().clone();
+        *response.status_mut() = parts.status;
+        *response.headers_mut() = parts.headers.clone();
 
         // Get an additional reference to the HTTP cache, so we can borrow the cache entry...
         let http_cache = Arc::clone(self.http_cache());
@@ -321,10 +321,10 @@ impl FastlyHttpCache for Sandbox {
 
         // We have to copy Parts here because we can't borrow the response parts and the cache
         // entry from &self at the same time.
-        let response = self.response_parts(response_handle)?;
+        let parts = self.response_parts(response_handle)?;
         let mut response = http::response::Response::new(read_body);
-        *response.status_mut() = response.status();
-        *response.headers_mut() = response.headers().clone();
+        *response.status_mut() = parts.status;
+        *response.headers_mut() = parts.headers.clone();
 
         // Get an additional reference to the HTTP cache, so we can borrow the cache entry...
         let http_cache = Arc::clone(self.http_cache());
