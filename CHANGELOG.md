@@ -9,6 +9,7 @@
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
 - Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
 - Add support for headers-based bot detection mocking, as well as headless bots in the API, updated to v0.13.0 of Fastly crate ([#658](https://github.com/fastly/Viceroy/pull/658))
+- Implement the blocking KV store WIT functions. ([#657](https://github.com/fastly/Viceroy/pull/657))
 
 ## 0.19.0 (2026-06-16)
 
