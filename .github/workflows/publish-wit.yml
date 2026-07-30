@@ -45,7 +45,7 @@ jobs:
         id: publish
         uses: bytecodealliance/wkg-github-action@5b7005d1fc81c8c3380a059e58345033e3a97638 # `main`, at the time of this comment, because we need bytecodealliance/wkg-github-action#9
         with:
-          oci-reference-without-tag: 'ghcr.io/fastly/Viceroy/fastly-compute'
+          oci-reference-without-tag: 'ghcr.io/fastly/viceroy/fastly-compute'
           file: 'fastly-compute.wasm'
           description: 'The APIs of the Fastly Compute platform'
           source: 'https://github.com/fastly/Viceroy'
@@ -56,7 +56,7 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-name: ghcr.io/fastly/Viceroy/fastly-compute
+          subject-name: ghcr.io/fastly/viceroy/fastly-compute
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
           github-token: ${{ secrets.ORG_PAT }}
