@@ -43,7 +43,7 @@ jobs:
 
       - name: Publish to GitHub Container Registry
         id: publish
-        uses: bytecodealliance/wkg-github-action@10b3b04b9059ba46208cd7daf7d352af14bded0f # v5
+        uses: bytecodealliance/wkg-github-action@5b7005d1fc81c8c3380a059e58345033e3a97638 # `main`, at the time of this comment, because we need bytecodealliance/wkg-github-action#9
         with:
           oci-reference-without-tag: 'ghcr.io/fastly/Viceroy/fastly-compute'
           file: 'fastly-compute.wasm'
