@@ -3,6 +3,7 @@
 ## 0.20.1 (2026-07-16)
 
 - Fix wiggle abi implementation for bot detection mocking. ([#664](https://github.com/fastly/Viceroy/pull/664))
+- Add a github workflow for publishing the WIT API to a GHCR repository. ([#671](https://github.com/fastly/Viceroy/pull/671))
 
 ## 0.20.0 (2026-07-09)
 
