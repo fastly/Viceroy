@@ -50,7 +50,7 @@ jobs:
           description: 'The APIs of the Fastly Compute platform'
           source: 'https://github.com/fastly/Viceroy'
           homepage: 'https://www.fastly.com/documentation/guides/compute/'
-          version: '0.0.0'
+          version: '0.1.0'
           licenses: 'Apache-2.0 WITH LLVM-exception'
 
       - name: Attest build provenance
