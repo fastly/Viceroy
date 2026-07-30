@@ -1,0 +1,61 @@
+name: Publish compute.wit
+
+# Workflow to publish fastly:compute to GHCR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+      contents: write
+      attestations: write
+
+    env:
+      WKG_VERSION: 0.15.0
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@732870f031d2fb36309d0deaf36abcc704a7be65 # v1.20.1
+
+      - name: Install wkg
+        shell: bash
+        run: cargo binstall -y "wkg@${{ env.WKG_VERSION }}"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.ORG_PAT }}
+
+      - name: Build WIT package
+        shell: bash
+        run: |
+          wkg wit build -o "$GITHUB_WORKSPACE/fastly-compute.wasm" --wit-dir wasm_abi/wit
+
+      - name: Publish to GitHub Container Registry
+        id: publish
+        uses: bytecodealliance/wkg-github-action@10b3b04b9059ba46208cd7daf7d352af14bded0f # v5
+        with:
+          oci-reference-without-tag: 'ghcr.io/fastly/Viceroy/fastly-compute'
+          file: 'fastly-compute.wasm'
+          description: 'The APIs of the Fastly Compute platform'
+          source: 'https://github.com/fastly/Viceroy'
+          homepage: 'https://www.fastly.com/documentation/guides/compute/'
+          version: '0.0.0'
+          licenses: 'Apache-2.0 WITH LLVM-exception'
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ghcr.io/fastly/Viceroy/fastly-compute
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+          github-token: ${{ secrets.ORG_PAT }}
