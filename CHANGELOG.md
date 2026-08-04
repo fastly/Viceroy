@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Allow shared CLI options before explicit `serve` and `run` subcommands. ([#358](https://github.com/fastly/Viceroy/issues/358))
+
 ## 0.20.1 (2026-07-16)
 
 - Fix wiggle abi implementation for bot detection mocking. ([#664](https://github.com/fastly/Viceroy/pull/664))

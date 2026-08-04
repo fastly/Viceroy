@@ -5,7 +5,7 @@ use std::time::Duration;
 use viceroy_lib::{GuestProfileConfig, config::UnknownImportBehavior};
 
 use {
-    clap::{Args, Parser, Subcommand, ValueEnum},
+    clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind},
     std::net::{IpAddr, Ipv4Addr},
     std::{
         collections::HashSet,
@@ -26,7 +26,11 @@ use {
 #[derive(Parser, Debug)]
 #[command(name = "viceroy", author, version, about)]
 #[command(propagate_version = true)]
-#[command(args_conflicts_with_subcommands = true)]
+#[command(subcommand_negates_reqs = true)]
+#[command(
+    override_usage = "viceroy [OPTIONS] <INPUT>\n       viceroy [OPTIONS] serve [ARGS]\n       viceroy [SHARED OPTIONS] run [ARGS]\n       viceroy [-v...] adapt [ARGS]",
+    after_help = "SHARED OPTIONS are all root options except --addr."
+)]
 pub struct Opts {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -50,7 +54,7 @@ pub enum Commands {
 
 #[derive(Debug, Args, Clone)]
 pub struct ServeArgs {
-    /// The IP address that the service should be bound to.
+    /// The IP address that the service should be bound to (serve mode only).
     #[arg(long = "addr")]
     socket_addr: Option<SocketAddr>,
 
@@ -110,12 +114,12 @@ pub struct SharedArgs {
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
-    /// Set the behavior for unknown imports.
+    /// Set the behavior for unknown imports (default: link-error).
     ///
     /// Note that if a program only works with a non-default setting for this flag, it is unlikely
     /// to be publishable to Fastly.
-    #[arg(long = "unknown-import-behavior", value_enum, default_value_t = UnknownImportBehavior::LinkError)]
-    unknown_import_behavior: UnknownImportBehavior,
+    #[arg(long = "unknown-import-behavior", value_enum)]
+    unknown_import_behavior: Option<UnknownImportBehavior>,
     /// Verbosity of logs for Viceroy. `-v` sets the log level to INFO,
     /// `-vv` to DEBUG, and `-vvv` to TRACE. This option will not take
     /// effect if you set RUST_LOG to a value before starting Viceroy
@@ -145,6 +149,66 @@ enum Profile {
     },
 }
 
+impl Opts {
+    pub(crate) fn into_command(self) -> Result<Commands, clap::Error> {
+        let Self {
+            command,
+            serve: prefix,
+        } = self;
+
+        match command {
+            None => Ok(Commands::Serve(prefix)),
+            Some(Commands::Serve(mut serve_args)) => {
+                if prefix.shared.input.is_some() {
+                    return Err(Self::argument_conflict(
+                        "the input argument cannot be used before an explicit subcommand",
+                    ));
+                }
+                serve_args
+                    .inherit(prefix)
+                    .map_err(Self::duplicate_argument)?;
+                Ok(Commands::Serve(serve_args))
+            }
+            Some(Commands::Run(mut run_args)) => {
+                if prefix.shared.input.is_some() {
+                    return Err(Self::argument_conflict(
+                        "the input argument cannot be used before an explicit subcommand",
+                    ));
+                }
+                if prefix.socket_addr.is_some() {
+                    return Err(Self::argument_conflict(
+                        "the argument '--addr' cannot be used with 'run'",
+                    ));
+                }
+                run_args
+                    .shared
+                    .inherit(prefix.shared)
+                    .map_err(Self::duplicate_argument)?;
+                Ok(Commands::Run(run_args))
+            }
+            Some(Commands::Adapt(mut adapt_args)) => {
+                if prefix.socket_addr.is_some() || prefix.shared.has_non_verbosity_arguments() {
+                    return Err(Self::argument_conflict(
+                        "serve and run arguments cannot be used with 'adapt'",
+                    ));
+                }
+                adapt_args.verbosity = adapt_args.verbosity.saturating_add(prefix.shared.verbosity);
+                Ok(Commands::Adapt(adapt_args))
+            }
+        }
+    }
+
+    fn duplicate_argument(argument: &'static str) -> clap::Error {
+        Self::argument_conflict(format!(
+            "the argument '{argument}' cannot be used multiple times"
+        ))
+    }
+
+    fn argument_conflict(message: impl std::fmt::Display) -> clap::Error {
+        <Self as CommandFactory>::command().error(ErrorKind::ArgumentConflict, message)
+    }
+}
+
 impl ServeArgs {
     /// The address that the service should be bound to.
     pub fn addr(&self) -> SocketAddr {
@@ -154,6 +218,11 @@ impl ServeArgs {
 
     pub fn shared(&self) -> &SharedArgs {
         &self.shared
+    }
+
+    fn inherit(&mut self, prefix: Self) -> Result<(), &'static str> {
+        inherit_option(&mut self.socket_addr, prefix.socket_addr, "--addr")?;
+        self.shared.inherit(prefix.shared)
     }
 }
 
@@ -229,7 +298,7 @@ impl SharedArgs {
 
     /// Unknown import behavior
     pub fn unknown_import_behavior(&self) -> UnknownImportBehavior {
-        self.unknown_import_behavior
+        self.unknown_import_behavior.unwrap_or_default()
     }
 
     /// Verbosity of logs for Viceroy. `-v` sets the log level to DEBUG and
@@ -256,6 +325,82 @@ impl SharedArgs {
         }
         wasm_features
     }
+
+    fn inherit(&mut self, mut prefix: Self) -> Result<(), &'static str> {
+        debug_assert!(prefix.input.is_none());
+
+        inherit_option(&mut self.config_path, prefix.config_path, "--config")?;
+        inherit_flag(&mut self.log_stdout, prefix.log_stdout, "--log-stdout")?;
+        inherit_flag(&mut self.log_stderr, prefix.log_stderr, "--log-stderr")?;
+        inherit_option(&mut self.profile, prefix.profile, "--profile")?;
+        inherit_option(
+            &mut self.local_pushpin_proxy_port,
+            prefix.local_pushpin_proxy_port,
+            "--local-pushpin-proxy-port",
+        )?;
+
+        prefix
+            .experimental_modules
+            .append(&mut self.experimental_modules);
+        self.experimental_modules = prefix.experimental_modules;
+
+        inherit_option(
+            &mut self.unknown_import_behavior,
+            prefix.unknown_import_behavior,
+            "--unknown-import-behavior",
+        )?;
+        self.verbosity = prefix.verbosity.saturating_add(self.verbosity);
+        inherit_flag(&mut self.adapt, prefix.adapt, "--adapt")?;
+        inherit_flag(
+            &mut self.wasm_exceptions,
+            prefix.wasm_exceptions,
+            "--wasm-exceptions",
+        )?;
+        inherit_flag(&mut self.wasm_gc, prefix.wasm_gc, "--wasm-gc")?;
+        inherit_flag(&mut self.wasm_cm_gc, prefix.wasm_cm_gc, "--wasm-cm-gc")?;
+        Ok(())
+    }
+
+    fn has_non_verbosity_arguments(&self) -> bool {
+        self.input.is_some()
+            || self.config_path.is_some()
+            || self.log_stdout
+            || self.log_stderr
+            || self.profile.is_some()
+            || self.local_pushpin_proxy_port.is_some()
+            || !self.experimental_modules.is_empty()
+            || self.unknown_import_behavior.is_some()
+            || self.adapt
+            || self.wasm_exceptions
+            || self.wasm_gc
+            || self.wasm_cm_gc
+    }
+}
+
+fn inherit_option<T>(
+    target: &mut Option<T>,
+    prefix: Option<T>,
+    argument: &'static str,
+) -> Result<(), &'static str> {
+    if target.is_some() && prefix.is_some() {
+        return Err(argument);
+    }
+    if target.is_none() {
+        *target = prefix;
+    }
+    Ok(())
+}
+
+fn inherit_flag(
+    target: &mut bool,
+    prefix: bool,
+    argument: &'static str,
+) -> Result<(), &'static str> {
+    if *target && prefix {
+        return Err(argument);
+    }
+    *target |= prefix;
+    Ok(())
 }
 
 #[derive(Args, Debug, Clone)]
@@ -417,8 +562,8 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
 #[cfg(test)]
 mod opts_tests {
     use {
-        super::{Commands, Opts},
-        clap::{Parser, error::ErrorKind},
+        super::{AdaptArgs, Commands, Opts, RunArgs, ServeArgs},
+        clap::{CommandFactory, Parser, error::ErrorKind},
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         std::path::PathBuf,
     };
@@ -434,6 +579,264 @@ mod opts_tests {
 
     /// A small type alias for test results, with a boxed error type.
     type TestResult = Result<(), anyhow::Error>;
+
+    fn parse_command(args: &[&str]) -> Result<Commands, clap::Error> {
+        Opts::try_parse_from(args)?.into_command()
+    }
+
+    fn expect_run(args: &[&str]) -> RunArgs {
+        match parse_command(args).expect("command should parse") {
+            Commands::Run(run_args) => run_args,
+            command => panic!("expected run command, got {command:?}"),
+        }
+    }
+
+    fn expect_serve(args: &[&str]) -> ServeArgs {
+        match parse_command(args).expect("command should parse") {
+            Commands::Serve(serve_args) => serve_args,
+            command => panic!("expected serve command, got {command:?}"),
+        }
+    }
+
+    fn expect_adapt(args: &[&str]) -> AdaptArgs {
+        match parse_command(args).expect("command should parse") {
+            Commands::Adapt(adapt_args) => adapt_args,
+            command => panic!("expected adapt command, got {command:?}"),
+        }
+    }
+
+    #[test]
+    fn shared_options_before_run_are_applied() {
+        let input = test_file("minimal.wat");
+        let run_args = expect_run(&["dummy-program-name", "--log-stdout", "-vv", "run", &input]);
+        assert!(run_args.shared().log_stdout());
+        assert_eq!(run_args.shared().verbosity(), 2);
+    }
+
+    #[test]
+    fn shared_options_can_surround_run() {
+        let input = test_file("minimal.wat");
+        let run_args = expect_run(&[
+            "dummy-program-name",
+            "--config",
+            "before.toml",
+            "run",
+            "--log-stderr",
+            &input,
+        ]);
+        assert_eq!(
+            run_args.shared().config_path(),
+            Some(std::path::Path::new("before.toml"))
+        );
+        assert!(run_args.shared().log_stderr());
+    }
+
+    #[test]
+    fn shared_options_before_explicit_serve_are_applied() {
+        let input = test_file("minimal.wat");
+        let expected_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7677);
+        let serve_args = expect_serve(&[
+            "dummy-program-name",
+            "--log-stdout",
+            "--addr",
+            "127.0.0.1:7677",
+            "serve",
+            &input,
+        ]);
+        assert!(serve_args.shared().log_stdout());
+        assert_eq!(serve_args.addr(), expected_addr);
+    }
+
+    #[test]
+    fn prefix_options_do_not_capture_run_trailing_args() {
+        let input = test_file("minimal.wat");
+        let run_args = expect_run(&[
+            "dummy-program-name",
+            "--log-stdout",
+            "run",
+            "--",
+            &input,
+            "--log-stderr",
+            "-v",
+        ]);
+        assert!(run_args.shared().log_stdout());
+        assert!(!run_args.shared().log_stderr());
+        assert_eq!(run_args.shared().verbosity(), 0);
+        assert_eq!(run_args.wasm_args(), &["--log-stderr", "-v"]);
+    }
+
+    #[test]
+    fn default_serve_options_still_work() {
+        let input = test_file("minimal.wat");
+        let serve_args = expect_serve(&[
+            "dummy-program-name",
+            "-v",
+            "--config",
+            "default-serve.toml",
+            &input,
+        ]);
+        assert_eq!(serve_args.shared().verbosity(), 1);
+        assert_eq!(
+            serve_args.shared().config_path(),
+            Some(std::path::Path::new("default-serve.toml"))
+        );
+    }
+
+    #[test]
+    fn verbosity_counts_across_run_boundary() {
+        let input = test_file("minimal.wat");
+        let run_args = expect_run(&["dummy-program-name", "-v", "run", "-vv", &input]);
+        assert_eq!(run_args.shared().verbosity(), 3);
+    }
+
+    #[test]
+    fn append_options_accumulate_across_run_boundary() {
+        let input = test_file("minimal.wat");
+        let run_args = expect_run(&[
+            "dummy-program-name",
+            "--experimental_modules",
+            "wasi-nn",
+            "run",
+            "--experimental_modules",
+            "wasi-nn",
+            &input,
+        ]);
+        assert_eq!(run_args.shared.experimental_modules.len(), 2);
+    }
+
+    #[test]
+    fn prefix_verbosity_is_applied_to_adapt() {
+        let input = test_file("minimal.wat");
+        let adapt_args = expect_adapt(&["dummy-program-name", "-v", "adapt", "-vv", &input]);
+        assert_eq!(adapt_args.verbosity(), 3);
+    }
+
+    #[test]
+    fn option_values_matching_subcommands_are_not_reinterpreted() {
+        let input = test_file("minimal.wat");
+        let serve_args = expect_serve(&["dummy-program-name", "--config", "run", "serve", &input]);
+        assert_eq!(
+            serve_args.shared().config_path(),
+            Some(std::path::Path::new("run"))
+        );
+    }
+
+    #[test]
+    fn root_usage_distinguishes_adapt_from_serve_and_run() {
+        let help = Opts::command().render_long_help().to_string();
+        assert!(help.contains("viceroy [OPTIONS] <INPUT>"));
+        assert!(help.contains("viceroy [OPTIONS] serve [ARGS]"));
+        assert!(help.contains("viceroy [SHARED OPTIONS] run [ARGS]"));
+        assert!(help.contains("viceroy [-v...] adapt"));
+        assert!(help.contains("SHARED OPTIONS are all root options except --addr."));
+        assert!(help.contains("serve mode only"));
+        assert!(!help.contains("viceroy [OPTIONS] {serve|run}"));
+        assert!(!help.contains("viceroy [OPTIONS] <COMMAND>"));
+        assert!(!help.contains("viceroy [OPTIONS] [INPUT] <COMMAND>"));
+    }
+
+    #[test]
+    fn unknown_import_behavior_default_is_preserved_and_documented() {
+        let input = test_file("minimal.wat");
+        let serve_args = expect_serve(&["dummy-program-name", &input]);
+        assert_eq!(
+            serve_args.shared().unknown_import_behavior(),
+            viceroy_lib::config::UnknownImportBehavior::LinkError
+        );
+
+        let help = Opts::command().render_help().to_string();
+        assert!(help.contains("Set the behavior for unknown imports (default: link-error)"));
+    }
+
+    #[test]
+    fn unknown_flag_starts_run_trailing_args() {
+        let input = test_file("minimal.wat");
+        let run_args = expect_run(&[
+            "dummy-program-name",
+            "--log-stdout",
+            "run",
+            &input,
+            "-x",
+            "--config",
+            "guest.toml",
+        ]);
+        assert!(run_args.shared().log_stdout());
+        assert_eq!(run_args.shared().config_path(), None);
+        assert_eq!(run_args.wasm_args(), &["-x", "--config", "guest.toml"]);
+    }
+
+    #[test]
+    fn duplicate_options_across_subcommand_are_rejected() {
+        let input = test_file("minimal.wat");
+        let cases = [
+            vec![
+                "dummy-program-name",
+                "--config",
+                "before.toml",
+                "run",
+                "--config",
+                "after.toml",
+                &input,
+            ],
+            vec![
+                "dummy-program-name",
+                "--log-stdout",
+                "run",
+                "--log-stdout",
+                &input,
+            ],
+            vec![
+                "dummy-program-name",
+                "--unknown-import-behavior",
+                "link-error",
+                "run",
+                "--unknown-import-behavior",
+                "trap",
+                &input,
+            ],
+            vec![
+                "dummy-program-name",
+                "--addr",
+                "127.0.0.1:7677",
+                "serve",
+                "--addr",
+                "127.0.0.1:7678",
+                &input,
+            ],
+        ];
+
+        for args in cases {
+            let error = parse_command(&args).expect_err("duplicate option should fail");
+            assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+        }
+    }
+
+    #[test]
+    fn options_invalid_for_selected_subcommand_are_rejected() {
+        let input = test_file("minimal.wat");
+        let cases = [
+            vec![
+                "dummy-program-name",
+                "--addr",
+                "127.0.0.1:7677",
+                "run",
+                &input,
+            ],
+            vec![
+                "dummy-program-name",
+                "--config",
+                "before.toml",
+                "adapt",
+                &input,
+            ],
+            vec!["dummy-program-name", &input, "run", &input],
+        ];
+
+        for args in cases {
+            let error = parse_command(&args).expect_err("invalid option placement should fail");
+            assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+        }
+    }
 
     /// Test that the default address works as expected.
     #[test]

@@ -30,8 +30,9 @@ use {
 #[tokio::main]
 async fn main() -> ExitCode {
     // Parse the command-line options, exiting if there are any errors
-    let opts = Opts::parse();
-    let cmd = opts.command.unwrap_or(Commands::Serve(opts.serve));
+    let cmd = Opts::parse()
+        .into_command()
+        .unwrap_or_else(|error| error.exit());
     match cmd {
         Commands::Run(run_args) => subcommands::run::exec(run_args).await,
         Commands::Serve(serve_args) => subcommands::serve::exec(serve_args).await,
