@@ -1024,6 +1024,21 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;;; Gets the non-canonical response reason phrase.
+    ;;;
+    ;;; The origin's non-canonical HTTP/0.9, HTTP/1.0, or HTTP/1.1 reason phrase is
+    ;;; returned when it is non-empty and ASCII. If no such phrase exists (a later
+    ;;; HTTP version, a synthetic or cached response, no phrase received, or an
+    ;;; empty or non-ASCII phrase), the `none` status is returned. At most 64 bytes
+    ;;; are exposed, and the result is not NUL-terminated.
+    (@interface func (export "reason_phrase_get")
+        (param $h $response_handle)
+        (param $reason_phrase_out (@witx pointer (@witx char8)))
+        (param $reason_phrase_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
     (@interface func (export "close")
         (param $h $response_handle)
         (result $err (expected (error $fastly_status)))

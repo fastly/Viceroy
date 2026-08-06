@@ -200,6 +200,54 @@ impl FastlyHttpResp for Sandbox {
         Ok(())
     }
 
+    fn reason_phrase_get(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        resp_handle: ResponseHandle,
+        reason_phrase_out: GuestPtr<u8>,
+        reason_phrase_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        // Maximum length of an exposed reason phrase, matching ExecuteD.
+        const MAX_REASON_PHRASE_LEN: usize = 64;
+
+        let parts = self.response_parts(resp_handle)?;
+
+        // Only HTTP/0.9, HTTP/1.0, and HTTP/1.1 carry a reason phrase on the
+        // status line. HTTP/2 and later have no reason phrase.
+        let exposed = match parts.version {
+            hyper::Version::HTTP_09 | hyper::Version::HTTP_10 | hyper::Version::HTTP_11 => parts
+                .extensions
+                .get::<hyper::ext::ReasonPhrase>()
+                .map(hyper::ext::ReasonPhrase::as_bytes)
+                // Canonical phrases are not stored by hyper. Empty and
+                // non-ASCII phrases are indistinguishable after parsing, so
+                // both are reported as absent.
+                .filter(|phrase| !phrase.is_empty() && phrase.is_ascii())
+                .map(|phrase| &phrase[..phrase.len().min(MAX_REASON_PHRASE_LEN)]),
+            _ => None,
+        };
+
+        let phrase = exposed.ok_or(Error::ValueAbsent)?;
+
+        if phrase.len() > reason_phrase_max_len as usize {
+            // Write out the number of bytes necessary to fit the phrase, or zero
+            // on overflow to signal an error condition.
+            memory.write(nwritten_out, phrase.len().try_into().unwrap_or(0))?;
+            return Err(Error::BufferLengthError {
+                buf: "reason_phrase_out",
+                len: "reason_phrase_max_len",
+            });
+        }
+
+        let phrase_len = u32::try_from(phrase.len())
+            .expect("smaller than reason_phrase_max_len means it must fit");
+        memory.copy_from_slice(phrase, reason_phrase_out.as_array(phrase_len))?;
+        memory.write(nwritten_out, phrase_len)?;
+
+        Ok(())
+    }
+
     fn framing_headers_mode_set(
         &mut self,
         _memory: &mut GuestMemory<'_>,
