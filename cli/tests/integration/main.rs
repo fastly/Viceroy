@@ -1,6 +1,7 @@
 mod acl;
 mod args;
 mod async_io;
+mod backend_introspection;
 mod body;
 mod bot_detection;
 mod cache;
