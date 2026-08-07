@@ -149,6 +149,11 @@ pub struct ExecuteCtx {
     log_stderr: bool,
     /// The local Pushpin proxy port
     local_pushpin_proxy_port: Option<u16>,
+    /// Whether WebSocket passthrough is enabled for this service.
+    ///
+    /// Set this to `false` to simulate a service that does not have the WebSockets feature
+    /// enabled, so that guests can exercise their handling of that state locally.
+    enable_local_websocket_passthrough: bool,
     /// The ID to assign the next incoming request
     next_req_id: Arc<AtomicU64>,
     /// The ObjectStore associated with this instance of Viceroy
@@ -310,6 +315,7 @@ impl ExecuteCtx {
             log_stdout: false,
             log_stderr: false,
             local_pushpin_proxy_port: None,
+            enable_local_websocket_passthrough: true,
             next_req_id: Arc::new(AtomicU64::new(0)),
             object_store: ObjectStores::new(),
             secret_stores: SecretStores::new(),
@@ -531,6 +537,9 @@ impl ExecuteCtx {
 
                     info!("Pushpin handoff signaled to backend '{backend_name}'");
 
+                    // Defensive only: `Sandbox::redirect_downstream_to_pushpin` is the sole
+                    // producer of this handoff, and it now rejects the call with an
+                    // `unsupported` error before signaling when no proxy port is configured.
                     let local_pushpin_proxy_port = match local_pushpin_proxy_port {
                         None => {
                             error!("Pushpin handoff signaled, but Pushpin mode not enabled.");
@@ -1030,6 +1039,16 @@ impl ExecuteCtx {
         &self.shielding_sites
     }
 
+    /// The local Pushpin proxy port, if Fanout is enabled for this execution context.
+    pub fn local_pushpin_proxy_port(&self) -> Option<u16> {
+        self.local_pushpin_proxy_port
+    }
+
+    /// Whether WebSocket passthrough is enabled for this execution context.
+    pub fn enable_local_websocket_passthrough(&self) -> bool {
+        self.enable_local_websocket_passthrough
+    }
+
     /// Get the valid mock Fastly API keys for this execution context.
     pub fn fake_valid_fastly_keys(&self) -> &FakeValidFastlyKeys {
         &self.fake_valid_fastly_keys
@@ -1146,6 +1165,15 @@ impl ExecuteCtxBuilder {
     /// Set the local Pushpin proxy port
     pub fn with_local_pushpin_proxy_port(mut self, local_pushpin_proxy_port: Option<u16>) -> Self {
         self.inner.local_pushpin_proxy_port = local_pushpin_proxy_port;
+        self
+    }
+
+    /// Set whether WebSocket passthrough is enabled for this execution context.
+    pub fn with_enable_local_websocket_passthrough(
+        mut self,
+        enable_local_websocket_passthrough: bool,
+    ) -> Self {
+        self.inner.enable_local_websocket_passthrough = enable_local_websocket_passthrough;
         self
     }
 }

@@ -107,6 +107,23 @@ pub struct SharedArgs {
     /// is disabled.
     #[arg(long = "local-pushpin-proxy-port")]
     local_pushpin_proxy_port: Option<u16>,
+    /// Whether WebSocket passthrough is enabled for the service.
+    ///
+    /// Set this to `false` to simulate a service that does not have the WebSockets
+    /// feature enabled: `redirect_to_websocket_proxy` will report `unsupported` to
+    /// the guest, so that it can exercise its handling of that state locally.
+    #[arg(
+        long = "enable-local-websocket-passthrough",
+        value_name = "BOOL",
+        default_value = "true",
+        action = clap::ArgAction::Set,
+        // `require_equals` keeps the bare form from swallowing the following positional
+        // argument as its value.
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true",
+    )]
+    enable_local_websocket_passthrough: bool,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -200,6 +217,11 @@ impl SharedArgs {
     /// Port running local Pushpin proxy.
     pub fn local_pushpin_proxy_port(&self) -> Option<u16> {
         self.local_pushpin_proxy_port
+    }
+
+    /// Whether WebSocket passthrough is enabled for the service.
+    pub fn enable_local_websocket_passthrough(&self) -> bool {
+        self.enable_local_websocket_passthrough
     }
 
     /// Configuration for guest profiling if enabled
