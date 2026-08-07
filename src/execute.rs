@@ -1249,6 +1249,10 @@ fn configure_wasmtime(
     // different host architecture.
     config.relaxed_simd_deterministic(true);
 
+    // Enable the wide-arithmetic feature, which has now been voted
+    // to phase-4.
+    config.wasm_wide_arithmetic(true);
+
     config
 }
 
