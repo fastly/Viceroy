@@ -81,7 +81,8 @@ pub(crate) async fn create_execution_context(
     )?
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout())
-    .with_local_pushpin_proxy_port(args.local_pushpin_proxy_port());
+    .with_local_pushpin_proxy_port(args.local_pushpin_proxy_port())
+    .with_enable_local_websocket_passthrough(args.enable_local_websocket_passthrough());
 
     let Some(config_path) = args.config_path() else {
         event!(
