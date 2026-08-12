@@ -8,6 +8,7 @@
   generated a plain-text 500 that the guest had no part in producing. The hostcall now returns
   `FastlyStatus::Unsupported` before the handoff is signaled, matching the behavior of a
   deployed service that does not have Fanout enabled, so that SDK-level error handling can run.
+  ([#678](https://github.com/fastly/Viceroy/pull/678))
 
 - Add `--enable-local-websocket-passthrough=<true|false>` (default `true`), to simulate a
   service that does not have the WebSockets feature enabled.
@@ -15,6 +16,7 @@
   When set to `false`, `redirect_to_websocket_proxy` (and `_v2`) reports
   `FastlyStatus::Unsupported` to the guest rather than proxying the request, which makes the
   "WebSockets not enabled" path testable locally for the first time.
+  ([#678](https://github.com/fastly/Viceroy/pull/678))
 
 ## 0.20.1 (2026-07-16)
 

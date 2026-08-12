@@ -288,10 +288,10 @@ impl Sandbox {
         // state through this hostcall's `unsupported` result, so guests (and the SDKs built on
         // them) can only exercise that path if we do the same.
         if self.ctx.local_pushpin_proxy_port().is_none() {
-            return Err(Error::Unsupported {
-                msg: "Fanout is not enabled on this service \
-                      (run Viceroy with --local-pushpin-proxy-port to enable it)",
-            });
+            const MSG: &str = "Fanout is not enabled on this service \
+                               (run Viceroy with --local-pushpin-proxy-port to enable it)";
+            tracing::error!("{MSG}");
+            return Err(Error::Unsupported { msg: MSG });
         }
 
         self.downstream_resp
@@ -318,10 +318,10 @@ impl Sandbox {
 
         // As above: the guest must be able to observe the disabled state itself.
         if !self.ctx.enable_local_websocket_passthrough() {
-            return Err(Error::Unsupported {
-                msg: "WebSocket passthrough is not enabled on this service \
-                      (it was disabled with --enable-local-websocket-passthrough=false)",
-            });
+            const MSG: &str = "WebSocket passthrough is not enabled on this service \
+                               (it was disabled with --enable-local-websocket-passthrough=false)";
+            tracing::error!("{MSG}");
+            return Err(Error::Unsupported { msg: MSG });
         }
 
         self.downstream_resp
