@@ -200,14 +200,18 @@ pub(crate) fn is_dynamic(sandbox: &mut Sandbox, backend: &str) -> Result<bool, t
 pub(crate) fn get_host(
     sandbox: &mut Sandbox,
     backend: &str,
-    _max_len: u64,
+    max_len: u64,
 ) -> Result<String, types::Error> {
-    // just doing this to get a different error if the backend doesn't exist
-    let _ = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
-    Err(Error::Unsupported {
-        msg: "`get-host` is not actually supported in Viceroy",
+    let backend = sandbox.backend(backend).ok_or(Error::InvalidArgument)?;
+    let host = backend.uri.host().ok_or(Error::InvalidArgument)?;
+
+    if host.len() > usize::try_from(max_len).unwrap() {
+        // Report the required length, so that guests (and the adapter's `alloc_result!`) can
+        // retry with a large enough buffer.
+        return Err(types::Error::BufferLen(u64::try_from(host.len()).unwrap()));
     }
-    .into())
+
+    Ok(host.to_owned())
 }
 
 pub(crate) fn get_override_host(
@@ -220,11 +224,7 @@ pub(crate) fn get_override_host(
         let host = host.to_str()?;
 
         if host.len() > usize::try_from(max_len).unwrap() {
-            return Err(Error::BufferLengthError {
-                buf: "host_out",
-                len: "host_max_len",
-            }
-            .into());
+            return Err(types::Error::BufferLen(u64::try_from(host.len()).unwrap()));
         }
 
         Ok(Some(host.as_bytes().to_owned()))
