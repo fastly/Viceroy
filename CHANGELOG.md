@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Enable support for the wide-arithmetic feature. ([#679](https://github.com/fastly/Viceroy/pull/679))
+
+- Implement `backend.get-host` on the component ABI, which previously always returned
+  `error.unsupported` even though the witx ABI implemented it, and report the required buffer
+  length from the component `get-host`/`get-override-host` accessors. ([#677](https://github.com/fastly/Viceroy/pull/677))
+
 - Report Fanout as `unsupported` to the guest when it is not enabled, instead of failing after
   the guest has returned.
 
