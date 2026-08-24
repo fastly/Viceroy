@@ -269,7 +269,7 @@ impl Sandbox {
 
     /// Redirect the downstream request to Pushpin.
     ///
-    /// Yield an error if a response has already been sent.
+    /// Yield an error if a response has already been sent, or if Fanout is not enabled.
     ///
     /// # Panics
     ///
@@ -279,6 +279,21 @@ impl Sandbox {
         &mut self,
         redirect_info: HandoffInfo,
     ) -> Result<(), Error> {
+        if !self.downstream_resp.is_unsent() {
+            return Err(Error::DownstreamRespSending);
+        }
+
+        // Report "not enabled" to the guest here, rather than letting the handoff proceed and
+        // failing once the guest has already returned. Deployed services signal the disabled
+        // state through this hostcall's `unsupported` result, so guests (and the SDKs built on
+        // them) can only exercise that path if we do the same.
+        if self.ctx.local_pushpin_proxy_port().is_none() {
+            const MSG: &str = "Fanout is not enabled on this service \
+                               (run Viceroy with --local-pushpin-proxy-port to enable it)";
+            tracing::error!("{MSG}");
+            return Err(Error::Unsupported { msg: MSG });
+        }
+
         self.downstream_resp
             .redirect_to_pushpin(redirect_info)
             .await
@@ -286,7 +301,8 @@ impl Sandbox {
 
     /// Redirect the downstream request to a backend.
     ///
-    /// Yield an error if a response has already been sent.
+    /// Yield an error if a response has already been sent, or if WebSocket passthrough is not
+    /// enabled.
     ///
     /// # Panics
     ///
@@ -296,6 +312,18 @@ impl Sandbox {
         &mut self,
         redirect_info: HandoffInfo,
     ) -> Result<(), Error> {
+        if !self.downstream_resp.is_unsent() {
+            return Err(Error::DownstreamRespSending);
+        }
+
+        // As above: the guest must be able to observe the disabled state itself.
+        if !self.ctx.enable_local_websocket_passthrough() {
+            const MSG: &str = "WebSocket passthrough is not enabled on this service \
+                               (it was disabled with --enable-local-websocket-passthrough=false)";
+            tracing::error!("{MSG}");
+            return Err(Error::Unsupported { msg: MSG });
+        }
+
         self.downstream_resp
             .redirect_to_backend(redirect_info)
             .await
