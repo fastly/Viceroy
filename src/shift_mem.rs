@@ -143,7 +143,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     // avoid the compiler crash, in case this load instruction is unreachable.
                     // If the code is reachable, the original and adapted code will both crash,
                     // so there is no observable divergence.
-                    let offset = offset.saturating_add(OFFSET as u32);
+                    let offset = offset.saturating_add(OFFSET as u64);
                     let instr = Instr::Load(Load {
                         memory,
                         kind,
@@ -156,7 +156,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    let offset = offset.saturating_add(OFFSET as u32);
+                    let offset = offset.saturating_add(OFFSET as u64);
                     let instr = Instr::Store(Store {
                         memory,
                         kind,
@@ -169,7 +169,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    let offset = offset.saturating_add(OFFSET as u32);
+                    let offset = offset.saturating_add(OFFSET as u64);
                     let instr = Instr::LoadSimd(LoadSimd {
                         memory,
                         kind,
