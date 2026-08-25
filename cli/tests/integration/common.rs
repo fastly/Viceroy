@@ -97,6 +97,7 @@ pub struct Test {
     adapt_component: bool,
     profiling_strategy: ProfilingStrategy,
     guest_profile_config: Option<viceroy_lib::GuestProfileConfig>,
+    enable_local_websocket_passthrough: bool,
 }
 
 impl Test {
@@ -124,6 +125,7 @@ impl Test {
             adapt_component: false,
             profiling_strategy: ProfilingStrategy::None,
             guest_profile_config: None,
+            enable_local_websocket_passthrough: true,
         }
     }
 
@@ -151,6 +153,7 @@ impl Test {
             adapt_component: false,
             profiling_strategy: ProfilingStrategy::None,
             guest_profile_config: None,
+            enable_local_websocket_passthrough: true,
         }
     }
 
@@ -346,6 +349,12 @@ impl Test {
         self
     }
 
+    /// Set whether WebSocket passthrough is enabled for this test.
+    pub fn enable_local_websocket_passthrough(mut self, enable: bool) -> Self {
+        self.enable_local_websocket_passthrough = enable;
+        self
+    }
+
     /// Enable guest profiling with the specified configuration.
     pub fn with_guest_profiling(mut self, config: viceroy_lib::GuestProfileConfig) -> Self {
         self.guest_profile_config = Some(config);
@@ -412,6 +421,7 @@ impl Test {
         .with_secret_stores(self.secret_stores.clone())
         .with_shielding_sites(self.shielding_sites.clone())
         .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
+        .with_enable_local_websocket_passthrough(self.enable_local_websocket_passthrough)
         .with_capture_logs(self.capture_logs.clone())
         .with_log_stderr(self.log_stderr)
         .with_log_stdout(self.log_stdout)

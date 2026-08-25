@@ -28,12 +28,12 @@ fn test_version_set_and_get() {
 
     unsafe {
         // Test that one successfully gets the default version.
-        new(&mut req1);
+        let _ = new(&mut req1);
         let stat = version_get(req1, &mut version1);
         assert_eq!(stat, FastlyStatus::OK);
 
         // Test that one successfully gets the previously-set version.
-        new(&mut req2);
+        let _ = new(&mut req2);
         let stat = version_set(req2, HttpVersion::Http09 as u32);
         assert_eq!(stat, FastlyStatus::OK);
         let stat = version_get(req2, &mut version2);
@@ -62,7 +62,7 @@ fn test_uri_set_and_get() {
 
     unsafe {
         // Test that one successfully gets the default uri.
-        new(&mut req);
+        let _ = new(&mut req);
         assert_eq!(
             uri_get(req, tiny_buffer.as_mut_ptr(), tiny_max, &mut nwritten),
             FastlyStatus::OK
@@ -78,7 +78,7 @@ fn test_uri_set_and_get() {
         nwritten = 0;
         assert_eq!(uri_set(req, uri.as_ptr(), uri.len()), FastlyStatus::OK);
 
-        uri_get(req, good_buffer.as_mut_ptr(), good_max, &mut nwritten);
+        let _ = uri_get(req, good_buffer.as_mut_ptr(), good_max, &mut nwritten);
         good_buffer.set_len(nwritten);
         assert_eq!(nwritten, uri.len());
         assert_eq!(
@@ -121,7 +121,7 @@ fn test_method_set_and_get() {
 
     unsafe {
         // Test that one successfully gets the default method.
-        new(&mut req);
+        let _ = new(&mut req);
         assert_eq!(
             method_get(req, tiny_buffer.as_mut_ptr(), tiny_max, &mut nwritten),
             FastlyStatus::OK
@@ -177,8 +177,8 @@ fn test_header_value_get_and_insert() {
 
     unsafe {
         // Test that one successfully gets a header that is not set.
-        new(&mut req);
-        header_value_get(
+        let _ = new(&mut req);
+        let _ = header_value_get(
             req,
             hdr_name.as_ptr(),
             hdr_name.len(),
@@ -194,14 +194,14 @@ fn test_header_value_get_and_insert() {
         );
 
         // Test that one successfully gets a header that has been inserted.
-        header_insert(
+        let _ = header_insert(
             req,
             hdr_name.as_ptr(),
             hdr_name.len(),
             hdr_val.as_ptr(),
             hdr_val.len(),
         );
-        header_value_get(
+        let _ = header_value_get(
             req,
             hdr_name.as_ptr(),
             hdr_name.len(),
@@ -277,15 +277,15 @@ fn test_header_append_and_remove() {
 
     unsafe {
         // Test that one can append a header that is not already set.
-        new(&mut req);
-        header_append(
+        let _ = new(&mut req);
+        let _ = header_append(
             req,
             hdr_name.as_ptr(),
             hdr_name.len(),
             hdr_val.as_ptr(),
             hdr_val.len(),
         );
-        header_value_get(
+        let _ = header_value_get(
             req,
             hdr_name.as_ptr(),
             hdr_name.len(),
@@ -326,7 +326,7 @@ fn test_header_append_and_remove() {
             header_remove(req, hdr_name.as_ptr(), hdr_name.len()),
             FastlyStatus::OK
         );
-        header_value_get(
+        let _ = header_value_get(
             req,
             hdr_name.as_ptr(),
             hdr_name.len(),

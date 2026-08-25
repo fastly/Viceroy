@@ -27,14 +27,14 @@ fn test_status_set_and_get() {
     let mut resp4: ResponseHandle = 0;
 
     unsafe {
-        new(&mut resp1);
-        new(&mut resp2);
-        new(&mut resp3);
-        new(&mut resp4);
+        let _ = new(&mut resp1);
+        let _ = new(&mut resp2);
+        let _ = new(&mut resp3);
+        let _ = new(&mut resp4);
 
-        status_set(resp1, 200);
-        status_set(resp2, 300);
-        status_set(resp3, 500);
+        let _ = status_set(resp1, 200);
+        let _ = status_set(resp2, 300);
+        let _ = status_set(resp3, 500);
 
         // Test that an invalid status code will result in an error code.
         assert_eq!(status_set(resp4, 1), FastlyStatus::INVAL);
@@ -45,9 +45,9 @@ fn test_status_set_and_get() {
     let mut status3: u16 = 0;
 
     unsafe {
-        status_get(resp1, &mut status1);
-        status_get(resp2, &mut status2);
-        status_get(resp3, &mut status3);
+        let _ = status_get(resp1, &mut status1);
+        let _ = status_get(resp2, &mut status2);
+        let _ = status_get(resp3, &mut status3);
     }
 
     assert_eq!(status1, 200);
@@ -64,13 +64,13 @@ fn test_version_set_and_get() {
 
     unsafe {
         // Test that one successfully gets the default version.
-        new(&mut resp1);
-        version_get(resp1, &mut version1);
+        let _ = new(&mut resp1);
+        let _ = version_get(resp1, &mut version1);
 
         // Test that one successfully gets the previously-set version.
-        new(&mut resp2);
-        version_set(resp2, HttpVersion::Http09 as u32);
-        version_get(resp2, &mut version2);
+        let _ = new(&mut resp2);
+        let _ = version_set(resp2, HttpVersion::Http09 as u32);
+        let _ = version_get(resp2, &mut version2);
     }
 
     assert_eq!(version1, HttpVersion::Http11 as u32);
@@ -93,8 +93,8 @@ fn test_header_value_get_and_insert() {
 
     unsafe {
         // Test that one successfully gets a header that is not set.
-        new(&mut resp);
-        header_value_get(
+        let _ = new(&mut resp);
+        let _ = header_value_get(
             resp,
             hdr_name.as_ptr(),
             hdr_name.len(),
@@ -110,14 +110,14 @@ fn test_header_value_get_and_insert() {
         );
 
         // Test that one successfully gets a header that has been inserted.
-        header_insert(
+        let _ = header_insert(
             resp,
             hdr_name.as_ptr(),
             hdr_name.len(),
             hdr_val.as_ptr(),
             hdr_val.len(),
         );
-        header_value_get(
+        let _ = header_value_get(
             resp,
             hdr_name.as_ptr(),
             hdr_name.len(),
@@ -193,15 +193,15 @@ fn test_header_append_and_remove() {
 
     unsafe {
         // Test that one can append a header that is not already set.
-        new(&mut resp);
-        header_append(
+        let _ = new(&mut resp);
+        let _ = header_append(
             resp,
             hdr_name.as_ptr(),
             hdr_name.len(),
             hdr_val.as_ptr(),
             hdr_val.len(),
         );
-        header_value_get(
+        let _ = header_value_get(
             resp,
             hdr_name.as_ptr(),
             hdr_name.len(),
@@ -242,7 +242,7 @@ fn test_header_append_and_remove() {
             header_remove(resp, hdr_name.as_ptr(), hdr_name.len()),
             FastlyStatus::OK
         );
-        header_value_get(
+        let _ = header_value_get(
             resp,
             hdr_name.as_ptr(),
             hdr_name.len(),

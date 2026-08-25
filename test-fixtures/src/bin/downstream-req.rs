@@ -25,10 +25,10 @@ fn main() {
 
     // Ensure that the methods for getting the original header info do _not_
     // include the mutation
-    let names: Vec<String> = client_req.get_original_header_names().unwrap().collect();
+    let names = client_req.get_original_header_names().unwrap();
     assert_eq!(
         names,
-        vec![String::from("accept"), String::from("x-custom-test")]
+        Some(vec![String::from("accept"), String::from("x-custom-test")].as_ref())
     );
     assert_eq!(client_req.get_original_header_count().unwrap(), 2);
 
@@ -53,15 +53,15 @@ fn main() {
     assert_eq!(client_req.fastly_key_is_valid(), false);
 
     // TLS is currently unsupported, so these should work but return `None`:
-    assert_eq!(client_req.get_tls_cipher_openssl_name(), None);
+    assert_eq!(client_req.get_tls_cipher_openssl_name(), Ok(None));
     assert_eq!(client_req.get_tls_cipher_openssl_name_bytes(), None);
     assert_eq!(client_req.get_tls_client_hello(), None);
-    assert_eq!(client_req.get_tls_protocol(), None);
+    assert_eq!(client_req.get_tls_protocol(), Ok(None));
     assert_eq!(client_req.get_tls_protocol_bytes(), None);
     assert_eq!(client_req.get_tls_client_hello(), None);
     assert_eq!(client_req.get_tls_ja3_md5(), None);
     assert_eq!(client_req.get_tls_ja4(), None);
-    assert_eq!(client_req.get_tls_raw_client_certificate(), None);
+    assert_eq!(client_req.get_tls_raw_client_certificate(), Ok(None));
     assert_eq!(client_req.get_tls_raw_client_certificate_bytes(), None);
     assert!(client_req.get_tls_client_cert_verify_result().is_none());
     // NOTE: This currently fails, waiting on a patch to land in the fastly crate

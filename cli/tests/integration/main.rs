@@ -1,7 +1,9 @@
 mod acl;
 mod args;
 mod async_io;
+mod backend_introspection;
 mod body;
+mod bot_detection;
 mod cache;
 mod client_certs;
 mod common;
@@ -15,6 +17,7 @@ mod env_vars;
 mod fastly_key_is_valid;
 mod geolocation_lookup;
 mod grpc;
+mod handoff;
 mod http_semantics;
 mod inspect;
 mod invalid_status_code;
