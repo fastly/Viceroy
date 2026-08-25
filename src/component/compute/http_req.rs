@@ -13,6 +13,7 @@ use {
         header::{HeaderName, HeaderValue},
         request::Request,
     },
+    std::time::Duration,
     wasmtime::component::Resource,
 };
 
@@ -450,11 +451,31 @@ impl http_req::HostRequest for ComponentCtx {
     }
 }
 
+/// Additional fields in CacheOverride. These aren't exposed directly as record fields, only via
+/// resource getters/setters, so they can be extended.
+#[derive(Default)]
+pub struct ExtraCacheOverrideDetails {
+    lookup_timeout: Option<Duration>,
+}
+
 impl http_req::HostExtraCacheOverrideDetails for ComponentCtx {
-    fn drop(
+    fn new(&mut self) -> wasmtime::Result<Resource<ExtraCacheOverrideDetails>> {
+        let resource = self.wasi_table.push(ExtraCacheOverrideDetails::default())?;
+        Ok(resource)
+    }
+
+    fn set_lookup_timeout(
         &mut self,
-        _details: Resource<http_req::ExtraCacheOverrideDetails>,
+        handle: Resource<ExtraCacheOverrideDetails>,
+        timeout_ms: u32,
     ) -> wasmtime::Result<()> {
+        self.wasi_table.get_mut(&handle)?.lookup_timeout =
+            Some(Duration::from_millis(timeout_ms as u64));
+        Ok(())
+    }
+
+    fn drop(&mut self, h: Resource<ExtraCacheOverrideDetails>) -> wasmtime::Result<()> {
+        self.wasi_table.delete(h)?;
         Ok(())
     }
 }
