@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.21.0 (2026-08-25)
 
 - Enable support for the wide-arithmetic feature. ([#679](https://github.com/fastly/Viceroy/pull/679))
