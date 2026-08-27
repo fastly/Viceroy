@@ -415,6 +415,7 @@ pub enum CacheOverride {
         stale_while_revalidate: Option<u32>,
         pci: bool,
         surrogate_key: Option<HeaderValue>,
+        lookup_timeout_ms: Option<u32>,
     },
 }
 
@@ -432,6 +433,7 @@ impl CacheOverride {
         ttl: u32,
         swr: u32,
         surrogate_key: Option<HeaderValue>,
+        lookup_timeout_ms: u32,
     ) -> Option<Self> {
         CacheOverrideTag::from_bits(tag).map(|tag| {
             if tag.contains(CacheOverrideTag::PASS) {
@@ -450,12 +452,18 @@ impl CacheOverride {
             } else {
                 None
             };
+            let lookup_timeout_ms = if tag.contains(CacheOverrideTag::LOOKUP_TIMEOUT) {
+                Some(lookup_timeout_ms)
+            } else {
+                None
+            };
             let pci = tag.contains(CacheOverrideTag::PCI);
             CacheOverride::Override {
                 ttl,
                 stale_while_revalidate,
                 pci,
                 surrogate_key,
+                lookup_timeout_ms,
             }
         })
     }

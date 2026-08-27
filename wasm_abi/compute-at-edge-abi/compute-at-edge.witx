@@ -170,6 +170,14 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;;; As cache_override_set and cache_override_v2_set, but with tags for which fields are present.
+    (@interface func (export "cache_override_v3_set")
+        (param $h $request_handle)
+        (param $tag $cache_override_tag)
+        (param $cache_override_ptr (@witx pointer $cache_override))
+        (result $err (expected (error $fastly_status)))
+    )
+
     ;; DEPRECATED: use fastly_http_downstream::downstream_client_ip_addr
     (@interface func (export "downstream_client_ip_addr")
         ;; must be a 16-byte array

@@ -15,6 +15,7 @@ pub(crate) mod bindings {
             "fastly:compute/cache.[constructor]extra-lookup-options": tracing | trappable,
             "fastly:compute/cache.[constructor]extra-replace-options": tracing | trappable,
             "fastly:compute/cache.[constructor]extra-write-options": tracing | trappable,
+            "fastly:compute/http-req.[static]extra-cache-override-details.new": tracing | trappable,
 
             // The trap-test test depends on being able to induce an artificial
             // trap in `get-header-values`.
@@ -33,6 +34,7 @@ pub(crate) mod bindings {
             "fastly:compute/http-req.await-response": async | tracing,
             "fastly:compute/http-req.[method]request.redirect-to-grip-proxy": async | tracing,
             "fastly:compute/http-req.[method]request.redirect-to-websocket-proxy": async | tracing,
+            "fastly:compute/http-req.[method]extra-cache-override-details.set-lookup-timeout": tracing | trappable,
             "fastly:compute/http-resp.send-downstream": async | tracing,
             "fastly:compute/http-resp.send-downstream-streaming": async | tracing,
             "fastly:compute/http-resp.send-downstream-pending": async | tracing,
@@ -127,6 +129,7 @@ pub(crate) mod bindings {
             "fastly:compute/erl.penalty-box": String,
             "fastly:compute/http-downstream.extra-bot-category": super::compute::http_downstream::ExtraBotCategory,
             "fastly:compute/shielding.shield-backend-options": super::compute::shielding::ShieldBackendOptions,
+            "fastly:compute/http-req.extra-cache-override-details": crate::component::compute::http_req::ExtraCacheOverrideDetails,
         },
 
         trappable_error_type: {

@@ -966,7 +966,12 @@ interface http-req {
   }
 
   /// Extensibility for `cache-override-details`
-  resource extra-cache-override-details {}
+  resource extra-cache-override-details {
+    new: static func() -> extra-cache-override-details;
+    /// Set an upper bound on the amount of time that can be spent waiting for a cache lookup,
+    /// including waiting for a request collapse leader to return a result.
+    set-lookup-timeout: func(timeout-ms: u32);
+  }
 
   /// TLS client certificate verified result from downstream.
   enum client-cert-verify-result {

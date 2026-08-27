@@ -1,5 +1,33 @@
 ## Unreleased
 
+## 0.21.0 (2026-08-25)
+
+- Enable support for the wide-arithmetic feature. ([#679](https://github.com/fastly/Viceroy/pull/679))
+
+- Implement `backend.get-host` on the component ABI, which previously always returned
+  `error.unsupported` even though the witx ABI implemented it, and report the required buffer
+  length from the component `get-host`/`get-override-host` accessors. ([#677](https://github.com/fastly/Viceroy/pull/677))
+
+- Report Fanout as `unsupported` to the guest when it is not enabled, instead of failing after
+  the guest has returned.
+
+  Previously, calling `redirect_to_grip_proxy` (or `_v2`) without
+  `--local-pushpin-proxy-port` succeeded from the guest's point of view, and Viceroy then
+  generated a plain-text 500 that the guest had no part in producing. The hostcall now returns
+  `FastlyStatus::Unsupported` before the handoff is signaled, matching the behavior of a
+  deployed service that does not have Fanout enabled, so that SDK-level error handling can run.
+  ([#678](https://github.com/fastly/Viceroy/pull/678))
+
+- Add `--enable-local-websocket-passthrough=<true|false>` (default `true`), to simulate a
+  service that does not have the WebSockets feature enabled.
+
+  When set to `false`, `redirect_to_websocket_proxy` (and `_v2`) reports
+  `FastlyStatus::Unsupported` to the guest rather than proxying the request, which makes the
+  "WebSockets not enabled" path testable locally for the first time.
+  ([#678](https://github.com/fastly/Viceroy/pull/678))
+
+- Future-proofed cache override hostcall ([#659](https://github.com/fastly/Viceroy/pull/659))
+
 ## 0.20.1 (2026-07-16)
 
 - Fix wiggle abi implementation for bot detection mocking. ([#664](https://github.com/fastly/Viceroy/pull/664))
@@ -8,7 +36,6 @@
 
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
 - Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
-- Add support for headers-based bot detection mocking, as well as headless bots in the API, updated to v0.13.0 of Fastly crate ([#658](https://github.com/fastly/Viceroy/pull/658))
 
 ## 0.19.0 (2026-06-16)
 
