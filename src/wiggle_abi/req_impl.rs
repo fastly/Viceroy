@@ -20,10 +20,11 @@ use {
             fastly_http_req::FastlyHttpReq,
             headers::{HttpHeadersRead, HttpHeadersWrite},
             types::{
-                BackendConfigOptions, BodyHandle, CacheOverrideTag, ClientCertVerifyResult,
-                ContentEncodings, DynamicBackendConfig, FramingHeadersMode, HttpVersion,
-                InspectInfo, InspectInfoMask, MultiValueCursor, MultiValueCursorResult,
-                PendingRequestHandle, PendingResponseKind, RequestHandle, ResponseHandle,
+                BackendConfigOptions, BodyHandle, CacheOverride as AbiCacheOverride,
+                CacheOverrideTag, ClientCertVerifyResult, ContentEncodings, DynamicBackendConfig,
+                FramingHeadersMode, HttpVersion, InspectInfo, InspectInfoMask, MultiValueCursor,
+                MultiValueCursorResult, PendingRequestHandle, PendingResponseKind, RequestHandle,
+                ResponseHandle,
             },
         },
     },
@@ -51,8 +52,9 @@ impl FastlyHttpReq for Sandbox {
         ttl: u32,
         stale_while_revalidate: u32,
     ) -> Result<(), Error> {
-        let overrides = CacheOverride::from_abi(u32::from(tag), ttl, stale_while_revalidate, None)
-            .ok_or(Error::InvalidArgument)?;
+        let overrides =
+            CacheOverride::from_abi(u32::from(tag), ttl, stale_while_revalidate, None, 0)
+                .ok_or(Error::InvalidArgument)?;
 
         self.request_parts_mut(req_handle)?
             .extensions
@@ -78,8 +80,46 @@ impl FastlyHttpReq for Sandbox {
             None
         };
 
-        let overrides = CacheOverride::from_abi(u32::from(tag), ttl, stale_while_revalidate, sk)
+        let overrides = CacheOverride::from_abi(u32::from(tag), ttl, stale_while_revalidate, sk, 0)
             .ok_or(Error::InvalidArgument)?;
+
+        self.request_parts_mut(req_handle)?
+            .extensions
+            .insert(overrides);
+
+        Ok(())
+    }
+
+    fn cache_override_v3_set(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        req_handle: RequestHandle,
+        tag: CacheOverrideTag,
+        cache_override: GuestPtr<AbiCacheOverride>,
+    ) -> Result<(), Error> {
+        let cache_override = memory.read(cache_override)?;
+        let sk = {
+            let ptr = GuestPtr::new((
+                cache_override.surrogate_keys.offset(),
+                cache_override.surrogate_keys_len,
+            ));
+            if cache_override.surrogate_keys_len > 0 {
+                let sk = memory.as_slice(ptr)?.ok_or(Error::SharedMemory)?;
+                let sk = HeaderValue::from_bytes(sk).map_err(|_| Error::InvalidArgument)?;
+                Some(sk)
+            } else {
+                None
+            }
+        };
+
+        let overrides = CacheOverride::from_abi(
+            u32::from(tag),
+            cache_override.ttl,
+            cache_override.stale_while_revalidate,
+            sk,
+            cache_override.lookup_timeout_ms,
+        )
+        .ok_or(Error::InvalidArgument)?;
 
         self.request_parts_mut(req_handle)?
             .extensions

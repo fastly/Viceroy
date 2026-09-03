@@ -5,6 +5,8 @@
   satisfy `hyper::Error::is_incomplete_message`, so the cause needs a downcast, and the component
   mapping had no equivalent of the one in `src/error.rs`. See [#289](https://github.com/fastly/Viceroy/issues/289).
 
+## 0.21.0 (2026-08-25)
+
 - Enable support for the wide-arithmetic feature. ([#679](https://github.com/fastly/Viceroy/pull/679))
 
 - Implement `backend.get-host` on the component ABI, which previously always returned
@@ -29,6 +31,8 @@
   "WebSockets not enabled" path testable locally for the first time.
   ([#678](https://github.com/fastly/Viceroy/pull/678))
 
+- Future-proofed cache override hostcall ([#659](https://github.com/fastly/Viceroy/pull/659))
+
 ## 0.20.1 (2026-07-16)
 
 - Fix wiggle abi implementation for bot detection mocking. ([#664](https://github.com/fastly/Viceroy/pull/664))
@@ -37,7 +41,6 @@
 
 - Always use an `unsafe` block to `unsafe_main_ptr`. ([#643](https://github.com/fastly/Viceroy/pull/643))
 - Add support for healthchecking dynamic backends ([#635](https://github.com/fastly/Viceroy/pull/635))
-- Add support for headers-based bot detection mocking, as well as headless bots in the API, updated to v0.13.0 of Fastly crate ([#658](https://github.com/fastly/Viceroy/pull/658))
 
 ## 0.19.0 (2026-06-16)
 
