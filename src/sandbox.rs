@@ -4,8 +4,9 @@ mod async_item;
 mod downstream;
 
 pub use async_item::{
-    AsyncItem, PeekableTask, PendingCacheTask, PendingDownstreamReqTask, PendingKvDeleteTask,
-    PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask, PendingResponse,
+    AsyncItem, PeekableTask, PendingCacheReplaceTask, PendingCacheTask, PendingDownstreamReqTask,
+    PendingKvDeleteTask, PendingKvInsertTask, PendingKvListTask, PendingKvLookupTask,
+    PendingResponse,
 };
 
 use std::collections::HashMap;
@@ -17,10 +18,12 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::cache::{Cache, CacheEntry};
+use crate::cache::{Cache, CacheEntry, ReplaceEntry};
 use crate::linking::Limiter;
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode};
+use crate::wiggle_abi::types::{
+    CacheBusyHandle, CacheHandle, CacheReplaceHandle, FramingHeadersMode,
+};
 
 use {
     self::downstream::DownstreamResponseState,
@@ -1183,6 +1186,77 @@ impl Sandbox {
             .ok_or(HandleError::InvalidCacheHandle(handle))
     }
 
+    /// Insert a pending cache replace operation.
+    pub fn insert_cache_replace_op(&mut self, task: PendingCacheReplaceTask) -> AsyncItemHandle {
+        self.async_items
+            .push(Some(AsyncItem::PendingCacheReplace(task)))
+    }
+
+    /// Returns true if the handle refers to a pending cache replace operation.
+    ///
+    /// The witx `close` hostcall is shared between cache entries and replace entries, so it has to
+    /// figure out which kind of handle it was given.
+    pub(crate) fn is_cache_replace(&self, handle: AsyncItemHandle) -> bool {
+        self.async_items
+            .get(handle)
+            .and_then(Option::as_ref)
+            .is_some_and(AsyncItem::is_pending_cache_replace)
+    }
+
+    /// Get mutable access to a replace entry, which may require blocking until the operation has
+    /// begun.
+    pub(crate) async fn cache_replace_entry_mut(
+        &mut self,
+        handle: CacheReplaceHandle,
+    ) -> Result<&mut ReplaceEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_cache_replace_mut)
+            .map(PendingCacheReplaceTask::as_mut)
+            .ok_or(HandleError::InvalidCacheReplaceHandle(handle))?
+            .await
+            .as_mut()
+            .map_err(|e| {
+                tracing::error!("in completion of cache replace: {e}");
+                HandleError::InvalidCacheReplaceHandle(handle)
+            })
+    }
+
+    /// Get immutable access to a replace entry, which may require blocking until the operation has
+    /// begun.
+    pub(crate) async fn cache_replace_entry(
+        &mut self,
+        handle: CacheReplaceHandle,
+    ) -> Result<&ReplaceEntry, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::as_mut)
+            .and_then(AsyncItem::as_pending_cache_replace_mut)
+            .map(PendingCacheReplaceTask::as_mut)
+            .ok_or(HandleError::InvalidCacheReplaceHandle(handle))?
+            .await
+            .as_ref()
+            .map_err(|e| {
+                tracing::error!("in completion of cache replace: {e}");
+                HandleError::InvalidCacheReplaceHandle(handle)
+            })
+    }
+
+    /// Take ownership of a `ReplaceEntry` given its handle.
+    ///
+    /// Returns a `HandleError` if the handle is not associated with a cache replace.
+    pub(crate) fn take_cache_replace_entry(
+        &mut self,
+        handle: CacheReplaceHandle,
+    ) -> Result<PendingCacheReplaceTask, HandleError> {
+        self.async_items
+            .get_mut(handle.into())
+            .and_then(Option::take)
+            .and_then(AsyncItem::into_pending_cache_replace)
+            .ok_or(HandleError::InvalidCacheReplaceHandle(handle))
+    }
+
     /// Access the cache.
     pub fn cache(&self) -> &Arc<Cache> {
         self.ctx.cache()
@@ -1657,6 +1731,18 @@ impl From<AsyncItemHandle> for CacheBusyHandle {
 
 impl From<CacheBusyHandle> for AsyncItemHandle {
     fn from(h: CacheBusyHandle) -> AsyncItemHandle {
+        AsyncItemHandle::from_u32(h.into())
+    }
+}
+
+impl From<AsyncItemHandle> for CacheReplaceHandle {
+    fn from(h: AsyncItemHandle) -> CacheReplaceHandle {
+        CacheReplaceHandle::from(h.as_u32())
+    }
+}
+
+impl From<CacheReplaceHandle> for AsyncItemHandle {
+    fn from(h: CacheReplaceHandle) -> AsyncItemHandle {
         AsyncItemHandle::from_u32(h.into())
     }
 }

@@ -2,11 +2,11 @@ use {
     crate::component::bindings::fastly::compute::{cache as api, http_body, types},
     crate::{
         body::Body,
-        cache::{self, CacheKey, SurrogateKeySet, VaryRule, WriteOptions},
+        cache::{self, CacheKey, ReplaceStrategy, SurrogateKeySet, VaryRule, WriteOptions},
         error::Error,
         linking::{ComponentCtx, SandboxView},
-        sandbox::{PeekableTask, PendingCacheTask, Sandbox},
-        wiggle_abi::types::{AsyncItemHandle, CacheBusyHandle, CacheHandle},
+        sandbox::{PeekableTask, PendingCacheReplaceTask, PendingCacheTask, Sandbox},
+        wiggle_abi::types::{AsyncItemHandle, CacheBusyHandle, CacheHandle, CacheReplaceHandle},
     },
     bytes::Bytes,
     http::HeaderMap,
@@ -115,6 +115,58 @@ fn load_lookup_options(
     })
 }
 
+struct ReplaceOptions {
+    headers: HeaderMap,
+    strategy: ReplaceStrategy,
+    always_use_requested_range: bool,
+}
+
+fn load_replace_options(
+    sandbox: &Sandbox,
+    options: api::ReplaceOptions,
+) -> Result<ReplaceOptions, Error> {
+    let headers = if let Some(request_headers) = options.request_headers {
+        let parts = sandbox.request_parts(request_headers.into())?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+
+    let strategy = match options.replace_strategy {
+        None | Some(api::ReplaceStrategy::Immediate) => ReplaceStrategy::Immediate,
+        Some(api::ReplaceStrategy::ImmediateForceMiss) => ReplaceStrategy::ImmediateForceMiss,
+        Some(api::ReplaceStrategy::Wait) => ReplaceStrategy::Wait,
+    };
+
+    Ok(ReplaceOptions {
+        headers,
+        strategy,
+        always_use_requested_range: options.always_use_requested_range,
+    })
+}
+
+/// The lookup state to report for an in-progress replace operation.
+///
+/// Unlike a lookup, a replace always carries the obligation to insert, and the state is always
+/// well-defined -- even with no existing object, in which case the state is just
+/// `MUST_INSERT_OR_UPDATE`. Note that the SDK panics if this is reported as absent.
+fn replace_lookup_state(entry: &cache::ReplaceEntry) -> api::LookupState {
+    let mut state = api::LookupState::MUST_INSERT_OR_UPDATE;
+    if let Some(existing) = entry.existing() {
+        // As in `get_state`: Compute reports FOUND only for usable objects, and SDKs (including old
+        // versions) do not check the USABLE bit.
+        if existing.meta().is_usable() {
+            state |= api::LookupState::USABLE;
+            state |= api::LookupState::FOUND;
+
+            if !existing.meta().is_fresh() {
+                state |= api::LookupState::STALE;
+            }
+        }
+    }
+    state
+}
+
 impl api::Host for ComponentCtx {
     async fn insert(
         &mut self,
@@ -142,13 +194,34 @@ impl api::Host for ComponentCtx {
 
     async fn replace_insert(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-        _options: api::WriteOptions,
+        handle: Resource<api::ReplaceEntry>,
+        mut options: api::WriteOptions,
     ) -> Result<Resource<api::Body>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        // Unlike `transaction_insert`, the replace API lets the guest set the request headers of the
+        // replacement -- that's what `Replace::header()` does. If they're absent, we fall back to
+        // the headers the replace was begun with.
+        let request_headers = if let Some(handle) = options.request_headers.take() {
+            let parts = self.sandbox().request_parts(handle.into())?;
+            Some(parts.headers.clone())
+        } else {
+            None
+        };
+        let options = load_write_options(&options)?;
+
+        // Optimistically start a body, so we don't have to reborrow self.sandbox_mut()
+        let body_handle = self.sandbox_mut().insert_body(Body::empty());
+        let read_body = self.sandbox_mut().begin_streaming(body_handle)?;
+
+        // `replace_insert` consumes the replace handle.
+        let entry = self
+            .sandbox_mut()
+            .take_cache_replace_entry(handle.into())?
+            .task()
+            .recv()
+            .await?;
+        entry.insert(request_headers, options, read_body);
+
+        Ok(body_handle.into())
     }
 
     async fn await_entry(
@@ -190,12 +263,12 @@ impl api::Host for ComponentCtx {
 
     async fn close_replace_entry(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<(), types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        // Dropping the entry drops its obligation, if it took one, which releases any writer waiting
+        // on this object.
+        let _ = self.sandbox_mut().take_cache_replace_entry(handle.into())?;
+        Ok(())
     }
 }
 
@@ -203,95 +276,181 @@ impl api::HostReplaceEntry for ComponentCtx {
     async fn replace(
         &mut self,
         key: Vec<u8>,
-        _options: api::ReplaceOptions,
+        options: api::ReplaceOptions,
     ) -> Result<Resource<api::ReplaceEntry>, types::Error> {
-        let _key: CacheKey = get_key(key)?;
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let ReplaceOptions {
+            headers,
+            strategy,
+            always_use_requested_range,
+        } = load_replace_options(self.sandbox(), options)?;
+        let key: CacheKey = get_key(key)?;
+        let cache = Arc::clone(self.sandbox().cache());
+
+        let task = match strategy {
+            // These strategies never block, so we can resolve the operation right now.
+            ReplaceStrategy::Immediate | ReplaceStrategy::ImmediateForceMiss => {
+                PeekableTask::complete(
+                    cache
+                        .replace(&key, headers, strategy)
+                        .await
+                        .with_always_use_requested_range(always_use_requested_range),
+                )
+            }
+            // `Wait` may block on another writer; let it do so in the background, so that the guest
+            // can use `step` to poll for completion.
+            ReplaceStrategy::Wait => {
+                PeekableTask::spawn(Box::pin(async move {
+                    Ok(cache
+                        .replace(&key, headers, strategy)
+                        .await
+                        .with_always_use_requested_range(always_use_requested_range))
+                }))
+                .await
+            }
+        };
+
+        let handle: CacheReplaceHandle = self
+            .sandbox_mut()
+            .insert_cache_replace_op(PendingCacheReplaceTask::new(task))
+            .into();
+        Ok(handle.into())
     }
 
     async fn get_age_ns(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        Ok(entry
+            .existing()
+            .map(|existing| existing.meta().age().as_nanos().try_into().unwrap()))
     }
 
     async fn get_body(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-        _options: api::GetBodyOptions,
+        handle: Resource<api::ReplaceEntry>,
+        options: api::GetBodyOptions,
     ) -> Result<Option<Resource<http_body::Body>>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        let handle: CacheReplaceHandle = handle.into();
+
+        // See the comments in `HostEntry::get_body`: we deliberately re-borrow rather than hold both
+        // a borrow of the entry and of the handle tables at once.
+        let entry = self.sandbox_mut().cache_replace_entry(handle).await?;
+        if entry.existing().is_none() {
+            return Ok(None);
         }
-        .into())
+        let body = entry.body(options.from, options.to).await?;
+
+        let existing = entry
+            .existing()
+            .ok_or(Error::CacheError(cache::Error::Missing))?;
+        if let Some(prev_handle) = existing.last_body_handle {
+            // Check if they're still reading the previous handle.
+            if self.sandbox().body(prev_handle).is_ok() {
+                return Err(Error::CacheError(cache::Error::HandleBodyUsed).into());
+            }
+        };
+
+        let body_handle = self.sandbox_mut().insert_body(body);
+        self.sandbox_mut()
+            .cache_replace_entry_mut(handle)
+            .await?
+            .existing_mut()
+            .unwrap()
+            .last_body_handle = Some(body_handle);
+
+        Ok(Some(body_handle.into()))
     }
 
     async fn get_hits(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        Ok(entry.existing().map(|existing| existing.meta().hits()))
     }
 
     async fn get_length(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        Ok(entry.existing().and_then(|existing| existing.length()))
     }
 
     async fn get_max_age_ns(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        Ok(entry
+            .existing()
+            .map(|existing| existing.meta().max_age().as_nanos().try_into().unwrap()))
     }
 
     async fn get_stale_while_revalidate_ns(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<Option<api::DurationNs>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        Ok(entry.existing().map(|existing| {
+            existing
+                .meta()
+                .stale_while_revalidate()
+                .as_nanos()
+                .try_into()
+                .unwrap()
+        }))
     }
 
     async fn get_state(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> Result<Option<api::LookupState>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        // NOTE: this must always report a state, even with no existing object: the SDK
+        // unconditionally calls this from `ReplaceBuilder::begin()` and panics on `none`.
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        Ok(Some(replace_lookup_state(entry)))
     }
 
     async fn get_user_metadata(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
-        _max_len: u64,
+        handle: Resource<api::ReplaceEntry>,
+        max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        let entry = self
+            .sandbox_mut()
+            .cache_replace_entry(handle.into())
+            .await?;
+        let Some(md_bytes) = entry
+            .existing()
+            .map(|existing| existing.meta().user_metadata())
+        else {
+            return Ok(None);
+        };
+        let len = md_bytes.len() as u64;
+        if len > max_len {
+            return Err(types::Error::BufferLen(len));
         }
-        .into())
+        Ok(Some(md_bytes.into()))
     }
 
     fn drop(&mut self, _entry: Resource<api::ReplaceEntry>) -> wasmtime::Result<()> {
@@ -300,12 +459,17 @@ impl api::HostReplaceEntry for ComponentCtx {
 
     fn step(
         &mut self,
-        _handle: Resource<api::ReplaceEntry>,
+        handle: Resource<api::ReplaceEntry>,
     ) -> wasmtime::Result<Option<Resource<api::Pollable>>> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
+        let replace_handle = CacheReplaceHandle::from(handle);
+        let async_handle = replace_handle.into();
+        let is_ready = self.sandbox_mut().async_item_mut(async_handle)?.is_ready();
+
+        if is_ready {
+            Ok(None)
+        } else {
+            Ok(Some(AsyncItemHandle::from(async_handle).into()))
         }
-        .into())
     }
 }
 
@@ -574,12 +738,17 @@ impl api::HostEntry for ComponentCtx {
 
     async fn get_stale_while_revalidate_ns(
         &mut self,
-        _handle: Resource<api::Entry>,
+        handle: Resource<api::Entry>,
     ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self.sandbox_mut().cache_entry_mut(handle.into()).await?;
+        Ok(entry.found().map(|found| {
+            found
+                .meta()
+                .stale_while_revalidate()
+                .as_nanos()
+                .try_into()
+                .unwrap()
+        }))
     }
 
     async fn get_age_ns(
@@ -596,12 +765,10 @@ impl api::HostEntry for ComponentCtx {
 
     async fn get_hits(
         &mut self,
-        _handle: Resource<api::Entry>,
+        handle: Resource<api::Entry>,
     ) -> Result<Option<u64>, types::Error> {
-        Err(Error::Unsupported {
-            msg: "Cache API primitives not yet supported",
-        }
-        .into())
+        let entry = self.sandbox_mut().cache_entry_mut(handle.into()).await?;
+        Ok(entry.found().map(|found| found.meta().hits()))
     }
 
     fn drop(&mut self, _entry: Resource<api::Entry>) -> wasmtime::Result<()> {

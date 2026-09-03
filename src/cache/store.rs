@@ -4,7 +4,10 @@ use crate::cache::{Error, variance::VaryRule};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
@@ -13,7 +16,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{Found, SurrogateKeySet, WriteOptions, variance::Variant};
+use super::{Found, ReplaceStrategy, SurrogateKeySet, WriteOptions, variance::Variant};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -45,6 +48,12 @@ pub struct ObjectMeta {
     // Soft-purge bit: atomic so we don't have to wrap the whole thing in a lock.
     // This can only transition false -> true.
     soft_purge: AtomicBool,
+
+    /// The number of times this object has been served from the cache.
+    ///
+    /// Shared (rather than copied) between clones of this metadata, so that a `Found` handed to the
+    /// guest observes the same counter as the object still sitting in the cache.
+    hits: Arc<AtomicU64>,
 }
 impl ObjectMeta {
     /// Retrieve the current age of this object.
@@ -56,6 +65,21 @@ impl ObjectMeta {
     /// Maximum fresh age of this object.
     pub fn max_age(&self) -> Duration {
         self.max_age
+    }
+
+    /// The stale-while-revalidate period of this object, which begins after `max_age`.
+    pub fn stale_while_revalidate(&self) -> Duration {
+        self.stale_while_revalidate
+    }
+
+    /// The number of times this object has been served from the cache.
+    pub fn hits(&self) -> u64 {
+        self.hits.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Count a delivery of this object from the cache.
+    fn record_hit(&self) {
+        self.hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Return true if the entry is fresh at the current time.
@@ -121,6 +145,7 @@ impl ObjectMeta {
             length,
             surrogate_keys,
             soft_purge: AtomicBool::new(false),
+            hits: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -137,6 +162,10 @@ impl Clone for ObjectMeta {
             length: self.length,
             surrogate_keys: self.surrogate_keys.clone(),
             soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
+            // Unlike the other fields, the hit counter is *shared* with the clone: a `Found`
+            // handed to the guest must observe the same counter as the object still sitting in
+            // the cache.
+            hits: Arc::clone(&self.hits),
         }
     }
 }
@@ -145,8 +174,20 @@ impl Clone for ObjectMeta {
 pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
 
 impl CacheKeyObjects {
-    /// Get the applicable CacheData, if available.
+    /// Get the applicable CacheData, if available, counting a hit against it.
     pub fn get(&self, request_headers: &HeaderMap) -> Option<Arc<CacheData>> {
+        let object = self.peek(request_headers);
+        if let Some(object) = &object {
+            object.meta.record_hit();
+        }
+        object
+    }
+
+    /// Get the applicable CacheData, if available, *without* counting a hit against it.
+    ///
+    /// This is what the `replace` API uses to read the existing object: on Compute, starting a
+    /// replace is not a delivery of the cached object, so it does not bump the hit count.
+    pub fn peek(&self, request_headers: &HeaderMap) -> Option<Arc<CacheData>> {
         let key_objects = self.0.borrow();
 
         for vary_rule in key_objects.vary_rules.iter() {
@@ -197,6 +238,7 @@ impl CacheKeyObjects {
                     if let Some(data) = &cache_value.present {
                         if data.meta.is_fresh() {
                             // We have fresh data; no need to generate an obligation.
+                            data.meta.record_hit();
                             return (Some(Arc::clone(data)), None);
                         }
                         if data.meta.is_usable() && cache_value.obligated {
@@ -204,6 +246,7 @@ impl CacheKeyObjects {
                             // obligated to freshen it.
                             // So we can go ahead and use the current data, without generating an
                             // obligation.
+                            data.meta.record_hit();
                             return (Some(Arc::clone(data)), None);
                         }
                     }
@@ -337,11 +380,176 @@ impl CacheKeyObjects {
 
             // Now outside of the lock: return what we have.
             if data.is_some() || obligated.is_some() || !ok_to_wait {
+                if let Some(data) = &data {
+                    data.meta.record_hit();
+                }
                 return (data, obligated);
             }
 
             // Return back to the top of the loop: look for the obligation we missed in the first
             // read pass.
+        }
+    }
+
+    /// Begin a replace operation.
+    ///
+    /// Returns the existing CacheData, if any (even if stale, and without counting a hit), and an
+    /// Obligation if this replace took ownership of the entry's obligation slot.
+    ///
+    /// The three strategies differ only in how they interact with that slot:
+    ///
+    /// - `Immediate` never takes it, and leaves the existing object visible to lookups. The
+    ///   eventual insert is an ordinary last-writer-wins insert.
+    /// - `ImmediateForceMiss` clears the existing object so that subsequent lookups miss, and takes
+    ///   the slot if it is free.
+    /// - `Wait` blocks until the slot is free, then takes it. Holding the slot is what serializes
+    ///   concurrent replaces of the same object, which is what makes read-modify-write ("counter")
+    ///   patterns work.
+    pub async fn replace(
+        self: &Arc<Self>,
+        request_headers: &HeaderMap,
+        strategy: ReplaceStrategy,
+    ) -> (Option<Arc<CacheData>>, Option<Obligation>) {
+        if matches!(strategy, ReplaceStrategy::Immediate) {
+            // Nothing to coordinate: read the current object and get out of the way.
+            return (self.peek(request_headers), None);
+        }
+
+        let force_miss = matches!(strategy, ReplaceStrategy::ImmediateForceMiss);
+        let mut sub = self.0.subscribe();
+
+        loop {
+            if !force_miss {
+                // `Wait`: don't attempt to take the obligation slot until nobody else holds it.
+                //
+                // Note that a guest which begins a `Wait` replace while *itself* holding an
+                // unfulfilled obligation on the same key will block here indefinitely; on Compute
+                // the request would eventually time out. We deliberately don't impose a timeout of
+                // our own.
+                let awaitable = {
+                    let key_objects = sub.borrow_and_update();
+                    key_objects
+                        .vary_rules
+                        .iter()
+                        .map(|v| v.variant(request_headers))
+                        .filter_map(|key| key_objects.objects.get(&key))
+                        .any(|value| value.obligated)
+                };
+                if awaitable {
+                    let _ = sub.changed().await;
+                    continue;
+                }
+            }
+
+            let mut data: Option<Arc<CacheData>> = None;
+            let mut obligation: Option<Obligation> = None;
+            // Set if, between the read above and the write below, someone else took the obligation
+            // slot out from under us; a `Wait` replace goes back around and waits on them instead.
+            let mut lost_race = false;
+
+            self.0.send_if_modified(|key_objects| {
+                // The variants that could serve this request, most-recent vary rule first.
+                let response_keys: Vec<Variant> = key_objects
+                    .vary_rules
+                    .iter()
+                    .map(|v| v.variant(request_headers))
+                    .collect();
+
+                // The existing object we'll hand to the guest: the same one a lookup would find.
+                let found = response_keys
+                    .iter()
+                    .find(|key| {
+                        key_objects
+                            .objects
+                            .get(key)
+                            .is_some_and(|value| value.present.is_some())
+                    })
+                    .cloned();
+                data = found.as_ref().and_then(|key| {
+                    key_objects
+                        .objects
+                        .get(key)
+                        .and_then(|value| value.present.clone())
+                });
+
+                // Hold the obligation against the variant we read from if there was one; failing
+                // that, any existing matching variant; failing that, a new variant derived from the
+                // most recent vary rule.
+                let variant = found
+                    .or_else(|| {
+                        response_keys
+                            .iter()
+                            .find(|key| key_objects.objects.contains_key(*key))
+                            .cloned()
+                    })
+                    .unwrap_or_else(|| {
+                        response_keys.into_iter().next().unwrap_or_else(|| {
+                            key_objects.vary_rules.push_front(VaryRule::default());
+                            VaryRule::default().variant(request_headers)
+                        })
+                    });
+
+                let already_obligated = key_objects
+                    .objects
+                    .get(&variant)
+                    .is_some_and(|value| value.obligated);
+
+                if already_obligated && !force_miss {
+                    // Raced with another obligation-taker; wait for them instead.
+                    lost_race = true;
+                    data = None;
+                    return false;
+                }
+
+                if force_miss {
+                    // Make subsequent lookups miss, for every variant that could have served this
+                    // request. As in `purge`, we keep obligated `CacheValue`s around (minus their
+                    // data) so we don't confuse whoever holds the obligation.
+                    for key in key_objects
+                        .vary_rules
+                        .iter()
+                        .map(|v| v.variant(request_headers))
+                        .collect::<Vec<_>>()
+                    {
+                        if let Some(value) = key_objects.objects.get_mut(&key) {
+                            value.present = None;
+                        }
+                    }
+                }
+
+                if already_obligated {
+                    // `ImmediateForceMiss` with an obligation already outstanding. The store's
+                    // invariant is one `Obligation` per obligated `CacheValue`, so we can't take a
+                    // second one; we fall back to a racing plain insert. (Deviation from Compute,
+                    // which would collapse these.)
+                    return false;
+                }
+
+                key_objects
+                    .objects
+                    .entry(variant.clone())
+                    .or_default()
+                    .obligated = true;
+                obligation = Some(Obligation {
+                    object: Arc::clone(self),
+                    variant,
+                    request_headers: request_headers.clone(),
+                    // A replace always inserts a fresh body, so this is only ever used to decide
+                    // that a revalidating `update` is possible -- which, for a force-miss, it
+                    // isn't, since we just dropped the data.
+                    present: if force_miss { None } else { data.clone() },
+                    completed: false,
+                });
+
+                // No notification: waiters wait on obligations being *fulfilled* or abandoned,
+                // neither of which happened here.
+                false
+            });
+
+            if lost_race {
+                continue;
+            }
+            return (data, obligation);
         }
     }
 
@@ -510,6 +718,20 @@ impl Obligation {
     /// Returns a Found for the entry inserted.
     pub fn insert(mut self, options: WriteOptions, body: Body) -> Found {
         let request_headers = std::mem::take(&mut self.request_headers);
+        self.insert_with_headers(request_headers, options, body)
+    }
+
+    /// Fulfill the obligation, computing the inserted variant from the given request headers rather
+    /// than the ones the obligation was created with.
+    ///
+    /// The `replace` API needs this: the guest may set request headers on the replacement that
+    /// differ from the ones it looked up with.
+    pub fn insert_with_headers(
+        mut self,
+        request_headers: HeaderMap,
+        options: WriteOptions,
+        body: Body,
+    ) -> Found {
         let variant = std::mem::take(&mut self.variant);
         let data = self
             .object
