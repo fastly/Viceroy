@@ -6,8 +6,10 @@ use bytes::Bytes;
 use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::{CacheKey, SurrogateKeySet, VaryRule, WriteOptions};
-use crate::sandbox::{PeekableTask, PendingCacheTask, Sandbox};
+use crate::cache::{
+    CacheKey, ReplaceEntry, ReplaceStrategy, SurrogateKeySet, VaryRule, WriteOptions,
+};
+use crate::sandbox::{PeekableTask, PendingCacheReplaceTask, PendingCacheTask, Sandbox};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
 use super::fastly_cache::FastlyCache;
@@ -177,6 +179,137 @@ fn load_lookup_options(
     })
 }
 
+struct ReplaceOptions {
+    headers: HeaderMap,
+    strategy: ReplaceStrategy,
+    always_use_requested_range: bool,
+}
+
+fn load_replace_options(
+    sandbox: &Sandbox,
+    memory: &wiggle::GuestMemory<'_>,
+    mut options_mask: types::CacheReplaceOptionsMask,
+    options: wiggle::GuestPtr<types::CacheReplaceOptions>,
+) -> Result<ReplaceOptions, Error> {
+    let options = memory.read(options)?;
+
+    let headers = if options_mask.contains(types::CacheReplaceOptionsMask::REQUEST_HEADERS) {
+        let parts = sandbox.request_parts(options.request_headers)?;
+        parts.headers.clone()
+    } else {
+        HeaderMap::default()
+    };
+    options_mask &= !types::CacheReplaceOptionsMask::REQUEST_HEADERS;
+
+    let strategy = if options_mask.contains(types::CacheReplaceOptionsMask::REPLACE_STRATEGY) {
+        ReplaceStrategy::from_abi(options.replace_strategy).ok_or(Error::InvalidArgument)?
+    } else {
+        ReplaceStrategy::default()
+    };
+    options_mask &= !types::CacheReplaceOptionsMask::REPLACE_STRATEGY;
+
+    if options_mask.contains(types::CacheReplaceOptionsMask::SERVICE_ID) {
+        // TODO: Support service-ID-keyed hashes, for testing internal services at Fastly
+        return Err(Error::Unsupported {
+            msg: "service ID in cache replace is not supported in Viceroy",
+        });
+    }
+    options_mask &= !types::CacheReplaceOptionsMask::SERVICE_ID;
+
+    let always_use_requested_range =
+        options_mask.contains(types::CacheReplaceOptionsMask::ALWAYS_USE_REQUESTED_RANGE);
+    options_mask &= !types::CacheReplaceOptionsMask::ALWAYS_USE_REQUESTED_RANGE;
+
+    if !options_mask.is_empty() {
+        return Err(Error::NotAvailable("unknown cache replace option"));
+    }
+
+    Ok(ReplaceOptions {
+        headers,
+        strategy,
+        always_use_requested_range,
+    })
+}
+
+struct GetBodyOptions {
+    from: Option<u64>,
+    to: Option<u64>,
+}
+
+fn load_get_body_options(
+    mut options_mask: types::CacheGetBodyOptionsMask,
+    options: &types::CacheGetBodyOptions,
+) -> Result<GetBodyOptions, Error> {
+    let from = if options_mask.contains(types::CacheGetBodyOptionsMask::FROM) {
+        Some(options.from)
+    } else {
+        None
+    };
+    options_mask &= !types::CacheGetBodyOptionsMask::FROM;
+    let to = if options_mask.contains(types::CacheGetBodyOptionsMask::TO) {
+        Some(options.to)
+    } else {
+        None
+    };
+    options_mask &= !types::CacheGetBodyOptionsMask::TO;
+
+    if !options_mask.is_empty() {
+        return Err(Error::NotAvailable("unknown cache get_body option"));
+    }
+
+    Ok(GetBodyOptions { from, to })
+}
+
+/// Copy user metadata out to the guest, reporting the required length if the buffer is too small.
+fn write_user_metadata(
+    memory: &mut wiggle::GuestMemory<'_>,
+    md_bytes: &[u8],
+    out_ptr: wiggle::GuestPtr<u8>,
+    out_len: u32,
+    nwritten_out: wiggle::GuestPtr<u32>,
+) -> Result<(), Error> {
+    let len: u32 = md_bytes
+        .len()
+        .try_into()
+        .expect("user metadata must be shorter than u32 can indicate");
+    if len > out_len {
+        memory.write(nwritten_out, len)?;
+        return Err(Error::BufferLengthError {
+            buf: "user_metadata_out_ptr",
+            len: "user_metadata_out_len",
+        });
+    }
+    let user_metadata = memory
+        .as_slice_mut(out_ptr.as_array(out_len))?
+        .ok_or(Error::SharedMemory)?;
+    user_metadata[..(len as usize)].copy_from_slice(md_bytes);
+    memory.write(nwritten_out, len)?;
+
+    Ok(())
+}
+
+/// The lookup state to report for an in-progress replace operation.
+///
+/// Unlike a lookup, a replace always carries the obligation to insert, and the state is always
+/// well-defined -- even with no existing object, in which case the state is just
+/// `MUST_INSERT_OR_UPDATE`.
+fn replace_lookup_state(entry: &ReplaceEntry) -> types::CacheLookupState {
+    let mut state = types::CacheLookupState::MUST_INSERT_OR_UPDATE;
+    if let Some(existing) = entry.existing() {
+        // As in `get_state`: Compute reports FOUND only for usable objects, and SDKs (including old
+        // versions) don't check the USABLE bit.
+        if existing.meta().is_usable() {
+            state |= types::CacheLookupState::USABLE;
+            state |= types::CacheLookupState::FOUND;
+
+            if !existing.meta().is_fresh() {
+                state |= types::CacheLookupState::STALE;
+            }
+        }
+    }
+    state
+}
+
 #[allow(unused_variables)]
 impl FastlyCache for Sandbox {
     async fn lookup(
@@ -245,7 +378,39 @@ impl FastlyCache for Sandbox {
         options_mask: types::CacheReplaceOptionsMask,
         abi_options: wiggle::GuestPtr<types::CacheReplaceOptions>,
     ) -> Result<types::CacheReplaceHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let ReplaceOptions {
+            headers,
+            strategy,
+            always_use_requested_range,
+        } = load_replace_options(self, memory, options_mask, abi_options)?;
+        let key = load_cache_key(memory, cache_key)?;
+        let cache = Arc::clone(self.cache());
+
+        let task = match strategy {
+            // These strategies never block, so we can resolve the operation right now.
+            ReplaceStrategy::Immediate | ReplaceStrategy::ImmediateForceMiss => {
+                PeekableTask::complete(
+                    cache
+                        .replace(&key, headers, strategy)
+                        .await
+                        .with_always_use_requested_range(always_use_requested_range),
+                )
+            }
+            // `Wait` may block on another writer; let it do so in the background, so that the guest
+            // can use `step` to poll for completion.
+            ReplaceStrategy::Wait => {
+                PeekableTask::spawn(Box::pin(async move {
+                    Ok(cache
+                        .replace(&key, headers, strategy)
+                        .await
+                        .with_always_use_requested_range(always_use_requested_range))
+                }))
+                .await
+            }
+        };
+
+        let handle = self.insert_cache_replace_op(PendingCacheReplaceTask::new(task));
+        Ok(handle.into())
     }
 
     async fn replace_get_age_ns(
@@ -253,7 +418,12 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let existing = self
+            .cache_replace_entry(cache_handle)
+            .await?
+            .existing()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        Ok(existing.meta().age().as_nanos().try_into().unwrap())
     }
 
     async fn replace_get_body(
@@ -263,7 +433,32 @@ impl FastlyCache for Sandbox {
         options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let GetBodyOptions { from, to } = load_get_body_options(options_mask, options)?;
+
+        // See the comments in `get_body`: we deliberately re-borrow rather than hold both a borrow
+        // of the entry and of the handle tables at once.
+        let entry = self.cache_replace_entry(cache_handle).await?;
+        let body = entry.body(from, to).await?;
+
+        let existing = entry
+            .existing()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+
+        if let Some(prev_handle) = existing.last_body_handle {
+            // Check if they're still reading the previous handle.
+            if self.body(prev_handle).is_ok() {
+                return Err(Error::CacheError(crate::cache::Error::HandleBodyUsed));
+            }
+        };
+
+        let body_handle = self.insert_body(body);
+        self.cache_replace_entry_mut(cache_handle)
+            .await?
+            .existing_mut()
+            .unwrap()
+            .last_body_handle = Some(body_handle);
+
+        Ok(body_handle)
     }
 
     async fn replace_get_hits(
@@ -271,7 +466,12 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
     ) -> Result<u64, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let existing = self
+            .cache_replace_entry(cache_handle)
+            .await?
+            .existing()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        Ok(existing.meta().hits())
     }
 
     async fn replace_get_length(
@@ -279,7 +479,11 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
     ) -> Result<u64, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        self.cache_replace_entry(cache_handle)
+            .await?
+            .existing()
+            .and_then(|existing| existing.length())
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))
     }
 
     async fn replace_get_max_age_ns(
@@ -287,7 +491,12 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let existing = self
+            .cache_replace_entry(cache_handle)
+            .await?
+            .existing()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        Ok(existing.meta().max_age().as_nanos().try_into().unwrap())
     }
 
     async fn replace_get_stale_while_revalidate_ns(
@@ -295,7 +504,17 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let existing = self
+            .cache_replace_entry(cache_handle)
+            .await?
+            .existing()
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        Ok(existing
+            .meta()
+            .stale_while_revalidate()
+            .as_nanos()
+            .try_into()
+            .unwrap())
     }
 
     async fn replace_get_state(
@@ -303,7 +522,10 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         cache_handle: types::CacheReplaceHandle,
     ) -> Result<types::CacheLookupState, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        // NOTE: this must never fail when there is no existing object: the SDK unconditionally
+        // calls this hostcall from `ReplaceBuilder::begin()` and panics on any non-OK status.
+        let entry = self.cache_replace_entry(cache_handle).await?;
+        Ok(replace_lookup_state(entry))
     }
 
     async fn replace_get_user_metadata(
@@ -314,7 +536,13 @@ impl FastlyCache for Sandbox {
         out_len: u32,
         nwritten_out: wiggle::GuestPtr<u32>,
     ) -> Result<(), Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let md_bytes = self
+            .cache_replace_entry(cache_handle)
+            .await?
+            .existing()
+            .map(|existing| existing.meta().user_metadata())
+            .ok_or(Error::CacheError(crate::cache::Error::Missing))?;
+        write_user_metadata(memory, &md_bytes, out_ptr, out_len, nwritten_out)
     }
 
     async fn replace_insert(
@@ -324,7 +552,36 @@ impl FastlyCache for Sandbox {
         options_mask: types::CacheWriteOptionsMask,
         abi_options: wiggle::GuestPtr<types::CacheWriteOptions>,
     ) -> Result<types::BodyHandle, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let guest_options = memory.read(abi_options)?;
+
+        // Unlike `transaction_insert`, the replace API lets the guest set the request headers of the
+        // replacement -- that's what `Replace::header()` does. If they're absent, we fall back to
+        // the headers the replace was begun with.
+        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
+            let handle = guest_options.request_headers;
+            Some(self.request_parts(handle)?.headers.clone())
+        } else {
+            None
+        };
+        let options = load_write_options(
+            memory,
+            options_mask & !CacheWriteOptionsMask::REQUEST_HEADERS,
+            &guest_options,
+        )?;
+
+        // Optimistically start a body, so we don't have to reborrow &mut self.
+        let body_handle = self.insert_body(Body::empty());
+        let read_body = self.begin_streaming(body_handle)?;
+
+        // `replace_insert` consumes the replace handle.
+        let entry = self
+            .take_cache_replace_entry(cache_handle)?
+            .task()
+            .recv()
+            .await?;
+        entry.insert(request_headers, options, read_body);
+
+        Ok(body_handle)
     }
 
     async fn transaction_lookup(
@@ -488,6 +745,17 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<(), Error> {
+        // `close` is shared between cache entries and replace entries: the SDK's
+        // `CacheReplaceHandle` closes itself through this hostcall, so dispatch on what the handle
+        // actually refers to.
+        //
+        // Dropping a replace entry drops its obligation, if it took one, which releases any writer
+        // waiting on this object.
+        let async_handle: crate::sandbox::AsyncItemHandle = handle.into();
+        if self.is_cache_replace(async_handle) {
+            let _ = self.take_cache_replace_entry(async_handle.into())?;
+            return Ok(());
+        }
         let _ = self.take_cache_entry(handle)?.task().recv().await?;
         Ok(())
     }
@@ -534,49 +802,23 @@ impl FastlyCache for Sandbox {
             .found()
             .map(|found| found.meta().user_metadata())
             .ok_or(crate::Error::CacheError(crate::cache::Error::Missing))?;
-        let len: u32 = md_bytes
-            .len()
-            .try_into()
-            .expect("user metadata must be shorter than u32 can indicate");
-        if len > user_metadata_out_len {
-            memory.write(nwritten_out, len)?;
-            return Err(Error::BufferLengthError {
-                buf: "user_metadata_out_ptr",
-                len: "user_metadata_out_len",
-            });
-        }
-        let user_metadata = memory
-            .as_slice_mut(user_metadata_out_ptr.as_array(user_metadata_out_len))?
-            .ok_or(Error::SharedMemory)?;
-        user_metadata[..(len as usize)].copy_from_slice(&md_bytes);
-        memory.write(nwritten_out, len)?;
-
-        Ok(())
+        write_user_metadata(
+            memory,
+            &md_bytes,
+            user_metadata_out_ptr,
+            user_metadata_out_len,
+            nwritten_out,
+        )
     }
 
     async fn get_body(
         &mut self,
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
-        mut options_mask: types::CacheGetBodyOptionsMask,
+        options_mask: types::CacheGetBodyOptionsMask,
         options: &types::CacheGetBodyOptions,
     ) -> Result<types::BodyHandle, Error> {
-        let from = if options_mask.contains(types::CacheGetBodyOptionsMask::FROM) {
-            Some(options.from)
-        } else {
-            None
-        };
-        options_mask &= !types::CacheGetBodyOptionsMask::FROM;
-        let to = if options_mask.contains(types::CacheGetBodyOptionsMask::TO) {
-            Some(options.to)
-        } else {
-            None
-        };
-        options_mask &= !types::CacheGetBodyOptionsMask::TO;
-
-        if !options_mask.is_empty() {
-            return Err(Error::NotAvailable("unknown cache get_body option"));
-        }
+        let GetBodyOptions { from, to } = load_get_body_options(options_mask, options)?;
 
         // We wind up re-borrowing `found` and `self.sandbox` several times here, to avoid
         // borrowing the both of them at once.
@@ -650,7 +892,17 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheDurationNs, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+        if let Some(found) = entry.found() {
+            Ok(found
+                .meta()
+                .stale_while_revalidate()
+                .as_nanos()
+                .try_into()
+                .unwrap())
+        } else {
+            Err(Error::CacheError(crate::cache::Error::Missing))
+        }
     }
 
     async fn get_age_ns(
@@ -671,6 +923,11 @@ impl FastlyCache for Sandbox {
         memory: &mut wiggle::GuestMemory<'_>,
         handle: types::CacheHandle,
     ) -> Result<types::CacheHitCount, Error> {
-        Err(Error::NotAvailable("Cache API primitives"))
+        let entry = self.cache_entry_mut(handle).await?;
+        if let Some(found) = entry.found() {
+            Ok(found.meta().hits())
+        } else {
+            Err(Error::CacheError(crate::cache::Error::Missing))
+        }
     }
 }

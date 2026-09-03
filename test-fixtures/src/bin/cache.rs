@@ -70,6 +70,15 @@ fn main() {
     run_test!(test_stream_back);
     run_test!(test_stream_back_fixed);
 
+    run_test!(test_hits_and_stale_while_revalidate);
+    run_test!(test_replace_no_existing);
+    run_test!(test_replace_existing);
+    run_test!(test_replace_counter);
+    run_test!(test_replace_force_miss);
+    run_test!(test_replace_dropped);
+    run_test!(test_replace_vary);
+    run_test!(test_replace_surrogate_keys);
+
     eprintln!("Completed all tests for version {service}")
 }
 
@@ -123,6 +132,27 @@ fn poll_known_length(key: &CacheKey) -> Found {
         "did not arrive at known-length after {} seconds",
         TIMEOUT.as_secs()
     );
+}
+
+/// Insert an object with a known length, and wait for the write to complete.
+fn write_object(key: &CacheKey, body: &str, max_age: Duration) {
+    let mut writer = insert(key.clone(), max_age)
+        .known_length(body.len() as u64)
+        .execute()
+        .unwrap();
+    writer.write_all(body.as_bytes()).unwrap();
+    writer.finish().unwrap();
+}
+
+/// Read a cached object's body, asserting that the object is present.
+fn read_object(key: &CacheKey) -> String {
+    lookup(key.clone())
+        .execute()
+        .unwrap()
+        .expect("object should be cached")
+        .to_stream()
+        .unwrap()
+        .into_string()
 }
 
 fn test_non_concurrent() {
@@ -1356,6 +1386,317 @@ fn test_stream_back_fixed() {
     let got = got.into_string();
 
     assert_eq!(&got, &body[6..=14]);
+}
+
+fn test_hits_and_stale_while_revalidate() {
+    let key = new_key();
+
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(140))
+            .stale_while_revalidate(Duration::from_secs(60))
+            .execute()
+            .unwrap();
+        write!(writer, "hello").unwrap();
+        writer.finish().unwrap();
+    }
+
+    let first = lookup(key.clone()).execute().unwrap().expect("is found");
+    assert_eq!(first.stale_while_revalidate(), Duration::from_secs(60));
+
+    // We can't assert an exact hit count -- the platform counts hits per cache node -- but the
+    // count must not go backwards as we keep reading the same object.
+    let first_hits = first.hits();
+    let second = lookup(key.clone()).execute().unwrap().expect("is found");
+    let second_hits = second.hits();
+    assert!(
+        second_hits >= first_hits,
+        "hit count went backwards: {first_hits} then {second_hits}"
+    );
+}
+
+fn test_replace_no_existing() {
+    let key = new_key();
+
+    let current = replace(key.clone()).begin().expect("failed to begin replace");
+    assert!(current.existing_object().is_none());
+
+    let body = "hello replacement";
+    let mut writer = current
+        .known_length(body.len() as u64)
+        .execute(Duration::from_secs(141))
+        .unwrap();
+    writer.write_all(body.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    let found = lookup(key).execute().unwrap().expect("is found");
+    assert_eq!(found.max_age(), Duration::from_secs(141));
+    assert_eq!(&found.to_stream().unwrap().into_string(), body);
+}
+
+fn test_replace_existing() {
+    let key = new_key();
+
+    let original = "the original object";
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(142))
+            .initial_age(Duration::from_secs(3))
+            .stale_while_revalidate(Duration::from_secs(60))
+            .known_length(original.len() as u64)
+            .user_metadata(Bytes::from_static(b"version 1"))
+            .execute()
+            .unwrap();
+        writer.write_all(original.as_bytes()).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let current = replace(key.clone()).begin().expect("failed to begin replace");
+    {
+        let existing = current.existing_object().expect("existing object");
+        assert_eq!(existing.max_age(), Duration::from_secs(142));
+        assert!(existing.age() >= Duration::from_secs(3));
+        assert_eq!(existing.stale_while_revalidate(), Duration::from_secs(60));
+        assert_eq!(existing.known_length(), Some(original.len() as u64));
+        assert_eq!(existing.user_metadata().iter().as_slice(), b"version 1");
+        assert!(existing.is_usable());
+        assert!(!existing.is_stale());
+        // Just check that reading the hit count works; how a replace affects it is unspecified.
+        let _ = existing.hits();
+        assert_eq!(&existing.to_stream().unwrap().into_string(), original);
+    }
+
+    let replacement = "the replacement object";
+    let mut writer = current
+        .known_length(replacement.len() as u64)
+        .user_metadata(Bytes::from_static(b"version 2"))
+        .execute(Duration::from_secs(143))
+        .unwrap();
+    writer.write_all(replacement.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    let found = lookup(key).execute().unwrap().expect("is found");
+    assert_eq!(found.max_age(), Duration::from_secs(143));
+    assert_eq!(found.user_metadata().iter().as_slice(), b"version 2");
+    assert_eq!(&found.to_stream().unwrap().into_string(), replacement);
+}
+
+fn test_replace_counter() {
+    let key = new_key();
+
+    // The read-modify-write pattern: each `Wait` replace waits for any in-progress update, so it
+    // observes the value written by the previous one.
+    for expected in 0..4u32 {
+        let current = replace(key.clone())
+            .replace_strategy(ReplaceStrategy::Wait)
+            .begin()
+            .expect("failed to begin replace");
+
+        let count = match current.existing_object() {
+            None => 0,
+            Some(existing) => existing
+                .to_stream()
+                .unwrap()
+                .into_string()
+                .parse::<u32>()
+                .expect("cached object should be a count"),
+        };
+        assert_eq!(count, expected);
+
+        let next = (count + 1).to_string();
+        let mut writer = current
+            .known_length(next.len() as u64)
+            .execute(Duration::from_secs(144))
+            .unwrap();
+        writer.write_all(next.as_bytes()).unwrap();
+        writer.finish().unwrap();
+    }
+
+    assert_eq!(read_object(&key), "4");
+}
+
+fn test_replace_force_miss() {
+    // The default `Immediate` strategy leaves the existing object in place until the replacement
+    // is provided.
+    {
+        let key = new_key();
+        write_object(&key, "original", Duration::from_secs(145));
+
+        let current = replace(key.clone()).begin().expect("failed to begin replace");
+        assert!(current.existing_object().is_some());
+        assert_eq!(
+            read_object(&key),
+            "original",
+            "an Immediate replace should leave the existing object visible"
+        );
+
+        let replacement = "replacement";
+        let mut writer = current
+            .known_length(replacement.len() as u64)
+            .execute(Duration::from_secs(146))
+            .unwrap();
+        writer.write_all(replacement.as_bytes()).unwrap();
+        writer.finish().unwrap();
+
+        assert_eq!(read_object(&key), replacement);
+    }
+
+    // `ImmediateForceMiss` removes the existing object right away, so other requests for it wait
+    // for the replacement instead of being served the old object.
+    {
+        let key = new_key();
+        write_object(&key, "original", Duration::from_secs(147));
+
+        let current = replace(key.clone())
+            .replace_strategy(ReplaceStrategy::ImmediateForceMiss)
+            .begin()
+            .expect("failed to begin replace");
+        // The replace itself still has access to the object it is replacing.
+        let existing = current.existing_object().expect("existing object");
+        assert_eq!(existing.to_stream().unwrap().into_string(), "original");
+
+        let pending = Transaction::lookup(key.clone()).execute_async().unwrap();
+        assert!(
+            pending.pending().expect("error checking status"),
+            "a lookup during a force-miss replace should wait for the replacement"
+        );
+
+        let replacement = "replacement";
+        let mut writer = current
+            .known_length(replacement.len() as u64)
+            .execute(Duration::from_secs(148))
+            .unwrap();
+        writer.write_all(replacement.as_bytes()).unwrap();
+        writer.finish().unwrap();
+
+        let txn = pending.wait().unwrap();
+        let found = txn.found().expect("the waiting lookup should be satisfied");
+        assert_eq!(found.to_stream().unwrap().into_string(), replacement);
+    }
+}
+
+fn test_replace_dropped() {
+    let key = new_key();
+    write_object(&key, "original", Duration::from_secs(149));
+
+    // Dropping a replace without calling execute() leaves the existing object alone.
+    {
+        let current = replace(key.clone()).begin().expect("failed to begin replace");
+        assert!(current.existing_object().is_some());
+    }
+    assert_eq!(read_object(&key), "original");
+
+    // The same is true of a `Wait` replace, and abandoning it must not block the next one: if the
+    // abandoned replace kept other updates waiting, the replace below would never begin.
+    {
+        let current = replace(key.clone())
+            .replace_strategy(ReplaceStrategy::Wait)
+            .begin()
+            .expect("failed to begin replace");
+        assert!(current.existing_object().is_some());
+    }
+    assert_eq!(read_object(&key), "original");
+
+    let replacement = "replacement";
+    let mut writer = replace(key.clone())
+        .replace_strategy(ReplaceStrategy::Wait)
+        .begin()
+        .expect("failed to begin replace")
+        .known_length(replacement.len() as u64)
+        .execute(Duration::from_secs(150))
+        .unwrap();
+    writer.write_all(replacement.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    assert_eq!(read_object(&key), replacement);
+}
+
+fn test_replace_vary() {
+    let key = new_key();
+    let header_name = HeaderName::from_static("x-viceroy-test");
+
+    let original = "original foo";
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(151))
+            .header(&header_name, "foo")
+            .vary_by([&header_name])
+            .known_length(original.len() as u64)
+            .execute()
+            .unwrap();
+        writer.write_all(original.as_bytes()).unwrap();
+        writer.finish().unwrap();
+    }
+
+    // Without the header, the replace doesn't find the varied object -- just like a lookup.
+    {
+        let current = replace(key.clone()).begin().expect("failed to begin replace");
+        assert!(current.existing_object().is_none());
+    }
+
+    // With the matching header it does. The replacement repeats the header and the vary rule, so
+    // that later lookups can still find it.
+    let replacement = "replacement foo";
+    {
+        let current = replace(key.clone())
+            .header(&header_name, "foo")
+            .begin()
+            .expect("failed to begin replace");
+        {
+            let existing = current.existing_object().expect("existing object");
+            assert_eq!(&existing.to_stream().unwrap().into_string(), original);
+        }
+
+        let mut writer = current
+            .header(&header_name, "foo")
+            .vary_by([&header_name])
+            .known_length(replacement.len() as u64)
+            .execute(Duration::from_secs(152))
+            .unwrap();
+        writer.write_all(replacement.as_bytes()).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let found = lookup(key.clone())
+        .header(&header_name, "foo")
+        .execute()
+        .unwrap()
+        .expect("is found");
+    assert_eq!(&found.to_stream().unwrap().into_string(), replacement);
+
+    // The variant without the header still doesn't exist.
+    assert!(lookup(key).execute().unwrap().is_none());
+}
+
+fn test_replace_surrogate_keys() {
+    let key = new_key();
+
+    {
+        let mut writer = insert(key.clone(), Duration::from_secs(153))
+            .surrogate_keys(["replace-key-old"])
+            .known_length(8)
+            .execute()
+            .unwrap();
+        writer.write_all(b"original").unwrap();
+        writer.finish().unwrap();
+    }
+
+    let replacement = "replacement";
+    let mut writer = replace(key.clone())
+        .begin()
+        .expect("failed to begin replace")
+        .surrogate_keys(["replace-key-new"])
+        .known_length(replacement.len() as u64)
+        .execute(Duration::from_secs(154))
+        .unwrap();
+    writer.write_all(replacement.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    // The replacement only carries the surrogate keys it was given, so the original's key no
+    // longer purges it...
+    fastly::http::purge::purge_surrogate_key("replace-key-old").unwrap();
+    assert_eq!(read_object(&key), replacement);
+
+    // ...but the replacement's own key does.
+    fastly::http::purge::purge_surrogate_key("replace-key-new").unwrap();
+    assert!(lookup(key).execute().unwrap().is_none());
 }
 
 fn test_simple_cache_expires() {

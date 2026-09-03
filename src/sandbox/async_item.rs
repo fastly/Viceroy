@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::cache::CacheEntry;
+use crate::cache::{CacheEntry, ReplaceEntry};
 use crate::downstream::DownstreamRequest;
 use crate::execute::NextRequest;
 use crate::http::PendingHeaders;
@@ -145,6 +145,26 @@ impl PendingCacheTask {
     }
 }
 
+/// An async item, waiting for a cache replace operation to begin.
+#[derive(Debug)]
+pub struct PendingCacheReplaceTask(PeekableTask<ReplaceEntry>);
+impl PendingCacheReplaceTask {
+    pub fn new(t: PeekableTask<ReplaceEntry>) -> PendingCacheReplaceTask {
+        PendingCacheReplaceTask(t)
+    }
+    pub fn task(self) -> PeekableTask<ReplaceEntry> {
+        self.0
+    }
+
+    /// Get a mutable reference to the ReplaceEntry, possibly blocking until it becomes available.
+    pub async fn as_mut(&mut self) -> &mut Result<ReplaceEntry, Error> {
+        self.0.await_ready().await;
+        self.0
+            .get_mut()
+            .expect("internal error: PeekableTask was not ready after AwaitReady")
+    }
+}
+
 /// Represents either a full body, or the write end of a streaming body.
 ///
 /// This enum is needed because we reuse the handle for a body when it is transformed into a streaming
@@ -160,6 +180,7 @@ pub enum AsyncItem {
     PendingKvDelete(PendingKvDeleteTask),
     PendingKvList(PendingKvListTask),
     PendingCache(PendingCacheTask),
+    PendingCacheReplace(PendingCacheReplaceTask),
     Ready,
 }
 
@@ -311,6 +332,31 @@ impl AsyncItem {
         }
     }
 
+    pub fn is_pending_cache_replace(&self) -> bool {
+        matches!(self, Self::PendingCacheReplace(_))
+    }
+
+    pub fn as_pending_cache_replace(&self) -> Option<&PendingCacheReplaceTask> {
+        match self {
+            Self::PendingCacheReplace(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn as_pending_cache_replace_mut(&mut self) -> Option<&mut PendingCacheReplaceTask> {
+        match self {
+            Self::PendingCacheReplace(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn into_pending_cache_replace(self) -> Option<PendingCacheReplaceTask> {
+        match self {
+            Self::PendingCacheReplace(op) => Some(op),
+            _ => None,
+        }
+    }
+
     pub fn into_pending_req(self) -> Option<PendingResponse> {
         match self {
             Self::PendingReq(req) => Some(req),
@@ -343,6 +389,7 @@ impl AsyncItem {
             Self::PendingKvDelete(req) => req.0.await_ready().await,
             Self::PendingKvList(req) => req.0.await_ready().await,
             Self::PendingCache(req) => req.0.await_ready().await,
+            Self::PendingCacheReplace(req) => req.0.await_ready().await,
             Self::Ready => (),
         }
     }
@@ -388,6 +435,12 @@ impl From<PendingKvListTask> for AsyncItem {
 impl From<PendingCacheTask> for AsyncItem {
     fn from(task: PendingCacheTask) -> Self {
         Self::PendingCache(task)
+    }
+}
+
+impl From<PendingCacheReplaceTask> for AsyncItem {
+    fn from(task: PendingCacheReplaceTask) -> Self {
+        Self::PendingCacheReplace(task)
     }
 }
 
