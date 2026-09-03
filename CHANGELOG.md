@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Map a body read that ends early to `error.http-incomplete` on the component ABI, which previously
+  answered `error.generic-error` even though the witx ABI mapped it. A truncated body does not
+  satisfy `hyper::Error::is_incomplete_message`, so the cause needs a downcast, and the component
+  mapping had no equivalent of the one in `src/error.rs`. See [#289](https://github.com/fastly/Viceroy/issues/289).
+
 ## 0.21.0 (2026-08-25)
 
 - Enable support for the wide-arithmetic feature. ([#679](https://github.com/fastly/Viceroy/pull/679))
