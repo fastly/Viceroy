@@ -422,6 +422,10 @@ pub enum HandleError {
     /// A cache handle was not valid.
     #[error("Invalid cache handle: {0}")]
     InvalidCacheHandle(crate::wiggle_abi::types::CacheHandle),
+
+    /// A cache replace handle was not valid.
+    #[error("Invalid cache replace handle: {0}")]
+    InvalidCacheReplaceHandle(crate::wiggle_abi::types::CacheReplaceHandle),
 }
 
 /// Errors that can occur in a worker thread running a guest module.
