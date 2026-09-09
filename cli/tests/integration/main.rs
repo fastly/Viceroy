@@ -5,6 +5,7 @@ mod backend_introspection;
 mod body;
 mod bot_detection;
 mod cache;
+mod cache_698;
 mod client_certs;
 mod common;
 mod config_store_lookup;
