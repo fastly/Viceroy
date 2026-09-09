@@ -355,6 +355,9 @@ interface log {
     /// events.
     open: static func(name: string) -> result<endpoint, open-error>;
 
+    /// Returns a new owned handle to the same endpoint.
+    clone: func() -> endpoint;
+
     /// Writes a data to the given endpoint.
     ///
     /// Each call to `write` with a non-empty message produces a single log event.
@@ -1925,7 +1928,7 @@ interface backend {
     ///
     /// For more information, see [the Fastly documentation on override hosts].
     ///
-    /// [the Fastly documentation on override hosts]: https://docs.fastly.com/en/guides/specifying-an-override-host>
+    /// [the Fastly documentation on override hosts]: https://docs.fastly.com/en/guides/specifying-an-override-host
     override-host: func(value: string);
 
     /// Sets the connection timeout, in milliseconds, for this backend.
@@ -2154,6 +2157,9 @@ interface backend {
       /// Attempts to open the named static backend.
       open: static func(name: string) -> result<backend, open-error>;
 
+      /// Returns a new owned handle to the same backend.
+      clone: func() -> backend;
+
       /// Returns the name of this backend.
       get-name: func() -> string;
 
@@ -2318,6 +2324,8 @@ interface purge {
   /// A surrogate key can be a max of 1024 characters.
   /// A surrogate key must contain only printable ASCII characters (those between `0x21` and `0x7E`,
   /// inclusive).
+  ///
+  /// Despite the name, the `surrogate-keys` argument only holds one key.
   purge-surrogate-key: func(
     surrogate-keys: string,
     purge-options: purge-options,
@@ -2328,6 +2336,8 @@ interface purge {
   /// This is similar to `purge-surrogate-key`, but on success, returns a
   /// [JSON purge response] containing an ASCII alphanumeric string identifying
   /// a purging.
+  ///
+  /// Despite the name, the `surrogate-keys` argument only holds one key.
   ///
   /// [JSON purge response]: https://developer.fastly.com/reference/api/purging/#purge-tag
   purge-surrogate-key-verbose: func(
@@ -2629,7 +2639,10 @@ interface cache {
   ) -> result<body, error>;
 
   /// Continues the lookup transaction from which the given busy handle was returned,
-  /// waiting for the leader transaction if request collapsed, and returns a cache handle.
+  /// as a cache handle instead of a busy handle.
+  ///
+  /// Note that cache handles also proceed asynchronously; the returned cache handle may not be ready
+  /// to read.
   await-entry: func(
     handle: pending-entry,
   ) -> result<entry, error>;

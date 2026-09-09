@@ -76,6 +76,7 @@ pub(crate) mod bindings {
             "fastly:compute/kv-store.[method]store.lookup-async": async | tracing,
             "fastly:compute/http-downstream.next-request": async | tracing,
             "fastly:compute/http-body.read": async | tracing,
+            "fastly:compute/backend.[method]backend.clone": tracing | trappable,
             "fastly:compute/backend.register-dynamic-backend": async | tracing,
             "fastly:compute/async-io.select": async | tracing | trappable,
             "fastly:compute/async-io.select-with-timeout": async | tracing,
@@ -90,6 +91,7 @@ pub(crate) mod bindings {
             "fastly:compute/cache.[static]entry.transaction-lookup-async": async | tracing,
             "fastly:compute/http-body.write": async | tracing,
             "fastly:compute/http-body.write-front": async | tracing,
+            "fastly:compute/log.[method]endpoint.clone": tracing | trappable,
 
             // Match the `wasmtime-wasi` crate's bindings.
             "wasi:io/streams.[method]output-stream.write": tracing | trappable,

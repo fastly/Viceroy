@@ -30,6 +30,13 @@ impl log::HostEndpoint for ComponentCtx {
         Ok(self.sandbox_mut().log_endpoint_handle(name).into())
     }
 
+    fn clone(
+        &mut self,
+        h: Resource<log::Endpoint>,
+    ) -> Result<Resource<log::Endpoint>, wasmtime::Error> {
+        Ok(h)
+    }
+
     fn write(&mut self, h: Resource<log::Endpoint>, msg: Vec<u8>) {
         let endpoint = self.sandbox().log_endpoint(h.into()).unwrap();
 

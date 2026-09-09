@@ -39,6 +39,17 @@ impl backend::HostBackend for ComponentCtx {
         Ok(res)
     }
 
+    fn clone(
+        &mut self,
+        backend_res: Resource<String>,
+    ) -> Result<Resource<String>, wasmtime::Error> {
+        let backend = self.wasi_table.get(&backend_res)?;
+
+        let res = self.wasi_table.push(backend.clone())?;
+
+        Ok(res)
+    }
+
     fn get_name(&mut self, name: Resource<String>) -> String {
         self.wasi_table.get(&name).unwrap().to_owned()
     }
