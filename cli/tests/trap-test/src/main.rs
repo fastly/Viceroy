@@ -5,7 +5,13 @@ use {
 };
 
 /// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
-const RUST_FIXTURE_PATH: &str = "../../../test-fixtures/target/wasm32-wasip1/debug/";
+///
+/// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
+/// working directory, e.g. when launched directly by an editor/debugger.
+const RUST_FIXTURE_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../test-fixtures/target/wasm32-wasip1/debug/"
+);
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -39,7 +45,10 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
 
     let body = resp.into_body().read_into_string().await?;
     let needle = "Fatal error: [A fatal error occurred in the test-only implementation of header_values_get]";
-    assert!(body.contains(needle), "body missing expected string: {body}");
+    assert!(
+        body.contains(needle),
+        "body missing expected string: {body}"
+    );
 
     Ok(())
 }

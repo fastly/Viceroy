@@ -1,0 +1,14 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "linkedProjects": [
+          "Cargo.toml",
+          "test-fixtures/Cargo.toml",
+          "wasm_abi/adapter/Cargo.toml",
+          "cli/tests/trap-test/Cargo.toml"
+        ]
+      }
+    }
+  }
+}
