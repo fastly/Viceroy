@@ -176,13 +176,31 @@ impl kv_store::HostStore for ComponentCtx {
 
     async fn lookup(
         &mut self,
-        _store: Resource<kv_store::Store>,
-        _key: String,
+        store: Resource<kv_store::Store>,
+        key: String,
     ) -> Result<Option<Resource<kv_store::Entry>>, kv_store::KvError> {
-        Err(Error::Unsupported {
-            msg: "kv-store.lookup is not supported in Viceroy",
+        let store = self.sandbox.get_kv_store_key(store.into()).unwrap();
+        let value = self
+            .sandbox
+            .obj_lookup(store.clone(), ObjectKey::new(key)?)?;
+
+        match value {
+            Some(value) => {
+                let lr = kv_store::Entry {
+                    body: Some(self.sandbox_mut().insert_body(value.body.into()).into()),
+                    metadata: match value.metadata_len {
+                        0 => None,
+                        _ => Some(value.metadata),
+                    },
+                    generation: value.generation,
+                };
+
+                let res = self.table().push(lr)?;
+
+                Ok(Some(res))
+            }
+            None => Ok(None),
         }
-        .into())
     }
 
     async fn lookup_async(
@@ -202,15 +220,43 @@ impl kv_store::HostStore for ComponentCtx {
 
     async fn insert(
         &mut self,
-        _store: Resource<kv_store::Store>,
-        _key: String,
-        _body_handle: Resource<kv_store::Body>,
-        _options: kv_store::InsertOptions,
+        store: Resource<kv_store::Store>,
+        key: String,
+        body_handle: Resource<kv_store::Body>,
+        options: kv_store::InsertOptions,
     ) -> Result<(), kv_store::KvError> {
-        Err(Error::Unsupported {
-            msg: "kv-store.insert is not supported in Viceroy",
-        }
-        .into())
+        let body = self
+            .sandbox_mut()
+            .take_body(body_handle.into())?
+            .read_into_vec()
+            .await?;
+        let store = self.sandbox.get_kv_store_key(store.into()).unwrap();
+
+        let mode = match options.mode {
+            InsertMode::Overwrite => KvInsertMode::Overwrite,
+            InsertMode::Add => KvInsertMode::Add,
+            InsertMode::Append => KvInsertMode::Append,
+            InsertMode::Prepend => KvInsertMode::Prepend,
+        };
+
+        let meta = options.metadata;
+        let igm = options.if_generation_match;
+
+        let ttl = options
+            .time_to_live_sec
+            .map(|time_to_live_sec| std::time::Duration::from_secs(time_to_live_sec as u64));
+
+        self.sandbox.kv_insert(
+            store.clone(),
+            ObjectKey::new(key)?,
+            body,
+            Some(mode),
+            igm,
+            meta,
+            ttl,
+        )?;
+
+        Ok(())
     }
 
     async fn insert_async(
@@ -259,13 +305,14 @@ impl kv_store::HostStore for ComponentCtx {
 
     async fn delete(
         &mut self,
-        _store: Resource<kv_store::Store>,
-        _key: String,
+        store: Resource<kv_store::Store>,
+        key: String,
     ) -> Result<bool, kv_store::KvError> {
-        Err(Error::Unsupported {
-            msg: "kv-store.delete is not supported in Viceroy",
-        }
-        .into())
+        let store = self.sandbox.get_kv_store_key(store.into()).unwrap();
+        let res = self
+            .sandbox
+            .kv_delete(store.clone(), ObjectKey::new(key)?)?;
+        Ok(res)
     }
 
     async fn delete_async(
@@ -285,13 +332,17 @@ impl kv_store::HostStore for ComponentCtx {
 
     async fn list(
         &mut self,
-        _store: Resource<kv_store::Store>,
-        _options: kv_store::ListOptions,
+        store: Resource<kv_store::Store>,
+        options: kv_store::ListOptions,
     ) -> Result<Resource<kv_store::PendingList>, kv_store::KvError> {
-        Err(Error::Unsupported {
-            msg: "kv-store.list is not supported in Viceroy",
-        }
-        .into())
+        let store = self.sandbox.get_kv_store_key(store.into()).unwrap();
+
+        let cursor = options.cursor;
+        let prefix = options.prefix;
+        let limit = options.limit;
+
+        let value = self.sandbox.kv_list(store.clone(), cursor, prefix, limit)?;
+        Ok(self.sandbox_mut().insert_body(value.into()).into())
     }
 
     async fn list_async(
