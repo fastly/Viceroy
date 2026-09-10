@@ -6,6 +6,7 @@
   mapping had no equivalent of the one in `src/error.rs`. See [#289](https://github.com/fastly/Viceroy/issues/289).
 
 - Avoid using bindings::sync functions in WASI implementations. ([#700](https://github.com/fastly/Viceroy/pull/700))
+- Implement cache_override_v3_set in the component adapter. ([#703](https://github.com/fastly/Viceroy/pull/703))
 
 ## 0.21.0 (2026-08-25)
 
