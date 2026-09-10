@@ -59,7 +59,13 @@ macro_rules! viceroy_test {
 /// ```
 /// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
 /// ```
-pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasip1/debug/";
+///
+/// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
+/// working directory, e.g. when launched directly by an editor/debugger.
+pub static RUST_FIXTURE_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../test-fixtures/target/wasm32-wasip1/debug/"
+);
 
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///
@@ -69,7 +75,10 @@ pub static RUST_FIXTURE_PATH: &str = "../test-fixtures/target/wasm32-wasip1/debu
 /// ```
 /// let module_path = format!("{}/guest.wat", WAT_FIXTURE_PATH);
 /// ```
-pub static WAT_FIXTURE_PATH: &str = "../test-fixtures/";
+///
+/// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
+/// working directory, e.g. when launched directly by an editor/debugger.
+pub static WAT_FIXTURE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/");
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
