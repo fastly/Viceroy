@@ -7,6 +7,7 @@
 
 - Avoid using bindings::sync functions in WASI implementations. ([#700](https://github.com/fastly/Viceroy/pull/700))
 - Implement cache_override_v3_set in the component adapter. ([#703](https://github.com/fastly/Viceroy/pull/703))
+- Update to the latest WITs. ([#701](https://github.com/fastly/Viceroy/pull/701))
 
 ## 0.21.0 (2026-08-25)
 
