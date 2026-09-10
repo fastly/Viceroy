@@ -5,6 +5,8 @@
   satisfy `hyper::Error::is_incomplete_message`, so the cause needs a downcast, and the component
   mapping had no equivalent of the one in `src/error.rs`. See [#289](https://github.com/fastly/Viceroy/issues/289).
 
+- Avoid using bindings::sync functions in WASI implementations. ([#700](https://github.com/fastly/Viceroy/pull/700))
+
 ## 0.21.0 (2026-08-25)
 
 - Enable support for the wide-arithmetic feature. ([#679](https://github.com/fastly/Viceroy/pull/679))

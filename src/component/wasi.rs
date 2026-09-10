@@ -13,8 +13,7 @@ use wasmtime_wasi_io::IoView;
 impl wasi::clocks::wall_clock::Host for ComponentCtx {
     fn now(&mut self) -> wasi::clocks::wall_clock::Datetime {
         let x =
-            wasmtime_wasi::p2::bindings::sync::clocks::wall_clock::Host::now(&mut self.clocks())
-                .unwrap();
+            wasmtime_wasi::p2::bindings::clocks::wall_clock::Host::now(&mut self.clocks()).unwrap();
         wasi::clocks::wall_clock::Datetime {
             seconds: x.seconds,
             nanoseconds: x.nanoseconds,
@@ -22,10 +21,9 @@ impl wasi::clocks::wall_clock::Host for ComponentCtx {
     }
 
     fn resolution(&mut self) -> wasi::clocks::wall_clock::Datetime {
-        let x = wasmtime_wasi::p2::bindings::sync::clocks::wall_clock::Host::resolution(
-            &mut self.clocks(),
-        )
-        .unwrap();
+        let x =
+            wasmtime_wasi::p2::bindings::clocks::wall_clock::Host::resolution(&mut self.clocks())
+                .unwrap();
         wasi::clocks::wall_clock::Datetime {
             seconds: x.seconds,
             nanoseconds: x.nanoseconds,
@@ -35,22 +33,19 @@ impl wasi::clocks::wall_clock::Host for ComponentCtx {
 
 impl wasi::clocks::monotonic_clock::Host for ComponentCtx {
     fn now(&mut self) -> wasi::clocks::monotonic_clock::Instant {
-        wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::now(&mut self.clocks())
-            .unwrap()
+        wasmtime_wasi::p2::bindings::clocks::monotonic_clock::Host::now(&mut self.clocks()).unwrap()
     }
 
     fn resolution(&mut self) -> wasi::clocks::monotonic_clock::Duration {
-        wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::resolution(
-            &mut self.clocks(),
-        )
-        .unwrap()
+        wasmtime_wasi::p2::bindings::clocks::monotonic_clock::Host::resolution(&mut self.clocks())
+            .unwrap()
     }
 
     fn subscribe_instant(
         &mut self,
         when: wasi::clocks::monotonic_clock::Instant,
     ) -> Resource<wasi::clocks::monotonic_clock::Pollable> {
-        wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::subscribe_instant(
+        wasmtime_wasi::p2::bindings::clocks::monotonic_clock::Host::subscribe_instant(
             &mut self.clocks(),
             when,
         )
@@ -61,7 +56,7 @@ impl wasi::clocks::monotonic_clock::Host for ComponentCtx {
         &mut self,
         when: wasi::clocks::monotonic_clock::Duration,
     ) -> Resource<wasi::clocks::monotonic_clock::Pollable> {
-        wasmtime_wasi::p2::bindings::sync::clocks::monotonic_clock::Host::subscribe_duration(
+        wasmtime_wasi::p2::bindings::clocks::monotonic_clock::Host::subscribe_duration(
             &mut self.clocks(),
             when,
         )
@@ -78,12 +73,10 @@ impl wasi::io::poll::Host for ComponentCtx {
 }
 
 impl wasi::io::poll::HostPollable for ComponentCtx {
-    fn ready(&mut self, pollable: Resource<wasi::io::poll::Pollable>) -> bool {
-        wasmtime_wasi::p2::bindings::sync::io::poll::HostPollable::ready(
-            &mut self.table(),
-            pollable,
-        )
-        .unwrap()
+    async fn ready(&mut self, pollable: Resource<wasi::io::poll::Pollable>) -> bool {
+        wasmtime_wasi::p2::bindings::io::poll::HostPollable::ready(&mut self.table(), pollable)
+            .await
+            .unwrap()
     }
     async fn block(&mut self, pollable: Resource<wasi::io::poll::Pollable>) {
         wasmtime_wasi::p2::bindings::io::poll::HostPollable::block(&mut self.table(), pollable)
@@ -91,7 +84,7 @@ impl wasi::io::poll::HostPollable for ComponentCtx {
             .unwrap()
     }
     fn drop(&mut self, pollable: Resource<wasi::io::poll::Pollable>) -> wasmtime::Result<()> {
-        wasmtime_wasi::p2::bindings::sync::io::poll::HostPollable::drop(&mut self.table(), pollable)
+        wasmtime_wasi::p2::bindings::io::poll::HostPollable::drop(&mut self.table(), pollable)
     }
 }
 
@@ -99,15 +92,12 @@ impl wasi::io::error::Host for ComponentCtx {}
 
 impl wasi::io::error::HostError for ComponentCtx {
     fn to_debug_string(&mut self, self_: Resource<wasi::io::error::Error>) -> String {
-        wasmtime_wasi::p2::bindings::sync::io::error::HostError::to_debug_string(
-            &mut self.table(),
-            self_,
-        )
-        .unwrap()
+        wasmtime_wasi::p2::bindings::io::error::HostError::to_debug_string(&mut self.table(), self_)
+            .unwrap()
     }
 
     fn drop(&mut self, rep: Resource<wasi::io::error::Error>) -> wasmtime::Result<()> {
-        wasmtime_wasi::p2::bindings::sync::io::error::HostError::drop(&mut self.table(), rep)
+        wasmtime_wasi::p2::bindings::io::error::HostError::drop(&mut self.table(), rep)
     }
 }
 
@@ -132,7 +122,7 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         stream: Resource<wasi::io::streams::OutputStream>,
         contents: Vec<u8>,
     ) -> Result<(), wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::write(
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::write(
             &mut self.table(),
             stream,
             contents,
@@ -156,10 +146,7 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         &mut self,
         stream: Resource<wasi::io::streams::OutputStream>,
     ) -> Result<(), wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::flush(
-            &mut self.table(),
-            stream,
-        )
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::flush(&mut self.table(), stream)
     }
 
     async fn blocking_flush(
@@ -177,7 +164,7 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         &mut self,
         stream: Resource<wasi::io::streams::OutputStream>,
     ) -> Result<u64, wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::check_write(
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::check_write(
             &mut self.table(),
             stream,
         )
@@ -187,7 +174,7 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         &mut self,
         self_: Resource<wasi::io::streams::OutputStream>,
     ) -> Resource<wasi::io::streams::Pollable> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::subscribe(
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::subscribe(
             &mut self.table(),
             self_,
         )
@@ -199,7 +186,7 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         self_: Resource<wasi::io::streams::OutputStream>,
         len: u64,
     ) -> Result<(), wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::write_zeroes(
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::write_zeroes(
             &mut self.table(),
             self_,
             len,
@@ -225,7 +212,7 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         src: Resource<wasi::io::streams::InputStream>,
         len: u64,
     ) -> Result<u64, wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::splice(
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::splice(
             &mut self.table(),
             self_,
             src,
@@ -248,11 +235,12 @@ impl wasi::io::streams::HostOutputStream for ComponentCtx {
         .await
     }
 
-    fn drop(&mut self, rep: Resource<wasi::io::streams::OutputStream>) -> wasmtime::Result<()> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostOutputStream::drop(
-            &mut self.table(),
-            rep,
-        )
+    async fn drop(
+        &mut self,
+        rep: Resource<wasi::io::streams::OutputStream>,
+    ) -> wasmtime::Result<()> {
+        wasmtime_wasi::p2::bindings::io::streams::HostOutputStream::drop(&mut self.table(), rep)
+            .await
     }
 }
 
@@ -262,7 +250,7 @@ impl wasi::io::streams::HostInputStream for ComponentCtx {
         self_: Resource<wasi::io::streams::InputStream>,
         len: u64,
     ) -> Result<Vec<u8>, wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostInputStream::read(
+        wasmtime_wasi::p2::bindings::io::streams::HostInputStream::read(
             &mut self.table(),
             self_,
             len,
@@ -287,7 +275,7 @@ impl wasi::io::streams::HostInputStream for ComponentCtx {
         self_: Resource<wasi::io::streams::InputStream>,
         len: u64,
     ) -> Result<u64, wasmtime_wasi::p2::StreamError> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostInputStream::skip(
+        wasmtime_wasi::p2::bindings::io::streams::HostInputStream::skip(
             &mut self.table(),
             self_,
             len,
@@ -311,18 +299,19 @@ impl wasi::io::streams::HostInputStream for ComponentCtx {
         &mut self,
         self_: Resource<wasi::io::streams::InputStream>,
     ) -> Resource<wasi::io::streams::Pollable> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostInputStream::subscribe(
+        wasmtime_wasi::p2::bindings::io::streams::HostInputStream::subscribe(
             &mut self.table(),
             self_,
         )
         .unwrap()
     }
 
-    fn drop(&mut self, rep: Resource<wasi::io::streams::InputStream>) -> wasmtime::Result<()> {
-        wasmtime_wasi::p2::bindings::sync::io::streams::HostInputStream::drop(
-            &mut self.table(),
-            rep,
-        )
+    async fn drop(
+        &mut self,
+        rep: Resource<wasi::io::streams::InputStream>,
+    ) -> wasmtime::Result<()> {
+        wasmtime_wasi::p2::bindings::io::streams::HostInputStream::drop(&mut self.table(), rep)
+            .await
     }
 }
 
