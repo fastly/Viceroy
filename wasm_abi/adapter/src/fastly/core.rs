@@ -1535,6 +1535,27 @@ pub mod fastly_http_req {
         H2Error,
     }
 
+    bitflags::bitflags! {
+        #[derive(Default)]
+        #[repr(transparent)]
+        pub struct CacheOverrideTag : u32 {
+            const PASS = 1 << 0;
+            const TTL = 1 << 1;
+            const STALE_WHILE_REVALIDATE = 1 << 2;
+            const PCI = 1 << 3;
+        }
+
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct CacheOverride {
+        pub ttl: u32,
+        pub stale_while_revalidate: u32,
+        pub surrogate_keys: *const u8,
+        pub surrogate_keys_len: u32,
+    }
+
     #[repr(C)]
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct SendErrorDetail {
@@ -1548,22 +1569,24 @@ pub mod fastly_http_req {
     }
 
     /// Convert from witx ABI values to a `CacheOverride`.
-    impl From<(u32, u32, u32, Option<ManuallyDrop<Vec<u8>>>)>
+    impl From<(CacheOverrideTag, u32, u32, Option<ManuallyDrop<Vec<u8>>>)>
         for fastly::compute::http_req::CacheOverride<'_>
     {
-        fn from((tag, ttl, swr, sk): (u32, u32, u32, Option<ManuallyDrop<Vec<u8>>>)) -> Self {
-            let flag_present = |n: u32| tag & (1 << n) != 0;
-
-            if flag_present(0) {
+        fn from(
+            (tag, ttl, swr, sk): (CacheOverrideTag, u32, u32, Option<ManuallyDrop<Vec<u8>>>),
+        ) -> Self {
+            if tag.contains(CacheOverrideTag::PASS) {
                 fastly::compute::http_req::CacheOverride::Pass
-            } else if tag == 0 {
+            } else if tag.is_empty() {
                 fastly::compute::http_req::CacheOverride::None
             } else {
                 fastly::compute::http_req::CacheOverride::Override(
                     fastly::compute::http_req::CacheOverrideDetails {
-                        ttl: flag_present(1).then_some(ttl),
-                        stale_while_revalidate: flag_present(2).then_some(swr),
-                        pci: flag_present(3),
+                        ttl: tag.contains(CacheOverrideTag::TTL).then_some(ttl),
+                        stale_while_revalidate: tag
+                            .contains(CacheOverrideTag::STALE_WHILE_REVALIDATE)
+                            .then_some(swr),
+                        pci: tag.contains(CacheOverrideTag::PCI),
                         surrogate_key: sk.map(ManuallyDrop::into_inner),
                         extra: None,
                     },
@@ -1779,7 +1802,7 @@ pub mod fastly_http_req {
     #[export_name = "fastly_http_req#cache_override_set"]
     pub fn cache_override_set(
         req_handle: RequestHandle,
-        tag: u32,
+        tag: CacheOverrideTag,
         ttl: u32,
         swr: u32,
     ) -> FastlyStatus {
@@ -1793,7 +1816,7 @@ pub mod fastly_http_req {
     #[export_name = "fastly_http_req#cache_override_v2_set"]
     pub fn cache_override_v2_set(
         req_handle: RequestHandle,
-        tag: u32,
+        tag: CacheOverrideTag,
         ttl: u32,
         swr: u32,
         sk: *const u8,
@@ -1808,6 +1831,27 @@ pub mod fastly_http_req {
         )));
         let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
         convert_result(req_handle.set_cache_override(&tag))
+    }
+
+    #[export_name = "fastly_http_req#cache_override_v3_set"]
+    pub fn cache_override_v3_set(
+        req_handle: RequestHandle,
+        tag: CacheOverrideTag,
+        cache_override: *const CacheOverride,
+    ) -> FastlyStatus {
+        let cache_override = unsafe { &*main_ptr!(cache_override) };
+        let sk = make_vec!(
+            unsafe_main_ptr!((cache_override).surrogate_keys),
+            cache_override.surrogate_keys_len
+        );
+        let wit_override = ManuallyDrop::new(fastly::compute::http_req::CacheOverride::from((
+            tag,
+            cache_override.ttl,
+            cache_override.stale_while_revalidate,
+            Some(sk),
+        )));
+        let req_handle = ManuallyDrop::new(unsafe { http_req::Request::from_handle(req_handle) });
+        convert_result(req_handle.set_cache_override(&wit_override))
     }
 
     #[export_name = "fastly_http_req#framing_headers_mode_set"]
