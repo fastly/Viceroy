@@ -16,6 +16,12 @@ tokio = { version = "1.49.0", features = ["full"] }
 tracing-subscriber = "0.2.19"
 viceroy-lib = { path = "../../..", features = ["test-fatalerror-config"] }
 
-# To indicate to cargo that this trap-test is not a member of the testing workspace specified by
-# ~/cli/tests/fixtures/Cargo.toml, place an empty workspace specification here.
+[dev-dependencies]
+test-fixtures-artifacts = { path = "../../../test-fixtures/artifacts" }
+
+# trap-test enables viceroy-lib's `test-fatalerror-config` feature, which via Cargo feature
+# unification would otherwise apply to every other build in the root workspace, forcing full
+# rebuilds. An empty `[workspace]` table here keeps trap-test out of the root workspace (see
+# ../../../Cargo.toml) so that feature stays isolated, and CI can build/test it in its own
+# parallel job (see ../../../Makefile and ../../../.github/workflows/test.yml).
 [workspace]
