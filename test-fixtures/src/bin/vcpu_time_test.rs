@@ -37,6 +37,7 @@ fn test_that_waiting_for_servers_increases_only_wall_time(client_req: Request) -
 }
 
 fn test_that_computing_factorial_increases_vcpu_time() -> Result<(), Error> {
+    let wall_initial_time = Instant::now();
     let vcpu_initial_time = current_vcpu_ms()?;
 
     let block = vec![0; 4096];
@@ -54,8 +55,19 @@ d41a57a4e18ffd2a07a452cd8175b8f5a4868dd
 913a7b40bb5
 ")[..]);
 
+    let wall_elapsed_time = wall_initial_time.elapsed().as_millis() as u64;
     let vcpu_final_time = current_vcpu_ms()?;
-    assert!(vcpu_final_time - vcpu_initial_time > 10000);
+    let vcpu_elapsed_time = vcpu_final_time - vcpu_initial_time;
+
+    // This work is synchronous and CPU-bound, so vcpu time should track wall-clock
+    // time closely, unlike `test_that_waiting_for_servers_increases_only_wall_time`.
+    // Compare against measured wall time rather than a hardcoded threshold so the
+    // test isn't sensitive to the guest's build flags or the host machine's speed.
+    assert!(
+        vcpu_elapsed_time * 2 > wall_elapsed_time,
+        "vcpu time should track wall-clock time for CPU-bound work: \
+         vcpu={vcpu_elapsed_time}ms wall={wall_elapsed_time}ms"
+    );
     Ok(())
 }
 

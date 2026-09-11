@@ -12,22 +12,30 @@ format-check:  ## Check formatting, without updating.
 
 .PHONY: clippy
 clippy:  ## Ask for Clippy lints.
-	$(VICEROY_CARGO) clippy --all-targets --all-features -- -D warnings
+	# `test-fixtures` only compiles for wasm32-wasip1 (the `fastly` crate gates
+	# much of its API on `target_env = "p1"`), so lint it separately against
+	# that target rather than the host.
+	$(VICEROY_CARGO) clippy --workspace --exclude test-fixtures --all-targets --all-features -- -D warnings
+	$(VICEROY_CARGO) clippy -p test-fixtures --target wasm32-wasip1 --all-targets --all-features -- -D warnings
 
 .PHONY: test
 test: test-crates trap-test  ## Run all tests.
 
 .PHONY: test-crates
 test-crates: fix-build
-	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
+	# `test-fixtures` is a workspace member (so its guest binaries can be built
+	# in-tree) but has no unit tests of its own; exclude it so `--all` doesn't
+	# spend time compiling and running an empty host-target test harness for
+	# each of its ~50 fixture binaries.
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --workspace --exclude test-fixtures
 
 .PHONY: test-crates-lto
 test-crates-lto: fix-build
-	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all --profile=test-lto
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --workspace --exclude test-fixtures --profile=test-lto
 
 .PHONY: fix-build
 fix-build:
-	cd test-fixtures && $(VICEROY_CARGO) build --target=wasm32-wasip1
+	$(VICEROY_CARGO) build -p test-fixtures-artifacts
 
 .PHONY: trap-test
 trap-test: fix-build
