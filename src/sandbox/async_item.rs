@@ -127,19 +127,49 @@ impl PendingDownstreamReqTask {
 
 /// An async item, waiting for a cache lookup to complete.
 #[derive(Debug)]
-pub struct PendingCacheTask(PeekableTask<CacheEntry>);
+pub struct PendingCacheTask {
+    task: PeekableTask<CacheEntry>,
+    /// Whether this task is owned by a pollable
+    /// or by another resource (e.g. `cache.entry`).
+    ///
+    /// This value doesn't change during the lifetime of the task,
+    /// but is instead a property of what constructed it.
+    ///
+    /// If this pollable is shared and the other resource
+    /// is dropped, then both compute & viceroy fail (as expected)
+    /// on the next async_item_mut call since there's no matching
+    /// task.
+    // this is a simple bool rather than a ref count since
+    // we only ever hand out 1 or 2 handles to a task, and
+    // when there's a second handle it should be owned by the other
+    // resource not the pollable. We might want another approach
+    // if this ever changes, but the behavior must match the compute service.
+    shared: bool,
+}
 impl PendingCacheTask {
+    /// Create a PendingCacheTask that is shared between the pollable and another resource (e.g. `cache.entry`).
+    /// The pollable will not be the sole owner of the task, and dropping it will not drop the task.
     pub fn new(t: PeekableTask<CacheEntry>) -> PendingCacheTask {
-        PendingCacheTask(t)
+        PendingCacheTask {
+            task: t,
+            shared: true,
+        }
+    }
+    /// Create a PendingCacheTask that is owned by the pollable, and not by another resource (e.g. `cache.entry`).
+    pub fn new_owned(t: PeekableTask<CacheEntry>) -> PendingCacheTask {
+        PendingCacheTask {
+            task: t,
+            shared: false,
+        }
     }
     pub fn task(self) -> PeekableTask<CacheEntry> {
-        self.0
+        self.task
     }
 
     /// Get a mutable reference to the CacheEntry, possibly blocking until it becomes available.
     pub async fn as_mut(&mut self) -> &mut Result<CacheEntry, Error> {
-        self.0.await_ready().await;
-        self.0
+        self.task.await_ready().await;
+        self.task
             .get_mut()
             .expect("internal error: PeekableTask was not ready after AwaitReady")
     }
@@ -166,6 +196,31 @@ pub enum AsyncItem {
 impl AsyncItem {
     pub fn is_streaming(&self) -> bool {
         matches!(self, Self::StreamingBody(_))
+    }
+
+    /// Whether the sole owner of this item is its `async_io::Pollable` handle.
+    ///
+    /// Most async items are only pollable resources. However, some are not, and
+    /// there are instead two handles to the item, the pollable which acts as a weak handle,
+    /// and another resource (e.g. `cache.entry`). We need to know if the pollable is the
+    /// sole owner to clean up the item when the pollable is dropped.
+    ///
+    /// This is deliberately an exhaustive match rather than a `matches!` allowlist, so
+    /// that adding a variant for a future `cache.replace-entry` or `http-cache.entry`
+    /// fails to compile until its ownership has been decided.
+    pub(crate) fn pollable_owns_item(&self) -> bool {
+        match self {
+            Self::PendingCache(c) => !c.shared,
+            Self::Body(_)
+            | Self::StreamingBody(_)
+            | Self::PendingReq(_)
+            | Self::PendingDownstream(_)
+            | Self::PendingKvLookup(_)
+            | Self::PendingKvInsert(_)
+            | Self::PendingKvDelete(_)
+            | Self::PendingKvList(_)
+            | Self::Ready => true,
+        }
     }
 
     pub fn as_body(&self) -> Option<&Body> {
@@ -342,7 +397,7 @@ impl AsyncItem {
             Self::PendingKvInsert(req) => req.0.await_ready().await,
             Self::PendingKvDelete(req) => req.0.await_ready().await,
             Self::PendingKvList(req) => req.0.await_ready().await,
-            Self::PendingCache(req) => req.0.await_ready().await,
+            Self::PendingCache(req) => req.task.await_ready().await,
             Self::Ready => (),
         }
     }

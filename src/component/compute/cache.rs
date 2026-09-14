@@ -427,7 +427,9 @@ impl api::HostEntry for ComponentCtx {
             .await
         };
 
-        let task = PendingCacheTask::new(task);
+        // we want this transaction to be cancelled if the task is dropped,
+        // so the PendingCacheTask must be the owned variant.
+        let task = PendingCacheTask::new_owned(task);
         let handle: CacheBusyHandle = self.sandbox_mut().insert_cache_op(task).into();
         Ok(handle.into())
     }
@@ -604,7 +606,12 @@ impl api::HostEntry for ComponentCtx {
         .into())
     }
 
-    fn drop(&mut self, _entry: Resource<api::Entry>) -> wasmtime::Result<()> {
+    fn drop(&mut self, entry: Resource<api::Entry>) -> wasmtime::Result<()> {
+        // Backstop: the guest may drop the resource without calling `close-entry`.
+        // this matches compute's behavior, which also drops the entry on drop.
+        // Ignore the error, since the entry may have already been removed by
+        // an explicit call to `close-entry`.
+        let _ = self.sandbox_mut().take_cache_entry(entry.into());
         Ok(())
     }
 
