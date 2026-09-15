@@ -5,11 +5,11 @@
 use std::io::Write;
 use std::str::FromStr;
 
-use fastly::handle::{BodyHandle, RequestHandle, ResponseHandle};
+use fastly::handle::{BodyHandle, CacheOverride, RequestHandle, ResponseHandle};
 use fastly::http::{HeaderName, HeaderValue, Method, StatusCode, Url};
 use fastly::Error;
 use fastly::Request;
-use fastly_shared::{CacheOverride, FastlyStatus};
+use fastly_shared::FastlyStatus;
 
 fn is_ready(handle: u32) -> bool {
     let mut ready_out: u32 = 0;
