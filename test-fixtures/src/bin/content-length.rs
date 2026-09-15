@@ -1,8 +1,8 @@
 //! Exercise calculation of Content-Length.
-use fastly::handle::{BodyHandle, RequestHandle, ResponseHandle};
-use fastly::http::{header, Url};
-use fastly::log::set_panic_endpoint;
 use fastly::Error;
+use fastly::handle::{BodyHandle, RequestHandle, ResponseHandle};
+use fastly::http::{Url, header};
+use fastly::log::set_panic_endpoint;
 use std::io::{Read, Write};
 
 fn main() -> Result<(), Error> {

@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use fastly::{Error, Request, Response};
 use fastly_shared::FastlyStatus;
 use hex_literal::hex;
-use sha2::{Sha512, Digest};
+use sha2::{Digest, Sha512};
 use std::time::Instant;
 
 #[link(wasm_import_module = "fastly_compute_runtime")]
@@ -15,12 +15,17 @@ fn current_vcpu_ms() -> Result<u64, anyhow::Error> {
     let mut vcpu_time = 0u64;
     let vcpu_time_result = unsafe { get_vcpu_ms(&mut vcpu_time) };
     if vcpu_time_result != FastlyStatus::OK {
-        return Err(anyhow!("Got bad response from get_vcpu_ms: {:?}", vcpu_time_result));
+        return Err(anyhow!(
+            "Got bad response from get_vcpu_ms: {:?}",
+            vcpu_time_result
+        ));
     }
     Ok(vcpu_time)
 }
 
-fn test_that_waiting_for_servers_increases_only_wall_time(client_req: Request) -> Result<(), Error> {
+fn test_that_waiting_for_servers_increases_only_wall_time(
+    client_req: Request,
+) -> Result<(), Error> {
     let wall_initial_time = Instant::now();
     let vcpu_initial_time = current_vcpu_ms()?;
     let Ok(_) = client_req.send("slow-server") else {
@@ -30,8 +35,8 @@ fn test_that_waiting_for_servers_increases_only_wall_time(client_req: Request) -
     let wall_elapsed_time = wall_initial_time.elapsed().as_millis();
     let vcpu_final_time = current_vcpu_ms()?;
 
-    assert!( (vcpu_final_time - vcpu_initial_time) < 1000 );
-    assert!(wall_elapsed_time > 3000 );
+    assert!((vcpu_final_time - vcpu_initial_time) < 1000);
+    assert!(wall_elapsed_time > 3000);
 
     Ok(())
 }
@@ -48,12 +53,17 @@ fn test_that_computing_factorial_increases_vcpu_time() -> Result<(), Error> {
         written += block.len();
     }
     let result = hasher.finalize();
-    assert_eq!(result[..], hex!("
+    assert_eq!(
+        result[..],
+        hex!(
+            "
 c5041ae163cf0f65600acfe7f6a63f212101687
 d41a57a4e18ffd2a07a452cd8175b8f5a4868dd
 2330bfe5ae123f18216bdbc9e0f80d131e64b94
 913a7b40bb5
-")[..]);
+"
+        )[..]
+    );
 
     let wall_elapsed_time = wall_initial_time.elapsed().as_millis() as u64;
     let vcpu_final_time = current_vcpu_ms()?;

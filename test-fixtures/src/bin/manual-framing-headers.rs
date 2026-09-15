@@ -5,13 +5,16 @@
 //!
 //! We use a streaming body so hyper doesn't know the length upfront.
 
-use fastly::http::{header, FramingHeadersMode, HeaderValue};
+use fastly::http::{FramingHeadersMode, HeaderValue, header};
 use fastly::{Error, Request, Response};
 use std::io::Write;
 
 fn main() -> Result<(), Error> {
     let (mut stream, pending) = Request::post("http://example.org/")
-        .with_header(header::TRANSFER_ENCODING, HeaderValue::from_static("chunked"))
+        .with_header(
+            header::TRANSFER_ENCODING,
+            HeaderValue::from_static("chunked"),
+        )
         .with_framing_headers_mode(FramingHeadersMode::ManuallyFromHeaders)
         .send_async_streaming("TheOrigin")?;
 

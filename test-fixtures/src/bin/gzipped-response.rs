@@ -1,5 +1,5 @@
-use fastly::http::request::SendError;
 use fastly::http::StatusCode;
+use fastly::http::request::SendError;
 use fastly::{Backend, Request};
 use std::io::{Read, Write};
 
@@ -92,9 +92,11 @@ fn main() -> Result<(), SendError> {
         pending_req
     };
     let mut unpacked_stream_async = unpacked_stream_pending.wait()?;
-    assert!(unpacked_stream_async
-        .get_header("Content-Encoding")
-        .is_none());
+    assert!(
+        unpacked_stream_async
+            .get_header("Content-Encoding")
+            .is_none()
+    );
     assert!(unpacked_stream_async.get_content_length().is_none());
     let hopefully_unpacked = unpacked_stream_async.take_body_str();
     assert_eq!(HELLO_WORLD, &hopefully_unpacked);
