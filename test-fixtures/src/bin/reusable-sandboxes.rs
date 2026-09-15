@@ -1,7 +1,7 @@
 //! A guest program that tests the hostcalls for fetching multiple requests per sandbox.
 
-use fastly::{Request, Response};
 use fastly::handle::{BodyHandle, RequestHandle};
+use fastly::{Request, Response};
 use fastly_shared::{FastlyStatus, INVALID_REQUEST_HANDLE};
 use fastly_sys::fastly_http_downstream::*;
 
@@ -27,9 +27,7 @@ fn main() {
         let opts = NextRequestOptions::default();
 
         let mut pending = INVALID_REQUEST_HANDLE;
-        let status = unsafe {
-            next_request(mask, &opts, &mut pending)
-        };
+        let status = unsafe { next_request(mask, &opts, &mut pending) };
 
         if status != FastlyStatus::OK {
             return;
@@ -51,7 +49,7 @@ fn main() {
         let status = unsafe { next_request_wait(pending, &mut rh, &mut bh) };
 
         match status {
-            FastlyStatus::OK => {},
+            FastlyStatus::OK => {}
             FastlyStatus::NONE => break 'outer,
             _ => panic!("unexpected result: {status:?}"),
         }
