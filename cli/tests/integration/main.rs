@@ -8,6 +8,7 @@ mod cache;
 mod client_certs;
 mod common;
 mod config_store_lookup;
+mod debug_info;
 mod device_detection_lookup;
 mod dictionary_lookup;
 mod downstream_req;

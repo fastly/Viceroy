@@ -77,6 +77,7 @@ pub(crate) async fn create_execution_context(
         args.adapt(),
         args.wasm_features(),
     )?
+    .with_debug_info(args.debug_info())
     .with_log_stderr(args.log_stderr())
     .with_log_stdout(args.log_stdout())
     .with_local_pushpin_proxy_port(args.local_pushpin_proxy_port())

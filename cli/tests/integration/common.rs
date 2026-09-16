@@ -106,6 +106,7 @@ pub struct Test {
     adapt_component: bool,
     enable_local_websocket_passthrough: bool,
     profiling: ProfilingConfig,
+    debug_info: bool,
 }
 
 impl Test {
@@ -133,6 +134,7 @@ impl Test {
             adapt_component: false,
             enable_local_websocket_passthrough: true,
             profiling: ProfilingConfig::None,
+            debug_info: false,
         }
     }
 
@@ -160,6 +162,7 @@ impl Test {
             adapt_component: false,
             enable_local_websocket_passthrough: true,
             profiling: ProfilingConfig::None,
+            debug_info: false,
         }
     }
 
@@ -367,6 +370,12 @@ impl Test {
         self
     }
 
+    /// Compile the guest with native debug information.
+    pub fn debug_info(mut self, debug_info: bool) -> Self {
+        self.debug_info = debug_info;
+        self
+    }
+
     /// Pass the given requests through this test, returning the associated responses.
     ///
     /// A `Test` can be used repeatedly against different requests, either individually (as with
@@ -417,6 +426,7 @@ impl Test {
             self.adapt_component,
             WasmFeatures::default(),
         )?
+        .with_debug_info(self.debug_info)
         .with_acls(self.acls.clone())
         .with_backends(self.backends.backend_configs().await)
         .with_dictionaries(self.dictionaries.clone())
