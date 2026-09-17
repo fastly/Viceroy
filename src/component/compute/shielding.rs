@@ -76,7 +76,7 @@ impl shielding::HostShieldBackendOptions for ComponentCtx {
         &mut self,
         resource: Resource<ShieldBackendOptions>,
         timeout_ms: u32,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), wasmtime::Error> {
         let current = self.wasi_table.get_mut(&resource)?;
         current.first_byte_timeout_ms = Some(timeout_ms);
         Ok(())
@@ -86,7 +86,7 @@ impl shielding::HostShieldBackendOptions for ComponentCtx {
         &mut self,
         resource: Resource<ShieldBackendOptions>,
         timeout_ms: u32,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), wasmtime::Error> {
         let current = self.wasi_table.get_mut(&resource)?;
         current.between_bytes_timeout_ms = Some(timeout_ms);
         Ok(())
@@ -94,7 +94,7 @@ impl shielding::HostShieldBackendOptions for ComponentCtx {
 
     fn set_cache_key(&mut self, _resource: Resource<ShieldBackendOptions>, _cache_key: String) {}
 
-    fn new(&mut self) -> Result<Resource<ShieldBackendOptions>, anyhow::Error> {
+    fn new(&mut self) -> Result<Resource<ShieldBackendOptions>, wasmtime::Error> {
         Ok(self.wasi_table.push(ShieldBackendOptions::default())?)
     }
 
