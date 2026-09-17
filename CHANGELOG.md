@@ -10,6 +10,7 @@
 - Update to the latest WITs. ([#701](https://github.com/fastly/Viceroy/pull/701))
 - Update test-fixtures to fastly 0.13.1. ([#707](https://github.com/fastly/Viceroy/pull/707))
 - Internal unification of native/guest profiling config. (#[597](https://github.com/fastly/Viceroy/pull/597))
+- Remove the warning about Wasm Component support. ([#709](https://github.com/fastly/Viceroy/pull/709))
 
 ## 0.21.0 (2026-08-25)
 
