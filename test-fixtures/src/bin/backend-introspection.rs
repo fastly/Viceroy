@@ -14,7 +14,10 @@ fn main() {
         backend.is_ssl(),
         backend
             .get_host_override()
-            .map(|host| host.to_str().expect("override host is valid UTF-8").to_owned())
+            .map(|host| host
+                .to_str()
+                .expect("override host is valid UTF-8")
+                .to_owned())
             .unwrap_or_else(|| "<none>".to_owned()),
     );
 

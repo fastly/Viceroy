@@ -374,7 +374,7 @@ impl FastlyCache for Sandbox {
             .await
         };
 
-        let task = PendingCacheTask::new(task);
+        let task = PendingCacheTask::new_owned(task);
         let handle = self.insert_cache_op(task);
         Ok(handle.into())
     }

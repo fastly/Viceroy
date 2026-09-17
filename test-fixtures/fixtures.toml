@@ -1,0 +1,22 @@
+# Specifies build customizations for test fixtures.
+# By default all fixtures build for wasm32-wasip1.
+#
+# Fixtures using the fastly sdk can be compiled to core modules
+# or components, the sdk switches at compile time based on the target.
+# Fixtures using wit_bindgen can only compile to components (unless
+# they also use conditional compilation).
+# Fixtures manually using the witx ABI compile to core modules or
+# components through the adapter.
+#
+# WASM Component and target are (semi-)orthogonal.
+# A wasm32-wasip2 target always produces a wasm component.
+# A wasm32-wasip1 target can produce a component but it needs to be
+# adapted (through wasm-tools component new & preview1 adapter or
+# our viceroy adapter if using witx ABI).
+
+
+# [defaults]
+# targets = ["wasm32-wasip1"]
+
+[fixtures.cache-step-pollable]
+targets = ["wasm32-wasip2"]

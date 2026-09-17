@@ -1,0 +1,14 @@
+[package]
+name = "test-fixtures-artifacts"
+version = "0.21.1"
+description = "Cross-compiles the guest wasm programs in `test-fixtures` for the integration tests."
+authors = ["Fastly"]
+edition = "2024"
+license = "Apache-2.0 WITH LLVM-exception"
+publish = false
+
+[build-dependencies]
+anyhow = { workspace = true }
+cargo_metadata = "0.23.1"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.6"

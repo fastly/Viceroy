@@ -1,9 +1,9 @@
 //! A guest program to test the core cache API works properly.
 
 use bytes::Bytes;
+use fastly::Body;
 use fastly::cache::core::*;
 use fastly::http::{HeaderName, HeaderValue};
-use fastly::Body;
 use std::io::{Read, Write};
 use std::time::Duration;
 use uuid::Uuid;
@@ -1040,22 +1040,28 @@ fn test_soft_purge() {
     fastly::http::purge::soft_purge_surrogate_key("keyB").unwrap();
     // Compute Platform will return stale data that has been soft-purged, if it's still within the
     // TTL.
-    assert!(lookup(key1)
-        .execute()
-        .unwrap()
-        .expect("is found")
-        .is_stale());
-    assert!(lookup(key3)
-        .execute()
-        .unwrap()
-        .expect("is found")
-        .is_stale());
+    assert!(
+        lookup(key1)
+            .execute()
+            .unwrap()
+            .expect("is found")
+            .is_stale()
+    );
+    assert!(
+        lookup(key3)
+            .execute()
+            .unwrap()
+            .expect("is found")
+            .is_stale()
+    );
     // key2 is untouched:
-    assert!(!lookup(key2)
-        .execute()
-        .unwrap()
-        .expect("is found")
-        .is_stale());
+    assert!(
+        !lookup(key2)
+            .execute()
+            .unwrap()
+            .expect("is found")
+            .is_stale()
+    );
 }
 
 fn test_purge_variant() {
@@ -1100,11 +1106,13 @@ fn test_purge_variant() {
     fastly::http::purge::purge_surrogate_key("keyA").unwrap();
 
     // keyA was purged:
-    assert!(lookup(key.clone())
-        .header(header.clone(), "value1")
-        .execute()
-        .unwrap()
-        .is_none());
+    assert!(
+        lookup(key.clone())
+            .header(header.clone(), "value1")
+            .execute()
+            .unwrap()
+            .is_none()
+    );
 
     // keyB is fine:
     assert_eq!(
@@ -1278,7 +1286,10 @@ fn test_collapse_from_later_vary() {
         .header(&header_a, "bar")
         .execute_async()
         .unwrap();
-    assert!(pending_txn3.pending().unwrap(), "txn3 should be waiting on txn2");
+    assert!(
+        pending_txn3.pending().unwrap(),
+        "txn3 should be waiting on txn2"
+    );
     assert!(txn1.must_insert_or_update());
     assert!(txn2.must_insert_or_update());
 
@@ -1286,7 +1297,7 @@ fn test_collapse_from_later_vary() {
     writer.write_all(b"the-response").unwrap();
     writer.finish().unwrap();
 
-    // Abandon Txn2 to verify that Txn3 falls back to 
+    // Abandon Txn2 to verify that Txn3 falls back to
     // Txn1's wildcard entry instead of spawning a duplicate origin fetch.
     txn2.cancel_insert_or_update().unwrap();
 
@@ -1363,7 +1374,8 @@ fn test_simple_cache_expires() {
 
     let body = "hello beautiful world";
 
-    let _ = fastly::cache::simple::get_or_set(key.clone(), body, Duration::from_secs(1)).expect("insert into simple cache");
+    let _ = fastly::cache::simple::get_or_set(key.clone(), body, Duration::from_secs(1))
+        .expect("insert into simple cache");
     std::thread::sleep(Duration::from_secs(2));
     let returned = fastly::cache::simple::get(key).expect("retrieve from simple cache");
     // Stale, and simple cache doesn't support SWR
@@ -1375,12 +1387,16 @@ fn test_core_cache_expires() {
 
     let body = "hello beautiful world";
 
-    let mut v = fastly::cache::core::insert(key.clone(), Duration::from_secs(1)).execute().expect("insert into core cache");
+    let mut v = fastly::cache::core::insert(key.clone(), Duration::from_secs(1))
+        .execute()
+        .expect("insert into core cache");
     v.write_all(body.as_bytes()).expect("write body");
     v.finish().expect("finish insert");
 
     std::thread::sleep(Duration::from_secs(2));
-    let returned = fastly::cache::core::lookup(key).execute().expect("retrieve from core cache");
+    let returned = fastly::cache::core::lookup(key)
+        .execute()
+        .expect("retrieve from core cache");
     // Stale, no SWR
     assert!(returned.is_none());
 }

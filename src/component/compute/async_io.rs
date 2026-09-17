@@ -59,6 +59,17 @@ impl async_io::HostPollable for ComponentCtx {
     fn drop(&mut self, handle: Resource<async_io::Pollable>) -> wasmtime::Result<()> {
         let handle = wiggle_abi::types::AsyncItemHandle::from(handle).into();
 
+        {
+            let it = self.sandbox_mut().async_item_mut(handle)?;
+
+            // Some pollables (and associated resources) are "owned" by the guest, and others
+            // are just weak handles to items owned by the host/other resources.
+            // Dropping extra state unconditionally would be a mistake for those.
+            if !it.pollable_owns_item() {
+                return Ok(());
+            }
+        }
+
         // Use `.take_async_item` instead of manipulating
         // `self.sandbox_mut().async_items` directly, so that any extra state
         // associated with the item is also cleared.

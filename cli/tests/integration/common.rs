@@ -51,22 +51,6 @@ macro_rules! viceroy_test {
     };
 }
 
-/// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
-///
-/// This value can be appended with the name of a fixture's `.wasm` in a test program, using the
-/// [`format!`][fmt] macro. For example:
-///
-/// ```
-/// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
-/// ```
-///
-/// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
-/// working directory, e.g. when launched directly by an editor/debugger.
-pub static RUST_FIXTURE_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../test-fixtures/target/wasm32-wasip1/debug/"
-);
-
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///
 /// This value can be appended with the name of a fixture's `.wat` in a test program, using the
@@ -78,7 +62,8 @@ pub static RUST_FIXTURE_PATH: &str = concat!(
 ///
 /// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
 /// working directory, e.g. when launched directly by an editor/debugger.
-pub static WAT_FIXTURE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/");
+pub static WAT_FIXTURE_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/src/wat/");
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -110,9 +95,12 @@ pub struct Test {
 }
 
 impl Test {
-    /// Create a new test given the file name for its wasm fixture.
-    pub fn using_fixture(fixture: &str) -> Self {
-        let mut module_path = PathBuf::from(RUST_FIXTURE_PATH);
+    /// Create a new test given the file name for its wasm fixture, its target architecture,
+    /// and the release mode.
+    pub fn using_wasm_fixture(fixture: &str, target: &str, release: &str) -> Self {
+        let mut module_path = PathBuf::from(test_fixtures_artifacts::FIXTURE_DIR);
+        module_path.push(target);
+        module_path.push(release);
         module_path.push(fixture);
 
         Self {
@@ -136,6 +124,16 @@ impl Test {
             profiling: ProfilingConfig::None,
             debug_info: false,
         }
+    }
+
+    /// Create a new test given the file name for its wasm fixture.
+    pub fn using_fixture(fixture: &str) -> Self {
+        Self::using_wasm_fixture(fixture, "wasm32-wasip1", "debug")
+    }
+
+    /// Create a new test given the file name for its wasm32-wasip2 fixture.
+    pub fn using_p2_fixture(fixture: &str) -> Self {
+        Self::using_wasm_fixture(fixture, "wasm32-wasip2", "debug")
     }
 
     /// Create a new test given the file name for its wasm fixture.
