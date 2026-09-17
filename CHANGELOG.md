@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Support generating native debug info for the guest, via the new `-g`/`--debug-info` flag and
+  `ExecuteCtxBuilder::with_debug_info`, so that guests can be inspected with `lldb` or `gdb`. This
+  remains off by default: it costs compile time and only helps when the guest itself was built with
+  debug info. See [#52](https://github.com/fastly/Viceroy/issues/52).
+  ([#708](https://github.com/fastly/Viceroy/pull/708))
+
 - Map a body read that ends early to `error.http-incomplete` on the component ABI, which previously
   answered `error.generic-error` even though the witx ABI mapped it. A truncated body does not
   satisfy `hyper::Error::is_incomplete_message`, so the cause needs a downcast, and the component

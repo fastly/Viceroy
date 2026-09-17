@@ -142,6 +142,13 @@ pub struct SharedArgs {
     /// components before running them.
     #[arg(long = "adapt")]
     adapt: bool,
+    /// Generate native debug information for the guest, so that it can be inspected with a
+    /// native debugger such as `lldb` or `gdb`.
+    ///
+    /// This requires the guest to have been built with debug information of its own, and makes
+    /// compilation slower.
+    #[arg(short = 'g', long = "debug-info")]
+    debug_info: bool,
     /// Enable the Wasm Exception Handling feature.
     #[arg(long)]
     wasm_exceptions: bool,
@@ -254,6 +261,11 @@ impl SharedArgs {
 
     pub fn adapt(&self) -> bool {
         self.adapt
+    }
+
+    /// Whether to generate native debug information for the guest.
+    pub fn debug_info(&self) -> bool {
+        self.debug_info
     }
 
     pub fn wasm_features(&self) -> WasmFeatures {
