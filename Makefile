@@ -19,15 +19,19 @@ test: test-crates trap-test  ## Run all tests.
 
 .PHONY: test-crates
 test-crates: fix-build
-	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all
+	# `test-fixtures` is a workspace member (so its guest binaries can be built
+	# in-tree) but has no unit tests of its own; exclude it so `--all` doesn't
+	# spend time compiling and running an empty host-target test harness for
+	# each of its ~50 fixture binaries.
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --workspace --exclude test-fixtures
 
 .PHONY: test-crates-lto
 test-crates-lto: fix-build
-	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --all --profile=test-lto
+	RUST_BACKTRACE=1 $(VICEROY_CARGO) test --workspace --exclude test-fixtures --profile=test-lto
 
 .PHONY: fix-build
 fix-build:
-	cd test-fixtures && $(VICEROY_CARGO) build --target=wasm32-wasip1
+	$(VICEROY_CARGO) build -p test-fixtures-artifacts
 
 .PHONY: trap-test
 trap-test: fix-build

@@ -1,13 +1,13 @@
 //! A guest program to test that Geolocation lookups work properly.
 
 use fastly::geo::{
-    geo_lookup,
     ConnSpeed,
     ConnType,
     Continent,
     ProxyDescription,
     ProxyType,
     // UtcOffset,
+    geo_lookup,
 };
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

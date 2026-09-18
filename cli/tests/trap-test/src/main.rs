@@ -1,17 +1,8 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, path::PathBuf};
 use {
     hyper::{Body, Request, StatusCode},
     viceroy_lib::{ExecuteCtx, ProfilingConfig, WasmFeatures},
 };
-
-/// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
-///
-/// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
-/// working directory, e.g. when launched directly by an editor/debugger.
-const RUST_FIXTURE_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../test-fixtures/target/wasm32-wasip1/debug/"
-);
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -20,7 +11,11 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type TestResult = Result<(), Error>;
 
 async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
-    let module_path = format!("{RUST_FIXTURE_PATH}/response.wasm");
+    let mut module_path = PathBuf::from(test_fixtures_artifacts::FIXTURE_DIR);
+    module_path.push("rust");
+    module_path.push("wasm32-wasip1");
+    module_path.push("debug");
+    module_path.push("response.wasm");
     let ctx = ExecuteCtx::new(
         module_path,
         ProfilingConfig::None,

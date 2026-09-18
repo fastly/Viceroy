@@ -1,0 +1,36 @@
+# Specifies build customizations for test fixtures.
+# By default all fixtures build for wasm32-wasip1.
+# See ./README.md
+#
+# Fixtures using the fastly sdk can be compiled to core modules
+# or components, the sdk switches at compile time based on the target.
+# Fixtures using wit_bindgen can only compile to components (unless
+# they also use conditional compilation).
+# Fixtures manually using the witx ABI compile to core modules or
+# components through the adapter.
+#
+# WASM Component and target are (semi-)orthogonal.
+# A wasm32-wasip2 target always produces a wasm component.
+# A wasm32-wasip1 target can produce a component but it needs to be
+# adapted (through wasm-tools component new & preview1 adapter or
+# our viceroy adapter if using witx ABI).
+
+[fixtures.request]
+env = {
+    # Since `test-fixtures` joined the root workspace it inherits the
+    # root `[profile.dev] opt-level = 1` override, which changed guest
+    # codegen enough to expose a bug in the preview1-adapted component
+    # path (a `uri_get` retry with a correctly-sized buffer fails).
+    # TODO: fix that bug and drop this override. Pinning fixture
+    # builds back to opt-level 0 in the meantime restores their old,
+    # known-good codegen.
+    "RUSTFLAGS" = "-C opt-level=0"
+}
+
+# Following two are reproductions for #491 and #498.
+# Don't need to build for both toolchains, just the ones that are relevant to the bug.
+[fixtures.empty-main]
+languages = ["tinygo"]
+
+[fixtures.sdk-guest]
+languages = ["go"]
