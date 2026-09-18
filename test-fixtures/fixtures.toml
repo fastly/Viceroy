@@ -26,3 +26,11 @@ env = {
     # known-good codegen.
     "RUSTFLAGS" = "-C opt-level=0"
 }
+
+# Following two are reproductions for #491 and #498.
+# Don't need to build for both toolchains, just the ones that are relevant to the bug.
+[fixtures.empty-main]
+languages = ["tinygo"]
+
+[fixtures.sdk-guest]
+languages = ["go"]
