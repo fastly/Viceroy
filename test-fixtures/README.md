@@ -43,22 +43,24 @@ All Rust fixtures are located in `test-fixtures/src/bin`. They are discovered th
 
 ### Go
 
-Go fixtures are located in `test-fixtures/src/go`. They are discovered by directory name and are part of a single Go module.
+Go fixtures are located in `test-fixtures/src/go`. They are discovered through `go list` on that directory.
 
 For now, only the `wasm32-wasip1` target is supported in `fixtures.toml`. This
 is translated to the correct args for the `tinygo` and `go` toolchains.
 
-Some fixtures may not build for a certain toolchain. This can be controlled by
-the `go_toolchains` option in `fixtures.toml`. By default we build for both `tinygo` and `go`, but you can specify a subset of these toolchains for a fixture.
+Some fixtures should not build for a certain toolchain. This can be controlled by the `languages` option in `fixtures.toml`.
+By default we build for both `tinygo` and `go`, but you can specify a subset of these toolchains for a fixture.
 
 * **TinyGo** — `tinygo build -target=wasip1`, the toolchain from
   [issue #491](https://github.com/fastly/Viceroy/issues/491).
 * **"big" Go** — `GOOS=wasip1 GOARCH=wasm go build`, the toolchain from
   [issue #498](https://github.com/fastly/Viceroy/issues/498).
 
-If `tinygo` or `go` is not installed, the build is skipped. Tests must be aware of
-this and skip tests that require a fixture that was not built. This may change
-in the future if we set up toolchain dependencies for local dev and CI (nix?).
+The build script currently only builds rust fixtures. Tests must be aware of this and skip tests that
+require a fixture that was not built. This may change in the future if we set up toolchain dependencies for local dev and CI.
+
+Integration tests can use the `go_fixture!` macro in `cli/tests/integration/common.rs` to handle this automatically.
+It returns early (and says why) when the artifact is missing.
 
 #### Manually Building and Running
 

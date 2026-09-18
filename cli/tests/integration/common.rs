@@ -52,6 +52,54 @@ macro_rules! viceroy_test {
     };
 }
 
+/// Build a [`Test`] for a Go fixture, or skip the enclosing test if that fixture was not
+/// built.
+///
+/// Expands to a `return Ok(())`, so it only works inside a test returning [`TestResult`].
+#[macro_export]
+macro_rules! go_fixture {
+    ($toolchain:expr, $fixture:expr) => {
+        match $crate::common::Test::using_go_fixture($toolchain, $fixture) {
+            Some(test) => test,
+            None => {
+                eprintln!(
+                    "skipping {}: the Go fixture `{}` was not built. Rebuild the fixtures \
+                     with `FIXTURE_LANGS=rust,go,tinygo` and the toolchain on `PATH`.",
+                    module_path!(),
+                    $fixture,
+                );
+                return Ok(());
+            }
+        }
+    };
+}
+
+/// The Go toolchain that built a fixture.
+///
+/// One fixture source can be built by both toolchains, so the artifacts are kept apart by
+/// toolchain. The distinction matters because the bugs they cover are toolchain-specific:
+/// [issue #491][491] is TinyGo and [issue #498][498] is "big" Go.
+///
+/// [491]: https://github.com/fastly/Viceroy/issues/491
+/// [498]: https://github.com/fastly/Viceroy/issues/498
+#[derive(Debug, Clone, Copy)]
+pub enum GoToolchain {
+    /// "big" Go: `GOOS=wasip1 GOARCH=wasm go build`.
+    Go,
+    /// TinyGo: `tinygo build -target=wasip1`.
+    TinyGo,
+}
+
+impl GoToolchain {
+    /// The directory the fixture build script writes this toolchain's artifacts to.
+    fn artifact_dir(self) -> &'static str {
+        match self {
+            Self::Go => "go",
+            Self::TinyGo => "tinygo",
+        }
+    }
+}
+
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///
 /// This value can be appended with the name of a fixture's `.wat` in a test program, using the
@@ -132,6 +180,20 @@ impl Test {
             .join("debug")
             .join(fixture);
         Self::using_wasm_fixture(path)
+    }
+
+    /// Create a new test for a Go fixture built by `toolchain`, or `None` if that fixture
+    /// was not built.
+    ///
+    /// Neither Go toolchain is a prerequisite for a Viceroy checkout, so these fixtures are
+    /// only built when `FIXTURE_LANGS` asks for them. Callers therefore have to tolerate a
+    /// missing artifact; [`go_fixture!`][crate::go_fixture] does so by skipping the test.
+    pub fn using_go_fixture(toolchain: GoToolchain, fixture: &str) -> Option<Self> {
+        let path = PathBuf::from(FIXTURE_DIR)
+            .join(toolchain.artifact_dir())
+            .join("wasm32-wasip1")
+            .join(fixture);
+        path.exists().then(|| Self::using_wasm_fixture(path))
     }
 
     /// Create a new test given the file name for its wasm fixture.
