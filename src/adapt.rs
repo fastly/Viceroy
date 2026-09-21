@@ -1,4 +1,5 @@
 use anyhow::Context;
+use std::borrow::Cow;
 
 /// The full adapter.
 const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
@@ -31,9 +32,13 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     // Determine if we have a main module or a library module.
     let library = !has_export(bytes, "_start");
+    let page_size_log2 = get_memory_page_size_log2(&bytes)?;
 
     // Wit-bindgen imports and exports need the noshift adapter.
-    let needs_no_shift_adapter = has_wit_bindgen_imports(bytes) || has_wit_bindgen_exports(bytes);
+    // Non-64KiB page sizes also need noshift, because shift_mem.rs assumes 64KiB pages.
+    let has_custom_page_size = page_size_log2.is_some_and(|log2| log2 != 16);
+    let needs_no_shift_adapter =
+        has_wit_bindgen_imports(bytes) || has_wit_bindgen_exports(bytes) || has_custom_page_size;
 
     let bytes = if needs_no_shift_adapter {
         bytes.to_vec()
@@ -42,11 +47,17 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     };
     let module = mangle_imports(&bytes)?;
 
-    let adapter_bytes = match (library, needs_no_shift_adapter) {
+    let adapter_bytes: &[u8] = match (library, needs_no_shift_adapter) {
         (true, true) => LIBRARY_ADAPTER_NOSHIFT_BYTES,
         (true, false) => LIBRARY_ADAPTER_BYTES,
         (false, true) => ADAPTER_NOSHIFT_BYTES,
         (false, false) => ADAPTER_BYTES,
+    };
+
+    let adapter_bytes: Cow<'_, [u8]> = if has_custom_page_size {
+        Cow::Owned(set_adapter_memory_page_size(adapter_bytes, page_size_log2)?)
+    } else {
+        Cow::Borrowed(adapter_bytes)
     };
 
     let component = wit_component::ComponentEncoder::default()
@@ -56,7 +67,7 @@ pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         // codebase make more sense, but plumbing that name all the way through the adapter would
         // require adjusting all preview1 functions to have a mangled name, like
         // "wasi_snapshot_preview1#args_get".
-        .adapter("wasi_snapshot_preview1", adapter_bytes)?
+        .adapter("wasi_snapshot_preview1", &adapter_bytes)?
         .validate(true)
         .encode()?;
 
@@ -141,6 +152,7 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
 
             payload => {
                 if let Some((id, range)) = payload.as_section() {
+                    let range = range.start as usize..range.end as usize;
                     module.section(&wasm_encoder::RawSection {
                         id,
                         data: &bytes[range],
@@ -173,6 +185,55 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
 
     false
 }
+/// Returns the `page_size_log2` of the first memory in a module.
+fn get_memory_page_size_log2(bytes: &[u8]) -> anyhow::Result<Option<u32>> {
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        let payload = payload?;
+        match payload {
+            wasmparser::Payload::MemorySection(section) => {
+                for mem in section {
+                    let mem = mem?;
+                    return Ok(mem.page_size_log2);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(None)
+}
+
+/// Rewrite the adapter module so that its memory import uses the given
+/// `page_size_log2`. This is necessary when the main module's memory has a
+/// non-default page size, because the component encoder requires the adapter's
+/// imported memory to match.
+fn set_adapter_memory_page_size(
+    adapter_bytes: &[u8],
+    page_size_log2: Option<u32>,
+) -> anyhow::Result<Vec<u8>> {
+    struct Reencoder {
+        page_size_log2: Option<u32>,
+    }
+    impl wasm_encoder::reencode::Reencode for Reencoder {
+        type Error = std::convert::Infallible;
+        fn memory_type(
+            &mut self,
+            mut mem: wasmparser::MemoryType,
+        ) -> Result<wasm_encoder::MemoryType, wasm_encoder::reencode::Error<Self::Error>> {
+            mem.page_size_log2 = self.page_size_log2;
+            Ok(wasm_encoder::reencode::utils::memory_type(self, mem))
+        }
+    }
+
+    use wasm_encoder::reencode::Reencode;
+    let mut module = wasm_encoder::Module::new();
+    Reencoder { page_size_log2 }.parse_core_module(
+        &mut module,
+        wasmparser::Parser::new(0),
+        adapter_bytes,
+    )?;
+    Ok(module.finish())
+}
+
 fn is_fastly_module(module: &str) -> bool {
     module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
 }
