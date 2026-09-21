@@ -143,7 +143,7 @@ wasmtime-wasi = "46.0.3"
 wasmtime-wasi-io = "46.0.3"
 wasmtime-wasi-nn = "46.0.3"
 wiggle = "46.0.3"
-wat = "1.251.0"
-wasmparser = "0.251.0"
-wasm-encoder = { version = "0.251.0", features = ["wasmparser"] }
-wit-component = "0.251.0"
+wat = "1.259.0"
+wasmparser = "0.259.0"
+wasm-encoder = { version = "0.259.0", features = ["wasmparser"] }
+wit-component = "0.259.0"
