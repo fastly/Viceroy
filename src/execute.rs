@@ -811,7 +811,7 @@ impl ExecuteCtx {
 
                 info!(
                     "guest completed using {} of WebAssembly heap",
-                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
+                    ByteFormatter(store.data().limiter().memory_allocated),
                 );
 
                 info!("guest completed in {:.0?}", request_duration);
@@ -889,7 +889,7 @@ impl ExecuteCtx {
 
                 info!(
                     "request completed using {} of WebAssembly heap",
-                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64)
+                    ByteFormatter(store.data().limiter().memory_allocated)
                 );
 
                 info!("request completed in {:.0?}", request_duration);
@@ -1417,5 +1417,58 @@ impl<E, F: Future<Output = Result<(), E>>> Future for CpuTimeTracking<F> {
         let runtime = start.elapsed().as_micros() as u64;
         let _ = me.time_spent.fetch_add(runtime, Ordering::SeqCst);
         result
+    }
+}
+
+/// Formats bytes as a human-readable string in IEC
+/// format (e.g. 1.0 MiB)
+struct ByteFormatter(usize);
+
+impl fmt::Display for ByteFormatter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let precision = f.precision().unwrap_or(1);
+        let bytes = self.0;
+
+        // very unlikely for allocated wasm memory to go up to TiB so that's where we stop
+        let units = ["B", "KiB", "MiB", "GiB", "TiB"];
+
+        // get the exponent
+        // we could do this with a logarithm, but this
+        // is simpler to read and we'll have at most 4 iterations anyway
+        let mut exp = 0;
+        let mut value = bytes as f64;
+
+        while value >= 1024.0 && exp < units.len() - 1 {
+            value /= 1024.0;
+            exp += 1;
+        }
+
+        write!(f, "{:.*} {}", precision, value, units[exp])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::execute::ByteFormatter;
+
+    #[test]
+    fn test_byte_formatter() {
+        let tests = [
+            (0, "0.0 B"),
+            (1, "1.0 B"),
+            (1023, "1023.0 B"),
+            (1024, "1.0 KiB"),
+            (1536, "1.5 KiB"),
+            (1048576, "1.0 MiB"),
+            (1572864, "1.5 MiB"),
+            (1073741824, "1.0 GiB"),
+            (1610612736, "1.5 GiB"),
+            (1099511627776, "1.0 TiB"),
+        ];
+
+        for (bytes, expected) in tests {
+            let formatter = ByteFormatter(bytes);
+            assert_eq!(formatter.to_string(), expected);
+        }
     }
 }
