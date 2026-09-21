@@ -53,7 +53,7 @@ serde_json = { workspace = true }
 thiserror = "^1.0.37"
 tokio = { workspace = true }
 tokio-rustls = "^0.24.1"
-toml = "^0.5.9"
+toml = "^1.1.6"
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 url = { workspace = true }

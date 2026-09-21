@@ -289,46 +289,17 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             shielding_sites,
             fake_valid_fastly_keys,
         } = self;
-        let acls = if let Some(acls) = acls {
-            acls.try_into()?
-        } else {
-            AclConfig::default()
-        };
-        let backends = if let Some(backends) = backends {
-            backends.try_into()?
-        } else {
-            BackendsConfig::default()
-        };
-        let device_detection = if let Some(device_detection) = device_detection {
-            device_detection.try_into()?
-        } else {
-            DeviceDetection::default()
-        };
-        let geolocation = if let Some(geolocation) = geolocation {
-            geolocation.try_into()?
-        } else {
-            Geolocation::default()
-        };
-        let dictionaries = if let Some(dictionaries) = dictionaries {
-            dictionaries.try_into()?
-        } else {
-            DictionariesConfig::default()
-        };
-        let object_stores = if let Some(object_store) = object_stores {
-            object_store.try_into()?
-        } else {
-            ObjectStoreConfig::default()
-        };
-        let secret_stores = if let Some(secret_store) = secret_stores {
-            secret_store.try_into()?
-        } else {
-            SecretStoreConfig::default()
-        };
-        let shielding_sites = if let Some(shielding_sites) = shielding_sites {
-            shielding_sites.try_into()?
-        } else {
-            ShieldingSites::default()
-        };
+
+        fn from_or_default<Src, Dest, E>(value: Option<Src>) -> Result<Dest, E>
+        where
+            Dest: Default + TryFrom<Src, Error = E>,
+        {
+            if let Some(value) = value {
+                Dest::try_from(value)
+            } else {
+                Ok(Dest::default())
+            }
+        }
 
         let fake_valid_fastly_keys = fake_valid_fastly_keys
             .unwrap_or_default()
@@ -336,14 +307,14 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             .collect::<FakeValidFastlyKeys>();
 
         Ok(LocalServerConfig {
-            acls,
-            backends,
-            device_detection,
-            geolocation,
-            dictionaries,
-            object_stores,
-            secret_stores,
-            shielding_sites,
+            acls: from_or_default(acls)?,
+            backends: from_or_default(backends)?,
+            device_detection: from_or_default(device_detection)?,
+            geolocation: from_or_default(geolocation)?,
+            dictionaries: from_or_default(dictionaries)?,
+            object_stores: from_or_default(object_stores)?,
+            secret_stores: from_or_default(secret_stores)?,
+            shielding_sites: from_or_default(shielding_sites)?,
             fake_valid_fastly_keys,
         })
     }
