@@ -194,12 +194,6 @@ pub enum Error {
     BetweenBytesTimeout,
 }
 
-impl From<wasmtime::Error> for Error {
-    fn from(err: wasmtime::Error) -> Self {
-        Self::Other(err.into())
-    }
-}
-
 impl Error {
     /// Map this error onto an appropriate 5XX response code during proxying.
     pub fn as_status_code(&self) -> StatusCode {

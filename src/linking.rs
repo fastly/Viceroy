@@ -332,9 +332,16 @@ pub fn link_host_functions(
             ExperimentalModule::WasiNn => {
                 wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
             }
-        })?;
+        })
+        .map_err(anyhow::Error::from)?;
 
-    wasmtime_wasi::p1::add_to_linker_async(linker, WasmCtx::wasi)?;
+    wasmtime_wasi::p1::add_to_linker_async(linker, WasmCtx::wasi).map_err(anyhow::Error::from)?;
+    link_wiggle_apis(linker).map_err(anyhow::Error::from)?;
+    link_legacy_aliases(linker).map_err(anyhow::Error::from)?;
+    Ok(())
+}
+
+fn link_wiggle_apis(linker: &mut Linker<WasmCtx>) -> Result<(), wasmtime::Error> {
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_acl::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::sandbox)?;
@@ -359,11 +366,10 @@ pub fn link_host_functions(
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::sandbox)?;
-    link_legacy_aliases(linker)?;
     Ok(())
 }
 
-fn link_legacy_aliases(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
+fn link_legacy_aliases(linker: &mut Linker<WasmCtx>) -> Result<(), wasmtime::Error> {
     linker.alias("fastly_abi", "init", "env", "xqd_init")?;
 
     let body = "fastly_http_body";

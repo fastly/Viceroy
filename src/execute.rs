@@ -1096,43 +1096,50 @@ impl ExecuteCtxBuilder {
         };
 
         let config = &configure_wasmtime(wasm_features, profiling.native_strategy(), debug_info);
-        let engine = Engine::new(config)?;
+        let engine = Engine::new(config).map_err(anyhow::Error::from)?;
         let instance_pre = if is_component {
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
             compute::link_host_functions(&mut linker)?;
             let component = if is_wat {
-                Component::from_file(&engine, &module_path)?
+                Component::from_file(&engine, &module_path).map_err(anyhow::Error::from)?
             } else {
-                Component::from_binary(&engine, &input)?
+                Component::from_binary(&engine, &input).map_err(anyhow::Error::from)?
             };
 
             match unknown_import_behavior {
                 UnknownImportBehavior::LinkError => (),
-                UnknownImportBehavior::Trap => {
-                    linker.define_unknown_imports_as_traps(&component)?
-                }
+                UnknownImportBehavior::Trap => linker
+                    .define_unknown_imports_as_traps(&component)
+                    .map_err(anyhow::Error::from)?,
             }
 
-            let instance_pre = linker.instantiate_pre(&component)?;
+            let instance_pre = linker
+                .instantiate_pre(&component)
+                .map_err(anyhow::Error::from)?;
             Instance::Component(
                 component,
-                compute::bindings::AdapterServicePre::new(instance_pre)?,
+                compute::bindings::AdapterServicePre::new(instance_pre)
+                    .map_err(anyhow::Error::from)?,
             )
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
             let module = if is_wat {
-                Module::from_file(&engine, &module_path)?
+                Module::from_file(&engine, &module_path).map_err(anyhow::Error::from)?
             } else {
-                Module::from_binary(&engine, &input)?
+                Module::from_binary(&engine, &input).map_err(anyhow::Error::from)?
             };
 
             match unknown_import_behavior {
                 UnknownImportBehavior::LinkError => (),
-                UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
+                UnknownImportBehavior::Trap => linker
+                    .define_unknown_imports_as_traps(&module)
+                    .map_err(anyhow::Error::from)?,
             }
 
-            let instance_pre = linker.instantiate_pre(&module)?;
+            let instance_pre = linker
+                .instantiate_pre(&module)
+                .map_err(anyhow::Error::from)?;
             Instance::Module(module, instance_pre)
         };
 
