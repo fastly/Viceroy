@@ -1364,6 +1364,8 @@ fn configure_wasmtime(
     // to phase-4.
     config.wasm_wide_arithmetic(true);
 
+    config.wasm_custom_page_sizes(true);
+
     config
 }
 
