@@ -634,7 +634,7 @@ impl ExecuteCtx {
         incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<Response<Body>, wasmtime::Error> {
+    ) -> Result<Response<Body>, Error> {
         let result = self.handle_request(incoming_req, local, remote).await?;
         let resp = guest_result_to_response(result.0, result.1);
 
