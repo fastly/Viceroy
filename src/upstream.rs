@@ -10,7 +10,7 @@ use crate::{
 use futures::Future;
 use http::{HeaderValue, Version, uri};
 use hyper::{Client, HeaderMap, Request, Response, Uri, client::HttpConnector, header};
-use rustls::client::ServerName;
+use rustls::pki_types::ServerName;
 use std::{
     io,
     net::SocketAddr,
@@ -45,10 +45,12 @@ pub struct TlsConfig {
 
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
-        let certs = rustls_native_certs::load_native_certs().map_err(Error::BadCerts)?;
+        let native_certs = rustls_native_certs::load_native_certs();
+        if let Some(err) = native_certs.errors.into_iter().next() {
+            return Err(Error::BadCerts(std::io::Error::other(err)));
+        }
         let mut roots = rustls::RootCertStore::empty();
-        let (added, failed) =
-            roots.add_parsable_certificates(&certs.into_iter().map(|c| c.0).collect::<Vec<_>>());
+        let (added, failed) = roots.add_parsable_certificates(native_certs.certs);
         if failed > 0 {
             warn!(
                 "failed to load {} certificate(s). attempting to continue with {} available certificate(s)",
@@ -59,7 +61,7 @@ impl TlsConfig {
             return Err(Error::TlsNoCAAvailable);
         }
 
-        let partial_config = rustls::ClientConfig::builder().with_safe_defaults();
+        let partial_config = rustls::ClientConfig::builder();
 
         Ok(TlsConfig {
             partial_config,
@@ -135,7 +137,8 @@ impl hyper::service::Service<Uri> for BackendConnector {
         // block to avoid capturing `http`
         let connect_fut = self.http.call(backend.uri.clone());
         let mut custom_roots = rustls::RootCertStore::empty();
-        let (added, ignored) = custom_roots.add_parsable_certificates(&self.backend.ca_certs);
+        let (added, ignored) =
+            custom_roots.add_parsable_certificates(self.backend.ca_certs.iter().cloned());
         if ignored > 0 {
             tracing::warn!(
                 "Ignored {} certificates in provided CA certificate.",
@@ -191,11 +194,13 @@ impl hyper::service::Service<Uri> for BackendConnector {
                     .or_else(|| backend.uri.host())
                     .ok_or(Error::TlsInvalidHost)?;
 
-                let dnsname = ServerName::try_from(cert_host).map_err(|_| {
-                    let err_msg = format!("Invalid DNS name: {}", cert_host);
-                    tracing::error!("{}", err_msg);
-                    Error::TlsInvalidHost
-                })?;
+                let dnsname = ServerName::try_from(cert_host)
+                    .map_err(|_| {
+                        let err_msg = format!("Invalid DNS name: {}", cert_host);
+                        tracing::error!("{}", err_msg);
+                        Error::TlsInvalidHost
+                    })?
+                    .to_owned();
 
                 // Connect with proper validation
                 let tls = connector
