@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Update to Wasmtime 46. ([#642](https://github.com/fastly/Viceroy/pull/642))
+
 ## 0.21.1 (2026-09-15)
 
 - Support generating native debug info for the guest, via the new `-g`/`--debug-info` flag and

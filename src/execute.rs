@@ -349,7 +349,7 @@ impl ExecuteCtx {
 
     async fn maybe_receive_response(
         mut receiver: mpsc::Receiver<DownstreamResponse>,
-    ) -> Option<(Response<Body>, Option<anyhow::Error>)> {
+    ) -> Option<(Response<Body>, Option<wasmtime::Error>)> {
         loop {
             match receiver.recv().await? {
                 DownstreamResponse::Http(mut resp) => {
@@ -376,8 +376,8 @@ impl ExecuteCtx {
                     let mut resp = pending
                         .recv_or_else(|e| {
                             let status = e.as_status_code();
-                            let err = anyhow::Error::from(e);
-                            anyhow_response_with_status(&err, status)
+                            let err = wasmtime::Error::from(e);
+                            err_response_with_status(&err, status)
                         })
                         .await;
 
@@ -441,7 +441,7 @@ impl ExecuteCtx {
         mut incoming_req: Request<hyper::Body>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<(Response<Body>, Option<anyhow::Error>), Error> {
+    ) -> Result<(Response<Body>, Option<wasmtime::Error>), Error> {
         let orig_req_on_upgrade = hyper::upgrade::on(&mut incoming_req);
         let (incoming_req_parts, incoming_req_body) = incoming_req.into_parts();
         let local_pushpin_proxy_port = self.settings.local_pushpin_proxy_port;
@@ -645,7 +645,7 @@ impl ExecuteCtx {
         self: Arc<Self>,
         req: Request<Body>,
         metadata: DownstreamMetadata,
-    ) -> (Response<Body>, Option<anyhow::Error>) {
+    ) -> (Response<Body>, Option<wasmtime::Error>) {
         let (downstream, receiver) = DownstreamRequest::new(req, metadata);
 
         let mut next_req = NextRequest(Some((Box::new(downstream), self.clone())));
@@ -678,7 +678,7 @@ impl ExecuteCtx {
         self: Arc<Self>,
         downstream: DownstreamRequest,
         receiver: mpsc::Receiver<DownstreamResponse>,
-    ) -> (Response<Body>, Option<anyhow::Error>) {
+    ) -> (Response<Body>, Option<wasmtime::Error>) {
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));
 
         // Spawn a separate task to run the guest code. That allows _this_ method to return a response early
@@ -705,7 +705,7 @@ impl ExecuteCtx {
                     "There was an error handling the request {}",
                     e.to_string()
                 );
-                (anyhow_response(&e), Some(e))
+                (err_response(&e), Some(e))
             }
             Err(e) => panic!("failed to run guest: {}", e),
         }
@@ -735,15 +735,21 @@ impl ExecuteCtx {
 
         match self.instance_pre.as_ref() {
             Instance::Component(component, instance_pre) => {
-                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
-                    let program_name = "main";
-                    GuestProfiler::new_component(
-                        program_name,
-                        pcfg.sample_period,
-                        component.clone(),
-                        std::iter::empty(),
-                    )
-                });
+                let profiler = self
+                    .guest_profile_config
+                    .as_deref()
+                    .map(|pcfg| {
+                        let program_name = "main";
+                        GuestProfiler::new_component(
+                            &self.engine,
+                            program_name,
+                            pcfg.sample_period,
+                            component.clone(),
+                            std::iter::empty(),
+                        )
+                    })
+                    .transpose()
+                    .map_err(ExecutionError::Context)?;
 
                 let req = sandbox.downstream_request();
                 let body = sandbox.downstream_request_body();
@@ -768,7 +774,7 @@ impl ExecuteCtx {
 
                     Ok(Err(())) => {
                         event!(Level::ERROR, "WebAssembly exited with an error");
-                        Err(ExecutionError::WasmTrap(anyhow::Error::msg("failed")))
+                        Err(ExecutionError::WasmTrap(wasmtime::format_err!("failed")))
                     }
 
                     Err(e) => {
@@ -814,14 +820,20 @@ impl ExecuteCtx {
             }
 
             Instance::Module(module, instance_pre) => {
-                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
-                    let program_name = "main";
-                    GuestProfiler::new(
-                        program_name,
-                        pcfg.sample_period,
-                        vec![(program_name.to_string(), module.clone())],
-                    )
-                });
+                let profiler = self
+                    .guest_profile_config
+                    .as_deref()
+                    .map(|pcfg| {
+                        let program_name = "main";
+                        GuestProfiler::new(
+                            &self.engine,
+                            program_name,
+                            pcfg.sample_period,
+                            vec![(program_name.to_string(), module.clone())],
+                        )
+                    })
+                    .transpose()
+                    .map_err(ExecutionError::Context)?;
 
                 // We currently have to postpone linking and instantiation to the guest task
                 // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
@@ -912,13 +924,19 @@ impl ExecuteCtx {
 
         let (module, instance_pre) = self.instance_pre.unwrap_module();
 
-        let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
-            GuestProfiler::new(
-                program_name,
-                pcfg.sample_period,
-                vec![(program_name.to_string(), module.clone())],
-            )
-        });
+        let profiler = self
+            .guest_profile_config
+            .as_deref()
+            .map(|pcfg| {
+                GuestProfiler::new(
+                    &self.engine,
+                    program_name,
+                    pcfg.sample_period,
+                    vec![(program_name.to_string(), module.clone())],
+                )
+            })
+            .transpose()
+            .map_err(ExecutionError::Context)?;
 
         let mut store = create_store(&self, sandbox, profiler, |builder| {
             builder.arg(program_name);
@@ -960,7 +978,7 @@ impl ExecuteCtx {
         // finished.
         drop(receiver);
 
-        result
+        Ok(result?)
     }
 
     pub fn cache(&self) -> &Arc<Cache> {
@@ -1078,43 +1096,50 @@ impl ExecuteCtxBuilder {
         };
 
         let config = &configure_wasmtime(wasm_features, profiling.native_strategy(), debug_info);
-        let engine = Engine::new(config)?;
+        let engine = Engine::new(config).map_err(anyhow::Error::from)?;
         let instance_pre = if is_component {
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
             compute::link_host_functions(&mut linker)?;
             let component = if is_wat {
-                Component::from_file(&engine, &module_path)?
+                Component::from_file(&engine, &module_path).map_err(anyhow::Error::from)?
             } else {
-                Component::from_binary(&engine, &input)?
+                Component::from_binary(&engine, &input).map_err(anyhow::Error::from)?
             };
 
             match unknown_import_behavior {
                 UnknownImportBehavior::LinkError => (),
-                UnknownImportBehavior::Trap => {
-                    linker.define_unknown_imports_as_traps(&component)?
-                }
+                UnknownImportBehavior::Trap => linker
+                    .define_unknown_imports_as_traps(&component)
+                    .map_err(anyhow::Error::from)?,
             }
 
-            let instance_pre = linker.instantiate_pre(&component)?;
+            let instance_pre = linker
+                .instantiate_pre(&component)
+                .map_err(anyhow::Error::from)?;
             Instance::Component(
                 component,
-                compute::bindings::AdapterServicePre::new(instance_pre)?,
+                compute::bindings::AdapterServicePre::new(instance_pre)
+                    .map_err(anyhow::Error::from)?,
             )
         } else {
             let mut linker = Linker::new(&engine);
             link_host_functions(&mut linker, &wasi_modules)?;
             let module = if is_wat {
-                Module::from_file(&engine, &module_path)?
+                Module::from_file(&engine, &module_path).map_err(anyhow::Error::from)?
             } else {
-                Module::from_binary(&engine, &input)?
+                Module::from_binary(&engine, &input).map_err(anyhow::Error::from)?
             };
 
             match unknown_import_behavior {
                 UnknownImportBehavior::LinkError => (),
-                UnknownImportBehavior::Trap => linker.define_unknown_imports_as_traps(&module)?,
+                UnknownImportBehavior::Trap => linker
+                    .define_unknown_imports_as_traps(&module)
+                    .map_err(anyhow::Error::from)?,
             }
 
-            let instance_pre = linker.instantiate_pre(&module)?;
+            let instance_pre = linker
+                .instantiate_pre(&module)
+                .map_err(anyhow::Error::from)?;
             Instance::Module(module, instance_pre)
         };
 
@@ -1260,7 +1285,7 @@ impl ExecuteCtxBuilder {
 
 fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {
     match std::fs::File::create(path)
-        .map_err(anyhow::Error::new)
+        .map_err(wasmtime::Error::new)
         .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
     {
         Err(e) => {
@@ -1299,23 +1324,23 @@ fn write_profile_component(
     }
 }
 
-fn guest_result_to_response(resp: Response<Body>, err: Option<anyhow::Error>) -> Response<Body> {
-    err.as_ref().map(anyhow_response).unwrap_or(resp)
+fn guest_result_to_response(resp: Response<Body>, err: Option<wasmtime::Error>) -> Response<Body> {
+    err.as_ref().map(err_response).unwrap_or(resp)
 }
 
 fn exec_err_to_response(err: &ExecutionError) -> Response<Body> {
     if let ExecutionError::WasmTrap(e) = err {
-        anyhow_response(e)
+        err_response(e)
     } else {
         panic!("failed to run guest: {err}")
     }
 }
 
-fn anyhow_response(err: &anyhow::Error) -> Response<Body> {
-    anyhow_response_with_status(err, hyper::StatusCode::INTERNAL_SERVER_ERROR)
+fn err_response(err: &wasmtime::Error) -> Response<Body> {
+    err_response_with_status(err, hyper::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-fn anyhow_response_with_status(err: &anyhow::Error, status: hyper::StatusCode) -> Response<Body> {
+fn err_response_with_status(err: &wasmtime::Error, status: hyper::StatusCode) -> Response<Body> {
     Response::builder()
         .status(status)
         .body(Body::from(format!("{err:?}").into_bytes()))
@@ -1343,7 +1368,6 @@ fn configure_wasmtime(
     // and is only useful when the guest was built with debug info to begin with.
     config.debug_info(debug_info);
     config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
-    config.async_support(true);
     config.epoch_interruption(true);
     config.profiler(profiling_strategy);
 
