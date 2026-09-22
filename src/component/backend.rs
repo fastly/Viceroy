@@ -52,10 +52,7 @@ pub(crate) async fn register_dynamic_backend(
             }
 
             let mut byte_cursor = std::io::Cursor::new(ca_cert.as_bytes());
-            rustls_pemfile::certs(&mut byte_cursor)?
-                .drain(..)
-                .map(rustls::Certificate)
-                .collect()
+            rustls_pemfile::certs(&mut byte_cursor).collect::<Result<Vec<_>, _>>()?
         } else {
             vec![]
         }

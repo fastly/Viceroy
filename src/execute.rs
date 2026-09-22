@@ -811,7 +811,7 @@ impl ExecuteCtx {
 
                 info!(
                     "guest completed using {} of WebAssembly heap",
-                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64),
+                    ByteFormatter(store.data().limiter().memory_allocated),
                 );
 
                 info!("guest completed in {:.0?}", request_duration);
@@ -889,7 +889,7 @@ impl ExecuteCtx {
 
                 info!(
                     "request completed using {} of WebAssembly heap",
-                    bytesize::ByteSize::b(store.data().limiter().memory_allocated as u64)
+                    ByteFormatter(store.data().limiter().memory_allocated)
                 );
 
                 info!("request completed in {:.0?}", request_duration);
@@ -1417,5 +1417,75 @@ impl<E, F: Future<Output = Result<(), E>>> Future for CpuTimeTracking<F> {
         let runtime = start.elapsed().as_micros() as u64;
         let _ = me.time_spent.fetch_add(runtime, Ordering::SeqCst);
         result
+    }
+}
+
+/// Formats bytes as a human-readable string in IEC
+/// format (e.g. 1.0 MiB), always to one decimal place.
+struct ByteFormatter(usize);
+
+impl fmt::Display for ByteFormatter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // very unlikely for allocated wasm memory to go up to TiB so that's where we stop
+        let units = ["B", "KiB", "MiB", "GiB", "TiB"];
+
+        // get the exponent
+        // we could do this with a logarithm, but this
+        // is simpler to read and we'll have at most 4 iterations anyway
+        let mut exp = 0;
+        let mut value = self.0 as f64;
+
+        // The bound is 1023.95 rather than 1024, because the mantissa is
+        // rounded to one decimal place when printed and anything above that
+        // rounds to "1024.0", which belongs in the next unit up: 1048575 bytes
+        // is 1023.999 KiB, and should read "1.0 MiB".
+        while value >= 1024.0 - 0.05 && exp < units.len() - 1 {
+            value /= 1024.0;
+            exp += 1;
+        }
+
+        write!(f, "{value:.1} {}", units[exp])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::execute::ByteFormatter;
+
+    #[test]
+    fn test_byte_formatter() {
+        let tests = [
+            (0, "0.0 B"),
+            (1, "1.0 B"),
+            (1023, "1023.0 B"),
+            (1024, "1.0 KiB"),
+            (1536, "1.5 KiB"),
+            (1048576, "1.0 MiB"),
+            (1572864, "1.5 MiB"),
+            (1073741824, "1.0 GiB"),
+            (1610612736, "1.5 GiB"),
+            (1099511627776, "1.0 TiB"),
+            // Just below a unit boundary. Rounding the mantissa to one decimal
+            // place takes these up to 1024, which belongs in the next unit.
+            (1048575, "1.0 MiB"),
+            (1073741823, "1.0 GiB"),
+            (1099511627775, "1.0 TiB"),
+            // 1048524 is 1023.949 KiB and 1048525 is 1023.950 KiB, so the pair
+            // brackets the point where rounding first reaches the boundary.
+            (1048524, "1023.9 KiB"),
+            (1048525, "1.0 MiB"),
+        ];
+
+        for (bytes, expected) in tests {
+            let formatter = ByteFormatter(bytes);
+            assert_eq!(formatter.to_string(), expected, "for {bytes} bytes");
+        }
+    }
+
+    /// TiB is the largest unit, so there is nothing to carry into and a
+    /// mantissa above 1024 is the intended result rather than a bug.
+    #[test]
+    fn test_byte_formatter_saturates_at_largest_unit() {
+        assert_eq!(ByteFormatter(1125899906842624).to_string(), "1024.0 TiB");
     }
 }

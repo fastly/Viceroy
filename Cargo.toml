@@ -30,10 +30,9 @@ rust-version = "1.95"
 anyhow = { workspace = true }
 async-trait = "0.1.59"
 bytes = "^1.2.1"
-bytesize = "^1.1.0"
 cfg-if = "^1.0"
 clap = { workspace = true }
-cranelift-entity = "^0.133.0"
+cranelift-entity = { workspace = true }
 fastly-shared = "^0.13.0"
 flate2 = "^1.0.24"
 futures = { workspace = true }
@@ -44,23 +43,22 @@ itertools = { workspace = true }
 lazy_static = "^1.4.0"
 pin-project = { workspace = true }
 regex = "^1.3.9"
-rustls = "^0.21.1"
-rustls-native-certs = "^0.6.3"
-rustls-pemfile = "^1.0.3"
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+rustls-pemfile = { workspace = true }
 serde = "^1.0.145"
 serde_derive = "^1.0.114"
 serde_json = { workspace = true }
-thiserror = "^1.0.37"
+thiserror = "^2.0.20"
 tokio = { workspace = true }
-tokio-rustls = "^0.24.1"
-toml = "^0.5.9"
+tokio-rustls = { workspace = true }
+toml = "^1.1.6"
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 url = { workspace = true }
 wasmparser = { workspace = true }
 wasm-encoder = { workspace = true }
-# Disable the "serde" feature which we don't need.
-wasm-metadata = { version = "0.251.0", default-features = false }
+wasm-metadata = { workspace = true }
 wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
@@ -70,11 +68,11 @@ wat = { workspace = true }
 wiggle = { workspace = true }
 base64 = { workspace = true }
 moka = { version = "0.12.12", features = ["future"] }
-walrus = "0.23.3"
+walrus = "0.27.2"
 
 [dev-dependencies]
 proptest = "1.6.0"
-proptest-derive = "0.5.1"
+proptest-derive = "0.8.0"
 tempfile = "3.6.0"
 
 [features]
@@ -122,16 +120,17 @@ codegen-units = 1
 
 [workspace.dependencies]
 anyhow = "1.0.31"
-base64 = "0.21.2"
+base64 = "0.23.1"
 clap = { version = "^4.0.18", features = ["derive"] }
 hyper = { version = "=0.14.26", features = ["full"] }
-itertools = "0.10.5"
+itertools = "0.15.0"
 pin-project = "1.0.8"
-rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
-rustls-pemfile = "1.0.3"
+rustls = "0.23.45"
+rustls-native-certs = "0.8.4"
+rustls-pemfile = "2.2.0"
 serde_json = "1.0.59"
 tokio = { version = "1.53.0", features = ["full"] }
-tokio-rustls = "0.24.1"
+tokio-rustls = "0.26.5"
 tracing = "0.1.37"
 tracing-futures = "0.2.5"
 futures = "0.3.24"
@@ -143,7 +142,17 @@ wasmtime-wasi = "46.0.3"
 wasmtime-wasi-io = "46.0.3"
 wasmtime-wasi-nn = "46.0.3"
 wiggle = "46.0.3"
-wat = "1.251.0"
+
+# The wasm-tools and cranelift crates below are also used internally by
+# wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
+# otherwise the build ends up with two copies of each: ours and wasmtime's.
+# `wat` is versioned 1.x, so a caret requirement would float past the release
+# wasmtime uses and drag a second `wast`/`wasm-encoder`/`wasmparser` in with
+# it. Pin it exactly; the 0.x crates below are already held by their minor.
+wat = "=1.251.0"
 wasmparser = "0.251.0"
 wasm-encoder = { version = "0.251.0", features = ["wasmparser"] }
 wit-component = "0.251.0"
+# Disable the "serde" feature which we don't need.
+wasm-metadata = { version = "0.251.0", default-features = false }
+cranelift-entity = "0.133.3"

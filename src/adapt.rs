@@ -141,9 +141,17 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
 
             payload => {
                 if let Some((id, range)) = payload.as_section() {
+                    // `as_section` reports section bounds as `u64` so that it can
+                    // describe inputs larger than this platform's address space.
+                    // `bytes` is already in memory, so its bounds always fit in a
+                    // `usize`, but convert fallibly rather than truncating.
+                    let start = usize::try_from(range.start)
+                        .context("wasm section start is out of range for this platform")?;
+                    let end = usize::try_from(range.end)
+                        .context("wasm section end is out of range for this platform")?;
                     module.section(&wasm_encoder::RawSection {
                         id,
-                        data: &bytes[range],
+                        data: &bytes[start..end],
                     });
                 }
             }

@@ -218,18 +218,26 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             ));
         }
 
-        let local_server = local_server
-            .map(TryInto::try_into)
-            .transpose()?
-            .unwrap_or_default();
         Ok(FastlyConfig {
             name: name.unwrap_or_default(),
             description: description.unwrap_or_default(),
             authors: authors.unwrap_or_default(),
             language: language.unwrap_or_default(),
-            local_server,
+            local_server: parse_raw_cfg(local_server)?,
         })
     }
+}
+
+/// Converts a raw config (an optional value satisfying TryInto)
+/// into its parsed form, or returns a default value if the raw config is None.
+fn parse_raw_cfg<Raw, Parsed, E>(raw: Option<Raw>) -> Result<Parsed, E>
+where
+    Raw: TryInto<Parsed, Error = E>,
+    Parsed: Default,
+{
+    raw.map(TryInto::try_into)
+        .transpose()
+        .map(|opt| opt.unwrap_or_default())
 }
 
 /// Configuration settings used for tests.
@@ -289,46 +297,6 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             shielding_sites,
             fake_valid_fastly_keys,
         } = self;
-        let acls = if let Some(acls) = acls {
-            acls.try_into()?
-        } else {
-            AclConfig::default()
-        };
-        let backends = if let Some(backends) = backends {
-            backends.try_into()?
-        } else {
-            BackendsConfig::default()
-        };
-        let device_detection = if let Some(device_detection) = device_detection {
-            device_detection.try_into()?
-        } else {
-            DeviceDetection::default()
-        };
-        let geolocation = if let Some(geolocation) = geolocation {
-            geolocation.try_into()?
-        } else {
-            Geolocation::default()
-        };
-        let dictionaries = if let Some(dictionaries) = dictionaries {
-            dictionaries.try_into()?
-        } else {
-            DictionariesConfig::default()
-        };
-        let object_stores = if let Some(object_store) = object_stores {
-            object_store.try_into()?
-        } else {
-            ObjectStoreConfig::default()
-        };
-        let secret_stores = if let Some(secret_store) = secret_stores {
-            secret_store.try_into()?
-        } else {
-            SecretStoreConfig::default()
-        };
-        let shielding_sites = if let Some(shielding_sites) = shielding_sites {
-            shielding_sites.try_into()?
-        } else {
-            ShieldingSites::default()
-        };
 
         let fake_valid_fastly_keys = fake_valid_fastly_keys
             .unwrap_or_default()
@@ -336,14 +304,14 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             .collect::<FakeValidFastlyKeys>();
 
         Ok(LocalServerConfig {
-            acls,
-            backends,
-            device_detection,
-            geolocation,
-            dictionaries,
-            object_stores,
-            secret_stores,
-            shielding_sites,
+            acls: parse_raw_cfg(acls)?,
+            backends: parse_raw_cfg(backends)?,
+            device_detection: parse_raw_cfg(device_detection)?,
+            geolocation: parse_raw_cfg(geolocation)?,
+            dictionaries: parse_raw_cfg(dictionaries)?,
+            object_stores: parse_raw_cfg(object_stores)?,
+            secret_stores: parse_raw_cfg(secret_stores)?,
+            shielding_sites: parse_raw_cfg(shielding_sites)?,
             fake_valid_fastly_keys,
         })
     }
