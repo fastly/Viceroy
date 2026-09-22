@@ -32,7 +32,7 @@ async-trait = "0.1.59"
 bytes = "^1.2.1"
 cfg-if = "^1.0"
 clap = { workspace = true }
-cranelift-entity = "^0.135.2"
+cranelift-entity = { workspace = true }
 fastly-shared = "^0.13.0"
 flate2 = "^1.0.24"
 futures = { workspace = true }
@@ -58,8 +58,7 @@ tracing-futures = { workspace = true }
 url = { workspace = true }
 wasmparser = { workspace = true }
 wasm-encoder = { workspace = true }
-# Disable the "serde" feature which we don't need.
-wasm-metadata = { version = "0.259.0", default-features = false }
+wasm-metadata = { workspace = true }
 wit-component = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
@@ -143,7 +142,17 @@ wasmtime-wasi = "46.0.3"
 wasmtime-wasi-io = "46.0.3"
 wasmtime-wasi-nn = "46.0.3"
 wiggle = "46.0.3"
-wat = "1.259.0"
-wasmparser = "0.259.0"
-wasm-encoder = { version = "0.259.0", features = ["wasmparser"] }
-wit-component = "0.259.0"
+
+# The wasm-tools and cranelift crates below are also used internally by
+# wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
+# otherwise the build ends up with two copies of each: ours and wasmtime's.
+# `wat` is versioned 1.x, so a caret requirement would float past the release
+# wasmtime uses and drag a second `wast`/`wasm-encoder`/`wasmparser` in with
+# it. Pin it exactly; the 0.x crates below are already held by their minor.
+wat = "=1.251.0"
+wasmparser = "0.251.0"
+wasm-encoder = { version = "0.251.0", features = ["wasmparser"] }
+wit-component = "0.251.0"
+# Disable the "serde" feature which we don't need.
+wasm-metadata = { version = "0.251.0", default-features = false }
+cranelift-entity = "0.133.3"

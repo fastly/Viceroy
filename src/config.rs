@@ -218,18 +218,26 @@ impl TryInto<FastlyConfig> for TomlFastlyConfig {
             ));
         }
 
-        let local_server = local_server
-            .map(TryInto::try_into)
-            .transpose()?
-            .unwrap_or_default();
         Ok(FastlyConfig {
             name: name.unwrap_or_default(),
             description: description.unwrap_or_default(),
             authors: authors.unwrap_or_default(),
             language: language.unwrap_or_default(),
-            local_server,
+            local_server: parse_raw_cfg(local_server)?,
         })
     }
+}
+
+/// Converts a raw config (an optional value satisfying TryInto)
+/// into its parsed form, or returns a default value if the raw config is None.
+fn parse_raw_cfg<Raw, Parsed, E>(raw: Option<Raw>) -> Result<Parsed, E>
+where
+    Raw: TryInto<Parsed, Error = E>,
+    Parsed: Default,
+{
+    raw.map(TryInto::try_into)
+        .transpose()
+        .map(|opt| opt.unwrap_or_default())
 }
 
 /// Configuration settings used for tests.
@@ -290,31 +298,20 @@ impl TryInto<LocalServerConfig> for RawLocalServerConfig {
             fake_valid_fastly_keys,
         } = self;
 
-        fn from_or_default<Src, Dest, E>(value: Option<Src>) -> Result<Dest, E>
-        where
-            Dest: Default + TryFrom<Src, Error = E>,
-        {
-            if let Some(value) = value {
-                Dest::try_from(value)
-            } else {
-                Ok(Dest::default())
-            }
-        }
-
         let fake_valid_fastly_keys = fake_valid_fastly_keys
             .unwrap_or_default()
             .into_iter()
             .collect::<FakeValidFastlyKeys>();
 
         Ok(LocalServerConfig {
-            acls: from_or_default(acls)?,
-            backends: from_or_default(backends)?,
-            device_detection: from_or_default(device_detection)?,
-            geolocation: from_or_default(geolocation)?,
-            dictionaries: from_or_default(dictionaries)?,
-            object_stores: from_or_default(object_stores)?,
-            secret_stores: from_or_default(secret_stores)?,
-            shielding_sites: from_or_default(shielding_sites)?,
+            acls: parse_raw_cfg(acls)?,
+            backends: parse_raw_cfg(backends)?,
+            device_detection: parse_raw_cfg(device_detection)?,
+            geolocation: parse_raw_cfg(geolocation)?,
+            dictionaries: parse_raw_cfg(dictionaries)?,
+            object_stores: parse_raw_cfg(object_stores)?,
+            secret_stores: parse_raw_cfg(secret_stores)?,
+            shielding_sites: parse_raw_cfg(shielding_sites)?,
             fake_valid_fastly_keys,
         })
     }

@@ -46,8 +46,11 @@ pub struct TlsConfig {
 impl TlsConfig {
     pub fn new() -> Result<TlsConfig, Error> {
         let native_certs = rustls_native_certs::load_native_certs();
-        if let Some(err) = native_certs.errors.into_iter().next() {
-            return Err(Error::BadCerts(std::io::Error::other(err)));
+        // we don't want one invalid cert to prevent us from starting up
+        // If the user misses these warnings, they will notice later if the
+        // invalid cert is the one they need to connect to a backend.
+        for err in native_certs.errors {
+            warn!("failed to load ssl certificate: {}", err);
         }
         let mut roots = rustls::RootCertStore::empty();
         let (added, failed) = roots.add_parsable_certificates(native_certs.certs);
