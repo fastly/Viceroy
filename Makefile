@@ -46,6 +46,7 @@ ci: format-check test-crates  ## The main CI target; runs all tests except `trap
 clean:  ## Clean up Cargo outputs and cache.
 	$(VICEROY_CARGO) clean
 	cd cli/tests/trap-test/ && $(VICEROY_CARGO) clean
+	cd wasm_abi/adapter && $(VICEROY_CARGO) clean
 
 .PHONY: doc
 doc: ## Open the documentation for the workspace in a browser.
@@ -61,66 +62,25 @@ generate-lockfile: ## Run `cargo generate-lockfile` for all of the crates in the
 	$(VICEROY_CARGO) generate-lockfile
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=test-fixtures/Cargo.toml
 	$(VICEROY_CARGO) generate-lockfile --manifest-path=cli/tests/trap-test/Cargo.toml
+	$(VICEROY_CARGO) generate-lockfile --manifest-path=wasm_abi/adapter/Cargo.toml
 
-# Regenerate the adapter, and move it into `wasm_abi/data`
-.PHONY: build-adapter
-build-adapter:
-	# Build the component adapter for adapting the host-call abi to the
-	# component model. This version uses `--no-default-features` to disable
-	# the default "exports" feature, to build the imports-only "library"
-	# version of the adapter.
-	( \
-		cd wasm_abi/adapter && \
-		cargo build \
-			--package viceroy-component-adapter \
-			--target wasm32-unknown-unknown \
-			--no-default-features \
-			--profile release-library \
-	)
-	# Build the non-shift "library" version of the adapter.
-	( \
-		cd wasm_abi/adapter && \
-		cargo build \
-			--package viceroy-component-adapter \
-			--target wasm32-unknown-unknown \
-			--no-default-features \
-			--profile release-library-noshift \
-			--features noshift \
-	)
-
-	# Build the component adapter for adapting the host-call abi to the
-	# component model. This is the normal version that includes the exports.
-	( \
-		cd wasm_abi/adapter && \
-		cargo build \
-			--package viceroy-component-adapter \
-			--target wasm32-unknown-unknown \
-			--release \
-	)
-
-	# Build the non-shift normal version of the adapter.
-	( \
-		cd wasm_abi/adapter && \
-		cargo build \
-			--package viceroy-component-adapter \
-			--target wasm32-unknown-unknown \
-			--profile release-noshift \
-			--features noshift \
-	)
-
-	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release/viceroy_component_adapter.wasm \
-		wasm_abi/data/viceroy-component-adapter.wasm
-	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-noshift/viceroy_component_adapter.wasm \
-		wasm_abi/data/viceroy-component-adapter.noshift.wasm
-	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library/viceroy_component_adapter.wasm \
-		wasm_abi/data/viceroy-component-adapter.library.wasm
-	cp wasm_abi/adapter/target/wasm32-unknown-unknown/release-library-noshift/viceroy_component_adapter.wasm \
-		wasm_abi/data/viceroy-component-adapter.library.noshift.wasm
-
+# Cargo package needs the binaries to be present in locations matched by
+# `include` list in Cargo.toml. A build script can't alter the list or tarball
+# since it runs at a different stage. Therefore, we must have a pre-build step
+# that outputs the binaries to the correct location.
+# We share this packaging logic with the local-dev build script, which can
+# build directly into the $OUT_DIR. Behavior is switched based on the presence
+# of the VICEROY_STAGE_ADAPTER env var.
+# This is a bit of a hack, since `cargo check` will re-check the whole viceroy-lib
+# crate just to output the binaries. An alternative would be to move the build tables
+# and commands to a shared file that both the build script and the publish action could
+# read.
+.PHONY: package-adapter
+package-adapter:  ## Build the adapter binaries used by `cargo package`.
+	VICEROY_STAGE_ADAPTER=1 $(VICEROY_CARGO) check --package=viceroy-lib
 
 .PHONY: help
 help:  ## Print help text for all documented commands. (Document with a ## comment.)
 	@grep -E '^[a-zA-Z_-]+:[^#]*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":[^#]*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 # Note that we don't sort; targets appear in the order they are in the file.
 # So, put more important targets first (or is it last?)
-

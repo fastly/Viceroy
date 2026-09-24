@@ -50,9 +50,6 @@ jobs:
     - name: test
       run: make ci
 
-    - name: adapter
-      run: cd wasm_abi/adapter && cargo build --release -p viceroy-component-adapter --target wasm32-unknown-unknown
-
   # Run the trap test in an isolated job. It needs different cargo features than the usual build, so
   # it entails rebuilding the whole workspace if we combine them in a single job. This way, we
   # achieve some parallelism via Actions jobs.
@@ -123,5 +120,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Same process as for `release.yml` - we need to build the adapter
+      # before attempting to publish. --allow-dirty is set here because
+      # of quirks with cargo publish and gitignored files. The release workflow
+      # checks that nothing else is dirty, but we don't do that here for simplicity.
+      - name: Build the adapter binaries that get packaged
+        run: make package-adapter
+
       - name: Check crates can be published
-        run: cargo publish --dry-run --package=viceroy-lib
+        run: cargo publish --dry-run --package=viceroy-lib --allow-dirty

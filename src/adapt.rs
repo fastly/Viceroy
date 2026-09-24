@@ -1,18 +1,29 @@
 use anyhow::Context;
 
+// These are built by `build.rs`, which either compiles them from
+// `wasm_abi/adapter` or, in a published crate, takes the prebuilt binaries from
+// `wasm_abi/data`.
+
 /// The full adapter.
-const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
-const ADAPTER_NOSHIFT_BYTES: &[u8] =
-    include_bytes!("../wasm_abi/data/viceroy-component-adapter.noshift.wasm");
+const ADAPTER_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/viceroy-component-adapter.wasm"));
+const ADAPTER_NOSHIFT_BYTES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/viceroy-component-adapter.noshift.wasm"
+));
 
 /// A version of the adapter that doesn't provide the `http_incoming` export.
 ///
 /// This is used by "library" components meant to be linked to a main component
 /// that does provide the `http_incoming` export.
-const LIBRARY_ADAPTER_BYTES: &[u8] =
-    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.wasm");
-const LIBRARY_ADAPTER_NOSHIFT_BYTES: &[u8] =
-    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.noshift.wasm");
+const LIBRARY_ADAPTER_BYTES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/viceroy-component-adapter.library.wasm"
+));
+const LIBRARY_ADAPTER_NOSHIFT_BYTES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/viceroy-component-adapter.library.noshift.wasm"
+));
 
 /// Check if the bytes represent a core wasm module, or a component.
 pub fn is_component(bytes: &[u8]) -> bool {

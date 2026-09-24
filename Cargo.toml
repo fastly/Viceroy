@@ -16,12 +16,16 @@ categories = [
     "wasm"
 ]
 include = [
+    "build.rs",
     "CHANGELOG.md",
     "SECURITY.md",
     "src/**/*",
     "tests/fixtures/*.wasm",
     "wasm_abi/wit/**/*",
     "wasm_abi/compute-at-edge-abi/**/*.witx",
+    # Built by `build.rs` at packaging time, not committed.
+    # We don't include the adapter source so consumers don't
+    # have to build with a wasm toolchain when using the crate.
     "wasm_abi/data/*.wasm",
 ]
 rust-version = "1.95"
