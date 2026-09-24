@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Build the WASI p1-to-p2 component adapter automatically, instead of checking in non-reproducible
+  binaries that risk going stale. Now we compile them using a build script and release packaging
+  ensures they're present for `cargo package`. Building `viceroy-lib` from crates.io still needs
+  no wasm toolchain, since the binaries are built at publish time and included in the package.
+  See [#536](https://github.com/fastly/Viceroy/issues/536).
+
 - Update to Wasmtime 46. ([#642](https://github.com/fastly/Viceroy/pull/642))
 
 ## 0.21.1 (2026-09-15)

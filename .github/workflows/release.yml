@@ -124,6 +124,14 @@ jobs:
     with:
       crate_name: viceroy-lib
       expected_version: ${{ github.ref_name }}
+      # Build the adapter binaries before publishing, since they
+      # are not committed.
+      # These binaries are gitignored, but cargo publish treats
+      # something in `include` as tracked and will think
+      # the working directory is dirty, so we need to
+      # set the `allow_dirty` flag.
+      pre_publish_command: make package-adapter
+      allow_dirty: true
 
   publish-bin:
     needs: publish-lib

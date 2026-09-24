@@ -9,6 +9,27 @@ by the compute world of `compute.wit`, whose definition is in `src/lib.rs`
 instead of being defined in `src/fastly`, as the `wit-bindgen::generate!` makes
 assumptions about relative module paths that make it hard to define elsewhere.
 
+## Building
+
+We build for `wasm32-unknown-unknown` in four variants: with or without the `exports`
+feature, and with or without `noshift`. The top-level workspace has a build script
+that builds all four variants and embeds them through `src/adapter.rs`.
+
+To build the adapter for use with viceroy, you usually only need to build `viceroy-lib`:
+`cargo build -p viceroy-lib`.
+
+To build manually, choose a profile from `Cargo.toml` and the corresponding feature flags,
+then run in this directory:
+
+```bash
+PROFILE="release-library-noshift" \
+FEATURES=("--no-default-features" "--features" "noshift") \
+cargo build --target=wasm32-unknown-unknown \
+    --package=viceroy-component-adapter \
+    --profile=$PROFILE \
+    "${FEATURES[@]}" \
+```
+
 ## Adding New Host Calls
 
 When adding new witx host calls, the adapter will need to be updated to know how
