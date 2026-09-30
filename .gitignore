@@ -3,3 +3,7 @@ publish
 vendor/
 verify-publishable/
 .vscode
+
+# Adapter binaries, built by `build.rs` and installed here for release
+# packaging by `make package-adapter`.
+/wasm_abi/data/*.wasm

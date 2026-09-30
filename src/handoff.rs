@@ -77,7 +77,7 @@ pub struct HandoffConfig {
 }
 
 pub struct HandoffTlsConfig {
-    pub ca_certs: Vec<rustls::Certificate>,
+    pub ca_certs: Vec<rustls::pki_types::CertificateDer<'static>>,
     pub client_cert: Option<ClientCertInfo>, // Viceroy's existing cert wrapper
     pub use_sni: bool,
     pub cert_host: Option<String>,
@@ -311,7 +311,7 @@ async fn execute_handoff(
 
         // Finalize Root Certificates
         let mut custom_roots = rustls::RootCertStore::empty();
-        let (added, _) = custom_roots.add_parsable_certificates(&config.ca_certs);
+        let (added, _) = custom_roots.add_parsable_certificates(config.ca_certs.iter().cloned());
         debug!("Using {added} certificates from provided CA certificate.");
 
         let builder = if config.ca_certs.is_empty() {
@@ -345,8 +345,9 @@ async fn execute_handoff(
             .cert_host
             .as_deref()
             .unwrap_or(&config.dns_name_fallback);
-        let dnsname = rustls::client::ServerName::try_from(cert_host)
-            .expect("`backend.cert_host` should be a valid DNS name");
+        let dnsname = rustls::pki_types::ServerName::try_from(cert_host)
+            .expect("`backend.cert_host` should be a valid DNS name")
+            .to_owned();
 
         let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(client_config));
         let tls = connector

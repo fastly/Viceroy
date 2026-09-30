@@ -524,10 +524,7 @@ impl FastlyHttpReq for Sandbox {
                     .as_slice(config.ca_cert.as_array(config.ca_cert_len))?
                     .ok_or(Error::SharedMemory)?;
                 let mut byte_cursor = std::io::Cursor::new(byte_slice);
-                rustls_pemfile::certs(&mut byte_cursor)?
-                    .drain(..)
-                    .map(rustls::Certificate)
-                    .collect()
+                rustls_pemfile::certs(&mut byte_cursor).collect::<Result<Vec<_>, _>>()?
             } else {
                 vec![]
             };

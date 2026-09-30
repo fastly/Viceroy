@@ -48,7 +48,7 @@ impl wasmtime::ResourceLimiter for Limiter {
         current: usize,
         desired: usize,
         maximum: Option<usize>,
-    ) -> anyhow::Result<bool> {
+    ) -> wasmtime::Result<bool> {
         // limit the amount of memory that an instance can use to (roughly) 128MB, erring on
         // the side of letting things run that might get killed on Compute, because we are not
         // tracking some runtime factors in this count.
@@ -69,15 +69,15 @@ impl wasmtime::ResourceLimiter for Limiter {
         current: usize,
         desired: usize,
         maximum: Option<usize>,
-    ) -> anyhow::Result<bool> {
+    ) -> wasmtime::Result<bool> {
         self.internal.table_growing(current, desired, maximum)
     }
 
-    fn memory_grow_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+    fn memory_grow_failed(&mut self, error: wasmtime::Error) -> wasmtime::Result<()> {
         self.internal.memory_grow_failed(error)
     }
 
-    fn table_grow_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+    fn table_grow_failed(&mut self, error: wasmtime::Error) -> wasmtime::Result<()> {
         self.internal.table_grow_failed(error)
     }
 
@@ -149,7 +149,7 @@ impl ComponentCtx {
         sandbox: Sandbox,
         guest_profiler: Option<GuestProfiler>,
         extra_init: impl FnOnce(&mut wasmtime_wasi::WasiCtxBuilder),
-    ) -> Result<Store<ComponentCtx>, anyhow::Error> {
+    ) -> Result<Store<ComponentCtx>, wasmtime::Error> {
         let mut builder = make_wasi_ctx(ctx, &sandbox);
 
         extra_init(&mut builder);
@@ -246,7 +246,7 @@ pub(crate) fn create_store(
     sandbox: Sandbox,
     guest_profiler: Option<GuestProfiler>,
     extra_init: impl FnOnce(&mut wasmtime_wasi::WasiCtxBuilder),
-) -> Result<Store<WasmCtx>, anyhow::Error> {
+) -> Result<Store<WasmCtx>, wasmtime::Error> {
     let mut builder = make_wasi_ctx(ctx, &sandbox);
 
     extra_init(&mut builder);
@@ -332,9 +332,16 @@ pub fn link_host_functions(
             ExperimentalModule::WasiNn => {
                 wasmtime_wasi_nn::witx::add_to_linker(linker, WasmCtx::wasi_nn)
             }
-        })?;
+        })
+        .map_err(anyhow::Error::from)?;
 
-    wasmtime_wasi::p1::add_to_linker_async(linker, WasmCtx::wasi)?;
+    wasmtime_wasi::p1::add_to_linker_async(linker, WasmCtx::wasi).map_err(anyhow::Error::from)?;
+    link_wiggle_apis(linker).map_err(anyhow::Error::from)?;
+    link_legacy_aliases(linker).map_err(anyhow::Error::from)?;
+    Ok(())
+}
+
+fn link_wiggle_apis(linker: &mut Linker<WasmCtx>) -> Result<(), wasmtime::Error> {
     wiggle_abi::fastly_abi::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_acl::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_async_io::add_to_linker(linker, WasmCtx::sandbox)?;
@@ -359,11 +366,10 @@ pub fn link_host_functions(
     wiggle_abi::fastly_secret_store::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_shielding::add_to_linker(linker, WasmCtx::sandbox)?;
     wiggle_abi::fastly_uap::add_to_linker(linker, WasmCtx::sandbox)?;
-    link_legacy_aliases(linker)?;
     Ok(())
 }
 
-fn link_legacy_aliases(linker: &mut Linker<WasmCtx>) -> Result<(), Error> {
+fn link_legacy_aliases(linker: &mut Linker<WasmCtx>) -> Result<(), wasmtime::Error> {
     linker.alias("fastly_abi", "init", "env", "xqd_init")?;
 
     let body = "fastly_http_body";

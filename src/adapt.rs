@@ -1,19 +1,30 @@
 use anyhow::Context;
 use std::borrow::Cow;
 
+// These are built by `build.rs`, which either compiles them from
+// `wasm_abi/adapter` or, in a published crate, takes the prebuilt binaries from
+// `wasm_abi/data`.
+
 /// The full adapter.
-const ADAPTER_BYTES: &[u8] = include_bytes!("../wasm_abi/data/viceroy-component-adapter.wasm");
-const ADAPTER_NOSHIFT_BYTES: &[u8] =
-    include_bytes!("../wasm_abi/data/viceroy-component-adapter.noshift.wasm");
+const ADAPTER_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/viceroy-component-adapter.wasm"));
+const ADAPTER_NOSHIFT_BYTES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/viceroy-component-adapter.noshift.wasm"
+));
 
 /// A version of the adapter that doesn't provide the `http_incoming` export.
 ///
 /// This is used by "library" components meant to be linked to a main component
 /// that does provide the `http_incoming` export.
-const LIBRARY_ADAPTER_BYTES: &[u8] =
-    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.wasm");
-const LIBRARY_ADAPTER_NOSHIFT_BYTES: &[u8] =
-    include_bytes!("../wasm_abi/data/viceroy-component-adapter.library.noshift.wasm");
+const LIBRARY_ADAPTER_BYTES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/viceroy-component-adapter.library.wasm"
+));
+const LIBRARY_ADAPTER_NOSHIFT_BYTES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/viceroy-component-adapter.library.noshift.wasm"
+));
 
 /// Check if the bytes represent a core wasm module, or a component.
 pub fn is_component(bytes: &[u8]) -> bool {
@@ -152,10 +163,17 @@ fn mangle_imports(bytes: &[u8]) -> anyhow::Result<wasm_encoder::Module> {
 
             payload => {
                 if let Some((id, range)) = payload.as_section() {
-                    let range = range.start as usize..range.end as usize;
+                    // `as_section` reports section bounds as `u64` so that it can
+                    // describe inputs larger than this platform's address space.
+                    // `bytes` is already in memory, so its bounds always fit in a
+                    // `usize`, but convert fallibly rather than truncating.
+                    let start = usize::try_from(range.start)
+                        .context("wasm section start is out of range for this platform")?;
+                    let end = usize::try_from(range.end)
+                        .context("wasm section end is out of range for this platform")?;
                     module.section(&wasm_encoder::RawSection {
                         id,
-                        data: &bytes[range],
+                        data: &bytes[start..end],
                     });
                 }
             }

@@ -439,19 +439,19 @@ pub(crate) enum ExecutionError {
     ///
     /// [call]: https://docs.rs/wasmtime/latest/wasmtime/struct.Func.html#method.call
     #[error("WebAssembly execution trapped: {0}")]
-    WasmTrap(anyhow::Error),
+    WasmTrap(wasmtime::Error),
 
     /// Errors thrown when trying to instantiate a guest context.
     #[error("Error creating context: {0}")]
-    Context(anyhow::Error),
+    Context(wasmtime::Error),
 
     /// Errors thrown when type-checking WebAssembly before instantiation
     #[error("Error type-checking WebAssembly instantiation: {0}")]
-    Typechecking(anyhow::Error),
+    Typechecking(wasmtime::Error),
 
     /// Errors thrown when trying to instantiate a guest module.
     #[error("Error instantiating WebAssembly: {0}")]
-    Instantiation(anyhow::Error),
+    Instantiation(wasmtime::Error),
 }
 
 /// Errors that can occur while parsing a `fastly.toml` file.

@@ -1,11 +1,23 @@
-use rustls::{Certificate, PrivateKey};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::fmt;
 use std::io::{BufReader, Cursor};
 
-#[derive(Clone, PartialEq)]
+#[derive(PartialEq)]
 pub struct ClientCertInfo {
-    certificates: Vec<Certificate>,
-    key: PrivateKey,
+    certificates: Vec<CertificateDer<'static>>,
+    key: PrivateKeyDer<'static>,
+}
+
+// `PrivateKeyDer` deliberately does not implement `Clone`, to keep private key
+// material from being copied around implicitly; `clone_key` is the explicit
+// opt-in, so we cannot `derive(Clone)` here.
+impl Clone for ClientCertInfo {
+    fn clone(&self) -> Self {
+        ClientCertInfo {
+            certificates: self.certificates.clone(),
+            key: self.key.clone_key(),
+        }
+    }
 }
 
 impl fmt::Debug for ClientCertInfo {
@@ -36,14 +48,14 @@ impl ClientCertInfo {
     pub fn new(certificate_bytes: &[u8], certificate_key: &[u8]) -> Result<Self, ClientCertError> {
         let mut certificate_bytes_reader = Cursor::new(certificate_bytes);
         let mut key_bytes_reader = Cursor::new(certificate_key);
-        let cert_info = rustls_pemfile::read_all(&mut certificate_bytes_reader)?;
-        let key_info = rustls_pemfile::read_all(&mut key_bytes_reader)?;
+        let cert_info = rustls_pemfile::read_all(&mut certificate_bytes_reader);
+        let key_info = rustls_pemfile::read_all(&mut key_bytes_reader);
 
         let mut certificates = Vec::new();
         let mut keys = Vec::new();
 
-        for item in cert_info.into_iter().chain(key_info) {
-            match item {
+        for item in cert_info.chain(key_info) {
+            match item? {
                 rustls_pemfile::Item::X509Certificate(x) => {
                     // Basic validation of certificate data
                     if x.is_empty() {
@@ -51,11 +63,11 @@ impl ClientCertInfo {
                             "Empty certificate data".to_string(),
                         ));
                     }
-                    certificates.push(Certificate(x))
+                    certificates.push(x)
                 }
-                rustls_pemfile::Item::RSAKey(x) => keys.push(PrivateKey(x)),
-                rustls_pemfile::Item::PKCS8Key(x) => keys.push(PrivateKey(x)),
-                rustls_pemfile::Item::ECKey(x) => keys.push(PrivateKey(x)),
+                rustls_pemfile::Item::Pkcs1Key(x) => keys.push(PrivateKeyDer::from(x)),
+                rustls_pemfile::Item::Pkcs8Key(x) => keys.push(PrivateKeyDer::from(x)),
+                rustls_pemfile::Item::Sec1Key(x) => keys.push(PrivateKeyDer::from(x)),
                 _ => {}
             }
         }
@@ -76,12 +88,12 @@ impl ClientCertInfo {
         Ok(ClientCertInfo { certificates, key })
     }
 
-    pub fn certs(&self) -> Vec<Certificate> {
+    pub fn certs(&self) -> Vec<CertificateDer<'static>> {
         self.certificates.clone()
     }
 
-    pub fn key(&self) -> PrivateKey {
-        self.key.clone()
+    pub fn key(&self) -> PrivateKeyDer<'static> {
+        self.key.clone_key()
     }
 }
 
@@ -118,22 +130,16 @@ fn file_reader_for_field(
 
 fn read_certificates<R: std::io::BufRead>(
     reader: &mut R,
-) -> Result<Vec<Certificate>, ClientCertError> {
+) -> Result<Vec<CertificateDer<'static>>, ClientCertError> {
     rustls_pemfile::certs(reader)
-        .map(|mut x| x.drain(..).map(Certificate).collect::<Vec<Certificate>>())
+        .collect::<Result<Vec<_>, _>>()
         .map_err(Into::into)
 }
 
-fn read_key<R: std::io::BufRead>(reader: &mut R) -> Result<PrivateKey, ClientCertError> {
-    for item in rustls_pemfile::read_all(reader)? {
-        match item {
-            rustls_pemfile::Item::RSAKey(x) => return Ok(PrivateKey(x)),
-            rustls_pemfile::Item::PKCS8Key(x) => return Ok(PrivateKey(x)),
-            rustls_pemfile::Item::ECKey(x) => return Ok(PrivateKey(x)),
-            _ => {}
-        }
-    }
-    Err(ClientCertError::NoKeysFound)
+fn read_key<R: std::io::BufRead>(
+    reader: &mut R,
+) -> Result<PrivateKeyDer<'static>, ClientCertError> {
+    rustls_pemfile::private_key(reader)?.ok_or(ClientCertError::NoKeysFound)
 }
 
 impl TryFrom<toml::Value> for ClientCertInfo {

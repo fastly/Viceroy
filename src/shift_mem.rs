@@ -137,13 +137,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    // When the offset + OFFSET overflows, it means the user code is using
-                    // the last 2 pages of 4G memory, which is way beyond what xqd can
-                    // allocate. We use saturating_add instead of checked_add here to
-                    // avoid the compiler crash, in case this load instruction is unreachable.
-                    // If the code is reachable, the original and adapted code will both crash,
-                    // so there is no observable divergence.
-                    let offset = offset.saturating_add(OFFSET as u32);
+                    let offset = shift_memarg_offset(offset);
                     let instr = Instr::Load(Load {
                         memory,
                         kind,
@@ -156,7 +150,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    let offset = offset.saturating_add(OFFSET as u32);
+                    let offset = shift_memarg_offset(offset);
                     let instr = Instr::Store(Store {
                         memory,
                         kind,
@@ -169,7 +163,7 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
                     kind,
                     arg: MemArg { align, offset },
                 }) => {
-                    let offset = offset.saturating_add(OFFSET as u32);
+                    let offset = shift_memarg_offset(offset);
                     let instr = Instr::LoadSimd(LoadSimd {
                         memory,
                         kind,
@@ -187,6 +181,26 @@ fn shift_func(r#gen: &mut ModuleLocals, func: &mut LocalFunction) {
         seq.instrs = instrs;
     }
 }
+
+/// Add the page offset to a static `memarg` offset.
+///
+/// When the offset + OFFSET overflows, it means the user code is using
+/// the last 2 pages of 4G memory, which is way beyond what xqd can
+/// allocate. We saturate instead of using checked arithmetic here to
+/// avoid the compiler crash, in case this instruction is unreachable.
+/// If the code is reachable, the original and adapted code will both crash,
+/// so there is no observable divergence.
+///
+/// `MemArg::offset` is a `u64` so that walrus can represent 64-bit memories,
+/// but this pass only ever runs against a single 32-bit memory (see
+/// `shift_main_module`), and a memarg offset above `u32::MAX` is not encodable
+/// against a 32-bit memory. So we saturate at `u32::MAX` rather than `u64::MAX`.
+fn shift_memarg_offset(offset: u64) -> u64 {
+    offset
+        .saturating_add(OFFSET as u64)
+        .min(u64::from(u32::MAX))
+}
+
 fn get_local(r#gen: &mut ModuleLocals, locals: &mut Vec<LocalId>, idx: usize) -> LocalId {
     if idx < locals.len() {
         locals[idx]

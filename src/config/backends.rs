@@ -31,7 +31,7 @@ pub struct Backend {
     pub first_byte_timeout: Option<Duration>,
     pub between_bytes_timeout: Option<Duration>,
     pub client_cert: Option<ClientCertInfo>,
-    pub ca_certs: Vec<rustls::Certificate>,
+    pub ca_certs: Vec<rustls::pki_types::CertificateDer<'static>>,
     pub health: BackendHealth,
 }
 
@@ -228,17 +228,13 @@ mod deserialization {
 
     fn parse_ca_cert_section(
         ca_cert: Value,
-    ) -> Result<Vec<rustls::Certificate>, BackendConfigError> {
+    ) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, BackendConfigError> {
         match ca_cert {
             Value::String(ca_cert) if !ca_cert.trim().is_empty() => {
                 let mut cursor = std::io::Cursor::new(ca_cert);
                 rustls_pemfile::certs(&mut cursor)
+                    .collect::<Result<Vec<_>, _>>()
                     .map_err(|e| BackendConfigError::InvalidCACertEntry(format!("Couldn't process certificate: {}", e)))
-                    .map(|mut x| {
-                        x.drain(..)
-                            .map(rustls::Certificate)
-                            .collect::<Vec<rustls::Certificate>>()
-                    })
             }
             Value::String(_) => Err(BackendConfigError::EmptyCACert),
 

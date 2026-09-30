@@ -19,10 +19,10 @@ impl Default for ShieldingSites {
     }
 }
 
-impl TryFrom<toml::value::Map<String, Value>> for ShieldingSites {
+impl TryFrom<toml::map::Map<String, Value>> for ShieldingSites {
     type Error = FastlyConfigError;
 
-    fn try_from(value: toml::value::Map<String, Value>) -> Result<Self, Self::Error> {
+    fn try_from(value: toml::map::Map<String, Value>) -> Result<Self, Self::Error> {
         let mut result = ShieldingSites::new();
 
         for (site_name, information) in value.into_iter() {

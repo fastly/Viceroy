@@ -95,13 +95,15 @@ impl wasmtime_wasi::cli::IsTerminal for LogEndpoint {
 
 impl wasmtime_wasi::p2::OutputStream for LogEndpoint {
     fn write(&mut self, bytes: bytes::Bytes) -> wasmtime_wasi::p2::StreamResult<()> {
-        self.write_entry(&bytes)
-            .map_err(|e| wasmtime_wasi::p2::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+        self.write_entry(&bytes).map_err(|e| {
+            wasmtime_wasi::p2::StreamError::LastOperationFailed(wasmtime::format_err!(e))
+        })
     }
 
     fn flush(&mut self) -> wasmtime_wasi::p2::StreamResult<()> {
-        <Self as Write>::flush(self)
-            .map_err(|e| wasmtime_wasi::p2::StreamError::LastOperationFailed(anyhow::anyhow!(e)))
+        <Self as Write>::flush(self).map_err(|e| {
+            wasmtime_wasi::p2::StreamError::LastOperationFailed(wasmtime::format_err!(e))
+        })
     }
 
     fn check_write(&mut self) -> wasmtime_wasi::p2::StreamResult<usize> {

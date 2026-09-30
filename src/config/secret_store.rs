@@ -55,10 +55,10 @@ impl TryFrom<Table> for SecretStoreConfig {
                     let toml: Vec<toml::Value> = json
                         .into_iter()
                         .map(|(key, value)| {
-                            toml::toml! {
+                            toml::Value::Table(toml::toml! {
                                 key = key
                                 data = value
-                            }
+                            })
                         })
                         .collect();
 
