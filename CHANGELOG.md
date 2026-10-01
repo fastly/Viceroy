@@ -9,6 +9,10 @@
 - Update to Wasmtime 46. ([#642](https://github.com/fastly/Viceroy/pull/642))
 - Implement the synchronous kv-store WIT API. ([#702](https://github.com/fastly/Viceroy/pull/702))
 
+- Return an empty result from `geo.lookup` on the component ABI for an address without geolocation
+  data, instead of erroring. This matches the witx ABI and the Compute platform.
+  See [#721](https://github.com/fastly/Viceroy/issues/721).
+
 ## 0.21.1 (2026-09-15)
 
 - Support generating native debug info for the guest, via the new `-g`/`--debug-info` flag and
