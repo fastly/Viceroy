@@ -85,15 +85,10 @@ test-fatalerror-config = []
 
 [workspace]
 members = [
-    "cli"
-]
-resolver = "3"
-
-# Exclude our integration test fixtures, which need to be compiled to wasm
-# (managed by the Makefile)
-exclude = [
+    "cli",
     "test-fixtures",
 ]
+resolver = "3"
 
 # Specify `cli` as the default workspace member to operate on. This means that
 # commands like `cargo run` will run the CLI binary by default.
@@ -160,3 +155,6 @@ wit-component = "0.251.0"
 # Disable the "serde" feature which we don't need.
 wasm-metadata = { version = "0.251.0", default-features = false }
 cranelift-entity = "0.133.3"
+
+# test fixtures, used only in dev-dependencies
+test-fixtures-artifacts = { path = "test-fixtures/artifacts" }

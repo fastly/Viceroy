@@ -12,6 +12,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use test_fixtures_artifacts::FIXTURE_DIR;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
@@ -51,21 +52,53 @@ macro_rules! viceroy_test {
     };
 }
 
-/// A shorthand for the path to our test fixtures' build artifacts for Rust tests.
+/// Build a [`Test`] for a Go fixture, or skip the enclosing test if that fixture was not
+/// built.
 ///
-/// This value can be appended with the name of a fixture's `.wasm` in a test program, using the
-/// [`format!`][fmt] macro. For example:
+/// Expands to a `return Ok(())`, so it only works inside a test returning [`TestResult`].
+#[macro_export]
+macro_rules! go_fixture {
+    ($toolchain:expr, $fixture:expr) => {
+        match $crate::common::Test::using_go_fixture($toolchain, $fixture) {
+            Some(test) => test,
+            None => {
+                eprintln!(
+                    "skipping {}: the Go fixture `{}` was not built. Rebuild the fixtures \
+                     with `FIXTURE_LANGS=rust,go,tinygo` and the toolchain on `PATH`.",
+                    module_path!(),
+                    $fixture,
+                );
+                return Ok(());
+            }
+        }
+    };
+}
+
+/// The Go toolchain that built a fixture.
 ///
-/// ```
-/// let module_path = format!("{}/guest.wasm", RUST_FIXTURE_PATH);
-/// ```
+/// One fixture source can be built by both toolchains, so the artifacts are kept apart by
+/// toolchain. The distinction matters because the bugs they cover are toolchain-specific:
+/// [issue #491][491] is TinyGo and [issue #498][498] is "big" Go.
 ///
-/// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
-/// working directory, e.g. when launched directly by an editor/debugger.
-pub static RUST_FIXTURE_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../test-fixtures/target/wasm32-wasip1/debug/"
-);
+/// [491]: https://github.com/fastly/Viceroy/issues/491
+/// [498]: https://github.com/fastly/Viceroy/issues/498
+#[derive(Debug, Clone, Copy)]
+pub enum GoToolchain {
+    /// "big" Go: `GOOS=wasip1 GOARCH=wasm go build`.
+    Go,
+    /// TinyGo: `tinygo build -target=wasip1`.
+    TinyGo,
+}
+
+impl GoToolchain {
+    /// The directory the fixture build script writes this toolchain's artifacts to.
+    fn artifact_dir(self) -> &'static str {
+        match self {
+            Self::Go => "go",
+            Self::TinyGo => "tinygo",
+        }
+    }
+}
 
 /// A shorthand for the path to our test fixtures' build artifacts for WAT tests.
 ///
@@ -78,7 +111,8 @@ pub static RUST_FIXTURE_PATH: &str = concat!(
 ///
 /// Anchored on `CARGO_MANIFEST_DIR` so it resolves regardless of the process's current
 /// working directory, e.g. when launched directly by an editor/debugger.
-pub static WAT_FIXTURE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/");
+pub static WAT_FIXTURE_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../test-fixtures/src/wat/");
 
 /// A catch-all error, so we can easily use `?` in test cases.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -110,11 +144,9 @@ pub struct Test {
 }
 
 impl Test {
-    /// Create a new test given the file name for its wasm fixture.
-    pub fn using_fixture(fixture: &str) -> Self {
-        let mut module_path = PathBuf::from(RUST_FIXTURE_PATH);
-        module_path.push(fixture);
-
+    /// Create a new test given the file name for its wasm fixture, its target architecture,
+    /// and the release mode.
+    pub fn using_wasm_fixture(module_path: PathBuf) -> Self {
         Self {
             module_path,
             acls: Acls::new(),
@@ -136,6 +168,32 @@ impl Test {
             profiling: ProfilingConfig::None,
             debug_info: false,
         }
+    }
+
+    /// Create a new test given the file name for its wasm fixture.
+    /// Only supports rust fixtures with the `wasm32-wasip1` target and `debug` profile.
+    /// For other source languages, targets, or profiles, use [`Test::using_wasm_fixture()`] instead.
+    pub fn using_fixture(fixture: &str) -> Self {
+        let path = PathBuf::from(FIXTURE_DIR)
+            .join("rust")
+            .join("wasm32-wasip1")
+            .join("debug")
+            .join(fixture);
+        Self::using_wasm_fixture(path)
+    }
+
+    /// Create a new test for a Go fixture built by `toolchain`, or `None` if that fixture
+    /// was not built.
+    ///
+    /// Neither Go toolchain is a prerequisite for a Viceroy checkout, so these fixtures are
+    /// only built when `FIXTURE_LANGS` asks for them. Callers therefore have to tolerate a
+    /// missing artifact; [`go_fixture!`][crate::go_fixture] does so by skipping the test.
+    pub fn using_go_fixture(toolchain: GoToolchain, fixture: &str) -> Option<Self> {
+        let path = PathBuf::from(FIXTURE_DIR)
+            .join(toolchain.artifact_dir())
+            .join("wasm32-wasip1")
+            .join(fixture);
+        path.exists().then(|| Self::using_wasm_fixture(path))
     }
 
     /// Create a new test given the file name for its wasm fixture.

@@ -1,4 +1,4 @@
-use fastly::error::{anyhow, Error};
+use fastly::error::{Error, anyhow};
 use fastly::handle::PendingRequestHandle;
 use fastly::http::request::Request;
 use fastly_shared::FastlyStatus;
@@ -55,17 +55,35 @@ enum PendingHeaderOp<'a> {
 }
 
 impl<'a> PendingHeaderOp<'a> {
-    fn apply(self, handle: PendingRequestHandle, target: PendingResponseKind) -> PendingRequestHandle {
+    fn apply(
+        self,
+        handle: PendingRequestHandle,
+        target: PendingResponseKind,
+    ) -> PendingRequestHandle {
         match self {
             PendingHeaderOp::Insert(name, val) => unsafe {
-                pending_req_header_insert(handle.as_u32(), name.as_ptr(), name.len(), val.as_ptr(), val.len(), target)
-                    .result()
-                    .expect("pending_req_header_insert should succeed")
+                pending_req_header_insert(
+                    handle.as_u32(),
+                    name.as_ptr(),
+                    name.len(),
+                    val.as_ptr(),
+                    val.len(),
+                    target,
+                )
+                .result()
+                .expect("pending_req_header_insert should succeed")
             },
             PendingHeaderOp::Append(name, val) => unsafe {
-                pending_req_header_append(handle.as_u32(), name.as_ptr(), name.len(), val.as_ptr(), val.len(), target)
-                    .result()
-                    .expect("pending_req_header_append should succeed")
+                pending_req_header_append(
+                    handle.as_u32(),
+                    name.as_ptr(),
+                    name.len(),
+                    val.as_ptr(),
+                    val.len(),
+                    target,
+                )
+                .result()
+                .expect("pending_req_header_append should succeed")
             },
             PendingHeaderOp::Remove(name) => unsafe {
                 pending_req_header_remove(handle.as_u32(), name.as_ptr(), name.len(), target)
@@ -139,6 +157,5 @@ fn handler(mut req: Request) -> Result<(), Error> {
 }
 
 fn main() -> Result<(), Error> {
-    handler(Request::from_client())
-        .inspect_err(|e| println!("request handler failed: {e}"))
+    handler(Request::from_client()).inspect_err(|e| println!("request handler failed: {e}"))
 }

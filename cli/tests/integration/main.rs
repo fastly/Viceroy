@@ -17,6 +17,7 @@ mod edge_rate_limiting;
 mod env_vars;
 mod fastly_key_is_valid;
 mod geolocation_lookup;
+mod go_guests;
 mod grpc;
 mod handoff;
 mod http_semantics;

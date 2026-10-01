@@ -1,5 +1,5 @@
 use fastly::http::StatusCode;
-use fastly::security::{inspect, InspectConfig};
+use fastly::security::{InspectConfig, inspect};
 use fastly::{Error, Request, Response};
 
 #[fastly::main]

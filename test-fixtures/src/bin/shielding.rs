@@ -1,4 +1,4 @@
-use fastly::{shielding::Shield, Error, Request, Response};
+use fastly::{Error, Request, Response, shielding::Shield};
 use http::StatusCode;
 
 #[fastly::main]
