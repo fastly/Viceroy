@@ -330,7 +330,7 @@ impl http_downstream::Host for ComponentCtx {
                     self.table()
                         .push(resource)
                         .map_err(|_| types::Error::GenericError)
-                        .map(|handle| http_downstream::BotCategory::Extra(handle))?
+                        .map(http_downstream::BotCategory::Extra)?
                 }
             }))
         } else {
