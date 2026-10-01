@@ -7,6 +7,7 @@
   See [#536](https://github.com/fastly/Viceroy/issues/536).
 
 - Update to Wasmtime 46. ([#642](https://github.com/fastly/Viceroy/pull/642))
+- Implement the synchronous kv-store WIT API. ([#702](https://github.com/fastly/Viceroy/pull/702))
 
 ## 0.21.1 (2026-09-15)
 
