@@ -1,0 +1,7 @@
+* @fastly/team-viceroy
+
+/.github @fastly/developer-tools
+/.gitignore @fastly/developer-tools
+/doc/ @fastly/developer-tools
+/*.md @fastly/developer-tools
+/LICENSE @fastly/developer-tools
