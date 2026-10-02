@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Report NotFound for delete_wait of missing key.
+  See [#722](https://github.com/fastly/Viceroy/issues/722).
+  ([#736](https://github.com/fastly/Viceroy/pull/736))
+
 - Restore clippy linting in CI. ([#737](https://github.com/fastly/Viceroy/pull/737))
 
 - Build the WASI p1-to-p2 component adapter automatically, instead of checking in non-reproducible
