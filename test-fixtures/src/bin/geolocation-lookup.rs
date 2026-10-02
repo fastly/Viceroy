@@ -9,6 +9,7 @@ use fastly::geo::{
     ProxyType,
     // UtcOffset,
 };
+use fastly_shared::FastlyStatus;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 fn main() {
@@ -38,4 +39,21 @@ fn main() {
     let geo_v6 = geo_lookup(client_ip_v6).unwrap();
     assert_eq!(geo_v6.as_name(), "Fastly Test IPv6");
     assert_eq!(geo_v6.city(), "Test City IPv6");
+
+    // An address with no geolocation data is a successful lookup with an empty result, not an
+    // error. The `fastly` crate maps both to `None`, so check the raw hostcall.
+    let unmapped_ip = Ipv4Addr::new(192, 0, 2, 1).octets();
+    let mut buf = Vec::<u8>::with_capacity(1024);
+    let mut nwritten = usize::MAX;
+    let status = unsafe {
+        fastly_sys::fastly_geo::lookup(
+            unmapped_ip.as_ptr(),
+            unmapped_ip.len(),
+            buf.as_mut_ptr(),
+            buf.capacity(),
+            &mut nwritten,
+        )
+    };
+    assert_eq!(status, FastlyStatus::OK);
+    assert_eq!(nwritten, 0);
 }

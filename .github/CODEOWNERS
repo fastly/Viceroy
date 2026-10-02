@@ -5,3 +5,8 @@
 /doc/ @fastly/developer-tools
 /*.md @fastly/developer-tools
 /LICENSE @fastly/developer-tools
+
+# Set no owner for the changelog,
+# otherwise developer-tools gets assigned on every PR
+# since our convention is to update the changelog with each
+/CHANGELOG.md

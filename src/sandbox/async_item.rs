@@ -159,7 +159,7 @@ pub enum AsyncItem {
     PendingKvInsert(PendingKvInsertTask),
     PendingKvDelete(PendingKvDeleteTask),
     PendingKvList(PendingKvListTask),
-    PendingCache(PendingCacheTask),
+    PendingCache(Box<PendingCacheTask>),
     Ready,
 }
 
@@ -306,7 +306,7 @@ impl AsyncItem {
 
     pub fn into_pending_cache(self) -> Option<PendingCacheTask> {
         match self {
-            Self::PendingCache(op) => Some(op),
+            Self::PendingCache(op) => Some(*op),
             _ => None,
         }
     }
@@ -387,7 +387,7 @@ impl From<PendingKvListTask> for AsyncItem {
 
 impl From<PendingCacheTask> for AsyncItem {
     fn from(task: PendingCacheTask) -> Self {
-        Self::PendingCache(task)
+        Self::PendingCache(Box::new(task))
     }
 }
 

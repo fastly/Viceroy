@@ -4,6 +4,8 @@
   See [#722](https://github.com/fastly/Viceroy/issues/722).
   ([#736](https://github.com/fastly/Viceroy/pull/736))
 
+- Restore clippy linting in CI. ([#737](https://github.com/fastly/Viceroy/pull/737))
+
 - Build the WASI p1-to-p2 component adapter automatically, instead of checking in non-reproducible
   binaries that risk going stale. Now we compile them using a build script and release packaging
   ensures they're present for `cargo package`. Building `viceroy-lib` from crates.io still needs
@@ -12,6 +14,10 @@
 
 - Update to Wasmtime 46. ([#642](https://github.com/fastly/Viceroy/pull/642))
 - Implement the synchronous kv-store WIT API. ([#702](https://github.com/fastly/Viceroy/pull/702))
+
+- Return an empty result from `geo.lookup` on the component ABI for an address without geolocation
+  data, instead of erroring. This matches the witx ABI and the Compute platform.
+  See [#721](https://github.com/fastly/Viceroy/issues/721).
 
 ## 0.21.1 (2026-09-15)
 
