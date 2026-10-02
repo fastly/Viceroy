@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Restore clippy linting in CI. ([#737](https://github.com/fastly/Viceroy/pull/737))
+
 - Build the WASI p1-to-p2 component adapter automatically, instead of checking in non-reproducible
   binaries that risk going stale. Now we compile them using a build script and release packaging
   ensures they're present for `cargo package`. Building `viceroy-lib` from crates.io still needs
