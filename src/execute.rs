@@ -373,13 +373,7 @@ impl ExecuteCtx {
                     return Some((resp, None));
                 }
                 DownstreamResponse::Pending(pending) => {
-                    let mut resp = pending
-                        .recv_or_else(|e| {
-                            let status = e.as_status_code();
-                            let err = wasmtime::Error::from(e);
-                            err_response_with_status(&err, status)
-                        })
-                        .await;
+                    let mut resp = pending.recv_or_else(err_response_canonical).await;
 
                     apply_response_framing(&mut resp);
 
@@ -1345,6 +1339,25 @@ fn err_response_with_status(err: &wasmtime::Error, status: hyper::StatusCode) ->
         .status(status)
         .body(Body::from(format!("{err:?}").into_bytes()))
         .unwrap()
+}
+
+/// Logs an error and returns a body with the canonical error response.
+///
+/// We match Fastly Compute, which uses the standard reason text instead
+/// of including additional details in the response body.
+/// Error trace can be found in the log instead.
+fn err_response_canonical(e: Error) -> Response<Body> {
+    let status = e.as_status_code();
+    tracing::error!("Downstream request failed: {:?}", wasmtime::Error::from(e));
+
+    let reason = status.canonical_reason().unwrap_or_default();
+    let mut resp = Response::new(Body::from(reason.as_bytes()));
+    *resp.status_mut() = status;
+    resp.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("text/plain"),
+    );
+    resp
 }
 
 impl Drop for ExecuteCtx {

@@ -1,9 +1,11 @@
 use {
     crate::{
-        common::{Test, TestResult},
+        common::{Error, Test, TestResult},
         viceroy_test,
     },
-    hyper::{Request, Response, StatusCode, header::HeaderValue},
+    hyper::{Body as HyperBody, Request, Response, StatusCode, header::HeaderValue},
+    std::time::Duration,
+    viceroy_lib::body::Body,
 };
 
 viceroy_test!(upstream_sync, |is_component| {
@@ -111,4 +113,70 @@ viceroy_test!(upstream_sync, |is_component| {
     assert_eq!(body.read_into_string().await?, "Hello, Viceroy!");
 
     Ok(())
+});
+
+/// Send a pending request to the given backend and hand it downstream, applying header
+/// operations to the synthetic error response so we can see they still take effect.
+async fn send_pending_expecting_error(test: &Test, backend: &str) -> Result<Response<Body>, Error> {
+    test.against(
+        Request::post("/")
+            .header("Backend-Name", backend)
+            .header("With-Header-Ops", "insert:a:any")
+            .header("With-Error-Header-Ops", "insert:b:error")
+            .body("Hello, Viceroy!")
+            .unwrap(),
+    )
+    .await
+}
+
+/// Assert that a failed pending request produced the same synthetic response as Fastly Compute:
+/// the status's reason phrase as a plain-text body, with the error header operations applied.
+async fn assert_synthetic_error_response(resp: Response<Body>, status: StatusCode) -> TestResult {
+    let (parts, body) = resp.into_parts();
+    assert_eq!(parts.status, status);
+    assert_eq!(parts.headers.get("content-type").unwrap(), "text/plain");
+    assert_eq!(parts.headers.get("a").unwrap(), "any");
+    assert_eq!(parts.headers.get("b").unwrap(), "error");
+    assert_eq!(
+        body.read_into_string().await?,
+        status.canonical_reason().unwrap()
+    );
+    Ok(())
+}
+
+viceroy_test!(pending_req_backend_error, |is_component| {
+    // The test server drops the connection without responding when its handler panics, which
+    // Viceroy reports as a backend connection error. A bit of a hack but we don't have a way
+    // to define a backend that doesn't respond yet.
+    let test = Test::using_fixture("pending-req.wasm")
+        .adapt_component(is_component)
+        .async_backend("origin", "/", None, |_req| {
+            Box::new(async { panic!("drop the connection without a response") })
+        })
+        .await;
+
+    let resp = send_pending_expecting_error(&test, "origin").await?;
+    assert_synthetic_error_response(resp, StatusCode::BAD_GATEWAY).await
+});
+
+viceroy_test!(pending_req_first_byte_timeout, |is_component| {
+    let test = Test::using_fixture("pending-req.wasm")
+        .adapt_component(is_component)
+        .async_backend_with_timeouts(
+            "origin",
+            "/",
+            None,
+            Some(Duration::from_millis(100)),
+            None,
+            |_req| {
+                Box::new(async {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    Response::new(HyperBody::empty())
+                })
+            },
+        )
+        .await;
+
+    let resp = send_pending_expecting_error(&test, "origin").await?;
+    assert_synthetic_error_response(resp, StatusCode::GATEWAY_TIMEOUT).await
 });

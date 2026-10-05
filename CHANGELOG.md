@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Match compute's 502 error body.
+  See [#729](https://github.com/fastly/Viceroy/issues/729).
+  ([#738](https://github.com/fastly/Viceroy/pull/738))
+
 - Restore clippy linting in CI. ([#737](https://github.com/fastly/Viceroy/pull/737))
 
 - Build the WASI p1-to-p2 component adapter automatically, instead of checking in non-reproducible
