@@ -3,6 +3,9 @@
 - Match compute's 502 error body.
   See [#729](https://github.com/fastly/Viceroy/issues/729).
   ([#738](https://github.com/fastly/Viceroy/pull/738))
+- Report NotFound for delete_wait of missing key.
+  See [#722](https://github.com/fastly/Viceroy/issues/722).
+  ([#736](https://github.com/fastly/Viceroy/pull/736))
 
 - Restore clippy linting in CI. ([#737](https://github.com/fastly/Viceroy/pull/737))
 
