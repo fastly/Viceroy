@@ -640,6 +640,7 @@ impl ExecuteCtx {
         req: Request<Body>,
         metadata: DownstreamMetadata,
     ) -> (Response<Body>, Option<wasmtime::Error>) {
+        let req_id = metadata.req_id;
         let (downstream, receiver) = DownstreamRequest::new(req, metadata);
 
         let mut next_req = NextRequest(Some((Box::new(downstream), self.clone())));
@@ -651,7 +652,10 @@ impl ExecuteCtx {
                     // Drop lock and wait for the guest to process our request.
                     drop(reusable);
 
-                    if let Some(response) = Self::maybe_receive_response(receiver).await {
+                    if let Some(response) = Self::maybe_receive_response(receiver)
+                        .instrument(info_span!("request", id = req_id))
+                        .await
+                    {
                         return response;
                     }
                     return (Response::default(), None);
@@ -684,7 +688,10 @@ impl ExecuteCtx {
                 .instrument(info_span!("request", id = req_id)),
         ));
 
-        if let Some(response) = Self::maybe_receive_response(receiver).await {
+        if let Some(response) = Self::maybe_receive_response(receiver)
+            .instrument(info_span!("request", id = req_id))
+            .await
+        {
             return response;
         }
 
@@ -1348,7 +1355,7 @@ fn err_response_with_status(err: &wasmtime::Error, status: hyper::StatusCode) ->
 /// Error trace can be found in the log instead.
 fn err_response_canonical(e: Error) -> Response<Body> {
     let status = e.as_status_code();
-    tracing::error!("Downstream request failed: {:?}", wasmtime::Error::from(e));
+    tracing::error!("Upstream request failed: {:?}", wasmtime::Error::from(e));
 
     let reason = status.canonical_reason().unwrap_or_default();
     let mut resp = Response::new(Body::from(reason.as_bytes()));
