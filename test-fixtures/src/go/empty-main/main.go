@@ -1,6 +1,13 @@
-// Reproduction/regression fixture for https://github.com/fastly/Viceroy/issues/491.
-// Fixed by shifting the adapter's pages in the adapter so the go
-// runtime doesn't overwite them on startup. See 92a76f4 (https://github.com/fastly/Viceroy/pull/538)
+// Regression fixture for https://github.com/fastly/Viceroy/issues/491 (TinyGo) and
+// https://github.com/fastly/Viceroy/issues/498 ("big" Go).
+//
+// Previously, the component adapter would make space for its own state by growing
+// the guest's memory during instantiation. This worked under Rust guests, but neither
+// Go runtime respects it. On startup, the go runtime writes over the adapter's pages,
+// and the first hostcall fails the adapter's magic-number check.
+//
+// Fixed by shifting the main module's memory accesses so the adapter owns the first
+// pages. See 92a76f4 (https://github.com/fastly/Viceroy/pull/538).
 package main
 
 import (
@@ -10,7 +17,5 @@ import (
 )
 
 func main() {
-	// Issue says that an empty main should be enough to trigger, but I wasn't able to reproduce.
-	// Using the sdk with no additional logic seems to work though.
 	fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {})
 }

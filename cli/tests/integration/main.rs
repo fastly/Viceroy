@@ -1,4 +1,5 @@
 mod acl;
+mod adapter_memory;
 mod args;
 mod async_io;
 mod backend_introspection;
@@ -17,7 +18,6 @@ mod edge_rate_limiting;
 mod env_vars;
 mod fastly_key_is_valid;
 mod geolocation_lookup;
-mod go_guests;
 mod grpc;
 mod handoff;
 mod http_semantics;

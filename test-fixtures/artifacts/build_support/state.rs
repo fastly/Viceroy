@@ -182,15 +182,6 @@ impl<'a> BuildState<'a> {
         self.discover_rust_fixtures()?;
         self.discover_go_fixtures()?;
 
-        // this always errors if lang filter is set and config defines a conflicting fixture
-        // since discovery is skipped for unselected languages
-        // // A key in fixtures.toml which isn't present as source code is an error
-        // for name in self.cfg.fixtures().keys() {
-        //     if !self.fixtures.contains_key(name) {
-        //         return Err(anyhow!("fixtures.toml configures unknown fixture `{name}`"));
-        //     }
-        // }
-
         Ok(())
     }
 

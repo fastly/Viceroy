@@ -71,13 +71,14 @@ using the `languages` option.
 Needs `tinygo` (0.41 or newer) and `go` (1.23.12 or newer) on `PATH`:
 
 ```sh
-cd test-fixtures/src/go tinygo build -target=wasip1 -o /tmp/sdk-guest.tinygo.wasm
-./sdk-guest GOOS=wasip1 GOARCH=wasm go build -o /tmp/sdk-guest.go.wasm ./sdk-guest
+cd test-fixtures/src/go
+tinygo build -target=wasip1 -o /tmp/empty-main.tinygo.wasm ./empty-main
+GOOS=wasip1 GOARCH=wasm go build -o /tmp/empty-main.go.wasm ./empty-main
 ```
 
 To run, use the viceroy cli
 
 ```sh
-cargo run --bin viceroy -- serve --adapt --log-stdout --log-stderr /tmp/sdk-guest.go.wasm
-curl -i http://127.0.0.1:7676/gc
+cargo run --bin viceroy -- serve --adapt --log-stdout --log-stderr /tmp/empty-main.go.wasm
+curl -i http://127.0.0.1:7676/
 ```
