@@ -5,8 +5,8 @@
 //! and then checks that both responses are eventually returned and processed.
 
 use fastly::{
-    http::request::{select, PendingRequest, PollResult},
     Request, Response,
+    http::request::{PendingRequest, PollResult, select},
 };
 
 /// Set up async requests to two distinct backends.

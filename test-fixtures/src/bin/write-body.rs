@@ -12,7 +12,7 @@
 use {
     fastly_shared::BodyWriteEnd,
     fastly_sys::{
-        fastly_http_body as http_body, fastly_http_resp as http_resp, BodyHandle, ResponseHandle,
+        BodyHandle, ResponseHandle, fastly_http_body as http_body, fastly_http_resp as http_resp,
     },
 };
 

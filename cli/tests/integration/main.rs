@@ -1,4 +1,5 @@
 mod acl;
+mod adapter_memory;
 mod args;
 mod async_io;
 mod backend_introspection;
