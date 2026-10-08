@@ -47,4 +47,15 @@ fn main() {
         empty_store.lookup("bar").unwrap().take_body().into_string(),
         "foo"
     );
+    // Check that deleting a present key succeeds and removes it
+    empty_store.delete("bar").unwrap();
+    match empty_store.lookup("bar") {
+        Err(ItemNotFound) => {}
+        _ => panic!(),
+    }
+    // Check that deleting an absent key reports it as not found
+    match empty_store.delete("bar") {
+        Err(ItemNotFound) => {}
+        _ => panic!(),
+    }
 }
