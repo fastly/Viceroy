@@ -570,8 +570,7 @@ mod tests {
     proptest! {
         #[test]
         fn reject_cache_key_too_long(l in 4097usize..5000) {
-            let mut v : Vec<u8> = Vec::new();
-            v.resize(l, 0);
+            let v : Vec<u8> = vec![0; l];
             CacheKey::try_from(&v).unwrap_err();
         }
     }
@@ -579,8 +578,7 @@ mod tests {
     proptest! {
         #[test]
         fn accept_valid_cache_key_len(l in 0usize..4096) {
-            let mut v : Vec<u8> = Vec::new();
-            v.resize(l, 0);
+            let v : Vec<u8> = vec![0; l];
             let _ = CacheKey::try_from(&v).unwrap();
         }
     }

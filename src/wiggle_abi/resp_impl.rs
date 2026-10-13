@@ -73,7 +73,7 @@ impl FastlyHttpResp for Sandbox {
             if #[cfg(feature = "test-fatalerror-config")] {
                 // Avoid warnings:
                 let _ = (memory, resp_handle, name, buf, buf_len, cursor, ending_cursor_out, nwritten_out);
-                return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()));
+                Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()))
             } else {
                 let headers = &self.response_parts(resp_handle)?.headers;
                 multi_value_result!(

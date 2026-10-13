@@ -126,13 +126,11 @@ fn handler(mut req: Request) -> Result<(), Error> {
         .remove_header_str("Backend-Name")
         .ok_or_else(|| anyhow!("missing Backend-Name header"))?;
 
-    let with_header_ops = req
-        .remove_header_str("With-Header-Ops")
-        .unwrap_or_else(String::new);
+    let with_header_ops = req.remove_header_str("With-Header-Ops").unwrap_or_default();
 
     let with_error_header_ops = req
         .remove_header_str("With-Error-Header-Ops")
-        .unwrap_or_else(String::new);
+        .unwrap_or_default();
 
     let headers = PendingHeaderOp::parse_multi(&with_header_ops)?;
     let errorhs = PendingHeaderOp::parse_multi(&with_error_header_ops)?;

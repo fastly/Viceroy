@@ -112,10 +112,9 @@ fn poll_known_length(key: &CacheKey) -> Found {
         if let Some(v) = lookup(key.clone())
             .execute()
             .expect("lookup should not generate error")
+            && v.known_length().is_some()
         {
-            if v.known_length().is_some() {
-                return v;
-            }
+            return v;
         }
         std::thread::sleep(SLEEP);
     }
@@ -295,7 +294,7 @@ fn test_edge_expires_after_ttl() {
     let result = insert(key.clone(), Duration::from_secs(1))
         .deliver_node_max_age(Duration::from_secs(104))
         .execute();
-    if !result.is_err() {
+    if result.is_ok() {
         panic!("error to provide deliver_node_max_age > ttl");
     }
 }
@@ -734,9 +733,9 @@ fn test_concurrent_range() {
         .to_stream_from_range(Some(6), Some(14))
         .unwrap();
 
-    writer_unknown_length.write(body).unwrap();
+    writer_unknown_length.write_all(body).unwrap();
     writer_unknown_length.finish().unwrap();
-    writer_known_length.write(body).unwrap();
+    writer_known_length.write_all(body).unwrap();
     writer_known_length.finish().unwrap();
 
     let body_unknown_length = body_unknown_length.into_bytes();
@@ -757,7 +756,9 @@ fn test_concurrent_range_fixed() {
 
     // The to_stream_from_range() call below will block until the first byte of the range is available.
     // Make it available.
-    writer_unknown_length.write(&body.as_bytes()[0..7]).unwrap();
+    writer_unknown_length
+        .write_all(&body.as_bytes()[0..7])
+        .unwrap();
     writer_unknown_length.flush().unwrap();
 
     // Then ask for a streaming body, with just part of the range.
@@ -771,7 +772,9 @@ fn test_concurrent_range_fixed() {
         .unwrap();
 
     // Finish writing:
-    writer_unknown_length.write(&body.as_bytes()[7..]).unwrap();
+    writer_unknown_length
+        .write_all(&body.as_bytes()[7..])
+        .unwrap();
     writer_unknown_length.finish().unwrap();
 
     let body_unknown_length = body_unknown_length.into_string();
@@ -799,7 +802,7 @@ fn test_concurrent_range_known_length_fixed() {
         .to_stream_from_range(Some(6), Some(14))
         .unwrap();
 
-    writer_known_length.write(body).unwrap();
+    writer_known_length.write_all(body).unwrap();
     writer_known_length.finish().unwrap();
 
     let body_known_length = body_known_length.into_bytes();
@@ -816,7 +819,7 @@ fn test_transaction_range_fixed() {
         .execute()
         .unwrap();
     let mut writer = tx1.insert(Duration::from_secs(122)).execute().unwrap();
-    writer.write(&body.as_bytes()[..7]).unwrap();
+    writer.write_all(&body.as_bytes()[..7]).unwrap();
     writer.flush().unwrap();
 
     // Next transaction should be ready immediately, because the write has started.
@@ -830,7 +833,7 @@ fn test_transaction_range_fixed() {
     let body2 = found.to_stream_from_range(Some(6), Some(14)).unwrap();
 
     // Finish the write:
-    writer.write(&body.as_bytes()[7..]).unwrap();
+    writer.write_all(&body.as_bytes()[7..]).unwrap();
     writer.finish().unwrap();
 
     let got = body2.into_string();
@@ -855,7 +858,7 @@ fn test_known_length_nonblocking() {
     let body = read.to_stream_from_range(Some(6), Some(14)).unwrap();
 
     // Finish the write, so we can convert into bytes:
-    writer.write(source).unwrap();
+    writer.write_all(source).unwrap();
     writer.finish().unwrap();
 
     let got = body.into_bytes();
@@ -870,7 +873,7 @@ fn test_known_length_invalid_range() {
         .known_length(source.len() as u64)
         .execute()
         .unwrap();
-    writer.write(source).unwrap();
+    writer.write_all(source).unwrap();
     writer.flush().unwrap();
 
     // Perform a lookup and get a body for the given range.
@@ -890,13 +893,14 @@ fn test_known_length_invalid_range() {
     // Known-invalid: the indices are backwards.
     let _got = get_body(Some(6), Some(4)).unwrap_err();
 
-    let mut bodies = Vec::new();
     // Each of these is invalid in some way; so, they should always return the full body,
     // because the length of the cached item is known.
-    bodies.push(get_body(Some(after_end), None).unwrap());
-    bodies.push(get_body(Some(4), Some(after_end)).unwrap());
-    bodies.push(get_body(None, Some(after_end)).unwrap());
-    bodies.push(get_body(None, Some(0)).unwrap());
+    let bodies = vec![
+        get_body(Some(after_end), None).unwrap(),
+        get_body(Some(4), Some(after_end)).unwrap(),
+        get_body(None, Some(after_end)).unwrap(),
+        get_body(None, Some(0)).unwrap(),
+    ];
 
     // Finish the write, so we can convert into bodies:
     writer.finish().unwrap();
@@ -914,7 +918,7 @@ fn test_unknown_length_invalid_range() {
     let mut writer = insert(key.clone(), Duration::from_secs(10))
         .execute()
         .unwrap();
-    writer.write(body).unwrap();
+    writer.write_all(body).unwrap();
     writer.flush().unwrap();
 
     {
@@ -1147,7 +1151,7 @@ fn test_racing_transactions() {
     let mut rd_body = found.to_stream().unwrap();
 
     // Write the body and read it back:
-    body.write(b"hello").unwrap();
+    body.write_all(b"hello").unwrap();
     body.finish().unwrap();
 
     let mut read = String::new();
@@ -1197,7 +1201,7 @@ fn test_explicit_cancel() {
     tx.cancel_insert_or_update().unwrap();
 
     let t2 = pending.wait().unwrap();
-    assert!(!t2.found().is_some());
+    assert!(t2.found().is_none());
     assert!(t2.must_insert_or_update());
 }
 
@@ -1210,14 +1214,14 @@ fn test_collapse_across_vary() {
     // Prefill with distinct vary rules, with stale responses:
     let b = insert(key.clone(), Duration::ZERO)
         .header(&header1, "value1")
-        .vary_by([&header1].into_iter())
+        .vary_by([&header1])
         .execute()
         .unwrap();
     b.finish().unwrap();
 
     let b = insert(key.clone(), Duration::ZERO)
         .header(&header2, "value2")
-        .vary_by([&header2].into_iter())
+        .vary_by([&header2])
         .execute()
         .unwrap();
     b.finish().unwrap();
@@ -1354,14 +1358,14 @@ fn test_stream_back_fixed() {
 
     // The to_stream_from_range() call below will block until the first byte of the range is available.
     // Make it available.
-    writer.write(&body.as_bytes()[0..7]).unwrap();
+    writer.write_all(&body.as_bytes()[0..7]).unwrap();
     writer.flush().unwrap();
 
     // Then ask for a streaming body, with just part of the range.
     let got = found.to_stream_from_range(Some(6), Some(14)).unwrap();
 
     // Finish writing:
-    writer.write(&body.as_bytes()[7..]).unwrap();
+    writer.write_all(&body.as_bytes()[7..]).unwrap();
     writer.finish().unwrap();
 
     let got = got.into_string();

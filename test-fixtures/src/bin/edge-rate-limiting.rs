@@ -14,7 +14,7 @@ fn main() {
     let not_blocked = erl
         .check_rate(entry, 1, RateWindow::TenSecs, 100, Duration::from_secs(300))
         .unwrap();
-    assert_eq!(not_blocked, false);
+    assert!(!not_blocked);
 
     let rc2 = RateCounter::open("rc");
     let rate_1 = rc2.lookup_rate(entry, RateWindow::OneSec).unwrap();
@@ -27,7 +27,7 @@ fn main() {
 
     let pb2 = Penaltybox::open("pb");
     let not_in_pb = pb2.has(entry).unwrap();
-    assert_eq!(not_in_pb, false);
+    assert!(!not_in_pb);
 
     assert!(pb2.add(entry, Duration::from_secs(300)).is_ok());
 }

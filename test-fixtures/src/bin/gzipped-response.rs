@@ -3,8 +3,8 @@ use fastly::http::request::SendError;
 use fastly::{Backend, Request};
 use std::io::{Read, Write};
 
-static HELLO_WORLD: &'static str = "hello, world!\n";
-static HELLO_WORLD_GZ: &'static [u8] = include_bytes!("../../data/hello_world.gz");
+static HELLO_WORLD: &str = "hello, world!\n";
+static HELLO_WORLD_GZ: &[u8] = include_bytes!("../../data/hello_world.gz");
 
 fn main() -> Result<(), SendError> {
     let echo_server = Backend::from_name("echo").expect("Could not find echo backend?");

@@ -50,7 +50,7 @@ fn main() {
     assert_eq!(client_req.get_client_ddos_detected(), Some(false));
 
     // Viceroy returns false for `fastly_key_is_valid`:
-    assert_eq!(client_req.fastly_key_is_valid(), false);
+    assert!(!client_req.fastly_key_is_valid());
 
     // TLS is currently unsupported, so these should work but return `None`:
     assert_eq!(client_req.get_tls_cipher_openssl_name(), Ok(None));
