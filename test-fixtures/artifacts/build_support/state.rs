@@ -106,6 +106,15 @@ impl<'a> BuildState<'a> {
             .exec()
             .context("failed to run cargo metadata")?;
 
+        // The fixtures resolve their dependencies (notably the Fastly SDK)
+        // through the workspace lockfile. Cargo only reruns a build script for
+        // the paths it explicitly names once any `rerun-if-changed` is emitted,
+        // and the `.d` files we parse after building list each fixture's own sources but
+        // never its dependency crates. So without this, `cargo update -p fastly`
+        // would leave the previously built fixtures in place against the old SDK.
+        self.deps
+            .insert(meta.workspace_root.join("Cargo.lock").into_std_path_buf());
+
         let rust_fixtures = meta
             .packages
             .into_iter()
