@@ -354,7 +354,7 @@ impl CacheKeyObjects {
     ///
     /// Returns the CacheData of the updated entry.
     pub fn insert(
-        &self,
+        self: &Arc<Self>,
         request_headers: HeaderMap,
         options: WriteOptions,
         body: Body,
@@ -394,12 +394,55 @@ impl CacheKeyObjects {
 
             cache_key_objects
                 .objects
-                .entry(variant)
+                .entry(variant.clone())
                 .or_default()
-                .present = Some(object);
+                .present = Some(Arc::clone(&object));
         });
+        // Only start watching for failure once the object is in place to be evicted.
+        self.evict_on_failure(variant, &object);
 
         result
+    }
+
+    /// Remove the object from the cache if its body fails (e.g. it is abandoned, or doesn't match
+    /// its declared length), as Compute does.
+    ///
+    /// Readers that already have the object keep it, and get an error when reading the body;
+    /// new lookups miss (and transactional lookups get a new obligation).
+    fn evict_on_failure(self: &Arc<Self>, variant: Variant, object: &Arc<CacheData>) {
+        // Hold weak references, so we don't keep the key or object alive.
+        let key_objects = Arc::downgrade(self);
+        let weak_object = Arc::downgrade(object);
+        let body = object.body.clone();
+        tokio::task::spawn(async move {
+            if body.wait_terminal().await.is_ok() {
+                return;
+            }
+            let Some(key_objects) = key_objects.upgrade() else {
+                return;
+            };
+            key_objects.0.send_if_modified(|cache_key_objects| {
+                let Some(value) = cache_key_objects.objects.get_mut(&variant) else {
+                    return false;
+                };
+                // Only evict if this object is still the current one; it may have been replaced
+                // or purged in the meantime.
+                if !value
+                    .present
+                    .as_ref()
+                    .is_some_and(|present| std::ptr::eq(Arc::as_ptr(present), weak_object.as_ptr()))
+                {
+                    return false;
+                }
+                tracing::debug!("removing cache object whose body failed to write");
+                value.present = None;
+                if !value.obligated {
+                    cache_key_objects.objects.remove(&variant);
+                }
+                // Wake anyone waiting on this key, so they don't wait on a failed object.
+                true
+            });
+        });
     }
 
     /// Purge all variants associated with the given key.
@@ -717,7 +760,8 @@ mod tests {
 
     use crate::{
         body::{Body, Chunk},
-        cache::{VaryRule, WriteOptions},
+        cache::{SurrogateKey, VaryRule, WriteOptions},
+        streaming_body::StreamingBody,
     };
 
     use super::CacheKeyObjects;
@@ -950,5 +994,187 @@ mod tests {
             .await
             .expect("can collect completed body");
         assert_eq!(&s, "hello");
+    }
+
+    /// Wait for the object for these headers to be evicted.
+    async fn wait_evicted(objects: &CacheKeyObjects, headers: &HeaderMap) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while objects.get(headers).is_some() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("failed object was not evicted")
+    }
+
+    fn with_length(length: Option<u64>) -> WriteOptions {
+        WriteOptions {
+            length,
+            ..WriteOptions::new(Duration::from_secs(100))
+        }
+    }
+
+    #[tokio::test]
+    async fn evicts_failed_inserts() {
+        // (declared length, data written, finished?)
+        let cases: [(Option<u64>, &[u8], bool); 5] = [
+            (Some(10), b"hello", true),
+            (Some(10), b"hello world, again", true),
+            (Some(10), b"hello", false),
+            (None, b"hello", false),
+            (None, b"", false),
+        ];
+        for (length, data, finish) in cases {
+            let objects = Arc::new(CacheKeyObjects::default());
+            let headers = HeaderMap::default();
+            let (mut tx, rx) = StreamingBody::new();
+            objects.insert(headers.clone(), with_length(length), rx.into(), None);
+            // Visible while streaming:
+            assert!(objects.get(&headers).is_some());
+
+            if !data.is_empty() {
+                tx.send_chunk(data).await.unwrap();
+            }
+            if finish {
+                tx.finish().unwrap();
+            } else {
+                std::mem::drop(tx);
+            }
+
+            wait_evicted(&objects, &headers).await;
+            let (found, obligation) = objects.transaction_get(&headers, false).await;
+            assert!(found.is_none());
+            assert!(obligation.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn keeps_successful_inserts() {
+        for length in [None, Some(5)] {
+            let objects = Arc::new(CacheKeyObjects::default());
+            let headers = HeaderMap::default();
+            let (mut tx, rx) = StreamingBody::new();
+            objects.insert(headers.clone(), with_length(length), rx.into(), None);
+
+            // A concurrent reader sees the body as it fills:
+            let reader = objects.get(&headers).unwrap().body.read().unwrap();
+            tx.send_chunk(b"hel".as_slice()).await.unwrap();
+            tx.send_chunk(b"lo".as_slice()).await.unwrap();
+            tx.finish().unwrap();
+            assert_eq!(reader.read_into_string().await.unwrap(), "hello");
+
+            let found = objects.get(&headers).unwrap();
+            found.body.wait_terminal().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert!(objects.get(&headers).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn in_flight_reader_errors_after_eviction() {
+        let objects = Arc::new(CacheKeyObjects::default());
+        let headers = HeaderMap::default();
+        let (mut tx, rx) = StreamingBody::new();
+        objects.insert(headers.clone(), with_length(Some(10)), rx.into(), None);
+
+        let found = objects.get(&headers).unwrap();
+        let reader = found.body.read().unwrap();
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        std::mem::drop(tx);
+
+        wait_evicted(&objects, &headers).await;
+        // The reader that started before the failure gets an error, not a clean EOF:
+        assert!(reader.read_into_vec().await.is_err());
+        // As does a new read from the object we already hold:
+        assert!(found.body.read().unwrap().read_into_vec().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn does_not_evict_superseding_insert() {
+        let objects = Arc::new(CacheKeyObjects::default());
+        let headers = HeaderMap::default();
+
+        let (tx_a, rx_a) = StreamingBody::new();
+        objects.insert(headers.clone(), with_length(None), rx_a.into(), None);
+        let a = objects.get(&headers).unwrap();
+
+        objects.insert(
+            headers.clone(),
+            with_length(None),
+            "B".as_bytes().into(),
+            None,
+        );
+
+        // A fails after B has replaced it:
+        std::mem::drop(tx_a);
+        assert!(a.body.wait_terminal().await.is_err());
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let b = objects.get(&headers).expect("B should still be present");
+        assert_eq!(
+            b.body.read().unwrap().read_into_string().await.unwrap(),
+            "B"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_transactional_insert_reissues_obligation() {
+        let objects = Arc::new(CacheKeyObjects::default());
+        let headers = HeaderMap::default();
+
+        let (None, Some(obligation)) = objects.transaction_get(&headers, true).await else {
+            panic!("expected an obligation");
+        };
+        // Another transaction waits on the obligation:
+        let waiter = tokio::task::spawn({
+            let objects = Arc::clone(&objects);
+            let headers = headers.clone();
+            async move { objects.transaction_get(&headers, true).await }
+        });
+
+        let (mut tx, rx) = StreamingBody::new();
+        obligation.insert(with_length(None), rx.into());
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+
+        // The waiter collapses onto the in-progress insert...
+        let (Some(found), None) = waiter.await.unwrap() else {
+            panic!("expected the waiter to collapse onto the insert");
+        };
+        let reader = found.body.read().unwrap();
+
+        // ...which is then abandoned:
+        std::mem::drop(tx);
+        assert!(reader.read_into_vec().await.is_err());
+
+        // The next transaction gets the obligation again:
+        wait_evicted(&objects, &headers).await;
+        let (found, obligation) = objects.transaction_get(&headers, true).await;
+        assert!(found.is_none());
+        assert!(obligation.is_some());
+    }
+
+    #[tokio::test]
+    async fn purge_races_with_eviction() {
+        let objects = Arc::new(CacheKeyObjects::default());
+        let headers = HeaderMap::default();
+        let key: SurrogateKey = "key".parse().unwrap();
+        let options = WriteOptions {
+            surrogate_keys: "key".parse().unwrap(),
+            ..with_length(None)
+        };
+
+        let (tx, rx) = StreamingBody::new();
+        objects.insert(headers.clone(), options, rx.into(), None);
+        assert_eq!(objects.purge(&key, false), 1);
+        std::mem::drop(tx);
+
+        let (tx, rx) = StreamingBody::new();
+        objects.insert(headers.clone(), with_length(None), rx.into(), None);
+        let found = objects.get(&headers).unwrap();
+        std::mem::drop(tx);
+        assert!(found.body.wait_terminal().await.is_err());
+        assert_eq!(objects.purge(&key, false), 0);
+
+        wait_evicted(&objects, &headers).await;
     }
 }

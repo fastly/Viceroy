@@ -56,7 +56,8 @@ impl CollectingBody {
         let state = recv
             .wait_for(|state| !matches!(state, CollectingBodyInner::Streaming(_)))
             .await
-            .expect("CollectingBody terminated, but not in state Complete or Error");
+            // The writer only hangs up in a terminal state, unless it panicked.
+            .map_err(|_| Error::UnfinishedStreamingBody)?;
         match &*state {
             CollectingBodyInner::Streaming(_) => unreachable!("wait_for un-matched this"),
             CollectingBodyInner::Complete { body, .. } => {
@@ -69,6 +70,19 @@ impl CollectingBody {
                 );
                 Err(Error::UnfinishedStreamingBody)
             }
+        }
+    }
+
+    /// Wait until the body has been completely written (Ok) or has failed (Err).
+    pub async fn wait_terminal(&self) -> Result<(), error::Error> {
+        let mut recv = self.inner.clone();
+        let state = recv
+            .wait_for(|state| !matches!(state, CollectingBodyInner::Streaming(_)))
+            .await
+            .map_err(|_| Error::UnfinishedStreamingBody)?;
+        match &*state {
+            CollectingBodyInner::Error(_) => Err(Error::UnfinishedStreamingBody),
+            _ => Ok(()),
         }
     }
 
@@ -85,7 +99,7 @@ impl CollectingBody {
                 _ => true,
             })
             .await
-            .expect("CollectingBody terminated, but not in state Complete or Error");
+            .map_err(|_| Error::UnfinishedStreamingBody)?;
 
         match &*state {
             CollectingBodyInner::Error(_) => Err(Error::UnfinishedStreamingBody),
@@ -131,22 +145,26 @@ impl CollectingBody {
         while let Some(chunk) = rx.data().await {
             match chunk {
                 Ok(data) => {
+                    let mut overrun = false;
                     tx.send_modify(|state| {
-                        if let CollectingBodyInner::Streaming(chunks) = state {
-                            length += data.len();
-                            chunks.push(data);
-                        } else {
-                            panic!("received data after CollectingBody is complete");
-                        }
+                        let CollectingBodyInner::Streaming(chunks) = state else {
+                            // We are the only writer, and we return as soon as we reach a
+                            // terminal state.
+                            unreachable!("received data after CollectingBody is complete");
+                        };
+                        length += data.len();
+                        chunks.push(data);
 
                         // Generate length-exceeded error before exiting send_modify.
-                        match expected_length {
-                            Some(expected_length) if (length as u64) > expected_length => {
-                                *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
-                            }
-                            _ => (),
+                        if expected_length.is_some_and(|expected| (length as u64) > expected) {
+                            *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
+                            overrun = true;
                         }
                     });
+                    if overrun {
+                        // The body has failed; don't accept any more data.
+                        return;
+                    }
                 }
                 Err(Error::Again) => continue,
                 Err(e) => {
@@ -207,14 +225,11 @@ impl CollectingBody {
             loop {
                 // We'll need to .await to send chunks, but we can't do that while holding a read
                 // lock on the watch channel.
-                // Open a new scope for the lock, copy out the work we need to do, then release the
-                // lock at the end of the scope.
-                let (send_chunks, trailers) = {
-                    // Acquire the read lock:
-                    let current_value = upstream.borrow_and_update();
-                    let send_chunks: Vec<Bytes> = current_value.chunks()[next_chunk..].to_owned();
-                    let trailers = current_value.trailers().cloned();
-                    if let CollectingBodyInner::Error(ref e) = *current_value {
+                // Copy out the work we need to do; the lock is released at the end of this
+                // statement.
+                let (send_chunks, trailers) = match upstream.borrow_and_update().since(next_chunk) {
+                    Ok(v) => v,
+                    Err(e) => {
                         // To trigger a guest error, it is sufficient to not .finish() the
                         // StreamingBody (so, early return).
                         // As of 2025-03-21, though, this code is new, so we don't want to
@@ -222,7 +237,6 @@ impl CollectingBody {
                         tracing::warn!("error in reading from CollectingBody: {e}");
                         return;
                     }
-                    (send_chunks, trailers)
                 };
 
                 // If send_chunks is nonempty, it contains data for us to forward:
@@ -327,6 +341,22 @@ impl CollectingBodyInner {
         }
     }
 
+    /// The chunks from index `next_chunk` onwards, and the trailers if the body is complete.
+    ///
+    /// Returns the error if the body has failed; a failed body has no chunks, so this must be
+    /// checked before indexing.
+    fn since(&self, next_chunk: usize) -> Result<(Vec<Bytes>, Option<HeaderMap>), &Error> {
+        if let CollectingBodyInner::Error(e) = self {
+            return Err(e);
+        }
+        let chunks = self
+            .chunks()
+            .get(next_chunk..)
+            .unwrap_or_default()
+            .to_owned();
+        Ok((chunks, self.trailers().cloned()))
+    }
+
     /// The trailers provided.
     ///
     /// Trailers are only present (Some()) if streaming is complete;
@@ -345,12 +375,15 @@ mod tests {
 
     use bytes::{Bytes, BytesMut};
     use http::{HeaderName, HeaderValue};
-    use tokio::{sync::oneshot, task::JoinSet};
+    use tokio::{
+        sync::{oneshot, watch},
+        task::JoinSet,
+    };
 
     use crate::{
         Error,
         body::{Body, Chunk},
-        collecting_body::CollectingBody,
+        collecting_body::{CollectingBody, CollectingBodyInner},
         streaming_body::StreamingBody,
     };
     use proptest::prelude::*;
@@ -591,6 +624,82 @@ mod tests {
 
         let err = collect.read().unwrap().read_into_vec().await.unwrap_err();
         assert!(matches!(err, Error::UnfinishedStreamingBody));
+    }
+
+    #[tokio::test]
+    async fn overfill_across_chunks_does_not_panic() {
+        let (mut tx, rx) = StreamingBody::new();
+        let (state_tx, state_rx) = watch::channel(CollectingBodyInner::default());
+        let tee = tokio::task::spawn(CollectingBody::tee(rx.into(), state_tx, Some(2)));
+
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        // The tee may have hung up after the first chunk; that's fine.
+        let _ = tx.send_chunk(b"world".as_slice()).await;
+        let _ = tx.finish();
+
+        tee.await.expect("tee task should not panic");
+        assert!(matches!(
+            *state_rx.borrow(),
+            CollectingBodyInner::Error(Error::UnfinishedStreamingBody)
+        ));
+    }
+
+    #[test]
+    fn failed_body_has_no_chunks_to_index() {
+        let state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
+        assert!(state.since(3).is_err());
+    }
+
+    #[tokio::test]
+    async fn reader_errors_after_source_fails() {
+        for length in [None, Some(10)] {
+            let (mut tx, rx) = StreamingBody::new();
+            let collect = CollectingBody::new(rx.into(), length);
+
+            // One reader starts before the failure, and gets partway through:
+            let mut early = collect.read().unwrap();
+            let mut early_range = collect.read_range(1, Some(8)).unwrap();
+            tx.send_chunk(b"hello".as_slice()).await.unwrap();
+            early.await_ready().await;
+            early_range.await_ready().await;
+
+            // Drop the source without finishing:
+            std::mem::drop(tx);
+            assert!(collect.wait_terminal().await.is_err());
+
+            assert!(early.read_into_vec().await.is_err());
+            assert!(early_range.read_into_vec().await.is_err());
+            // Readers that start after the failure also get an error:
+            assert!(collect.read().unwrap().read_into_vec().await.is_err());
+            assert!(
+                collect
+                    .read_range(1, None)
+                    .unwrap()
+                    .read_into_vec()
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn wait_terminal_ok_on_complete() {
+        let (mut tx, rx) = StreamingBody::new();
+        let collect = CollectingBody::new(rx.into(), Some(5));
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+        collect.wait_terminal().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn wait_terminal_err_on_length_mismatch() {
+        for (length, data) in [(10, b"hello".as_slice()), (2, b"hello".as_slice())] {
+            let (mut tx, rx) = StreamingBody::new();
+            let collect = CollectingBody::new(rx.into(), Some(length));
+            tx.send_chunk(data).await.unwrap();
+            let _ = tx.finish();
+            assert!(collect.wait_terminal().await.is_err());
+        }
     }
 
     /// Proptest strategy: get a nonempty set of Bytes.

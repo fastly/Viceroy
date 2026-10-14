@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Remove core cache entries whose insert body fails, to match the Compute platform. A body fails
+  when it's abandoned or dropped before `finish()`, when an appended body errors mid-stream, or
+  when it doesn't match the insert's `known_length`. Later lookups miss, and the next transactional
+  lookup gets the obligation to insert again; readers that already have the entry still get a read
+  error. Previously the entry stayed in the cache and every read of it failed. Also fix internal
+  panics when a cached body failed while it was being read, or overran its `known_length` across
+  more than one write.
+
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
   ([#739](https://github.com/fastly/Viceroy/pull/739))

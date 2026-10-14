@@ -70,6 +70,15 @@ fn main() {
     run_test!(test_stream_back);
     run_test!(test_stream_back_fixed);
 
+    run_test!(test_append_success);
+    run_test!(test_failed_insert_short_write);
+    run_test!(test_failed_insert_long_write);
+    run_test!(test_failed_insert_append_source_fails);
+    run_test!(test_failed_insert_abandoned);
+    run_test!(test_failed_insert_in_flight_reader);
+    run_test!(test_failed_insert_superseded);
+    run_test!(test_failed_transaction_insert);
+
     eprintln!("Completed all tests for version {service}")
 }
 
@@ -123,6 +132,40 @@ fn poll_known_length(key: &CacheKey) -> Found {
         "did not arrive at known-length after {} seconds",
         TIMEOUT.as_secs()
     );
+}
+
+/// Wait for the object at the key to be removed, e.g. after its body fails.
+///
+/// As with `poll_known_length`, Viceroy processes cached bodies concurrently, so the failure may
+/// not be visible to a lookup immediately. (On Compute, too, a lookup in the same request may
+/// briefly see the failed object.)
+fn poll_evicted(key: &CacheKey) {
+    const SLEEP: Duration = Duration::from_millis(11);
+    const TIMEOUT: Duration = Duration::from_secs(5);
+    let iters = TIMEOUT.as_millis() / SLEEP.as_millis();
+    for _ in 0..iters {
+        if lookup(key.clone())
+            .execute()
+            .expect("lookup should not generate error")
+            .is_none()
+        {
+            return;
+        }
+        std::thread::sleep(SLEEP);
+    }
+    panic!("object was not removed after {} seconds", TIMEOUT.as_secs());
+}
+
+/// A TTL long enough that objects won't expire while we wait for them to be removed.
+const LONG_TTL: Duration = Duration::from_secs(600);
+
+/// Assert that the failed insert at the key has been removed:
+/// lookups miss, and a transaction gets the obligation to insert.
+fn assert_failed_insert_removed(key: &CacheKey) {
+    poll_evicted(key);
+    let tx = Transaction::lookup(key.clone()).execute().unwrap();
+    assert!(tx.found().is_none());
+    assert!(tx.must_insert());
 }
 
 fn test_non_concurrent() {
@@ -1383,4 +1426,159 @@ fn test_core_cache_expires() {
     let returned = fastly::cache::core::lookup(key).execute().expect("retrieve from core cache");
     // Stale, no SWR
     assert!(returned.is_none());
+}
+
+fn test_append_success() {
+    for length in [None, Some(5)] {
+        let key = new_key();
+        let mut builder = insert(key.clone(), LONG_TTL);
+        if let Some(length) = length {
+            builder = builder.known_length(length);
+        }
+        let mut writer = builder.execute().unwrap();
+        writer.append(Body::from("hello"));
+        writer.finish().unwrap();
+
+        let found = poll_known_length(&key);
+        assert_eq!(found.known_length(), Some(5));
+        assert_eq!(found.to_stream().unwrap().into_string(), "hello");
+    }
+}
+
+fn test_failed_insert_short_write() {
+    let key = new_key();
+    let mut writer = insert(key.clone(), LONG_TTL)
+        .known_length(10)
+        .execute()
+        .unwrap();
+    writer.write_all(b"hello").unwrap();
+    // The guest isn't told about the failure:
+    writer.finish().unwrap();
+
+    assert_failed_insert_removed(&key);
+}
+
+fn test_failed_insert_long_write() {
+    let key = new_key();
+    let mut writer = insert(key.clone(), LONG_TTL)
+        .known_length(10)
+        .execute()
+        .unwrap();
+    writer.write_all(b"hello beautiful world").unwrap();
+    writer.finish().unwrap();
+
+    assert_failed_insert_removed(&key);
+}
+
+fn test_failed_insert_append_source_fails() {
+    for length in [None, Some(10)] {
+        // Use another cache insert, which we abandon partway through, as a body that fails
+        // mid-stream.
+        let source_key = new_key();
+        let mut source = insert(source_key.clone(), LONG_TTL).execute().unwrap();
+        let source_body = lookup(source_key.clone())
+            .execute()
+            .unwrap()
+            .unwrap()
+            .to_stream()
+            .unwrap();
+
+        let key = new_key();
+        let mut builder = insert(key.clone(), LONG_TTL);
+        if let Some(length) = length {
+            builder = builder.known_length(length);
+        }
+        let mut writer = builder.execute().unwrap();
+        writer.append(source_body);
+        // The guest isn't told about the failure:
+        writer.finish().unwrap();
+
+        source.write_all(b"hello").unwrap();
+        source.abandon().unwrap();
+
+        assert_failed_insert_removed(&source_key);
+        assert_failed_insert_removed(&key);
+    }
+}
+
+fn test_failed_insert_abandoned() {
+    for length in [None, Some(10)] {
+        for explicit in [false, true] {
+            let key = new_key();
+            let mut builder = insert(key.clone(), LONG_TTL);
+            if let Some(length) = length {
+                builder = builder.known_length(length);
+            }
+            let mut writer = builder.execute().unwrap();
+            writer.write_all(b"hello").unwrap();
+            if explicit {
+                writer.abandon().unwrap();
+            } else {
+                std::mem::drop(writer);
+            }
+
+            assert_failed_insert_removed(&key);
+        }
+    }
+}
+
+fn test_failed_insert_in_flight_reader() {
+    let key = new_key();
+    let mut writer = insert(key.clone(), LONG_TTL)
+        .known_length(10)
+        .execute()
+        .unwrap();
+    let found = lookup(key.clone()).execute().unwrap().unwrap();
+    let mut reader = found.to_stream().unwrap();
+
+    writer.write_all(b"hello").unwrap();
+    writer.abandon().unwrap();
+
+    // A reader that started before the failure gets an error, not a clean EOF:
+    let mut data = Vec::new();
+    reader.read_to_end(&mut data).unwrap_err();
+
+    assert_failed_insert_removed(&key);
+}
+
+fn test_failed_insert_superseded() {
+    let key = new_key();
+    let mut writer_a = insert(key.clone(), LONG_TTL).execute().unwrap();
+    writer_a.write_all(b"A").unwrap();
+
+    let mut writer_b = insert(key.clone(), LONG_TTL).execute().unwrap();
+    writer_b.write_all(b"B").unwrap();
+    writer_b.finish().unwrap();
+    let _ = poll_known_length(&key);
+
+    // The failure of A must not remove B:
+    writer_a.abandon().unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+
+    let found = lookup(key.clone()).execute().unwrap().unwrap();
+    assert_eq!(found.to_stream().unwrap().into_string(), "B");
+}
+
+fn test_failed_transaction_insert() {
+    let key = new_key();
+
+    let busy1 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let busy2 = Transaction::lookup(key.clone()).execute_async().unwrap();
+    let (tx, pending) = ready_and_pending(busy1, busy2);
+    assert!(tx.must_insert());
+    let mut writer = tx.insert(LONG_TTL).execute().unwrap();
+    writer.write_all(b"hello").unwrap();
+
+    // The waiting transaction collapses onto the in-progress insert...
+    let tx2 = pending.wait().unwrap();
+    assert!(!tx2.must_insert());
+    let mut reader = tx2.found().unwrap().to_stream().unwrap();
+
+    // ...which is then abandoned, so the reader gets an error:
+    writer.abandon().unwrap();
+    let mut data = Vec::new();
+    reader.read_to_end(&mut data).unwrap_err();
+
+    // The next transaction gets the obligation again:
+    assert_failed_insert_removed(&key);
 }
