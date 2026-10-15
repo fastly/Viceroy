@@ -6,9 +6,7 @@ use bytes::Bytes;
 use http::HeaderMap;
 
 use crate::body::Body;
-use crate::cache::{
-    CacheKey, ReplaceEntry, ReplaceStrategy, SurrogateKeySet, VaryRule, WriteOptions,
-};
+use crate::cache::{CacheKey, ReplaceStrategy, SurrogateKeySet, VaryRule, WriteOptions};
 use crate::sandbox::{PeekableTask, PendingCacheReplaceTask, PendingCacheTask, Sandbox};
 use crate::wiggle_abi::types::CacheWriteOptionsMask;
 
@@ -288,26 +286,11 @@ fn write_user_metadata(
     Ok(())
 }
 
-/// The lookup state to report for an in-progress replace operation.
-///
-/// Unlike a lookup, a replace always carries the obligation to insert, and the state is always
-/// well-defined -- even with no existing object, in which case the state is just
-/// `MUST_INSERT_OR_UPDATE`.
-fn replace_lookup_state(entry: &ReplaceEntry) -> types::CacheLookupState {
-    let mut state = types::CacheLookupState::MUST_INSERT_OR_UPDATE;
-    if let Some(existing) = entry.existing() {
-        // As in `get_state`: Compute reports FOUND only for usable objects, and SDKs (including old
-        // versions) don't check the USABLE bit.
-        if existing.meta().is_usable() {
-            state |= types::CacheLookupState::USABLE;
-            state |= types::CacheLookupState::FOUND;
-
-            if !existing.meta().is_fresh() {
-                state |= types::CacheLookupState::STALE;
-            }
-        }
+// The layouts are identical, so this is a bit cast; `lookup_state_layout` checks that.
+impl From<crate::cache::LookupState> for types::CacheLookupState {
+    fn from(state: crate::cache::LookupState) -> Self {
+        Self::from_bits(state.bits()).expect("identical flag layout")
     }
-    state
 }
 
 #[allow(unused_variables)]
@@ -391,7 +374,7 @@ impl FastlyCache for Sandbox {
             ReplaceStrategy::Immediate | ReplaceStrategy::ImmediateForceMiss => {
                 PeekableTask::complete(
                     cache
-                        .replace(&key, headers, strategy)
+                        .replace(&key, &headers, strategy)
                         .await
                         .with_always_use_requested_range(always_use_requested_range),
                 )
@@ -401,7 +384,7 @@ impl FastlyCache for Sandbox {
             ReplaceStrategy::Wait => {
                 PeekableTask::spawn(Box::pin(async move {
                     Ok(cache
-                        .replace(&key, headers, strategy)
+                        .replace(&key, &headers, strategy)
                         .await
                         .with_always_use_requested_range(always_use_requested_range))
                 }))
@@ -525,7 +508,7 @@ impl FastlyCache for Sandbox {
         // NOTE: this must never fail when there is no existing object: the SDK unconditionally
         // calls this hostcall from `ReplaceBuilder::begin()` and panics on any non-OK status.
         let entry = self.cache_replace_entry(cache_handle).await?;
-        Ok(replace_lookup_state(entry))
+        Ok(entry.lookup_state().into())
     }
 
     async fn replace_get_user_metadata(
@@ -554,15 +537,8 @@ impl FastlyCache for Sandbox {
     ) -> Result<types::BodyHandle, Error> {
         let guest_options = memory.read(abi_options)?;
 
-        // Unlike `transaction_insert`, the replace API lets the guest set the request headers of the
-        // replacement -- that's what `Replace::header()` does. If they're absent, we fall back to
-        // the headers the replace was begun with.
-        let request_headers = if options_mask.contains(CacheWriteOptionsMask::REQUEST_HEADERS) {
-            let handle = guest_options.request_headers;
-            Some(self.request_parts(handle)?.headers.clone())
-        } else {
-            None
-        };
+        // As on Compute, ignore any request headers (which `Replace::header()` sends): the
+        // replacement's variant comes from the headers the replace was begun with.
         let options = load_write_options(
             memory,
             options_mask & !CacheWriteOptionsMask::REQUEST_HEADERS,
@@ -579,7 +555,7 @@ impl FastlyCache for Sandbox {
             .task()
             .recv()
             .await?;
-        entry.insert(request_headers, options, read_body);
+        entry.insert(options, read_body);
 
         Ok(body_handle)
     }
@@ -929,5 +905,34 @@ impl FastlyCache for Sandbox {
         } else {
             Err(Error::CacheError(crate::cache::Error::Missing))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::types;
+    use crate::cache::LookupState;
+
+    #[test]
+    fn lookup_state_layout() {
+        for (ours, theirs) in [
+            (LookupState::FOUND, types::CacheLookupState::FOUND),
+            (LookupState::USABLE, types::CacheLookupState::USABLE),
+            (LookupState::STALE, types::CacheLookupState::STALE),
+            (
+                LookupState::MUST_INSERT_OR_UPDATE,
+                types::CacheLookupState::MUST_INSERT_OR_UPDATE,
+            ),
+            (
+                LookupState::USABLE_IF_ERROR,
+                types::CacheLookupState::USABLE_IF_ERROR,
+            ),
+        ] {
+            assert_eq!(types::CacheLookupState::from(ours), theirs);
+        }
+        assert_eq!(
+            LookupState::all().bits(),
+            types::CacheLookupState::all().bits()
+        );
     }
 }

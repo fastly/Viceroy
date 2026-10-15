@@ -1459,7 +1459,8 @@ fn test_replace_existing() {
         assert_eq!(existing.user_metadata().iter().as_slice(), b"version 1");
         assert!(existing.is_usable());
         assert!(!existing.is_stale());
-        // Just check that reading the hit count works; how a replace affects it is unspecified.
+        // Just check that reading the hit count works: the platform counts hits per cache node, so
+        // we can't assert an exact value.
         let _ = existing.hits();
         assert_eq!(&existing.to_stream().unwrap().into_string(), original);
     }
@@ -1631,8 +1632,8 @@ fn test_replace_vary() {
         assert!(current.existing_object().is_none());
     }
 
-    // With the matching header it does. The replacement repeats the header and the vary rule, so
-    // that later lookups can still find it.
+    // With the matching header it does. The replacement's variant comes from the headers the
+    // replace began with; it repeats the vary rule, so that later lookups can still find it.
     let replacement = "replacement foo";
     {
         let current = replace(key.clone())
@@ -1645,7 +1646,6 @@ fn test_replace_vary() {
         }
 
         let mut writer = current
-            .header(&header_name, "foo")
             .vary_by([&header_name])
             .known_length(replacement.len() as u64)
             .execute(Duration::from_secs(152))

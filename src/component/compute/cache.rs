@@ -145,26 +145,27 @@ fn load_replace_options(
     })
 }
 
-/// The lookup state to report for an in-progress replace operation.
-///
-/// Unlike a lookup, a replace always carries the obligation to insert, and the state is always
-/// well-defined -- even with no existing object, in which case the state is just
-/// `MUST_INSERT_OR_UPDATE`. Note that the SDK panics if this is reported as absent.
-fn replace_lookup_state(entry: &cache::ReplaceEntry) -> api::LookupState {
-    let mut state = api::LookupState::MUST_INSERT_OR_UPDATE;
-    if let Some(existing) = entry.existing() {
-        // As in `get_state`: Compute reports FOUND only for usable objects, and SDKs (including old
-        // versions) do not check the USABLE bit.
-        if existing.meta().is_usable() {
-            state |= api::LookupState::USABLE;
-            state |= api::LookupState::FOUND;
-
-            if !existing.meta().is_fresh() {
-                state |= api::LookupState::STALE;
+// wasmtime flags have no `from_bits`, so convert flag by flag, as the adapter does in the other
+// direction.
+impl From<cache::LookupState> for api::LookupState {
+    fn from(state: cache::LookupState) -> Self {
+        let mut flags = Self::empty();
+        for (ours, theirs) in [
+            (cache::LookupState::FOUND, Self::FOUND),
+            (cache::LookupState::USABLE, Self::USABLE),
+            (cache::LookupState::STALE, Self::STALE),
+            (
+                cache::LookupState::MUST_INSERT_OR_UPDATE,
+                Self::MUST_INSERT_OR_UPDATE,
+            ),
+            (cache::LookupState::USABLE_IF_ERROR, Self::USABLE_IF_ERROR),
+        ] {
+            if state.contains(ours) {
+                flags |= theirs;
             }
         }
+        flags
     }
-    state
 }
 
 impl api::Host for ComponentCtx {
@@ -197,15 +198,9 @@ impl api::Host for ComponentCtx {
         handle: Resource<api::ReplaceEntry>,
         mut options: api::WriteOptions,
     ) -> Result<Resource<api::Body>, types::Error> {
-        // Unlike `transaction_insert`, the replace API lets the guest set the request headers of the
-        // replacement -- that's what `Replace::header()` does. If they're absent, we fall back to
-        // the headers the replace was begun with.
-        let request_headers = if let Some(handle) = options.request_headers.take() {
-            let parts = self.sandbox().request_parts(handle.into())?;
-            Some(parts.headers.clone())
-        } else {
-            None
-        };
+        // As on Compute, ignore any request headers (which `Replace::header()` sends): the
+        // replacement's variant comes from the headers the replace was begun with.
+        options.request_headers = None;
         let options = load_write_options(&options)?;
 
         // Optimistically start a body, so we don't have to reborrow self.sandbox_mut()
@@ -219,7 +214,7 @@ impl api::Host for ComponentCtx {
             .task()
             .recv()
             .await?;
-        entry.insert(request_headers, options, read_body);
+        entry.insert(options, read_body);
 
         Ok(body_handle.into())
     }
@@ -291,7 +286,7 @@ impl api::HostReplaceEntry for ComponentCtx {
             ReplaceStrategy::Immediate | ReplaceStrategy::ImmediateForceMiss => {
                 PeekableTask::complete(
                     cache
-                        .replace(&key, headers, strategy)
+                        .replace(&key, &headers, strategy)
                         .await
                         .with_always_use_requested_range(always_use_requested_range),
                 )
@@ -301,7 +296,7 @@ impl api::HostReplaceEntry for ComponentCtx {
             ReplaceStrategy::Wait => {
                 PeekableTask::spawn(Box::pin(async move {
                     Ok(cache
-                        .replace(&key, headers, strategy)
+                        .replace(&key, &headers, strategy)
                         .await
                         .with_always_use_requested_range(always_use_requested_range))
                 }))
@@ -428,7 +423,7 @@ impl api::HostReplaceEntry for ComponentCtx {
             .sandbox_mut()
             .cache_replace_entry(handle.into())
             .await?;
-        Ok(Some(replace_lookup_state(entry)))
+        Ok(Some(entry.lookup_state().into()))
     }
 
     async fn get_user_metadata(
@@ -824,5 +819,23 @@ impl api::HostExtraLookupOptions for ComponentCtx {
 
     fn drop(&mut self, _options: Resource<api::ExtraLookupOptions>) -> wasmtime::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{api, cache};
+
+    #[test]
+    fn lookup_state_layout() {
+        // Every WIT flag must be reachable from ours.
+        assert_eq!(
+            api::LookupState::from(cache::LookupState::all()),
+            api::LookupState::all()
+        );
+        assert_eq!(
+            api::LookupState::from(cache::LookupState::STALE),
+            api::LookupState::STALE
+        );
     }
 }
