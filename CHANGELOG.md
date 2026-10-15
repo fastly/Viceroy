@@ -4,6 +4,7 @@
   `known_length` or a finished insert), for both full reads and ranges, instead of
   `Transfer-Encoding: chunked`. This matches the Compute platform. Bodies of unknown length are
   still chunked. A guest's `known_length()` on such a body now returns the length too.
+  ([#743](https://github.com/fastly/Viceroy/pull/743))
 
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
