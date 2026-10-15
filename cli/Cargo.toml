@@ -71,7 +71,7 @@ libc = "^0.2.139"
 anyhow = { workspace = true }
 futures = { workspace = true }
 url = { workspace = true }
-tls-listener = { version = "^0.7.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
+tls-listener = { version = "^0.8.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
 tempfile = "3"
 serde_json = { workspace = true }
 
@@ -83,5 +83,5 @@ serde_json = { workspace = true }
 # until we can update hyper (or remove tls-listener). `dangerous_configuration` is
 # required for `rustls::server::ClientCertVerifier` in the test.
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
-rustls-pemfile = "1.0.3"
-tokio-rustls = "0.24.1"
+rustls-pemfile = "2.2.0"
+tokio-rustls = "0.26.5"
