@@ -29,6 +29,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct CollectingBody {
     inner: watch::Receiver<CollectingBodyInner>,
+    /// The length the writer promised up front, if any.
+    expected_length: Option<u64>,
 }
 
 impl Default for CollectingBodyInner {
@@ -107,7 +109,10 @@ impl CollectingBody {
     /// CollectingBody.
     pub fn new(from: Body, length: Option<u64>) -> CollectingBody {
         let (tx, rx) = watch::channel(CollectingBodyInner::default());
-        let body = CollectingBody { inner: rx };
+        let body = CollectingBody {
+            inner: rx,
+            expected_length: length,
+        };
         tokio::task::spawn(Self::tee(from, tx, length));
         body
     }
@@ -196,6 +201,12 @@ impl CollectingBody {
     /// Get a handle to read the requested range from this body.
     /// Start is inclusive, end is exclusive.
     pub fn read_range(&self, start: u64, end: Option<u64>) -> Result<Body, error::Error> {
+        // If we know how long the whole body will be, we know how many bytes this read will
+        // produce (unless the body fails, in which case the read fails too).
+        let range_length = self.length().or(self.expected_length).map(|length| {
+            let end = end.map_or(length, |end| std::cmp::min(end, length));
+            end.saturating_sub(start)
+        });
         let mut upstream = self.inner.clone();
         let (mut tx, rx) = StreamingBody::new();
         tokio::task::spawn(async move {
@@ -299,7 +310,10 @@ impl CollectingBody {
                 }
             }
         });
-        let c: Chunk = rx.into();
+        let c = match range_length {
+            Some(length) => Chunk::known_length_channel(rx, length),
+            None => rx.into(),
+        };
         let b: Body = c.into();
         Ok(b)
     }
@@ -590,6 +604,57 @@ mod tests {
         tx.finish().unwrap();
 
         let err = collect.read().unwrap().read_into_vec().await.unwrap_err();
+        assert!(matches!(err, Error::UnfinishedStreamingBody));
+    }
+
+    #[tokio::test]
+    async fn known_length_reads_have_exact_length() {
+        let (mut tx, rx) = StreamingBody::new();
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)), Some(10));
+
+        // The lengths are known before any data has been written.
+        assert_eq!(collect.read().unwrap().len(), Some(10));
+        assert_eq!(collect.read_range(2, Some(5)).unwrap().len(), Some(3));
+        assert_eq!(collect.read_range(7, None).unwrap().len(), Some(3));
+        assert_eq!(collect.read_range(7, Some(20)).unwrap().len(), Some(3));
+
+        let full = collect.read().unwrap();
+        let range = collect.read_range(2, Some(5)).unwrap();
+        tx.send_chunk(b"0123456789".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+        assert_eq!(full.read_into_vec().await.unwrap(), b"0123456789");
+        assert_eq!(range.read_into_vec().await.unwrap(), b"234");
+    }
+
+    #[tokio::test]
+    async fn unknown_length_reads_have_no_length_until_complete() {
+        let (mut tx, rx) = StreamingBody::new();
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)), None);
+
+        let streaming = collect.read().unwrap();
+        assert_eq!(streaming.len(), None);
+
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+        assert_eq!(streaming.read_into_vec().await.unwrap(), b"hello");
+
+        // Once the body is complete, its length is known.
+        collect.known_length().await.unwrap();
+        assert_eq!(collect.read().unwrap().len(), Some(5));
+        assert_eq!(collect.read_range(1, None).unwrap().len(), Some(4));
+    }
+
+    #[tokio::test]
+    async fn known_length_underfill_fails_reader() {
+        let (mut tx, rx) = StreamingBody::new();
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)), Some(10));
+        let reader = collect.read().unwrap();
+        assert_eq!(reader.len(), Some(10));
+
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        std::mem::drop(tx);
+
+        let err = reader.read_into_vec().await.unwrap_err();
         assert!(matches!(err, Error::UnfinishedStreamingBody));
     }
 
