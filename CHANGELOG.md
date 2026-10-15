@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Frame Core Cache bodies with `Content-Length` when the entry's length is known (from
+  `known_length` or a finished insert), for both full reads and ranges, instead of
+  `Transfer-Encoding: chunked`. This matches the Compute platform. Bodies of unknown length are
+  still chunked. A guest's `known_length()` on such a body now returns the length too.
+
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
   ([#739](https://github.com/fastly/Viceroy/pull/739))
