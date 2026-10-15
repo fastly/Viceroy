@@ -6,7 +6,7 @@
   lookup gets the obligation to insert again; readers that already have the entry still get a read
   error. Previously the entry stayed in the cache and every read of it failed. Also fix internal
   panics when a cached body failed while it was being read, or overran its `known_length` across
-  more than one write.
+  more than one write. ([#742](https://github.com/fastly/Viceroy/pull/742))
 
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
