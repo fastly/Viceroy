@@ -29,10 +29,20 @@ fn insert_complete(known_length: bool) -> Found {
     let mut writer = builder.execute().unwrap();
     writer.write_all(&contents()).unwrap();
     writer.finish().unwrap();
-    lookup(key)
-        .execute()
-        .unwrap()
-        .expect("inserted object should be found")
+    // Without a known length, the host learns the length only once it has collected the whole
+    // body, which happens asynchronously after `finish`. Re-look-up until it has.
+    const SLEEP: Duration = Duration::from_millis(10);
+    for _ in 0..1000 {
+        let found = lookup(key.clone())
+            .execute()
+            .unwrap()
+            .expect("inserted object should be found");
+        if found.known_length().is_some() {
+            return found;
+        }
+        std::thread::sleep(SLEEP);
+    }
+    panic!("inserted object never had a known length");
 }
 
 /// Start an insert under a new key and write the first `written` bytes, without finishing.
