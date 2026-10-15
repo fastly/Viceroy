@@ -265,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_propagation() {
-        let error = std::io::Error::new(std::io::ErrorKind::Other, "test error");
+        let error = std::io::Error::other("test error");
         let stream = stream::iter(vec![
             Ok(Bytes::from("one")),
             Err(error),

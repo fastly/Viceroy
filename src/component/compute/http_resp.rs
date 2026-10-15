@@ -255,7 +255,7 @@ impl http_resp::HostResponse for ComponentCtx {
             if #[cfg(feature = "test-fatalerror-config")] {
                 // Avoid warnings:
                 let _ = (h, name, max_len, cursor);
-                return Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into());
+                Err(Error::FatalError("A fatal error occurred in the test-only implementation of header_values_get".to_string()).into())
             } else {
                 if name.len() > MAX_HEADER_NAME_LEN {
                     return Ok(Err(Error::InvalidArgument.into()));

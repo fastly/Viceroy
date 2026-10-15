@@ -85,3 +85,4 @@ serde_json = { workspace = true }
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.3"
 tokio-rustls = "0.24.1"
+test-fixtures-artifacts = { workspace = true }

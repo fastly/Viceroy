@@ -1,6 +1,6 @@
 //! A guest program to test that acls works properly.
-use fastly::acl::Acl;
 use fastly::Error;
+use fastly::acl::Acl;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 fn main() -> Result<(), Error> {

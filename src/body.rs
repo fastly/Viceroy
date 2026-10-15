@@ -465,7 +465,7 @@ mod tests {
         let all_chunks = chunk_lengths.into_iter().chain(std::iter::once(body.len()));
         let mut remaining: &[u8] = &body;
         for chunk_length in all_chunks {
-            if remaining.len() == 0 {
+            if remaining.is_empty() {
                 break;
             }
             let len = std::cmp::min(remaining.len(), chunk_length);
@@ -492,7 +492,7 @@ mod tests {
             got.extend_from_slice(&buf[..n]);
         }
         prop_assert_eq!(got.len(), want.len());
-        for (i, (got, want)) in got.into_iter().zip(want.into_iter()).enumerate() {
+        for (i, (got, want)) in got.into_iter().zip(want).enumerate() {
             prop_assert_eq!(got, want, "@{}: {} != {}", i, got, want);
         }
 

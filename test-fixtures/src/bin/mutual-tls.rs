@@ -1,4 +1,4 @@
-use base64::engine::{general_purpose, Engine};
+use base64::engine::{Engine, general_purpose};
 use fastly::http::StatusCode;
 use fastly::secret_store::Secret;
 use fastly::{Backend, Error, Request, Response};
