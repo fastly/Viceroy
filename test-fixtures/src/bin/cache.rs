@@ -75,6 +75,8 @@ fn main() {
     run_test!(test_replace_existing);
     run_test!(test_replace_counter);
     run_test!(test_replace_force_miss);
+    run_test!(test_replace_expired);
+    run_test!(test_replace_immediate_collapses);
     run_test!(test_replace_dropped);
     run_test!(test_replace_vary);
     run_test!(test_replace_surrogate_keys);
@@ -142,6 +144,26 @@ fn write_object(key: &CacheKey, body: &str, max_age: Duration) {
         .unwrap();
     writer.write_all(body.as_bytes()).unwrap();
     writer.finish().unwrap();
+}
+
+/// Look up an object that a replace has just written, waiting for the replacement to show up.
+///
+/// On Compute, a lookup immediately after a replace finishes may briefly still see the object it
+/// replaced.
+fn lookup_replacement(lookup: impl Fn() -> LookupBuilder, expected: &str) -> Found {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(found) = lookup().execute().unwrap()
+            && found.to_stream().unwrap().into_string() == expected
+        {
+            return found;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "replacement {expected:?} never became visible"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// Read a cached object's body, asserting that the object is present.
@@ -1428,7 +1450,7 @@ fn test_replace_no_existing() {
     writer.write_all(body.as_bytes()).unwrap();
     writer.finish().unwrap();
 
-    let found = lookup(key).execute().unwrap().expect("is found");
+    let found = lookup_replacement(|| lookup(key.clone()), body);
     assert_eq!(found.max_age(), Duration::from_secs(141));
     assert_eq!(&found.to_stream().unwrap().into_string(), body);
 }
@@ -1474,7 +1496,7 @@ fn test_replace_existing() {
     writer.write_all(replacement.as_bytes()).unwrap();
     writer.finish().unwrap();
 
-    let found = lookup(key).execute().unwrap().expect("is found");
+    let found = lookup_replacement(|| lookup(key.clone()), replacement);
     assert_eq!(found.max_age(), Duration::from_secs(143));
     assert_eq!(found.user_metadata().iter().as_slice(), b"version 2");
     assert_eq!(&found.to_stream().unwrap().into_string(), replacement);
@@ -1511,7 +1533,7 @@ fn test_replace_counter() {
         writer.finish().unwrap();
     }
 
-    assert_eq!(read_object(&key), "4");
+    lookup_replacement(|| lookup(key.clone()), "4");
 }
 
 fn test_replace_force_miss() {
@@ -1537,7 +1559,7 @@ fn test_replace_force_miss() {
         writer.write_all(replacement.as_bytes()).unwrap();
         writer.finish().unwrap();
 
-        assert_eq!(read_object(&key), replacement);
+        lookup_replacement(|| lookup(key.clone()), replacement);
     }
 
     // `ImmediateForceMiss` removes the existing object right away, so other requests for it wait
@@ -1574,6 +1596,48 @@ fn test_replace_force_miss() {
     }
 }
 
+fn test_replace_expired() {
+    let key = new_key();
+    write_object(&key, "expired", Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(2));
+
+    // A lookup no longer finds the object...
+    assert!(lookup(key.clone()).execute().unwrap().is_none());
+
+    // ...but a replace does, so that e.g. a counter whose TTL has lapsed can carry on counting.
+    let current = replace(key.clone()).begin().expect("failed to begin replace");
+    let existing = current.existing_object().expect("existing object");
+    assert!(existing.is_stale());
+    assert_eq!(existing.to_stream().unwrap().into_string(), "expired");
+}
+
+fn test_replace_immediate_collapses() {
+    // With nothing usable in the cache, transactional lookups wait for an `Immediate` replace's
+    // replacement, rather than being asked to insert an object themselves.
+    let key = new_key();
+    let current = replace(key.clone()).begin().expect("failed to begin replace");
+    assert!(current.existing_object().is_none());
+
+    let pending = Transaction::lookup(key.clone()).execute_async().unwrap();
+    assert!(
+        pending.pending().expect("error checking status"),
+        "a lookup during an Immediate replace of a missing object should wait for the replacement"
+    );
+
+    let replacement = "replacement";
+    let mut writer = current
+        .known_length(replacement.len() as u64)
+        .execute(Duration::from_secs(155))
+        .unwrap();
+    writer.write_all(replacement.as_bytes()).unwrap();
+    writer.finish().unwrap();
+
+    let txn = pending.wait().unwrap();
+    assert!(!txn.must_insert_or_update());
+    let found = txn.found().expect("the waiting lookup should be satisfied");
+    assert_eq!(found.to_stream().unwrap().into_string(), replacement);
+}
+
 fn test_replace_dropped() {
     let key = new_key();
     write_object(&key, "original", Duration::from_secs(149));
@@ -1607,7 +1671,7 @@ fn test_replace_dropped() {
     writer.write_all(replacement.as_bytes()).unwrap();
     writer.finish().unwrap();
 
-    assert_eq!(read_object(&key), replacement);
+    lookup_replacement(|| lookup(key.clone()), replacement);
 }
 
 fn test_replace_vary() {
@@ -1654,12 +1718,7 @@ fn test_replace_vary() {
         writer.finish().unwrap();
     }
 
-    let found = lookup(key.clone())
-        .header(&header_name, "foo")
-        .execute()
-        .unwrap()
-        .expect("is found");
-    assert_eq!(&found.to_stream().unwrap().into_string(), replacement);
+    lookup_replacement(|| lookup(key.clone()).header(&header_name, "foo"), replacement);
 
     // The variant without the header still doesn't exist.
     assert!(lookup(key).execute().unwrap().is_none());
@@ -1688,6 +1747,7 @@ fn test_replace_surrogate_keys() {
         .unwrap();
     writer.write_all(replacement.as_bytes()).unwrap();
     writer.finish().unwrap();
+    lookup_replacement(|| lookup(key.clone()), replacement);
 
     // The replacement only carries the surrogate keys it was given, so the original's key no
     // longer purges it...

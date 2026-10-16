@@ -448,7 +448,11 @@ impl api::HostReplaceEntry for ComponentCtx {
         Ok(Some(md_bytes.into()))
     }
 
-    fn drop(&mut self, _entry: Resource<api::ReplaceEntry>) -> wasmtime::Result<()> {
+    fn drop(&mut self, handle: Resource<api::ReplaceEntry>) -> wasmtime::Result<()> {
+        // A backstop, as on Compute: if the guest drops the entry without closing it or inserting
+        // the replacement, abandon the replace so that other writers aren't left waiting on it.
+        // Otherwise the entry is already gone, and there's nothing to do.
+        let _ = self.sandbox_mut().take_cache_replace_entry(handle.into());
         Ok(())
     }
 

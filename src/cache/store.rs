@@ -50,10 +50,8 @@ pub struct ObjectMeta {
     soft_purge: AtomicBool,
 
     /// The number of times this object has been served from the cache.
-    ///
-    /// Shared (rather than copied) between clones of this metadata, so that a `Found` handed to the
-    /// guest observes the same counter as the object still sitting in the cache.
-    hits: Arc<AtomicU64>,
+    // Atomic so we can count hits through a shared reference, like `soft_purge`.
+    hits: AtomicU64,
 }
 impl ObjectMeta {
     /// Retrieve the current age of this object.
@@ -145,7 +143,7 @@ impl ObjectMeta {
             length,
             surrogate_keys,
             soft_purge: AtomicBool::new(false),
-            hits: Arc::new(AtomicU64::new(0)),
+            hits: AtomicU64::new(0),
         }
     }
 }
@@ -162,10 +160,9 @@ impl Clone for ObjectMeta {
             length: self.length,
             surrogate_keys: self.surrogate_keys.clone(),
             soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
-            // Unlike the other fields, the hit counter is *shared* with the clone: a `Found`
-            // handed to the guest must observe the same counter as the object still sitting in
-            // the cache.
-            hits: Arc::clone(&self.hits),
+            // As on Compute, a `Found` handed to the guest reports the hit count as of its
+            // delivery, rather than tracking later hits.
+            hits: AtomicU64::new(self.hits()),
         }
     }
 }
@@ -387,10 +384,11 @@ impl CacheKeyObjects {
     /// abandoned. The three strategies differ in how they interact with that and with the
     /// obligation slot:
     ///
-    /// - `Immediate` doesn't take the obligation, and leaves the existing object visible to
-    ///   lookups. The eventual insert is an ordinary last-writer-wins insert.
-    /// - `ImmediateForceMiss` clears the existing object so that subsequent lookups miss, and takes
-    ///   the obligation if it is free, so that transactional lookups wait for the replacement.
+    /// - `Immediate` takes the obligation if it is free, so that transactional lookups that find
+    ///   nothing usable wait for the replacement; but it leaves the existing object visible to
+    ///   lookups.
+    /// - `ImmediateForceMiss` does the same, and also hides the existing object, so that lookups
+    ///   miss (or, if transactional, wait for the replacement).
     /// - `Wait` blocks until no matching variant is obligated or being replaced, then takes the
     ///   obligation. This is what serializes concurrent replaces of the same object, which is what
     ///   makes read-modify-write ("counter") patterns work.
@@ -446,15 +444,14 @@ impl CacheKeyObjects {
                         .and_then(|value| value.present.clone())
                 });
 
-                if strategy == ReplaceStrategy::ImmediateForceMiss {
-                    // Make subsequent lookups miss, for every variant that could have served this
-                    // request. As in `purge`, we keep the `CacheValue`s around (minus their data)
-                    // so we don't confuse whoever holds an obligation or replace on them.
-                    for key in response_keys.iter() {
-                        if let Some(value) = key_objects.objects.get_mut(key) {
-                            value.present = None;
-                        }
-                    }
+                if strategy == ReplaceStrategy::ImmediateForceMiss
+                    && let Some(key) = &found
+                    && let Some(value) = key_objects.objects.get_mut(key)
+                {
+                    // As on Compute, hide only the object we found. As in `purge`, we keep the
+                    // `CacheValue` around (minus its data) so we don't confuse whoever holds an
+                    // obligation or replace on it.
+                    value.present = None;
                 }
 
                 // Track the replace against the variant we read from if there was one; failing
@@ -477,11 +474,12 @@ impl CacheKeyObjects {
                 let value = key_objects.objects.entry(variant.clone()).or_default();
                 value.replacing += 1;
 
-                // `ImmediateForceMiss` may find the obligation already taken. The store's invariant
-                // is one `Obligation` per obligated `CacheValue`, so it can't take a second one,
-                // and falls back to a racing plain insert. (Deviation from Compute, which would
-                // collapse these.)
-                let obligation = if strategy != ReplaceStrategy::Immediate && !value.obligated {
+                // Only a `Wait` replace is guaranteed to find the obligation free. On Compute, the
+                // other strategies take it over from whoever holds it; but the store's invariant
+                // is one `Obligation` per obligated `CacheValue`, so instead they fall back to a
+                // racing plain insert. (They still count as `replacing`, so `Wait` replaces
+                // still queue behind them.)
+                let obligation = if !value.obligated {
                     value.obligated = true;
                     Some(Obligation {
                         object: Arc::clone(self),

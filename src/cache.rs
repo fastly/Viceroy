@@ -325,14 +325,11 @@ impl ReplaceEntry {
     pub fn lookup_state(&self) -> LookupState {
         let mut state = LookupState::empty();
         if let Some(existing) = &self.existing {
-            // As for lookups: Compute reports FOUND only for usable objects, and SDKs (including
-            // old versions) do not check the USABLE bit.
-            if existing.meta().is_usable() {
-                state |= LookupState::USABLE | LookupState::FOUND;
-
-                if !existing.meta().is_fresh() {
-                    state |= LookupState::STALE;
-                }
+            // Unlike for lookups, Compute reports any existing object as FOUND and USABLE, even
+            // if it has expired: the guest decides what to do about freshness.
+            state |= LookupState::FOUND | LookupState::USABLE;
+            if !existing.meta().is_fresh() {
+                state |= LookupState::STALE;
             }
         }
         state
@@ -1314,6 +1311,134 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replace_expired_object() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        cache
+            .insert(
+                &key,
+                HeaderMap::default(),
+                WriteOptions::new(Duration::ZERO),
+                "old".as_bytes().into(),
+            )
+            .await;
+        // Lookups report the object as unusable, so `get_state` doesn't report it as found...
+        let entry = cache.lookup(&key, &HeaderMap::default()).await;
+        assert!(!entry.found().unwrap().meta().is_usable());
+
+        // ...but, as on Compute, a replace does.
+        let entry = cache
+            .replace(&key, &HeaderMap::default(), ReplaceStrategy::Immediate)
+            .await;
+        assert_eq!(read_body(&entry).await, "old");
+        assert_eq!(
+            entry.lookup_state(),
+            LookupState::FOUND | LookupState::USABLE | LookupState::STALE
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_immediate_collapses_lookups() {
+        for existing in [true, false] {
+            let cache = Arc::new(Cache::default());
+            let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+            if existing {
+                insert_fresh(&cache, &key, "old").await;
+            }
+
+            let entry = cache
+                .replace(&key, &HeaderMap::default(), ReplaceStrategy::Immediate)
+                .await;
+
+            let mut waiter = tokio::task::spawn({
+                let cache = Arc::clone(&cache);
+                let key = key.clone();
+                async move {
+                    let txn = cache
+                        .transaction_lookup(&key, &HeaderMap::default(), true)
+                        .await;
+                    assert!(txn.go_get().is_none(), "the replace holds the obligation");
+                    txn.body(None, None)
+                        .await
+                        .unwrap()
+                        .read_into_string()
+                        .await
+                        .unwrap()
+                }
+            });
+
+            if existing {
+                // A usable object is served right away...
+                let body = tokio::time::timeout(Duration::from_secs(5), waiter)
+                    .await
+                    .expect("lookup should be served the existing object")
+                    .unwrap();
+                assert_eq!(body, "old");
+            } else {
+                // ...but otherwise, the lookup waits for the replacement.
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), &mut waiter)
+                        .await
+                        .is_err(),
+                    "lookup should wait for the replacement"
+                );
+                entry.insert(
+                    WriteOptions::new(Duration::from_secs(100)),
+                    "new".as_bytes().into(),
+                );
+                let body = tokio::time::timeout(Duration::from_secs(5), waiter)
+                    .await
+                    .expect("lookup should be woken by the replacement")
+                    .unwrap();
+                assert_eq!(body, "new");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn replace_force_miss_hides_only_found_variant() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        let header_name = HeaderName::from_static("x-viceroy-test");
+        let request_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("test"))]
+            .into_iter()
+            .collect();
+
+        // Two variants that both match `request_headers`; the varied one is more recent, so it's
+        // the one a lookup (or replace) finds.
+        insert_fresh(&cache, &key, "unvaried").await;
+        cache
+            .insert(
+                &key,
+                request_headers.clone(),
+                WriteOptions {
+                    vary_rule: VaryRule::new([&header_name].into_iter()),
+                    ..WriteOptions::new(Duration::from_secs(100))
+                },
+                "varied".as_bytes().into(),
+            )
+            .await;
+
+        let entry = cache
+            .replace(&key, &request_headers, ReplaceStrategy::ImmediateForceMiss)
+            .await;
+        assert_eq!(read_body(&entry).await, "varied");
+
+        // As on Compute, only the object the replace found is hidden.
+        let found = cache.lookup(&key, &request_headers).await;
+        assert_eq!(
+            found
+                .body(None, None)
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap(),
+            "unvaried"
+        );
+    }
+
+    #[tokio::test]
     async fn hits_and_stale_while_revalidate() {
         let cache = Cache::default();
         let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
@@ -1338,11 +1463,10 @@ mod tests {
             Duration::from_secs(10)
         );
 
-        // The counter is shared with the object still in the cache, so a second delivery is visible
-        // through the first `Found` as well.
+        // As on Compute, each `Found` reports the count as of its own delivery.
         let second = cache.lookup(&key, &HeaderMap::default()).await;
         assert_eq!(second.found().unwrap().meta().hits(), 2);
-        assert_eq!(found.meta().hits(), 2);
+        assert_eq!(found.meta().hits(), 1);
 
         // As on Compute, beginning a replace counts as a hit.
         let entry = cache
