@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix `viceroy adapt` for core modules built with `wasip2` ([#748](https://github.com/fastly/Viceroy/pull/748))
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
   ([#739](https://github.com/fastly/Viceroy/pull/739))
