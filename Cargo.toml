@@ -148,15 +148,19 @@ wasmtime-wasi-nn = "46.0.3"
 wiggle = "46.0.3"
 
 # The wasm-tools and cranelift crates below are also used internally by
-# wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
-# otherwise the build ends up with two copies of each: ours and wasmtime's.
+# wasmtime. Preferrably, we should keep them on the exact versions wasmtime
+# 46.0.3 depends on, otherwise the build ends up with two copies of each:
+# ours and wasmtime's.
+# However, to support custom page size, we need to use a more recent version
+# of wasm-tools. With the next wasmtime bump, we can hopefully unify the
+# version again.
 # `wat` is versioned 1.x, so a caret requirement would float past the release
 # wasmtime uses and drag a second `wast`/`wasm-encoder`/`wasmparser` in with
 # it. Pin it exactly; the 0.x crates below are already held by their minor.
-wat = "=1.251.0"
-wasmparser = "0.251.0"
-wasm-encoder = { version = "0.251.0", features = ["wasmparser"] }
-wit-component = "0.251.0"
+wat = "=1.262.0"
+wasmparser = "0.262.0"
+wasm-encoder = { version = "0.262.0", features = ["wasmparser"] }
+wit-component = "0.262.0"
 # Disable the "serde" feature which we don't need.
-wasm-metadata = { version = "0.251.0", default-features = false }
+wasm-metadata = { version = "0.262.0", default-features = false }
 cranelift-entity = "0.133.3"
