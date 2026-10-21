@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Remove lint config from rust source, tighten CI.
+  ([#750](https://github.com/fastly/Viceroy/pull/750))
+
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
   ([#739](https://github.com/fastly/Viceroy/pull/739))
