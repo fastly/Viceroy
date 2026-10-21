@@ -16,6 +16,9 @@ tokio = { version = "1.53.0", features = ["full"] }
 tracing-subscriber = "0.2.19"
 viceroy-lib = { path = "../../..", features = ["test-fatalerror-config"] }
 
+[dev-dependencies]
+test-fixtures-artifacts = { path = "../../../test-fixtures/artifacts" }
+
 # To indicate to cargo that this trap-test is not a member of the testing workspace specified by
 # ~/cli/tests/fixtures/Cargo.toml, place an empty workspace specification here.
 [workspace]

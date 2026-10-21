@@ -19,8 +19,8 @@ fn main() {
 
     println!("logging from stdout");
     eprintln!("logging from stderr");
-    println!(""); // this should be dropped
-    eprintln!(""); // this should be dropped
+    println!(); // this should be dropped
+    eprintln!(); // this should be dropped
 
     // showcase line buffering on stdout
     print!("log line terminates on flush");

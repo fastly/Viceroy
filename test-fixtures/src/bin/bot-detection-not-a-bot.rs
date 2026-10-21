@@ -5,8 +5,8 @@ use fastly_sys::fastly_http_downstream as downstream;
 fn main() {
     let client_req = Request::from_client();
 
-    assert_eq!(client_req.get_bot_detected(), false);
-    assert_eq!(client_req.get_bot_analyzed(), false);
+    assert!(!client_req.get_bot_detected());
+    assert!(!client_req.get_bot_analyzed());
     assert_eq!(client_req.get_bot_name(), Ok(None));
     assert_eq!(client_req.get_bot_category(), Ok(None));
     assert_eq!(client_req.get_bot_category_kind(), None);

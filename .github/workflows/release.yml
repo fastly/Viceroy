@@ -77,9 +77,12 @@ jobs:
       - name: Install Rust
         run: rustup target add ${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
+      # Only the `viceroy` binary is packaged, so build just that package
+      # (which pulls in `viceroy-lib` as a dependency). `--workspace` would
+      # also try to build `test-fixtures`, which only compiles for wasm.
       - name: Build
         run: |
-          cargo build --profile=release-lto-stripped --workspace --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
+          cargo build --profile=release-lto-stripped -p viceroy --locked --target=${{ matrix.rust_arch }}-${{ matrix.rust_abi }}
 
       - name: Package
         run: |

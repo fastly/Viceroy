@@ -50,7 +50,7 @@ fn main() {
     assert_eq!(client_req.get_client_ddos_detected(), Some(false));
 
     // Viceroy returns false for `fastly_key_is_valid`:
-    assert_eq!(client_req.fastly_key_is_valid(), false);
+    assert!(!client_req.fastly_key_is_valid());
 
     // TLS is currently unsupported, so these should work but return `None`:
     assert_eq!(client_req.get_tls_cipher_openssl_name(), Ok(None));
@@ -79,7 +79,12 @@ fn main() {
     let mut region = Vec::with_capacity(10);
     let mut nwritten = 0;
     let status = unsafe {
-        downstream_compliance_region(rh.as_u32(), region.as_mut_ptr(), region.capacity(), &mut nwritten)
+        downstream_compliance_region(
+            rh.as_u32(),
+            region.as_mut_ptr(),
+            region.capacity(),
+            &mut nwritten,
+        )
     };
     unsafe {
         region.set_len(nwritten);
@@ -87,5 +92,4 @@ fn main() {
     assert_eq!(status, FastlyStatus::OK);
     assert_eq!(nwritten, 4);
     assert_eq!(region.as_slice(), b"none");
-
 }
