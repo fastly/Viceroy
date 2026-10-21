@@ -43,7 +43,7 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     // Determine if we have a main module or a library module.
     let library = !has_export(bytes, "_start");
-    let page_size_log2 = get_memory_page_size_log2(&bytes)?;
+    let page_size_log2 = get_memory_page_size_log2(bytes)?;
 
     // Wit-bindgen imports and exports need the noshift adapter.
     // Non-64KiB page sizes also need noshift, because shift_mem.rs assumes 64KiB pages.
@@ -207,14 +207,11 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
 fn get_memory_page_size_log2(bytes: &[u8]) -> anyhow::Result<Option<u32>> {
     for payload in wasmparser::Parser::new(0).parse_all(bytes) {
         let payload = payload?;
-        match payload {
-            wasmparser::Payload::MemorySection(section) => {
-                for mem in section {
-                    let mem = mem?;
-                    return Ok(mem.page_size_log2);
-                }
-            }
-            _ => {}
+        if let wasmparser::Payload::MemorySection(section) = payload
+            && let Some(mem) = section.into_iter().next()
+        {
+            let mem = mem?;
+            return Ok(mem.page_size_log2);
         }
     }
     Ok(None)
