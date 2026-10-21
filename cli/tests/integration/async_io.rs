@@ -11,6 +11,7 @@ use crate::{
     viceroy_test,
 };
 use hyper::{Body, Request, Response, StatusCode, body::HttpBody};
+use std::convert::Infallible;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -69,10 +70,13 @@ viceroy_test!(async_io_methods, |is_component| {
                         .status(StatusCode::OK)
                         .body(Body::empty())
                         .unwrap(),
+                    // A body that never yields data or completes, so the
+                    // guest's handle to it never becomes ready.
                     0 | 1 | 3 => Response::builder()
-                        .header("Transfer-Encoding", "chunked")
                         .status(StatusCode::OK)
-                        .body(Body::empty())
+                        .body(Body::wrap_stream(futures::stream::pending::<
+                            Result<hyper::body::Bytes, Infallible>,
+                        >()))
                         .unwrap(),
                     _ => unreachable!(),
                 }

@@ -89,7 +89,7 @@ mod tests {
 
     use crate::tracing_log_filter;
 
-    fn test_log_filter(env_filter: Option<&str>, verbosity: u8, tests: impl FnOnce() -> ()) {
+    fn test_log_filter(env_filter: Option<&str>, verbosity: u8, tests: impl FnOnce()) {
         let sub = FmtSubscriber::builder()
             .with_env_filter(tracing_log_filter(env_filter, verbosity))
             .finish();

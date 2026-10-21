@@ -300,16 +300,15 @@ impl FastlyKvStore for Sandbox {
             .recv()
             .await?;
 
-        match resp {
-            Ok(_) => {
-                memory.write(kv_error_out, KvError::Ok)?;
-                Ok(())
-            }
-            Err(e) => {
-                memory.write(kv_error_out, (&e).into())?;
-                Ok(())
-            }
-        }
+        // matching compute & wit `await-delete` api, we report NotFound for `Ok(false)`
+        // since it indicates a missing or expired entry.
+        let kv_error = match resp {
+            Ok(true) => KvError::Ok,
+            Ok(false) => KvError::NotFound,
+            Err(e) => (&e).into(),
+        };
+        memory.write(kv_error_out, kv_error)?;
+        Ok(())
     }
 
     async fn list(

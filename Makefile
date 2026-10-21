@@ -40,7 +40,7 @@ trap-test-ci: trap-test
 
 .PHONY: ci
 ci: VICEROY_CARGO=cargo --locked
-ci: format-check test-crates  ## The main CI target; runs all tests except `trap-test`.
+ci: format-check clippy test-crates  ## The main CI target; runs all tests except `trap-test`.
 
 .PHONY: clean
 clean:  ## Clean up Cargo outputs and cache.

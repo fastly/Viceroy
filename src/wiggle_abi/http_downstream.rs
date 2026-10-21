@@ -465,13 +465,12 @@ impl FastlyHttpDownstream for Sandbox {
         _memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
     ) -> Result<u32, Error> {
-        Ok(self
-            .downstream_original_headers(handle)?
+        self.downstream_original_headers(handle)?
             .ok_or(Error::MissingDownstreamMetadata)?
             .get("x-fastly-bot-verified")
             .map(|a| a == "true")
             .map(|a| if a { 1 } else { 0 })
-            .ok_or(Error::ValueAbsent)?)
+            .ok_or(Error::ValueAbsent)
     }
 
     fn downstream_resvpnproxy_is_anonymous(
@@ -571,15 +570,13 @@ impl FastlyHttpDownstream for Sandbox {
     ) -> Result<u32, Error> {
         Err(Error::Unsupported {
             msg: "`downstream_visits_this_service` not yet supported",
-        }
-        .into())
+        })
     }
 
     fn downstream_visits_this_pop(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
         Err(Error::Unsupported {
             msg: "`downstream_visits_this_pop` not yet supported",
-        }
-        .into())
+        })
     }
 }
 

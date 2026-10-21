@@ -598,10 +598,7 @@ impl backend::HostHealthcheckOptions for ComponentCtx {
         &mut self,
         host: String,
     ) -> wasmtime::Result<Resource<backend::HealthcheckOptions>, types::Error> {
-        let builder = match HealthcheckBuilder::new(host) {
-            Ok(builder) => builder,
-            Err(e) => return Err(e.into()),
-        };
+        let builder = HealthcheckBuilder::new(host)?;
 
         Ok(self.table().push(builder)?)
     }

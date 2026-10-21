@@ -174,6 +174,24 @@ impl From<KeyValidationError> for types::Error {
     }
 }
 
+impl From<KeyValidationError> for KvError {
+    fn from(_: KeyValidationError) -> Self {
+        KvError::BadRequest
+    }
+}
+
+impl From<ResourceTableError> for KvError {
+    fn from(_: ResourceTableError) -> Self {
+        KvError::InternalError
+    }
+}
+
+impl From<HandleError> for KvError {
+    fn from(_: HandleError) -> Self {
+        KvError::InternalError
+    }
+}
+
 impl From<SecretStoreError> for types::Error {
     fn from(err: SecretStoreError) -> Self {
         use SecretStoreError::*;

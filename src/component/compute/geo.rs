@@ -11,7 +11,7 @@ impl geo::Host for ComponentCtx {
         let json = self
             .sandbox()
             .geolocation_lookup(&ip_addr)
-            .ok_or(geo::Error::GenericError)?;
+            .unwrap_or_default();
 
         if json.len() > usize::try_from(max_len).unwrap() {
             return Err(error::Error::BufferLengthError {

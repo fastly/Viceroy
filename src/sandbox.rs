@@ -1126,7 +1126,8 @@ impl Sandbox {
 
     /// Insert a pending cache operation: CacheHandle or CacheBusyHandle
     pub fn insert_cache_op(&mut self, task: PendingCacheTask) -> AsyncItemHandle {
-        self.async_items.push(Some(AsyncItem::PendingCache(task)))
+        self.async_items
+            .push(Some(AsyncItem::PendingCache(Box::new(task))))
     }
 
     /// Get mutable access to a cache entry, which may require blocking until the entry is
