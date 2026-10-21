@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Support custom page size in `viceroy adapt`. ([#714](https://github.com/fastly/Viceroy/pull/714))
+
 - Fix `async_io` test.
   See [#286](https://github.com/fastly/Viceroy/issues/286).
   ([#739](https://github.com/fastly/Viceroy/pull/739))
