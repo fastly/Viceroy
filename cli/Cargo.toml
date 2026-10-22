@@ -51,6 +51,9 @@ pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_windows-
 name = "viceroy"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
 base64 = { workspace = true }

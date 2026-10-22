@@ -18,6 +18,14 @@ clippy:  ## Ask for Clippy lints.
 	$(VICEROY_CARGO) clippy --workspace --exclude test-fixtures --all-targets --all-features -- -D warnings
 	$(VICEROY_CARGO) clippy -p test-fixtures --target wasm32-wasip1 --all-targets --all-features -- -D warnings
 
+.PHONY: lint-adapter
+lint-adapter:  ## Lint all four WASM adapter variants, denying compiler warnings.
+	# The adapter has its own workspace, so the main Clippy run doesn't cover it.
+	cd wasm_abi/adapter && RUSTFLAGS="$(RUSTFLAGS) -D warnings" $(VICEROY_CARGO) check --package=viceroy-component-adapter --lib --target=wasm32-unknown-unknown
+	cd wasm_abi/adapter && RUSTFLAGS="$(RUSTFLAGS) -D warnings" $(VICEROY_CARGO) check --package=viceroy-component-adapter --lib --target=wasm32-unknown-unknown --features noshift
+	cd wasm_abi/adapter && RUSTFLAGS="$(RUSTFLAGS) -D warnings" $(VICEROY_CARGO) check --package=viceroy-component-adapter --lib --target=wasm32-unknown-unknown --no-default-features
+	cd wasm_abi/adapter && RUSTFLAGS="$(RUSTFLAGS) -D warnings" $(VICEROY_CARGO) check --package=viceroy-component-adapter --lib --target=wasm32-unknown-unknown --no-default-features --features noshift
+
 .PHONY: test
 test: test-crates trap-test  ## Run all tests.
 
@@ -48,7 +56,7 @@ trap-test-ci: trap-test
 
 .PHONY: ci
 ci: VICEROY_CARGO=cargo --locked
-ci: format-check clippy test-crates  ## The main CI target; runs all tests except `trap-test`.
+ci: format-check clippy lint-adapter test-crates  ## The main CI target; runs all tests except `trap-test`.
 
 .PHONY: clean
 clean:  ## Clean up Cargo outputs and cache.

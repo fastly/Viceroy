@@ -117,6 +117,13 @@ inherits = "dev"
 lto = "fat"
 codegen-units = 1
 
+[lints]
+workspace = true
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "warn"
+invalid_codeblock_attributes = "warn"
+
 [workspace.dependencies]
 anyhow = "1.0.31"
 base64 = "0.23.1"
@@ -142,7 +149,7 @@ wasmtime-wasi-io = "46.0.3"
 wasmtime-wasi-nn = "46.0.3"
 wiggle = "46.0.3"
 
-# The wasm-tools and cranelift crates below are also used internally by
+# The wasm-tools crates below are also used internally by
 # wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
 # otherwise the build ends up with two copies of each: ours and wasmtime's.
 # `wat` is versioned 1.x, so a caret requirement would float past the release
@@ -154,7 +161,10 @@ wasm-encoder = { version = "0.251.0", features = ["wasmparser"] }
 wit-component = "0.251.0"
 # Disable the "serde" feature which we don't need.
 wasm-metadata = { version = "0.251.0", default-features = false }
-cranelift-entity = "0.133.3"
+# Unlike the crates above, this must be newer than Wasmtime's internal version:
+# entity_impl! in the older release uses primitive constants deprecated in Rust 1.99.
+# Stay on the 0.135 series to preserve support for our Rust 1.95 minimum.
+cranelift-entity = "0.135.7"
 
 # test fixtures, used only in dev-dependencies
 test-fixtures-artifacts = { path = "test-fixtures/artifacts" }
