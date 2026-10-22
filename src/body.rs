@@ -39,7 +39,11 @@ pub enum Chunk {
     /// Since the channel yields chunks, this variant represents a *stream* of chunks rather than
     /// one individual chunk. That stream is effectively "flattened" on-demand, as the `Body`
     /// containing it is read.
-    Channel(mpsc::Receiver<StreamingBodyItem>),
+    ///
+    /// The second field is the exact number of bytes the channel has left to yield, if that is
+    /// known up front (e.g. for a cached object with a known length). It lets the body report an
+    /// exact size hint, so that it can be framed with `Content-Length`.
+    Channel(mpsc::Receiver<StreamingBodyItem>, Option<u64>),
     /// A version of `HttpBody` that assumes that the interior data is gzip-compressed.
     CompressedHttpBody(DecoderState, hyper::Body),
 }
@@ -48,6 +52,20 @@ impl Chunk {
     pub fn compressed_body(body: hyper::Body) -> Chunk {
         let initial_state = Box::new(GzDecoder::new(BytesMut::new().writer()));
         Chunk::CompressedHttpBody(initial_state, body)
+    }
+
+    /// A channel chunk that will yield exactly `length` bytes.
+    pub fn known_length_channel(chan: mpsc::Receiver<StreamingBodyItem>, length: u64) -> Chunk {
+        Chunk::Channel(chan, Some(length))
+    }
+
+    /// The exact number of bytes this chunk will yield, if known.
+    fn exact_len(&self) -> Option<u64> {
+        match self {
+            Chunk::HttpBody(body) => body.size_hint().exact(),
+            Chunk::Channel(_, length) => *length,
+            Chunk::CompressedHttpBody(_, _) => None,
+        }
     }
 }
 
@@ -77,7 +95,7 @@ impl From<hyper::Body> for Chunk {
 
 impl From<mpsc::Receiver<StreamingBodyItem>> for Chunk {
     fn from(chan: mpsc::Receiver<StreamingBodyItem>) -> Self {
-        Chunk::Channel(chan)
+        Chunk::Channel(chan, None)
     }
 }
 
@@ -194,11 +212,7 @@ impl Body {
         let mut len = 0u64;
 
         for chunk in &self.chunks {
-            if let Chunk::HttpBody(body) = chunk {
-                len = len.checked_add(body.size_hint().exact()?)?;
-            } else {
-                return None;
-            }
+            len = len.checked_add(chunk.exact_len()?)?;
         }
 
         Some(len)
@@ -312,13 +326,13 @@ impl HttpBody for Body {
                         }
                     }
                 }
-                Chunk::Channel(mut receiver) => {
+                Chunk::Channel(mut receiver, remaining) => {
                     let receiver_mut = &mut receiver;
                     pin_mut!(receiver_mut);
                     match receiver_mut.poll_recv(cx) {
                         Poll::Pending => {
                             // put the channel back, so we can poll it again next time
-                            self.chunks.push_front(receiver.into());
+                            self.chunks.push_front(Chunk::Channel(receiver, remaining));
                             return self.check_timeout_on_pending(cx);
                         }
                         Poll::Ready(None) => {
@@ -326,9 +340,12 @@ impl HttpBody for Body {
                             return Poll::Ready(Some(Err(Error::UnfinishedStreamingBody)));
                         }
                         Poll::Ready(Some(StreamingBodyItem::Chunk(chunk))) => {
+                            // the bytes in this chunk are no longer the channel's to yield
+                            let remaining =
+                                remaining.and_then(|r| r.checked_sub(chunk.exact_len()?));
                             // put the channel back first, so we can poll it again after the chunk it
                             // just yielded
-                            self.chunks.push_front(receiver.into());
+                            self.chunks.push_front(Chunk::Channel(receiver, remaining));
                             // now push the chunk which will be polled appropriately the next time
                             // through the loop
                             self.chunks.push_front(chunk);
@@ -410,24 +427,12 @@ impl HttpBody for Body {
     /// This is an optional method, but implementing it correctly allows us to reduce the number of
     /// cases where bodies get sent with chunked Transfer-Encoding instead of Content-Length.
     fn size_hint(&self) -> SizeHint {
-        let mut size = 0;
-        for chunk in self.chunks.iter() {
-            match chunk {
-                // If this is a streaming body or a compressed chunk, immediately give up on the hint.
-                Chunk::Channel(_) => return SizeHint::default(),
-                Chunk::CompressedHttpBody(_, _) => return SizeHint::default(),
-                Chunk::HttpBody(body) => {
-                    // An `HttpBody` size hint will either be exact, or wide open. If the latter,
-                    // bail out with a wide-open range.
-                    if let Some(chunk_size) = body.size_hint().exact() {
-                        size += chunk_size;
-                    } else {
-                        return SizeHint::default();
-                    }
-                }
-            }
+        // Each chunk's hint is either exact, or wide open (a streaming body of unknown length, or a
+        // compressed chunk). If any is wide open, so is the whole body's.
+        match self.len() {
+            Some(size) => SizeHint::with_exact(size),
+            None => SizeHint::default(),
         }
-        SizeHint::with_exact(size)
     }
 }
 
@@ -545,6 +550,44 @@ mod tests {
             result?;
         }
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn known_length_channel_has_exact_size_hint() {
+        use crate::{body::Body, streaming_body::StreamingBody};
+        use http_body::Body as _;
+
+        let (mut tx, rx) = StreamingBody::new();
+        let mut body: Body = Chunk::known_length_channel(rx, 10).into();
+        assert_eq!(body.size_hint().exact(), Some(10));
+        assert_eq!(body.len(), Some(10));
+
+        // The hint counts down as the channel yields data.
+        tx.send_chunk(b"0123".as_slice()).await.unwrap();
+        let mut buf = [0u8; 4];
+        assert_eq!(body.read(&mut buf).await.unwrap(), 4);
+        assert_eq!(body.size_hint().exact(), Some(6));
+
+        tx.send_chunk(b"456789".as_slice()).await.unwrap();
+        tx.finish().unwrap();
+        assert_eq!(body.read_into_vec().await.unwrap(), b"456789");
+    }
+
+    #[tokio::test]
+    async fn known_length_channel_survives_append() {
+        use crate::{body::Body, streaming_body::StreamingBody};
+        use http_body::Body as _;
+
+        let (_tx, rx) = StreamingBody::new();
+        let mut body: Body = b"prefix".as_slice().into();
+        body.append(Chunk::known_length_channel(rx, 10).into());
+        assert_eq!(body.size_hint().exact(), Some(16));
+
+        // A channel of unknown length makes the whole body unknown.
+        let (_tx, rx) = StreamingBody::new();
+        body.append(rx.into());
+        assert_eq!(body.size_hint().exact(), None);
+        assert_eq!(body.len(), None);
     }
 
     proptest! {
