@@ -16,7 +16,7 @@ use http::{HeaderMap, HeaderValue};
 mod store;
 mod variance;
 
-use store::{CacheData, CacheKeyObjects, GetBodyBuilder, ObjectMeta, Obligation};
+use store::{CacheData, CacheKeyObjects, GetBodyBuilder, ObjectMeta, Obligation, Replacing};
 pub use variance::VaryRule;
 
 #[derive(Debug, thiserror::Error)]
@@ -240,6 +240,129 @@ impl CacheEntry {
     }
 }
 
+/// How a `replace` operation coordinates with other writers of the same object.
+///
+/// See <https://docs.rs/fastly/latest/fastly/cache/core/enum.ReplaceStrategy.html>.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ReplaceStrategy {
+    /// Read the existing object, if any, and leave it in place. The replacement is an ordinary
+    /// last-writer-wins insert.
+    #[default]
+    Immediate,
+    /// As `Immediate`, except that the existing object immediately stops being findable by lookups.
+    ImmediateForceMiss,
+    /// Wait for any in-flight write of this object to complete, then block other writers until this
+    /// replace inserts its replacement (or is abandoned).
+    Wait,
+}
+
+impl ReplaceStrategy {
+    /// Convert from the representation used across the ABI boundary.
+    ///
+    /// Returns `None` if the value is not a recognized strategy.
+    pub fn from_abi(value: u32) -> Option<Self> {
+        match value {
+            1 => Some(Self::Immediate),
+            2 => Some(Self::ImmediateForceMiss),
+            3 => Some(Self::Wait),
+            _ => None,
+        }
+    }
+}
+
+wiggle::bitflags::bitflags! {
+    /// The state of a cache lookup or replace, as reported to the guest.
+    ///
+    /// This has the same layout as both ABIs' lookup state flags.
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    pub struct LookupState: u32 {
+        const FOUND = 1 << 0;
+        const USABLE = 1 << 1;
+        const STALE = 1 << 2;
+        const MUST_INSERT_OR_UPDATE = 1 << 3;
+        const USABLE_IF_ERROR = 1 << 4;
+    }
+}
+
+/// An in-progress replace operation: the object currently in the cache (if any), plus the
+/// permission to write a replacement for it.
+#[derive(Debug)]
+pub struct ReplaceEntry {
+    key: CacheKey,
+    existing: Option<Found>,
+    replacing: Replacing,
+
+    /// See [`CacheEntry::always_use_requested_range`].
+    always_use_requested_range: bool,
+}
+
+impl ReplaceEntry {
+    /// Set the always_use_requested_range flag.
+    pub fn with_always_use_requested_range(self, always_use_requested_range: bool) -> Self {
+        Self {
+            always_use_requested_range,
+            ..self
+        }
+    }
+
+    /// Returns the key used to begin this replace.
+    pub fn key(&self) -> &CacheKey {
+        &self.key
+    }
+
+    /// Returns the object that was in the cache when the replace began, if any.
+    ///
+    /// This object may be stale: `replace` returns whatever is present, and leaves it to the guest
+    /// to decide what to do about freshness.
+    pub fn existing(&self) -> Option<&Found> {
+        self.existing.as_ref()
+    }
+
+    /// The lookup state to report for this replace.
+    ///
+    /// As on Compute, this starts from an empty set: even with no existing object, the state does
+    /// not include `MUST_INSERT_OR_UPDATE`.
+    pub fn lookup_state(&self) -> LookupState {
+        let mut state = LookupState::empty();
+        if let Some(existing) = &self.existing {
+            // Unlike for lookups, Compute reports any existing object as FOUND and USABLE, even
+            // if it has expired: the guest decides what to do about freshness.
+            state |= LookupState::FOUND | LookupState::USABLE;
+            if !existing.meta().is_fresh() {
+                state |= LookupState::STALE;
+            }
+        }
+        state
+    }
+
+    /// Returns the object that was in the cache when the replace began, if any.
+    pub fn existing_mut(&mut self) -> Option<&mut Found> {
+        self.existing.as_mut()
+    }
+
+    /// Access the body of the existing object, if there is one.
+    pub async fn body(&self, from: Option<u64>, to: Option<u64>) -> Result<Body, crate::Error> {
+        let existing = self
+            .existing
+            .as_ref()
+            .ok_or(crate::Error::CacheError(Error::Missing))?;
+        existing
+            .get_body()
+            .with_range(from, to)
+            .with_always_use_requested_range(self.always_use_requested_range)
+            .build()
+            .await
+    }
+
+    /// Write the replacement object, consuming this replace operation.
+    ///
+    /// As on Compute, the replacement's variant is computed from the request headers the replace
+    /// was begun with.
+    pub fn insert(self, options: WriteOptions, body: Body) {
+        self.replacing.insert(options, body);
+    }
+}
+
 /// A successful retrieval of an item from the cache.
 #[derive(Debug)]
 pub struct Found {
@@ -336,6 +459,27 @@ impl Cache {
             key: key.clone(),
             found: found.map(|v| Found::from((*v).clone())),
             go_get: obligation,
+            always_use_requested_range: false,
+        }
+    }
+
+    /// Begin a replace operation: read the object currently in the cache (if any), and acquire the
+    /// right to write a replacement for it.
+    pub async fn replace(
+        &self,
+        key: &CacheKey,
+        request_headers: &HeaderMap,
+        strategy: ReplaceStrategy,
+    ) -> ReplaceEntry {
+        let objects = self
+            .inner
+            .get_with_by_ref(key, async { Default::default() })
+            .await;
+        let (existing, replacing) = objects.replace(request_headers, strategy).await;
+        ReplaceEntry {
+            key: key.clone(),
+            existing: existing.map(|v| Found::from((*v).clone())),
+            replacing,
             always_use_requested_range: false,
         }
     }
@@ -878,5 +1022,459 @@ mod tests {
         assert!(!found.meta().is_fresh());
         assert!(found.meta().is_usable());
         assert!(result.go_get().is_some());
+    }
+
+    /// Insert `body` at `key` with a 100s TTL, non-transactionally.
+    async fn insert_fresh(cache: &Cache, key: &CacheKey, body: &str) {
+        cache
+            .insert(
+                key,
+                HeaderMap::default(),
+                WriteOptions::new(Duration::from_secs(100)),
+                body.as_bytes().into(),
+            )
+            .await;
+    }
+
+    async fn read_body(entry: &ReplaceEntry) -> String {
+        entry
+            .body(None, None)
+            .await
+            .unwrap()
+            .read_into_string()
+            .await
+            .unwrap()
+    }
+
+    async fn lookup_body(cache: &Cache, key: &CacheKey) -> Option<String> {
+        let entry = cache.lookup(key, &HeaderMap::default()).await;
+        entry.found()?;
+        Some(
+            entry
+                .body(None, None)
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn replace_immediate_leaves_existing_visible() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        insert_fresh(&cache, &key, "old").await;
+
+        let entry = cache
+            .replace(&key, &HeaderMap::default(), ReplaceStrategy::Immediate)
+            .await;
+        assert_eq!(read_body(&entry).await, "old");
+
+        // `Immediate` does not disturb the existing object...
+        assert_eq!(lookup_body(&cache, &key).await.as_deref(), Some("old"));
+
+        entry.insert(
+            WriteOptions::new(Duration::from_secs(100)),
+            "new".as_bytes().into(),
+        );
+
+        // ...but the replacement wins once it's written.
+        assert_eq!(lookup_body(&cache, &key).await.as_deref(), Some("new"));
+    }
+
+    #[tokio::test]
+    async fn replace_no_existing_object() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+
+        let entry = cache
+            .replace(&key, &HeaderMap::default(), ReplaceStrategy::Wait)
+            .await;
+        assert!(entry.existing().is_none());
+
+        entry.insert(
+            WriteOptions::new(Duration::from_secs(100)),
+            "new".as_bytes().into(),
+        );
+        assert_eq!(lookup_body(&cache, &key).await.as_deref(), Some("new"));
+    }
+
+    #[tokio::test]
+    async fn replace_force_miss_hides_existing() {
+        let cache = Arc::new(Cache::default());
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        insert_fresh(&cache, &key, "old").await;
+
+        let entry = cache
+            .replace(
+                &key,
+                &HeaderMap::default(),
+                ReplaceStrategy::ImmediateForceMiss,
+            )
+            .await;
+        // The replace still gets to read the object it displaced...
+        assert_eq!(read_body(&entry).await, "old");
+        // ...but nobody else can find it.
+        assert!(
+            cache
+                .lookup(&key, &HeaderMap::default())
+                .await
+                .found()
+                .is_none()
+        );
+
+        // A transactional lookup blocks on our obligation rather than missing.
+        let waiter = tokio::task::spawn({
+            let cache = Arc::clone(&cache);
+            let key = key.clone();
+            async move {
+                cache
+                    .transaction_lookup(&key, &HeaderMap::default(), true)
+                    .await
+            }
+        });
+
+        entry.insert(
+            WriteOptions::new(Duration::from_secs(100)),
+            "new".as_bytes().into(),
+        );
+
+        let waited = tokio::time::timeout(Duration::from_secs(5), waiter)
+            .await
+            .expect("waiter should be woken by the replacement insert")
+            .unwrap();
+        assert!(waited.go_get().is_none());
+        assert_eq!(
+            waited
+                .body(None, None)
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap(),
+            "new"
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_wait_serializes() {
+        let cache = Arc::new(Cache::default());
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        insert_fresh(&cache, &key, "1").await;
+
+        // The read-modify-write ("counter") pattern: each task reads the current value, adds one,
+        // and writes it back. `Wait` is what makes this safe.
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..4 {
+            set.spawn({
+                let cache = Arc::clone(&cache);
+                let key = key.clone();
+                async move {
+                    let entry = cache
+                        .replace(&key, &HeaderMap::default(), ReplaceStrategy::Wait)
+                        .await;
+                    let count: u32 = read_body(&entry).await.parse().unwrap();
+                    entry.insert(
+                        WriteOptions::new(Duration::from_secs(100)),
+                        format!("{}", count + 1).into_bytes().into(),
+                    );
+                }
+            });
+        }
+        tokio::time::timeout(Duration::from_secs(10), set.join_all())
+            .await
+            .expect("`Wait` replaces should not deadlock");
+
+        assert_eq!(lookup_body(&cache, &key).await.as_deref(), Some("5"));
+    }
+
+    #[tokio::test]
+    async fn replace_wait_queues_behind_immediate() {
+        for strategy in [
+            ReplaceStrategy::Immediate,
+            ReplaceStrategy::ImmediateForceMiss,
+        ] {
+            for complete in [true, false] {
+                let cache = Arc::new(Cache::default());
+                let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+                insert_fresh(&cache, &key, "1").await;
+
+                let first = cache.replace(&key, &HeaderMap::default(), strategy).await;
+
+                let mut waiter = tokio::task::spawn({
+                    let cache = Arc::clone(&cache);
+                    let key = key.clone();
+                    async move {
+                        let entry = cache
+                            .replace(&key, &HeaderMap::default(), ReplaceStrategy::Wait)
+                            .await;
+                        entry.existing().is_some()
+                    }
+                });
+
+                // A correct implementation never finishes here, so this can't flake; at worst it
+                // misses a bug.
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), &mut waiter)
+                        .await
+                        .is_err(),
+                    "{strategy:?}: `Wait` should queue behind an in-progress replace"
+                );
+
+                if complete {
+                    first.insert(
+                        WriteOptions::new(Duration::from_secs(100)),
+                        "2".as_bytes().into(),
+                    );
+                } else {
+                    drop(first);
+                }
+
+                let found_existing = tokio::time::timeout(Duration::from_secs(5), waiter)
+                    .await
+                    .expect("`Wait` should begin once the other replace is finished")
+                    .unwrap();
+                // An abandoned force-miss has already removed the object.
+                let expect_existing = complete || strategy == ReplaceStrategy::Immediate;
+                assert_eq!(found_existing, expect_existing, "{strategy:?}, {complete}");
+                if complete {
+                    assert_eq!(lookup_body(&cache, &key).await.as_deref(), Some("2"));
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn replace_abandoned_releases_obligation() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        insert_fresh(&cache, &key, "old").await;
+
+        let entry = cache
+            .replace(
+                &key,
+                &HeaderMap::default(),
+                ReplaceStrategy::ImmediateForceMiss,
+            )
+            .await;
+        drop(entry);
+
+        // The obligation is gone, so a new transaction gets to take it on rather than waiting
+        // forever on the abandoned replace.
+        let txn = cache
+            .transaction_lookup(&key, &HeaderMap::default(), false)
+            .await;
+        assert!(txn.found().is_none());
+        assert!(txn.go_get().is_some());
+    }
+
+    #[tokio::test]
+    async fn replace_with_new_vary_rule() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+
+        let header_name = HeaderName::from_static("x-viceroy-test");
+        let request_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("test"))]
+            .into_iter()
+            .collect();
+
+        cache
+            .insert(
+                &key,
+                request_headers.clone(),
+                WriteOptions {
+                    vary_rule: VaryRule::new([&header_name].into_iter()),
+                    ..WriteOptions::new(Duration::from_secs(100))
+                },
+                "old".as_bytes().into(),
+            )
+            .await;
+
+        let entry = cache
+            .replace(&key, &request_headers, ReplaceStrategy::Wait)
+            .await;
+        assert_eq!(read_body(&entry).await, "old");
+
+        // Write the replacement without a vary rule: the obligation was taken against the *old*
+        // variant, but the new object lands under a new one.
+        entry.insert(
+            WriteOptions::new(Duration::from_secs(100)),
+            "new".as_bytes().into(),
+        );
+
+        assert_eq!(lookup_body(&cache, &key).await.as_deref(), Some("new"));
+        let matched = cache.lookup(&key, &request_headers).await;
+        assert!(matched.found().is_some());
+    }
+
+    #[tokio::test]
+    async fn replace_expired_object() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        cache
+            .insert(
+                &key,
+                HeaderMap::default(),
+                WriteOptions::new(Duration::ZERO),
+                "old".as_bytes().into(),
+            )
+            .await;
+        // Lookups report the object as unusable, so `get_state` doesn't report it as found...
+        let entry = cache.lookup(&key, &HeaderMap::default()).await;
+        assert!(!entry.found().unwrap().meta().is_usable());
+
+        // ...but, as on Compute, a replace does.
+        let entry = cache
+            .replace(&key, &HeaderMap::default(), ReplaceStrategy::Immediate)
+            .await;
+        assert_eq!(read_body(&entry).await, "old");
+        assert_eq!(
+            entry.lookup_state(),
+            LookupState::FOUND | LookupState::USABLE | LookupState::STALE
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_immediate_collapses_lookups() {
+        for existing in [true, false] {
+            let cache = Arc::new(Cache::default());
+            let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+            if existing {
+                insert_fresh(&cache, &key, "old").await;
+            }
+
+            let entry = cache
+                .replace(&key, &HeaderMap::default(), ReplaceStrategy::Immediate)
+                .await;
+
+            let mut waiter = tokio::task::spawn({
+                let cache = Arc::clone(&cache);
+                let key = key.clone();
+                async move {
+                    let txn = cache
+                        .transaction_lookup(&key, &HeaderMap::default(), true)
+                        .await;
+                    assert!(txn.go_get().is_none(), "the replace holds the obligation");
+                    txn.body(None, None)
+                        .await
+                        .unwrap()
+                        .read_into_string()
+                        .await
+                        .unwrap()
+                }
+            });
+
+            if existing {
+                // A usable object is served right away...
+                let body = tokio::time::timeout(Duration::from_secs(5), waiter)
+                    .await
+                    .expect("lookup should be served the existing object")
+                    .unwrap();
+                assert_eq!(body, "old");
+            } else {
+                // ...but otherwise, the lookup waits for the replacement.
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), &mut waiter)
+                        .await
+                        .is_err(),
+                    "lookup should wait for the replacement"
+                );
+                entry.insert(
+                    WriteOptions::new(Duration::from_secs(100)),
+                    "new".as_bytes().into(),
+                );
+                let body = tokio::time::timeout(Duration::from_secs(5), waiter)
+                    .await
+                    .expect("lookup should be woken by the replacement")
+                    .unwrap();
+                assert_eq!(body, "new");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn replace_force_miss_hides_only_found_variant() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+        let header_name = HeaderName::from_static("x-viceroy-test");
+        let request_headers: HeaderMap = [(header_name.clone(), HeaderValue::from_static("test"))]
+            .into_iter()
+            .collect();
+
+        // Two variants that both match `request_headers`; the varied one is more recent, so it's
+        // the one a lookup (or replace) finds.
+        insert_fresh(&cache, &key, "unvaried").await;
+        cache
+            .insert(
+                &key,
+                request_headers.clone(),
+                WriteOptions {
+                    vary_rule: VaryRule::new([&header_name].into_iter()),
+                    ..WriteOptions::new(Duration::from_secs(100))
+                },
+                "varied".as_bytes().into(),
+            )
+            .await;
+
+        let entry = cache
+            .replace(&key, &request_headers, ReplaceStrategy::ImmediateForceMiss)
+            .await;
+        assert_eq!(read_body(&entry).await, "varied");
+
+        // As on Compute, only the object the replace found is hidden.
+        let found = cache.lookup(&key, &request_headers).await;
+        assert_eq!(
+            found
+                .body(None, None)
+                .await
+                .unwrap()
+                .read_into_string()
+                .await
+                .unwrap(),
+            "unvaried"
+        );
+    }
+
+    #[tokio::test]
+    async fn hits_and_stale_while_revalidate() {
+        let cache = Cache::default();
+        let key: CacheKey = ([1u8].as_slice()).try_into().unwrap();
+
+        cache
+            .insert(
+                &key,
+                HeaderMap::default(),
+                WriteOptions {
+                    stale_while_revalidate: Duration::from_secs(10),
+                    ..WriteOptions::new(Duration::from_secs(100))
+                },
+                "old".as_bytes().into(),
+            )
+            .await;
+
+        let first = cache.lookup(&key, &HeaderMap::default()).await;
+        let found = first.found().unwrap();
+        assert_eq!(found.meta().hits(), 1);
+        assert_eq!(
+            found.meta().stale_while_revalidate(),
+            Duration::from_secs(10)
+        );
+
+        // As on Compute, each `Found` reports the count as of its own delivery.
+        let second = cache.lookup(&key, &HeaderMap::default()).await;
+        assert_eq!(second.found().unwrap().meta().hits(), 2);
+        assert_eq!(found.meta().hits(), 1);
+
+        // As on Compute, beginning a replace counts as a hit.
+        let entry = cache
+            .replace(&key, &HeaderMap::default(), ReplaceStrategy::Immediate)
+            .await;
+        let existing = entry.existing().unwrap();
+        assert_eq!(existing.meta().hits(), 3);
+        assert_eq!(
+            existing.meta().stale_while_revalidate(),
+            Duration::from_secs(10)
+        );
     }
 }
