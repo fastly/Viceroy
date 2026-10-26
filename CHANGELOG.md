@@ -26,6 +26,19 @@
   data, instead of erroring. This matches the witx ABI and the Compute platform.
   See [#721](https://github.com/fastly/Viceroy/issues/721).
 
+- Support the "replace" family of core cache calls, completing Viceroy's coverage of the
+  [core cache API](https://docs.rs/fastly/latest/fastly/cache/core/index.html).
+  ([#495](https://github.com/fastly/Viceroy/issues/495))
+
+  `fastly::cache::core::replace()` previously failed immediately, so read-modify-write patterns
+  such as a cached counter could not be tested locally. All three `ReplaceStrategy` variants are
+  now modeled: `Immediate` leaves the existing object visible until the replacement is provided,
+  `ImmediateForceMiss` removes it as soon as the replace begins, and `Wait` queues behind any
+  in-progress insert or replace.
+
+  As part of this, `Found::hits()` and `Found::stale_while_revalidate()` are implemented; they
+  previously reported `unsupported` for lookups as well, which made the SDK panic.
+
 ## 0.21.1 (2026-09-15)
 
 - Support generating native debug info for the guest, via the new `-g`/`--debug-info` flag and
