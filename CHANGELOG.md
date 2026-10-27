@@ -1,7 +1,8 @@
-## Unreleased
+## 0.22.0 (2026-10-27)
 
 - Provide `fastly_compute_runtime::has_{domain_inspector,image_optimizer,origin_inspector}`
   hostcall stubs, which report every product as disabled.
+  ([#753](https://github.com/fastly/Viceroy/pull/753))
 
 - Remove lint config from rust source, tighten CI.
   ([#750](https://github.com/fastly/Viceroy/pull/750))
@@ -27,7 +28,11 @@
 
 - Return an empty result from `geo.lookup` on the component ABI for an address without geolocation
   data, instead of erroring. This matches the witx ABI and the Compute platform.
-  See [#721](https://github.com/fastly/Viceroy/issues/721).
+  See [#721](https://github.com/fastly/Viceroy/issues/721) and
+  [#734](https://github.com/fastly/Viceroy/pull/734).
+
+- Build adapater automatically instead of requiring it be kept checked-in.
+  See [#720](https://github.com/fastly/Viceroy/pull/720)
 
 ## 0.21.1 (2026-09-15)
 
