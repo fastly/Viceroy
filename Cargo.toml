@@ -128,7 +128,7 @@ invalid_codeblock_attributes = "warn"
 anyhow = "1.0.31"
 base64 = "0.23.1"
 clap = { version = "^4.0.18", features = ["derive"] }
-hyper = { version = "=0.14.26", features = ["full"] }
+hyper = { version = "=1.12.0", features = ["full"] }
 itertools = "0.15.0"
 pin-project = "1.0.8"
 rustls = "0.23.45"
@@ -144,10 +144,10 @@ url = "2.3.1"
 
 # Wasmtime dependencies
 wasmtime = { version =  "46.0.3", features = ["anyhow", "call-hook"] }
-wasmtime-wasi = "46.0.3"
-wasmtime-wasi-io = "46.0.3"
-wasmtime-wasi-nn = "46.0.3"
-wiggle = "46.0.3"
+wasmtime-wasi = "48.0.7"
+wasmtime-wasi-io = "48.0.7"
+wasmtime-wasi-nn = "48.0.7"
+wiggle = "48.0.7"
 
 # The wasm-tools crates below are also used internally by
 # wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
@@ -155,12 +155,12 @@ wiggle = "46.0.3"
 # `wat` is versioned 1.x, so a caret requirement would float past the release
 # wasmtime uses and drag a second `wast`/`wasm-encoder`/`wasmparser` in with
 # it. Pin it exactly; the 0.x crates below are already held by their minor.
-wat = "=1.251.0"
-wasmparser = "0.251.0"
-wasm-encoder = { version = "0.251.0", features = ["wasmparser"] }
-wit-component = "0.251.0"
+wat = "=1.262.0"
+wasmparser = "0.262.0"
+wasm-encoder = { version = "0.262.0", features = ["wasmparser"] }
+wit-component = "0.254.2"
 # Disable the "serde" feature which we don't need.
-wasm-metadata = { version = "0.251.0", default-features = false }
+wasm-metadata = { version = "0.254.2", default-features = false }
 # Unlike the crates above, this must be newer than Wasmtime's internal version:
 # entity_impl! in the older release uses primitive constants deprecated in Rust 1.99.
 # Stay on the 0.135 series to preserve support for our Rust 1.95 minimum.
