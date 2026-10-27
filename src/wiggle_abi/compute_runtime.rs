@@ -15,4 +15,16 @@ impl FastlyComputeRuntime for Sandbox {
     fn get_heap_mib(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
         Ok(self.get_heap_usage_mib())
     }
+
+    fn has_domain_inspector(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        Ok(0)
+    }
+
+    fn has_image_optimizer(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        Ok(0)
+    }
+
+    fn has_origin_inspector(&mut self, _memory: &mut GuestMemory<'_>) -> Result<u32, Error> {
+        Ok(0)
+    }
 }

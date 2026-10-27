@@ -550,6 +550,10 @@
 (typename $vcpu_ms u64)
 (typename $memory_mib u32)
 
+(typename $domain_inspector_enabled u32)
+(typename $image_optimizer_enabled u32)
+(typename $origin_inspector_enabled u32)
+
 (typename $inspect_info_mask
     (flags (@witx repr u32)
         $reserved

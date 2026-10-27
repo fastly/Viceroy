@@ -92,6 +92,7 @@ pub(crate) mod bindings {
             "fastly:compute/http-body.write": async | tracing,
             "fastly:compute/http-body.write-front": async | tracing,
             "fastly:compute/log.[method]endpoint.clone": tracing | trappable,
+            "fastly:compute/compute-runtime.[static]products.new": tracing | trappable,
 
             // Match the `wasmtime-wasi` crate's bindings.
             "wasi:io/streams.[method]output-stream.write": tracing | trappable,
@@ -133,6 +134,7 @@ pub(crate) mod bindings {
             "fastly:compute/erl.rate-counter": String,
             "fastly:compute/erl.penalty-box": String,
             "fastly:compute/http-downstream.extra-bot-category": super::compute::http_downstream::ExtraBotCategory,
+            "fastly:compute/compute-runtime.products": super::compute::compute_runtime::Products,
             "fastly:compute/shielding.shield-backend-options": super::compute::shielding::ShieldBackendOptions,
             "fastly:compute/http-req.extra-cache-override-details": crate::component::compute::http_req::ExtraCacheOverrideDetails,
         },
