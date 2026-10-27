@@ -1,6 +1,7 @@
-use crate::component::bindings::fastly::compute::compute_runtime;
+use crate::component::bindings::fastly::compute::{compute_runtime, types};
 use crate::linking::ComponentCtx;
 use std::sync::atomic::Ordering;
+use wasmtime::component::Resource;
 
 impl compute_runtime::Host for ComponentCtx {
     fn get_vcpu_ms(&mut self) -> u64 {
@@ -49,5 +50,30 @@ impl compute_runtime::Host for ComponentCtx {
 
     fn get_namespace_id(&mut self) -> String {
         "".to_owned()
+    }
+}
+
+pub struct Products;
+
+impl compute_runtime::HostProducts for ComponentCtx {
+    fn new(&mut self) -> wasmtime::Result<Resource<Products>> {
+        Ok(self.wasi_table.push(Products)?)
+    }
+
+    fn has_domain_inspector(&mut self, _h: Resource<Products>) -> Result<bool, types::Error> {
+        Ok(false)
+    }
+
+    fn has_image_optimizer(&mut self, _h: Resource<Products>) -> Result<bool, types::Error> {
+        Ok(false)
+    }
+
+    fn has_origin_inspector(&mut self, _h: Resource<Products>) -> Result<bool, types::Error> {
+        Ok(false)
+    }
+
+    fn drop(&mut self, h: Resource<Products>) -> wasmtime::Result<()> {
+        self.wasi_table.delete(h)?;
+        Ok(())
     }
 }

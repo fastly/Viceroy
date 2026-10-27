@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Provide `fastly_compute_runtime::has_{domain_inspector,image_optimizer,origin_inspector}`
+  hostcall stubs, which report every product as disabled.
+
 - Remove lint config from rust source, tighten CI.
   ([#750](https://github.com/fastly/Viceroy/pull/750))
 

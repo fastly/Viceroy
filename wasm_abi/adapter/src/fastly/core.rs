@@ -340,6 +340,48 @@ pub mod fastly_compute_runtime {
         }
         FastlyStatus::OK
     }
+
+    #[export_name = "fastly_compute_runtime#has_domain_inspector"]
+    pub fn has_domain_inspector(value_out: *mut u32) -> FastlyStatus {
+        let products = crate::bindings::fastly::compute::compute_runtime::Products::new();
+        match products.has_domain_inspector() {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(value_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_compute_runtime#has_image_optimizer"]
+    pub fn has_image_optimizer(value_out: *mut u32) -> FastlyStatus {
+        let products = crate::bindings::fastly::compute::compute_runtime::Products::new();
+        match products.has_image_optimizer() {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(value_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
+
+    #[export_name = "fastly_compute_runtime#has_origin_inspector"]
+    pub fn has_origin_inspector(value_out: *mut u32) -> FastlyStatus {
+        let products = crate::bindings::fastly::compute::compute_runtime::Products::new();
+        match products.has_origin_inspector() {
+            Ok(res) => {
+                unsafe {
+                    *main_ptr!(value_out) = u32::from(res);
+                }
+                FastlyStatus::OK
+            }
+            Err(e) => e.into(),
+        }
+    }
 }
 
 pub mod fastly_http_body {
