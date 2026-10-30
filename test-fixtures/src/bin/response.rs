@@ -6,11 +6,11 @@ use {
     fastly::{error::BufferSizeError, handle::ResponseHandle as FastlyResponseHandle},
     fastly_shared::{FastlyStatus, HttpVersion},
     fastly_sys::{
+        ResponseHandle,
         fastly_http_resp::{
             header_append, header_insert, header_remove, header_value_get, new, status_get,
             status_set, version_get, version_set,
         },
-        ResponseHandle,
     },
     http::header::{HeaderName, HeaderValue},
 };

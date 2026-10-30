@@ -1529,6 +1529,18 @@
         (result $err (expected $vcpu_ms (error $fastly_status)))
     )
 
+    (@interface func (export "has_domain_inspector")
+        (result $err (expected $domain_inspector_enabled (error $fastly_status)))
+    )
+
+    (@interface func (export "has_image_optimizer")
+        (result $err (expected $image_optimizer_enabled (error $fastly_status)))
+    )
+
+    (@interface func (export "has_origin_inspector")
+        (result $err (expected $origin_inspector_enabled (error $fastly_status)))
+    )
+
     ;;; Get a snapshot of the current dynamic memory usage, rounded up to the nearest mebibyte (2^20).
     ;;;
     ;;; This includes usage from the Wasm linear memory (heap) and usage from host allocations

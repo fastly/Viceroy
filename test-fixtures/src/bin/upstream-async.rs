@@ -5,8 +5,8 @@
 //! and then checks that both responses are eventually returned and processed.
 
 use fastly::{
-    http::request::{select, PendingRequest, PollResult},
     Request, Response,
+    http::request::{PendingRequest, PollResult, select},
 };
 
 /// Set up async requests to two distinct backends.
@@ -88,7 +88,7 @@ fn test_poll() {
     let mut reqs = vec![req1, req2];
 
     while !reqs.is_empty() {
-        for req in std::mem::replace(&mut reqs, Vec::new()) {
+        for req in std::mem::take(&mut reqs) {
             match req.poll() {
                 PollResult::Pending(req) => reqs.push(req),
                 PollResult::Done(resp_result) => tracker.process(resp_result.unwrap()),

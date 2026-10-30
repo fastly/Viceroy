@@ -7,7 +7,7 @@
 //! [tea]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/418
 
 use fastly_sys::{
-    fastly_http_body as http_body, fastly_http_resp as http_resp, BodyHandle, ResponseHandle,
+    BodyHandle, ResponseHandle, fastly_http_body as http_body, fastly_http_resp as http_resp,
 };
 
 fn main() {

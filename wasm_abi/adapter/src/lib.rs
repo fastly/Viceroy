@@ -1,6 +1,3 @@
-// Promote warnings into errors, when building in release mode.
-#![cfg_attr(not(debug_assertions), deny(warnings))]
-
 /// After performing the instrumentation from `crates/xqd-codegen/src/shift_mem.rs`,
 /// the adapter is now free to take the first two pages of the Wasm memory.
 /// This means the adapter code deviates from the upstream repo in the following ways:
