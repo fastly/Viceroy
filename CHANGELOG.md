@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Support custom page size in `viceroy adapt`. ([#714](https://github.com/fastly/Viceroy/pull/714))
+
 ## 0.22.0 (2026-10-27)
 
 - Provide `fastly_compute_runtime::has_{domain_inspector,image_optimizer,origin_inspector}`
