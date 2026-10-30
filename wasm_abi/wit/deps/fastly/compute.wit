@@ -3221,11 +3221,20 @@ interface http-incoming {
 
 /// Features for interacting with the Compute runtime.
 interface compute-runtime {
+  use types.{error};
+
   /// A timestamp in milliseconds.
   type vcpu-ms = u64;
   /// An amount of memory in mebibytes (2^20 bytes).
   type memory-mib = u32;
 
+  resource products {
+    /// Returns the products enabled for this service.
+    new: static func() -> products;
+    has-domain-inspector: func() -> result<bool, error>;
+    has-image-optimizer: func() -> result<bool, error>;
+    has-origin-inspector: func() -> result<bool, error>;
+  }
 
   /// Gets the amount of vCPU time that has passed since this sandbox was started, in
   /// milliseconds.

@@ -1,7 +1,7 @@
 [package]
 name = "viceroy"
 description = "Viceroy is a local testing daemon for Fastly Compute."
-version = "0.22.0"
+version = "0.22.1"
 authors = ["Fastly"]
 readme = "../README.md"
 edition = "2024"
@@ -51,6 +51,9 @@ pkg-url = "{ repo }/releases/download/v{ version }/viceroy_v{ version }_windows-
 name = "viceroy"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
 base64 = { workspace = true }
@@ -61,7 +64,7 @@ clap = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
-viceroy-lib = { path = "..", version = "=0.22.0" }
+viceroy-lib = { path = "..", version = "=0.22.1" }
 wat = "^1.0.38"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
@@ -85,3 +88,4 @@ serde_json = { workspace = true }
 rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.3"
 tokio-rustls = "0.24.1"
+test-fixtures-artifacts = { workspace = true }

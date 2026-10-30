@@ -1,6 +1,6 @@
 [package]
 name = "viceroy-lib"
-version = "0.22.0"
+version = "0.22.1"
 description = "Viceroy implementation details."
 authors = ["Fastly"]
 edition = "2024"
@@ -85,15 +85,10 @@ test-fatalerror-config = []
 
 [workspace]
 members = [
-    "cli"
-]
-resolver = "3"
-
-# Exclude our integration test fixtures, which need to be compiled to wasm
-# (managed by the Makefile)
-exclude = [
+    "cli",
     "test-fixtures",
 ]
+resolver = "3"
 
 # Specify `cli` as the default workspace member to operate on. This means that
 # commands like `cargo run` will run the CLI binary by default.
@@ -122,6 +117,13 @@ inherits = "dev"
 lto = "fat"
 codegen-units = 1
 
+[lints]
+workspace = true
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "warn"
+invalid_codeblock_attributes = "warn"
+
 [workspace.dependencies]
 anyhow = "1.0.31"
 base64 = "0.23.1"
@@ -147,13 +149,14 @@ wasmtime-wasi-io = "46.0.3"
 wasmtime-wasi-nn = "46.0.3"
 wiggle = "46.0.3"
 
-# The wasm-tools and cranelift crates below are also used internally by
-# wasmtime. Preferrably, we should keep them on the exact versions wasmtime
-# 46.0.3 depends on, otherwise the build ends up with two copies of each:
-# ours and wasmtime's.
+# The wasm-tools crates below are also used internally by
+# wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
+# otherwise the build ends up with two copies of each: ours and wasmtime's.
+#
 # However, to support custom page size, we need to use a more recent version
 # of wasm-tools. With the next wasmtime bump, we can hopefully unify the
 # version again.
+#
 # `wat` is versioned 1.x, so a caret requirement would float past the release
 # wasmtime uses and drag a second `wast`/`wasm-encoder`/`wasmparser` in with
 # it. Pin it exactly; the 0.x crates below are already held by their minor.
@@ -163,4 +166,11 @@ wasm-encoder = { version = "0.262.0", features = ["wasmparser"] }
 wit-component = "0.262.0"
 # Disable the "serde" feature which we don't need.
 wasm-metadata = { version = "0.262.0", default-features = false }
-cranelift-entity = "0.133.3"
+# Unlike the crates above, this must be newer than Wasmtime's internal version:
+# entity_impl! in the older release uses primitive constants deprecated in Rust 1.99.
+# Stay on the 0.135 series to preserve support for our Rust 1.95 minimum.
+cranelift-entity = "0.135.7"
+
+# test fixtures, used only in dev-dependencies
+test-fixtures-artifacts = { path = "test-fixtures/artifacts" }
+

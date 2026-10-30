@@ -20,7 +20,12 @@ jobs:
           - stable
           - beta
           - nightly
-    runs-on: ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+      fail-fast: false
+    # An environment override takes precedence over rust-toolchain.toml;
+    # changing rustup's default alone still builds with the pinned toolchain.
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+    runs-on: ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +33,15 @@ jobs:
         persist-credentials: false
 
     - name: Install Rust
-      run: rustup default ${{ matrix.rust }}
+      run: |
+        rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal \
+          --component rustfmt,clippy \
+          --target wasm32-wasip1,wasm32-wasip2,wasm32-unknown-unknown
+
+    - name: Show active toolchain
+      run: |
+        rustup show active-toolchain
+        rustc --version --verbose
+        cargo --version
 
     - run: make ci

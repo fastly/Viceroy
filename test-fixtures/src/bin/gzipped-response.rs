@@ -1,10 +1,10 @@
-use fastly::http::request::SendError;
 use fastly::http::StatusCode;
+use fastly::http::request::SendError;
 use fastly::{Backend, Request};
 use std::io::{Read, Write};
 
-static HELLO_WORLD: &'static str = "hello, world!\n";
-static HELLO_WORLD_GZ: &'static [u8] = include_bytes!("../../data/hello_world.gz");
+static HELLO_WORLD: &str = "hello, world!\n";
+static HELLO_WORLD_GZ: &[u8] = include_bytes!("../../data/hello_world.gz");
 
 fn main() -> Result<(), SendError> {
     let echo_server = Backend::from_name("echo").expect("Could not find echo backend?");
@@ -92,9 +92,11 @@ fn main() -> Result<(), SendError> {
         pending_req
     };
     let mut unpacked_stream_async = unpacked_stream_pending.wait()?;
-    assert!(unpacked_stream_async
-        .get_header("Content-Encoding")
-        .is_none());
+    assert!(
+        unpacked_stream_async
+            .get_header("Content-Encoding")
+            .is_none()
+    );
     assert!(unpacked_stream_async.get_content_length().is_none());
     let hopefully_unpacked = unpacked_stream_async.take_body_str();
     assert_eq!(HELLO_WORLD, &hopefully_unpacked);

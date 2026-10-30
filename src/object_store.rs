@@ -492,7 +492,7 @@ pub enum KeyValidationError {
 mod tests {
     use super::*;
 
-    const STORE_NAME: &'static str = "test_store";
+    const STORE_NAME: &str = "test_store";
 
     #[test]
     fn test_kv_store_exists() {
@@ -529,9 +529,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
 
         // lookup
@@ -643,9 +642,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
         // append val3
         let res = stores.insert(
@@ -657,9 +655,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
         let res = stores.lookup(
             ObjectStoreKey(STORE_NAME.to_string()),
@@ -684,9 +681,8 @@ mod tests {
             Some(val2.clone()),
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
 
         // test overwrite
@@ -724,25 +720,23 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
 
         // test overwrite, get gen
-        let generation;
         let res = stores.lookup(
             ObjectStoreKey(STORE_NAME.to_string()),
             ObjectKey(key.clone()),
         );
-        match res {
+        let generation = match res {
             Ok(Some(ov)) => {
                 assert_eq!(ov.body, val1.as_bytes().to_vec());
-                generation = ov.generation;
+                ov.generation
             }
             Ok(None) => panic!("should have been Ok(Some(_))"),
             Err(e) => panic!("should not have been Err({:?})", e),
-        }
+        };
 
         // test generation match failure
         let res = stores.insert(
@@ -814,9 +808,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
 
         // insert val1
@@ -829,9 +822,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
         // insert val2
         let res = stores.insert(
@@ -843,9 +835,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
         // insert val3
         let res = stores.insert(
@@ -857,9 +848,8 @@ mod tests {
             None,
             None,
         );
-        match res {
-            Err(e) => panic!("should not have been Err({:?})", e),
-            _ => {}
+        if let Err(e) = res {
+            panic!("should not have been Err({:?})", e)
         }
 
         // list

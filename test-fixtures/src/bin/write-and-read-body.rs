@@ -3,12 +3,12 @@ use std::io::{Read, Write};
 
 fn main() {
     let mut body = Body::new();
-    body.write(b"Hello").unwrap();
-    body.write(b", ").unwrap();
+    body.write_all(b"Hello").unwrap();
+    body.write_all(b", ").unwrap();
 
     let mut body2 = Body::new();
-    body2.write(b"Viceroy").unwrap();
-    body2.write(b"!").unwrap();
+    body2.write_all(b"Viceroy").unwrap();
+    body2.write_all(b"!").unwrap();
 
     body.append(body2);
 

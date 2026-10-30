@@ -5,10 +5,10 @@
 use std::io::Write;
 use std::str::FromStr;
 
-use fastly::handle::{BodyHandle, CacheOverride, RequestHandle, ResponseHandle};
-use fastly::http::{HeaderName, HeaderValue, Method, StatusCode, Url};
 use fastly::Error;
 use fastly::Request;
+use fastly::handle::{BodyHandle, CacheOverride, RequestHandle, ResponseHandle};
+use fastly::http::{HeaderName, HeaderValue, Method, StatusCode, Url};
 use fastly_shared::FastlyStatus;
 
 fn is_ready(handle: u32) -> bool {
@@ -96,14 +96,19 @@ fn test_select() -> Result<(), Error> {
     append_header(&mut ds_resp, "Read-Ready", is_ready(read_body_handle));
     append_header(&mut ds_resp, "Write-Ready", is_ready(write_body_handle));
 
-    let handles = vec![
+    let handles = [
         simple_pending_req_handle,
         read_body_handle,
         write_body_handle,
     ];
     let mut ready_idx = 0;
     unsafe {
-        let _ = fastly_sys::fastly_async_io::select(handles.as_ptr(), handles.len(), 20, &mut ready_idx);
+        let _ = fastly_sys::fastly_async_io::select(
+            handles.as_ptr(),
+            handles.len(),
+            20,
+            &mut ready_idx,
+        );
     };
     if ready_idx == u32::MAX {
         append_header(&mut ds_resp, "Ready-Index", "timeout");

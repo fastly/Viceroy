@@ -1,4 +1,5 @@
 mod acl;
+mod adapter_memory;
 mod args;
 mod async_io;
 mod backend_introspection;
@@ -26,6 +27,7 @@ mod kv_store;
 mod logging;
 mod memory;
 mod pending_req;
+mod products;
 mod profiling;
 mod request;
 mod response;
