@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix `viceroy adapt` for core modules built with `wasip2` ([#748](https://github.com/fastly/Viceroy/pull/748))
+
 ## 0.22.0 (2026-10-27)
 
 - Provide `fastly_compute_runtime::has_{domain_inspector,image_optimizer,origin_inspector}`

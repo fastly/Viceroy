@@ -40,8 +40,25 @@ pub fn adapt_wat(wat: &str) -> anyhow::Result<Vec<u8>> {
 /// Given bytes that represent a core wasm module, adapt it to a component using the viceroy
 /// adapter.
 pub fn adapt_bytes(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
-    // Determine if we have a main module or a library module.
-    let library = !has_export(bytes, "_start");
+    // Determine if we have a main module or a library module. Modules built for
+    // `wasm32-wasip2` with `--skip-wit-component` export their entry point as
+    // `wasi:cli/run@0.2.x#run` instead of `_start`.
+    let has_start = has_export(bytes, "_start");
+    let run_export = if has_start {
+        None
+    } else {
+        find_wasi_cli_run_export(bytes)
+    };
+    let library = !has_start && run_export.is_none();
+
+    let synthesized;
+    let bytes = match &run_export {
+        Some(run_export) => {
+            synthesized = synthesize_start(bytes, run_export)?;
+            synthesized.as_slice()
+        }
+        None => bytes,
+    };
 
     // Wit-bindgen imports and exports need the noshift adapter.
     let needs_no_shift_adapter = has_wit_bindgen_imports(bytes) || has_wit_bindgen_exports(bytes);
@@ -184,6 +201,72 @@ fn has_export(bytes: &[u8], wanted: &str) -> bool {
 
     false
 }
+
+/// Find the name of a `wasi:cli/run@0.2.x#run` export, which is how
+/// `wasm32-wasip2` modules linked with `--skip-wit-component` export their
+/// entry point.
+fn find_wasi_cli_run_export(bytes: &[u8]) -> Option<String> {
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        let Ok(payload) = payload else {
+            return None;
+        };
+        if let wasmparser::Payload::ExportSection(section) = payload {
+            for export in section {
+                let Ok(export) = export else {
+                    return None;
+                };
+                if export.kind == wasmparser::ExternalKind::Func
+                    && export.name.starts_with("wasi:cli/run@0.2")
+                    && export.name.ends_with("#run")
+                {
+                    return Some(export.name.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Synthesize a `_start: () -> ()` export that calls the `wasi:cli/run`
+/// export named `run_export`, since `_start` is the entry point the adapter
+/// imports from the main module.
+///
+/// On error, `_start` passes the non-zero error code to `wasi:cli/exit#exit`.
+fn synthesize_start(bytes: &[u8], run_export: &str) -> anyhow::Result<Vec<u8>> {
+    use walrus::{FunctionBuilder, Module, ValType};
+
+    let mut module = Module::from_buffer(bytes)?;
+    let run = module.exports.get_func(run_export)?;
+
+    let version = run_export
+        .strip_prefix("wasi:cli/run@")
+        .and_then(|rest| rest.strip_suffix("#run"))
+        .context("malformed wasi:cli/run export name")?;
+    let exit_module = format!("wasi:cli/exit@{version}");
+    let exit = match module.imports.get_func(&exit_module, "exit") {
+        Ok(exit) => exit,
+        Err(_) => {
+            let ty = module.types.add(&[ValType::I32], &[]);
+            module.add_import_func(&exit_module, "exit", ty).0
+        }
+    };
+
+    let mut start = FunctionBuilder::new(&mut module.types, &[], &[]);
+    start.func_body().call(run).if_else(
+        None,
+        |then| {
+            // run returns result, which can only be 1 in the error case.
+            then.i32_const(1).call(exit);
+        },
+        |_| {},
+    );
+    let start = start.finish(vec![], &mut module.funcs);
+    module.exports.add("_start", start);
+
+    Ok(module.emit_wasm())
+}
+
 fn is_fastly_module(module: &str) -> bool {
     module.starts_with("fastly_") || module == "env" || module == "fastly" || module == "xqd"
 }
