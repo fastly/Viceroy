@@ -128,7 +128,7 @@ invalid_codeblock_attributes = "warn"
 anyhow = "1.0.31"
 base64 = "0.23.1"
 clap = { version = "^4.0.18", features = ["derive"] }
-hyper = { version = "=0.14.26", features = ["full"] }
+hyper = { version = "=1.12.0", features = ["full"] }
 itertools = "0.15.0"
 pin-project = "1.0.8"
 rustls = "0.23.45"
@@ -143,11 +143,11 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "46.0.3", features = ["anyhow", "call-hook"] }
-wasmtime-wasi = "46.0.3"
-wasmtime-wasi-io = "46.0.3"
-wasmtime-wasi-nn = "46.0.3"
-wiggle = "46.0.3"
+wasmtime = { version =  "48.0.7", features = ["anyhow", "call-hook"] }
+wasmtime-wasi = "48.0.8"
+wasmtime-wasi-io = "48.0.8"
+wasmtime-wasi-nn = "48.0.8"
+wiggle = "48.0.8"
 
 # The wasm-tools crates below are also used internally by
 # wasmtime. Keep them on the exact versions wasmtime 46.0.3 depends on,
