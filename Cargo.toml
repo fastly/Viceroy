@@ -143,7 +143,7 @@ futures = "0.3.24"
 url = "2.3.1"
 
 # Wasmtime dependencies
-wasmtime = { version =  "46.0.3", features = ["anyhow", "call-hook"] }
+wasmtime = { version =  "48.0.7", features = ["anyhow", "call-hook"] }
 wasmtime-wasi = "46.0.3"
 wasmtime-wasi-io = "46.0.3"
 wasmtime-wasi-nn = "46.0.3"
