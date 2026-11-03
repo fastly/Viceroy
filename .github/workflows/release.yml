@@ -12,7 +12,18 @@ defaults:
     shell: bash
 
 jobs:
+  # Use the same checks as PRs, but require the full supported-platform matrix
+  # before creating, building, or publishing a release.
+  test:
+    permissions:
+      contents: read
+    # Keep the established local-workflow syntax for actionlint compatibility.
+    uses: ./.github/workflows/test.yml # zizmor: ignore[self-repository]
+    with:
+      all-platforms: true
+
   prep-release:
+    needs: test
     runs-on: ${{ case(vars.LINUX_RUNNER_SMALL != '', vars.LINUX_RUNNER_SMALL, 'ubuntu-slim') }}
     permissions:
       contents: write

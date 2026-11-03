@@ -2,6 +2,14 @@ name: Test
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      all-platforms:
+        description: Run the test suites on every supported release platform.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,15 +22,65 @@ env:
   CACHE_GENERATION: 0
 
 jobs:
+  platforms:
+    runs-on: ${{ case(vars.LINUX_RUNNER_SMALL != '', vars.LINUX_RUNNER_SMALL, 'ubuntu-slim') }}
+    outputs:
+      runners: ${{ steps.select.outputs.runners }}
+    steps:
+    - name: Select test platforms
+      id: select
+      env:
+        ALL_PLATFORMS: ${{ inputs.all-platforms || contains(github.event.pull_request.labels.*.name, 'test-all') }}
+        LINUX_ARM64: ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+        LINUX_AMD64: ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
+        MACOS_ARM64: ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
+        MACOS_AMD64: ${{ case(vars.MACOS_RUNNER_AMD64 != '', vars.MACOS_RUNNER_AMD64, 'macos-26-intel') }}
+        WINDOWS: ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
+      run: |
+        runners=$(jq -cn \
+          --arg all_platforms "$ALL_PLATFORMS" \
+          --arg linux_arm64 "$LINUX_ARM64" \
+          --arg linux_amd64 "$LINUX_AMD64" \
+          --arg macos_arm64 "$MACOS_ARM64" \
+          --arg macos_amd64 "$MACOS_AMD64" \
+          --arg windows "$WINDOWS" \
+          'if $all_platforms == "true" then
+             [$linux_arm64, $linux_amd64, $macos_arm64, $macos_amd64, $windows]
+           else [$linux_amd64]
+           end')
+        echo "runners=$runners" >> "$GITHUB_OUTPUT"
+
+  # Lints do not need the runtime test matrix: enforce them on one platform.
+  lint:
+    runs-on: ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Cache cargo
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+        key: lint-${{ runner.os }}-${{ runner.arch }}-cargo-v${{ env.CACHE_GENERATION }}-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+    - name: Lint
+      run: make lint-ci
+
+  # Run the full suite once in ordinary CI; releases and PRs labeled test-all use all supported platforms.
   test:
+    needs: platforms
     strategy:
       matrix:
-        runner:
-          - ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
-          - ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
-          - ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
-          - ${{ case(vars.MACOS_RUNNER_AMD64 != '', vars.MACOS_RUNNER_AMD64, 'macos-26-intel') }}
-          - ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
+        runner: ${{ fromJSON(needs.platforms.outputs.runners) }}
       fail-fast: false
     runs-on: ${{ matrix.runner }}
     env:
@@ -44,24 +102,18 @@ jobs:
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-
     - name: test
-      run: make ci
+      run: make test-crates-ci
 
   # Run the trap test in an isolated job. It needs different cargo features than the usual build, so
   # it entails rebuilding the whole workspace if we combine them in a single job. This way, we
   # achieve some parallelism via Actions jobs.
   trap-test:
+    needs: platforms
     strategy:
       matrix:
-        runner:
-          - ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
-          - ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
-          - ${{ case(vars.MACOS_RUNNER_ARM64 != '', vars.MACOS_RUNNER_ARM64, 'macos-26') }}
-          - ${{ case(vars.MACOS_RUNNER_AMD64 != '', vars.MACOS_RUNNER_AMD64, 'macos-26-intel') }}
-          - ${{ case(vars.WINDOWS_RUNNER != '', vars.WINDOWS_RUNNER, 'windows-2025') }}
+        runner: ${{ fromJSON(needs.platforms.outputs.runners) }}
+      fail-fast: false
     runs-on: ${{ matrix.runner }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -113,7 +165,7 @@ jobs:
       run: make test-crates-lto
 
   package-check:
-    runs-on: ${{ case(vars.LINUX_RUNNER_ARM64 != '', vars.LINUX_RUNNER_ARM64, 'ubuntu-24.04-arm') }}
+    runs-on: ${{ case(vars.LINUX_RUNNER_AMD64 != '', vars.LINUX_RUNNER_AMD64, 'ubuntu-24.04') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
