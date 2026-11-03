@@ -6,6 +6,30 @@ updates:
       interval: weekly
     allow:
       - dependency-type: all
+    # Keep Wasmtime on production Compute's major version; allow compatible updates.
+    ignore:
+      - dependency-name: "wasmtime*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "wiggle*"
+        update-types: ["version-update:semver-major"]
+      # Keep Cranelift and wasm-tools on their selected release series to avoid
+      # duplicate crates. Allow patches; coordinate larger upgrades manually.
+      - dependency-name: "cranelift*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wasmparser"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wasm-encoder"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wasm-metadata"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wit-component"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wit-parser"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wat"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "wast"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels:
       - skip-changelog
     groups:
