@@ -23,6 +23,7 @@ env:
 
 jobs:
   platforms:
+    permissions: {}
     runs-on: ${{ case(vars.LINUX_RUNNER_SMALL != '', vars.LINUX_RUNNER_SMALL, 'ubuntu-slim') }}
     outputs:
       runners: ${{ steps.select.outputs.runners }}
