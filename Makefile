@@ -8,7 +8,8 @@ format:  ## Apply standard formatting with `cargo fmt`.
 
 .PHONY: format-check
 format-check:  ## Check formatting, without updating.
-	$(VICEROY_CARGO) fmt -- --check
+	$(VICEROY_CARGO) fmt --all -- --check
+	cd wasm_abi/adapter && $(VICEROY_CARGO) fmt --all -- --check
 
 .PHONY: clippy
 clippy:  ## Ask for Clippy lints.
@@ -54,15 +55,29 @@ trap-test: fix-build
 trap-test-ci: VICEROY_CARGO=cargo --locked
 trap-test-ci: trap-test
 
+.PHONY: lint-ci
+lint-ci: VICEROY_CARGO=cargo --locked
+lint-ci: format-check clippy lint-adapter  ## Run the lint checks once per CI toolchain.
+	# Keep documentation diagnostics visible without blocking CI for now.
+	$(MAKE) doc-check VICEROY_CARGO="$(VICEROY_CARGO)" || echo "Warning: documentation checks failed (non-blocking)."
+
+.PHONY: test-crates-ci
+test-crates-ci: VICEROY_CARGO=cargo --locked
+test-crates-ci: test-crates  ## Run the main test suite on each CI platform.
+
 .PHONY: ci
 ci: VICEROY_CARGO=cargo --locked
-ci: format-check clippy lint-adapter test-crates  ## The main CI target; runs all tests except `trap-test`.
+ci: lint-ci test-crates  ## The main CI target; runs all tests except `trap-test`.
 
 .PHONY: clean
 clean:  ## Clean up Cargo outputs and cache.
 	$(VICEROY_CARGO) clean
 	cd cli/tests/trap-test/ && $(VICEROY_CARGO) clean
 	cd wasm_abi/adapter && $(VICEROY_CARGO) clean
+
+.PHONY: doc-check
+doc-check:  ## Check documentation with warnings treated as errors.
+	RUSTDOCFLAGS="$(RUSTDOCFLAGS) -D warnings" $(VICEROY_CARGO) doc --workspace --exclude test-fixtures --all-features --no-deps
 
 .PHONY: doc
 doc: ## Open the documentation for the workspace in a browser.
