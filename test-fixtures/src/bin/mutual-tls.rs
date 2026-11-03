@@ -42,7 +42,8 @@ fn main() -> Result<(), Error> {
             assert_eq!(resp.get_status(), StatusCode::OK);
             let body = resp.into_body().into_string();
             let mut cert_cursor = std::io::Cursor::new(certificate);
-            let mut info = rustls_pemfile::certs(&mut cert_cursor).expect("got certs");
+            let mut info =
+                rustls_pemfile::certs(&mut cert_cursor).collect::<Result<Vec<_>, _>>()?;
             assert_eq!(info.len(), 1);
             let reflected_cert = info.remove(0);
             let base64_cert = general_purpose::STANDARD.encode(reflected_cert);
