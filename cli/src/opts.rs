@@ -55,7 +55,82 @@ pub struct ServeArgs {
     socket_addr: Option<SocketAddr>,
 
     #[command(flatten)]
+    tls: TlsArgs,
+
+    #[command(flatten)]
     shared: SharedArgs,
+}
+
+/// Options for serving over HTTPS instead of plain HTTP.
+#[derive(Args, Debug, Clone, Default)]
+pub struct TlsArgs {
+    /// Serve over HTTPS using this PEM certificate chain (leaf first). Requires `--tls-key`.
+    #[arg(long = "tls-cert", value_name = "PATH", requires = "tls_key")]
+    tls_cert: Option<PathBuf>,
+
+    /// The PEM private key for `--tls-cert`.
+    #[arg(long = "tls-key", value_name = "PATH", requires = "tls_cert")]
+    tls_key: Option<PathBuf>,
+
+    /// Serve over HTTPS using a certificate generated at startup.
+    ///
+    /// The certificate is not trusted by browsers or other clients; its PEM is logged at
+    /// startup (and written to `--tls-self-signed-out`, if given) so that it can be trusted
+    /// explicitly. To avoid browser warnings, use `--tls-cert` with a locally-trusted
+    /// certificate instead, for example one created with `mkcert`.
+    #[arg(long = "tls-self-signed", conflicts_with = "tls_cert")]
+    tls_self_signed: bool,
+
+    /// A subject alternative name (DNS name or IP address) for the generated certificate.
+    ///
+    /// May be repeated. Defaults to `localhost`, `127.0.0.1` and `::1`.
+    #[arg(long = "tls-san", value_name = "NAME", requires = "tls_self_signed")]
+    tls_sans: Vec<String>,
+
+    /// Write the generated certificate to this file as PEM.
+    #[arg(
+        long = "tls-self-signed-out",
+        value_name = "PATH",
+        requires = "tls_self_signed"
+    )]
+    tls_self_signed_out: Option<PathBuf>,
+}
+
+/// How the server should terminate TLS, as chosen on the command line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TlsMode {
+    /// Serve plain HTTP.
+    Disabled,
+    /// Serve HTTPS with the given certificate chain and key files.
+    Files { cert: PathBuf, key: PathBuf },
+    /// Serve HTTPS with a certificate generated for these names.
+    SelfSigned {
+        sans: Vec<String>,
+        out: Option<PathBuf>,
+    },
+}
+
+impl TlsArgs {
+    pub fn mode(&self) -> TlsMode {
+        match (&self.tls_cert, &self.tls_key) {
+            (Some(cert), Some(key)) => TlsMode::Files {
+                cert: cert.clone(),
+                key: key.clone(),
+            },
+            _ if self.tls_self_signed => TlsMode::SelfSigned {
+                sans: if self.tls_sans.is_empty() {
+                    viceroy_lib::downstream_tls::DEFAULT_SELF_SIGNED_NAMES
+                        .iter()
+                        .map(|name| name.to_string())
+                        .collect()
+                } else {
+                    self.tls_sans.clone()
+                },
+                out: self.tls_self_signed_out.clone(),
+            },
+            _ => TlsMode::Disabled,
+        }
+    }
 }
 
 #[derive(Args, Debug, Clone)]
@@ -178,6 +253,11 @@ impl ServeArgs {
 
     pub fn shared(&self) -> &SharedArgs {
         &self.shared
+    }
+
+    /// How the server should terminate TLS.
+    pub fn tls_mode(&self) -> TlsMode {
+        self.tls.mode()
     }
 }
 
@@ -442,7 +522,7 @@ fn check_wasmtime_profiler_mode(s: &str) -> Result<Profile, Error> {
 #[cfg(test)]
 mod opts_tests {
     use {
-        super::{Commands, Opts},
+        super::{Commands, Opts, TlsMode},
         clap::{Parser, error::ErrorKind},
         std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         std::path::PathBuf,
@@ -511,6 +591,103 @@ mod opts_tests {
             assert_eq!(serve_args.addr(), expected);
         }
         Ok(())
+    }
+
+    fn serve_args(args: &[&str]) -> Result<super::ServeArgs, clap::Error> {
+        let wasm = test_file("minimal.wat");
+        let argv: Vec<&str> = std::iter::once("dummy-program-name")
+            .chain(args.iter().copied())
+            .chain(std::iter::once(wasm.as_str()))
+            .collect();
+        let opts = Opts::try_parse_from(argv)?;
+        match opts.command.unwrap_or(Commands::Serve(opts.serve)) {
+            Commands::Serve(serve_args) => Ok(serve_args),
+            other => panic!("expected serve args, got {other:?}"),
+        }
+    }
+
+    /// TLS is off unless asked for.
+    #[test]
+    fn tls_is_disabled_by_default() -> TestResult {
+        assert_eq!(serve_args(&[])?.tls_mode(), TlsMode::Disabled);
+        Ok(())
+    }
+
+    /// A certificate and key can be given together.
+    #[test]
+    fn tls_cert_and_key_are_accepted() -> TestResult {
+        let args = serve_args(&["--tls-cert", "cert.pem", "--tls-key", "key.pem"])?;
+        assert_eq!(
+            args.tls_mode(),
+            TlsMode::Files {
+                cert: PathBuf::from("cert.pem"),
+                key: PathBuf::from("key.pem"),
+            }
+        );
+        Ok(())
+    }
+
+    /// A certificate without a key (or the reverse) is an error.
+    #[test]
+    fn tls_cert_requires_key() {
+        for args in [&["--tls-cert", "cert.pem"][..], &["--tls-key", "key.pem"]] {
+            let err = serve_args(args).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument, "{args:?}");
+        }
+    }
+
+    /// A self-signed certificate defaults to the loopback names.
+    #[test]
+    fn tls_self_signed_defaults() -> TestResult {
+        let args = serve_args(&["--tls-self-signed"])?;
+        assert_eq!(
+            args.tls_mode(),
+            TlsMode::SelfSigned {
+                sans: vec!["localhost".into(), "127.0.0.1".into(), "::1".into()],
+                out: None,
+            }
+        );
+        Ok(())
+    }
+
+    /// Custom subject alternative names replace the defaults.
+    #[test]
+    fn tls_self_signed_with_sans() -> TestResult {
+        let args = serve_args(&[
+            "--tls-self-signed",
+            "--tls-san",
+            "www.example.com",
+            "--tls-san",
+            "192.168.1.20",
+            "--tls-self-signed-out",
+            "viceroy.pem",
+        ])?;
+        assert_eq!(
+            args.tls_mode(),
+            TlsMode::SelfSigned {
+                sans: vec!["www.example.com".into(), "192.168.1.20".into()],
+                out: Some(PathBuf::from("viceroy.pem")),
+            }
+        );
+        Ok(())
+    }
+
+    /// The two ways of providing a certificate are mutually exclusive, and the
+    /// self-signed options need `--tls-self-signed`.
+    #[test]
+    fn tls_conflicting_options_are_rejected() {
+        let err = serve_args(&[
+            "--tls-self-signed",
+            "--tls-cert",
+            "cert.pem",
+            "--tls-key",
+            "key.pem",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+
+        let err = serve_args(&["--tls-san", "localhost"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
     }
 
     /// Test that a nonexistent file is rejected properly.

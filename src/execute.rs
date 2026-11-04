@@ -14,6 +14,7 @@ use {
             Geolocation, UnknownImportBehavior,
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
+        downstream_tls::DownstreamTlsInfo,
         error::{ExecutionError, NonHttpResponse},
         handoff::{HandoffConfig, HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
         http::framing::apply_response_framing,
@@ -450,6 +451,10 @@ impl ExecuteCtx {
         let orig_request_info_for_pushpin = HandoffRequestInfo::from_parts(&incoming_req_parts);
 
         let original_headers = incoming_req_parts.headers.clone();
+        let tls = incoming_req_parts
+            .extensions
+            .get::<Arc<DownstreamTlsInfo>>()
+            .cloned();
         let req = prepare_request(Request::from_parts(incoming_req_parts, body_for_wasm))?;
 
         let req_id = self
@@ -462,6 +467,7 @@ impl ExecuteCtx {
             client_addr: remote,
             compliance_region: String::from(REGION_NONE),
             original_headers,
+            tls,
         };
 
         let backends = self.settings.backends.clone();
@@ -912,6 +918,7 @@ impl ExecuteCtx {
             client_addr: (Ipv4Addr::LOCALHOST, 0).into(),
             compliance_region: String::from(REGION_NONE),
             original_headers: Default::default(),
+            tls: None,
         };
         let (downstream, receiver) = DownstreamRequest::new(req, metadata);
         let active_cpu_time_us = Arc::new(AtomicU64::new(0));

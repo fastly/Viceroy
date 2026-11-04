@@ -1,8 +1,8 @@
-use crate::opts::ServeArgs;
+use crate::opts::{ServeArgs, TlsMode};
 use crate::{create_execution_context, install_tracing_subscriber};
 use std::process::ExitCode;
 use tracing::{Level, event};
-use viceroy_lib::{Error, ProfilingConfig, ViceroyService};
+use viceroy_lib::{Error, ProfilingConfig, ViceroyService, downstream_tls::DownstreamTlsConfig};
 
 pub(crate) async fn exec(serve_args: ServeArgs) -> ExitCode {
     install_tracing_subscriber(serve_args.shared().verbosity());
@@ -37,7 +37,40 @@ async fn serve(serve_args: ServeArgs) -> Result<(), Error> {
     }
 
     let addr = serve_args.addr();
-    ViceroyService::new(ctx).serve(addr).await?;
+    let service = ViceroyService::new(ctx);
+    match load_tls_config(&serve_args.tls_mode())? {
+        Some(tls) => service.serve_tls(addr, tls).await?,
+        None => service.serve(addr).await?,
+    }
 
     unreachable!()
+}
+
+/// Build the downstream TLS configuration requested on the command line, if any.
+fn load_tls_config(mode: &TlsMode) -> Result<Option<DownstreamTlsConfig>, Error> {
+    match mode {
+        TlsMode::Disabled => Ok(None),
+        TlsMode::Files { cert, key } => Ok(Some(DownstreamTlsConfig::from_pem_files(cert, key)?)),
+        TlsMode::SelfSigned { sans, out } => {
+            let tls = DownstreamTlsConfig::self_signed(sans)?;
+            let pem = tls.certificate_pem().unwrap_or_default();
+            if let Some(out) = out {
+                std::fs::write(out, pem)?;
+                event!(
+                    Level::INFO,
+                    "Wrote self-signed certificate for {} to {}",
+                    sans.join(", "),
+                    out.display()
+                );
+            }
+            // Always show the certificate, so it can be trusted even without `-v`.
+            eprintln!(
+                "Generated a self-signed certificate for {}. Clients will not trust it unless \
+                 you add it to their trust store:\n{}",
+                sans.join(", "),
+                pem.trim_end()
+            );
+            Ok(Some(tls))
+        }
+    }
 }

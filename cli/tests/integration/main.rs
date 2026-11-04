@@ -13,6 +13,7 @@ mod debug_info;
 mod device_detection_lookup;
 mod dictionary_lookup;
 mod downstream_req;
+mod downstream_tls;
 mod early_hints;
 mod edge_rate_limiting;
 mod env_vars;

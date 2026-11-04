@@ -68,33 +68,43 @@ impl http_downstream::Host for ComponentCtx {
     fn downstream_tls_cipher_openssl_name(
         &mut self,
         h: Resource<http_req::Request>,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
-        Ok(self.sandbox().absent_metadata_value(h)?)
+        tls_value(self.sandbox(), h, max_len, |tls| {
+            Some(tls.cipher_openssl_name.as_bytes())
+        })
     }
 
     fn downstream_tls_protocol(
         &mut self,
         h: Resource<http_req::Request>,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
-        Ok(self.sandbox().absent_metadata_value(h)?)
+        tls_value(self.sandbox(), h, max_len, |tls| {
+            Some(tls.protocol.as_bytes())
+        })
     }
 
     fn downstream_tls_client_servername(
         &mut self,
         h: Resource<http_req::Request>,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Option<String>, types::Error> {
-        self.sandbox().absent_metadata_value(h).map_err(Into::into)
+        let sni = tls_value(self.sandbox(), h, max_len, |tls| {
+            tls.client_servername.as_deref().map(str::as_bytes)
+        })?;
+        // The server name came from a `&str`, so this cannot fail.
+        Ok(sni.map(|bytes| String::from_utf8(bytes).expect("SNI is valid UTF-8")))
     }
 
     fn downstream_tls_client_hello(
         &mut self,
         h: Resource<http_req::Request>,
-        _max_len: u64,
+        max_len: u64,
     ) -> Result<Option<Vec<u8>>, types::Error> {
-        Ok(self.sandbox().absent_metadata_value(h)?)
+        tls_value(self.sandbox(), h, max_len, |tls| {
+            tls.client_hello.as_deref()
+        })
     }
 
     fn downstream_tls_raw_client_certificate(
@@ -485,4 +495,24 @@ impl MetadataView for Sandbox {
             .ok_or(Error::MissingDownstreamMetadata)?;
         Ok(None)
     }
+}
+
+/// Look up a TLS metadata value for a downstream request.
+///
+/// Returns `Ok(None)` if the request did not arrive over TLS or the value is not available for
+/// the connection, and [`types::Error::BufferLen`] if the value is longer than `max_len`.
+fn tls_value(
+    sandbox: &Sandbox,
+    h: Resource<http_req::Request>,
+    max_len: u64,
+    select: impl FnOnce(&crate::downstream_tls::DownstreamTlsInfo) -> Option<&[u8]>,
+) -> Result<Option<Vec<u8>>, types::Error> {
+    let Some(value) = sandbox.downstream_tls_info(h.into())?.and_then(select) else {
+        return Ok(None);
+    };
+    let len = u64::try_from(value.len()).unwrap();
+    if len > max_len {
+        return Err(types::Error::BufferLen(len));
+    }
+    Ok(Some(value.to_vec()))
 }

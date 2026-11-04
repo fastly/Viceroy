@@ -206,46 +206,80 @@ impl FastlyHttpDownstream for Sandbox {
 
     fn downstream_tls_cipher_openssl_name(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
-        _cipher_out: GuestPtr<u8>,
-        _cipher_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        cipher_out: GuestPtr<u8>,
+        cipher_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        self.absent_metadata_value(handle)
+        let cipher = tls_value(self, handle, |tls| Some(tls.cipher_openssl_name.as_bytes()))?;
+        write_tls_value(
+            memory,
+            cipher,
+            cipher_out,
+            cipher_max_len,
+            nwritten_out,
+            ("cipher_out", "cipher_max_len"),
+        )
     }
 
     fn downstream_tls_protocol(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
-        _protocol_out: GuestPtr<u8>,
-        _protocol_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        protocol_out: GuestPtr<u8>,
+        protocol_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        self.absent_metadata_value(handle)
+        let protocol = tls_value(self, handle, |tls| Some(tls.protocol.as_bytes()))?;
+        write_tls_value(
+            memory,
+            protocol,
+            protocol_out,
+            protocol_max_len,
+            nwritten_out,
+            ("protocol_out", "protocol_max_len"),
+        )
     }
 
     fn downstream_tls_client_servername(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
-        _sni_out: GuestPtr<u8>,
-        _sni_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        sni_out: GuestPtr<u8>,
+        sni_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        self.absent_metadata_value(handle)
+        let sni = tls_value(self, handle, |tls| {
+            tls.client_servername.as_deref().map(str::as_bytes)
+        })?;
+        write_tls_value(
+            memory,
+            sni,
+            sni_out,
+            sni_max_len,
+            nwritten_out,
+            ("sni_out", "sni_max_len"),
+        )
     }
 
     fn downstream_tls_client_hello(
         &mut self,
-        _memory: &mut GuestMemory<'_>,
+        memory: &mut GuestMemory<'_>,
         handle: RequestHandle,
-        _chello_out: GuestPtr<u8>,
-        _chello_max_len: u32,
-        _nwritten_out: GuestPtr<u32>,
+        chello_out: GuestPtr<u8>,
+        chello_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
     ) -> Result<(), Error> {
-        self.absent_metadata_value(handle)
+        let hello = tls_value(self, handle, |tls| tls.client_hello.as_deref())?;
+        write_tls_value(
+            memory,
+            hello,
+            chello_out,
+            chello_max_len,
+            nwritten_out,
+            ("chello_out", "chello_max_len"),
+        )
     }
 
     fn downstream_tls_raw_client_certificate(
@@ -590,5 +624,46 @@ impl MetadataView for Sandbox {
             .downstream_metadata(handle)?
             .ok_or(Error::MissingDownstreamMetadata)?;
         Err(Error::ValueAbsent)
+    }
+}
+
+/// Look up a TLS metadata value for a downstream request.
+///
+/// Fails with [`Error::ValueAbsent`] if the request did not arrive over TLS or the value is not
+/// available for the connection.
+fn tls_value<'a>(
+    sandbox: &'a Sandbox,
+    handle: RequestHandle,
+    select: impl FnOnce(&'a crate::downstream_tls::DownstreamTlsInfo) -> Option<&'a [u8]>,
+) -> Result<&'a [u8], Error> {
+    sandbox
+        .downstream_tls_info(handle)?
+        .and_then(select)
+        .ok_or(Error::ValueAbsent)
+}
+
+/// Copy a TLS metadata value into guest memory, reporting the required length if the guest's
+/// buffer is too small.
+fn write_tls_value(
+    memory: &mut GuestMemory<'_>,
+    value: &[u8],
+    out: GuestPtr<u8>,
+    max_len: u32,
+    nwritten_out: GuestPtr<u32>,
+    names: (&'static str, &'static str),
+) -> Result<(), Error> {
+    match u32::try_from(value.len()) {
+        Ok(len) if len <= max_len => {
+            memory.copy_from_slice(value, out.as_array(len))?;
+            memory.write(nwritten_out, len)?;
+            Ok(())
+        }
+        too_large => {
+            memory.write(nwritten_out, too_large.unwrap_or(0))?;
+            Err(Error::BufferLengthError {
+                buf: names.0,
+                len: names.1,
+            })
+        }
     }
 }

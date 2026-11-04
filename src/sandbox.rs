@@ -30,6 +30,7 @@ use {
         body::Body,
         config::{Backend, Backends, Dictionaries, LoadedDictionary},
         downstream::{DownstreamMetadata, DownstreamRequest},
+        downstream_tls::DownstreamTlsInfo,
         error::{Error, HandleError},
         handoff::HandoffInfo,
         logging::LogEndpoint,
@@ -221,6 +222,21 @@ impl Sandbox {
         Ok(self
             .downstream_metadata(handle)?
             .map(|md| md.compliance_region.as_str()))
+    }
+
+    /// Retrieve the TLS details of the downstream connection for a request handle.
+    ///
+    /// Returns `Ok(None)` if the request did not arrive over TLS, and
+    /// [`Error::MissingDownstreamMetadata`] if the handle is not a downstream request.
+    pub fn downstream_tls_info(
+        &self,
+        handle: RequestHandle,
+    ) -> Result<Option<&DownstreamTlsInfo>, Error> {
+        Ok(self
+            .downstream_metadata(handle)?
+            .ok_or(Error::MissingDownstreamMetadata)?
+            .tls
+            .as_deref())
     }
 
     /// Retrieve the request ID for the given request handle.

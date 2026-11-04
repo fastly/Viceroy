@@ -151,6 +151,9 @@ pub enum Error {
     #[error("TLS certificate validation failed")]
     TlsCertificateValidationFailed,
 
+    #[error(transparent)]
+    DownstreamTls(#[from] crate::downstream_tls::DownstreamTlsError),
+
     #[error("Could not generate new backend name from '{0}'")]
     BackendNameRegistryError(String),
 
@@ -301,6 +304,7 @@ impl Error {
             | Error::TlsNoValidCACerts
             | Error::TlsInvalidHost
             | Error::TlsCertificateValidationFailed
+            | Error::DownstreamTls(_)
             | Error::DownstreamRequestError(_)
             | Error::DownstreamRespSending
             | Error::FastlyConfig(_)

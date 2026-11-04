@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Serve over HTTPS with `--tls-cert`/`--tls-key`, or with a generated certificate via
+  `--tls-self-signed` (and `--tls-san` for extra names). Guests see `https://` URLs, and the
+  downstream TLS protocol, cipher, SNI server name and ClientHello hostcalls return real values
+  for TLS connections. See [#50](https://github.com/fastly/Viceroy/issues/50).
+
 - Support custom page size in `viceroy adapt`. ([#714](https://github.com/fastly/Viceroy/pull/714))
 
 ## 0.22.0 (2026-10-27)

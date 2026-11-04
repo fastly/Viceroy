@@ -1,11 +1,16 @@
 //! Service types.
 
 use {
-    crate::{Error, body::Body, execute::ExecuteCtx},
+    crate::{
+        Error,
+        body::Body,
+        downstream_tls::{DownstreamTlsConfig, DownstreamTlsInfo, HandshakeRecorder},
+        execute::ExecuteCtx,
+    },
     futures::future::{self, Ready},
     hyper::{
         http::{Request, Response},
-        server::conn::AddrStream,
+        server::conn::{AddrStream, Http},
         service::Service,
     },
     std::{
@@ -15,9 +20,15 @@ use {
         pin::Pin,
         sync::Arc,
         task::{self, Poll},
+        time::Duration,
     },
+    tokio::net::TcpListener,
+    tokio_rustls::TlsAcceptor,
     tracing::{Level, event},
 };
+
+/// How long a client gets to complete the TLS handshake before the connection is dropped.
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A Viceroy service uses a Wasm module and a handler function to respond to HTTP requests.
 ///
@@ -80,6 +91,106 @@ impl ViceroyService {
         server.await?;
         Ok(())
     }
+
+    /// Bind this service to the given address and serve responses over HTTPS.
+    ///
+    /// TLS is terminated by Viceroy using `tls`. Guests see `https://` request URLs, and the
+    /// downstream TLS metadata hostcalls report the negotiated protocol, cipher suite, SNI server
+    /// name and raw ClientHello.
+    ///
+    /// Like [`ViceroyService::serve`], this function will only return if an error occurs.
+    pub async fn serve_tls(self, addr: SocketAddr, tls: DownstreamTlsConfig) -> Result<(), Error> {
+        let listener = TcpListener::bind(addr).await?;
+        self.serve_tls_on(listener, tls).await
+    }
+
+    /// Serve responses over HTTPS on an already-bound listener.
+    ///
+    /// This is the same as [`ViceroyService::serve_tls`], but lets the caller pick the listener,
+    /// for example one bound to an ephemeral port.
+    pub async fn serve_tls_on(
+        self,
+        listener: TcpListener,
+        tls: DownstreamTlsConfig,
+    ) -> Result<(), Error> {
+        event!(
+            Level::INFO,
+            "Listening on https://{}",
+            listener.local_addr()?
+        );
+        let acceptor = TlsAcceptor::from(tls.server_config());
+
+        loop {
+            let (tcp, remote_addr) = match listener.accept().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    // Mirror hyper's default for plain HTTP: errors such as running out of file
+                    // descriptors are logged, then we back off briefly instead of spinning.
+                    event!(Level::ERROR, "failed to accept connection: {}", e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            let local_addr = match tcp.local_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    event!(
+                        Level::DEBUG,
+                        "dropping connection from {}: {}",
+                        remote_addr,
+                        e
+                    );
+                    continue;
+                }
+            };
+            let ctx = self.ctx.clone();
+            let acceptor = acceptor.clone();
+
+            tokio::spawn(async move {
+                let handshake = acceptor.accept(HandshakeRecorder::new(tcp));
+                let mut stream = match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, handshake).await
+                {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(e)) => {
+                        event!(
+                            Level::DEBUG,
+                            "TLS handshake with {} failed: {}",
+                            remote_addr,
+                            e
+                        );
+                        return;
+                    }
+                    Err(_) => {
+                        event!(Level::DEBUG, "TLS handshake with {} timed out", remote_addr);
+                        return;
+                    }
+                };
+
+                let (recorder, conn) = stream.get_mut();
+                let tls_info = DownstreamTlsInfo::from_connection(conn)
+                    .with_client_hello(&recorder.take_recorded());
+                let svc = RequestService {
+                    ctx,
+                    local_addr,
+                    remote_addr,
+                    tls: Some(Arc::new(tls_info)),
+                };
+
+                if let Err(e) = Http::new()
+                    .serve_connection(stream, svc)
+                    .with_upgrades()
+                    .await
+                {
+                    event!(
+                        Level::DEBUG,
+                        "error serving connection from {}: {}",
+                        remote_addr,
+                        e
+                    );
+                }
+            });
+        }
+    }
 }
 
 impl<'addr> Service<&'addr AddrStream> for ViceroyService {
@@ -115,6 +226,7 @@ pub struct RequestService {
     ctx: Arc<ExecuteCtx>,
     local_addr: SocketAddr,
     remote_addr: SocketAddr,
+    tls: Option<Arc<DownstreamTlsInfo>>,
 }
 
 impl RequestService {
@@ -127,6 +239,7 @@ impl RequestService {
             ctx,
             local_addr,
             remote_addr,
+            tls: None,
         }
     }
 }
@@ -143,7 +256,13 @@ impl Service<Request<hyper::Body>> for RequestService {
     }
 
     /// Process the request and return the response asynchronously.
-    fn call(&mut self, req: Request<hyper::Body>) -> Self::Future {
+    fn call(&mut self, mut req: Request<hyper::Body>) -> Self::Future {
+        // Requests on a TLS connection carry the connection's TLS details, which `handle_request`
+        // picks up to build the downstream metadata.
+        if let Some(tls) = &self.tls {
+            req.extensions_mut().insert(tls.clone());
+        }
+
         // Request handling currently takes ownership of the context, which is cheaply cloneable.
         let ctx = self.ctx.clone();
         let local = self.local_addr;

@@ -1,7 +1,9 @@
 //! Operations related to handling the "downstream" (end-client) request
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use crate::body::Body;
+use crate::downstream_tls::DownstreamTlsInfo;
 use crate::error::DownstreamRequestError;
 use crate::handoff::HandoffInfo;
 use crate::sandbox::PendingResponse;
@@ -25,6 +27,8 @@ pub struct DownstreamMetadata {
     /// The originally received headers in this request, before the
     /// guest potentially modified them.
     pub original_headers: HeaderMap,
+    /// Details of the TLS session, if the request arrived over HTTPS.
+    pub tls: Option<Arc<DownstreamTlsInfo>>,
 }
 
 #[derive(Debug)]
@@ -94,7 +98,17 @@ pub fn prepare_request(req: Request<hyper::Body>) -> Result<Request<Body>, Downs
     let path_and_query = uri_parts
         .path_and_query
         .ok_or(DownstreamRequestError::InvalidUrl)?;
-    let scheme = uri_parts.scheme.unwrap_or(http::uri::Scheme::HTTP);
+    let scheme = uri_parts.scheme.unwrap_or_else(|| {
+        if metadata
+            .extensions
+            .get::<Arc<DownstreamTlsInfo>>()
+            .is_some()
+        {
+            http::uri::Scheme::HTTPS
+        } else {
+            http::uri::Scheme::HTTP
+        }
+    });
     metadata.uri = Uri::builder()
         .scheme(scheme)
         .authority(http_host)

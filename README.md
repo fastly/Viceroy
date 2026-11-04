@@ -66,6 +66,32 @@ be used to make requests to your Compute service locally. You can make requests
 by using [curl](https://curl.se/), or you can send a simple GET request by visiting
 the URL in your web browser.
 
+### Serving over HTTPS
+
+Some things only work over HTTPS, like `Secure` cookies and browser APIs that
+require a secure context. Viceroy can terminate TLS itself:
+
+```
+# Use your own certificate, e.g. one created with `mkcert localhost 127.0.0.1`:
+viceroy --tls-cert localhost+1.pem --tls-key localhost+1-key.pem bin/main.wasm
+
+# Or generate a self-signed certificate at startup:
+viceroy --tls-self-signed bin/main.wasm
+viceroy --tls-self-signed --tls-san dev.example.com --tls-self-signed-out viceroy.pem bin/main.wasm
+```
+
+The service is then available at `https://127.0.0.1:7676` (plain HTTP is not
+served on that port). A generated certificate covers `localhost`, `127.0.0.1` and
+`::1` unless `--tls-san` is given, and is printed at startup; clients have to be
+told to trust it (for example `curl --cacert viceroy.pem`). Connections use
+HTTP/1.1.
+
+Over HTTPS, the guest sees `https://` request URLs, and the client TLS metadata
+calls (such as `get_tls_protocol`, `get_tls_cipher_openssl_name`,
+`get_tls_client_servername` and `get_tls_client_hello` in the Rust SDK) return
+the values for the connection. Client certificates, JA3 and JA4 are not supported
+yet.
+
 ## Usage as a test runner
 Viceroy can also be used as a test runner for running Rust unit tests for Compute applications in the following way:
 

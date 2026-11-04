@@ -14,6 +14,7 @@ mod body_tee;
 mod collecting_body;
 pub mod component;
 mod downstream;
+pub mod downstream_tls;
 mod execute;
 mod handoff;
 mod http;
