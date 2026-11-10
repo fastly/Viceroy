@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use viceroy_lib::config::UnknownImportBehavior;
+use viceroy_lib::{BacktraceDetails, config::UnknownImportBehavior};
 
 use {
     clap::{Args, Parser, Subcommand, ValueEnum},
@@ -149,6 +149,12 @@ pub struct SharedArgs {
     /// compilation slower.
     #[arg(short = 'g', long = "debug-info")]
     debug_info: bool,
+    /// Do not symbolize wasm backtrace frames, like `WASMTIME_BACKTRACE_DETAILS=0`.
+    ///
+    /// Trap messages then have no source locations, which makes guests that start many threads
+    /// or tasks faster.
+    #[arg(long = "disable-symbolization")]
+    disable_symbolization: bool,
     /// Enable the Wasm Exception Handling feature.
     #[arg(long)]
     wasm_exceptions: bool,
@@ -266,6 +272,17 @@ impl SharedArgs {
     /// Whether to generate native debug information for the guest.
     pub fn debug_info(&self) -> bool {
         self.debug_info
+    }
+
+    /// How to symbolize wasm backtrace frames. The flag wins, then `WASMTIME_BACKTRACE_DETAILS`.
+    pub fn backtrace_details(&self) -> BacktraceDetails {
+        if self.disable_symbolization {
+            BacktraceDetails::Disable
+        } else if std::env::var_os("WASMTIME_BACKTRACE_DETAILS").is_some() {
+            BacktraceDetails::Environment
+        } else {
+            BacktraceDetails::Enable
+        }
     }
 
     pub fn wasm_features(&self) -> WasmFeatures {
