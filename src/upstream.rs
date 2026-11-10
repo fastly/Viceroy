@@ -2,7 +2,7 @@ use crate::{
     body::{Body, Chunk},
     cache::CacheOverride,
     config::Backend,
-    error::Error,
+    error::{Error, HyperError},
     http::framing::apply_request_framing,
     sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
     wiggle_abi::types::ContentEncodings,
@@ -382,12 +382,13 @@ pub fn send_request(
                 .map_err(Error::FirstByteTimeout)?,
         }
         .map_err(|source| {
-            let err = Error::BackendConnectionError {
-                backend_name: backend_name.clone(),
-                uri: backend_uri.clone(),
+            let err = Error::from(HyperError::backend(
+                backend_name.clone(),
+                backend_uri.clone(),
                 source,
-            };
-            tracing::error!("{}", err);
+            ));
+            // Record as an error value, so that subscribers report the full source chain.
+            tracing::error!(error = &err as &(dyn std::error::Error + 'static));
             err
         })?;
 
