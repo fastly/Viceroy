@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Add a `--disable-symbolization` flag that skips symbolizing guest backtraces, like
+  `WASMTIME_BACKTRACE_DETAILS=0`, and let `WASMTIME_BACKTRACE_DETAILS` control symbolization when
+  it is set. Both make guests that start many threads or tasks much faster.
+
 - Support custom page size in `viceroy adapt`. ([#714](https://github.com/fastly/Viceroy/pull/714))
 
 ## 0.22.0 (2026-10-27)

@@ -80,6 +80,28 @@ impl Instance {
     }
 }
 
+/// How wasm backtrace frames are symbolized.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum BacktraceDetails {
+    /// Symbolize wasm backtrace frames.
+    #[default]
+    Enable,
+    /// Do not symbolize wasm backtrace frames.
+    Disable,
+    /// Let wasmtime decide based on `WASMTIME_BACKTRACE_DETAILS`.
+    Environment,
+}
+
+impl From<BacktraceDetails> for wasmtime::WasmBacktraceDetails {
+    fn from(details: BacktraceDetails) -> Self {
+        match details {
+            BacktraceDetails::Enable => Self::Enable,
+            BacktraceDetails::Disable => Self::Disable,
+            BacktraceDetails::Environment => Self::Environment,
+        }
+    }
+}
+
 /// Configuration for profiling Wasm execution.
 ///
 /// Viceroy supports two types of profiling:
@@ -271,6 +293,7 @@ impl ExecuteCtx {
             adapt_components,
             wasm_features,
             debug_info: false,
+            backtrace_details: BacktraceDetails::default(),
             settings: Settings::default(),
         })
     }
@@ -1050,6 +1073,8 @@ pub struct ExecuteCtxBuilder {
     /// Whether to compile the guest with native debug info, so that it can be inspected with a
     /// native debugger.
     debug_info: bool,
+    /// How to symbolize wasm backtrace frames.
+    backtrace_details: BacktraceDetails,
     /// The settings to hand to the finished context.
     settings: Settings,
 }
@@ -1066,6 +1091,7 @@ impl ExecuteCtxBuilder {
             adapt_components,
             wasm_features,
             debug_info,
+            backtrace_details,
             settings,
         } = self;
 
@@ -1095,7 +1121,12 @@ impl ExecuteCtxBuilder {
             (is_wat, is_component, input)
         };
 
-        let config = &configure_wasmtime(wasm_features, profiling.native_strategy(), debug_info);
+        let config = &configure_wasmtime(
+            wasm_features,
+            profiling.native_strategy(),
+            debug_info,
+            backtrace_details,
+        );
         let engine = Engine::new(config).map_err(anyhow::Error::from)?;
         let instance_pre = if is_component {
             let mut linker: component::Linker<ComponentCtx> = component::Linker::new(&engine);
@@ -1183,6 +1214,15 @@ impl ExecuteCtxBuilder {
     /// guest to have been built with debug info of its own.
     pub fn with_debug_info(mut self, debug_info: bool) -> Self {
         self.debug_info = debug_info;
+        self
+    }
+
+    /// Set how wasm backtrace frames are symbolized.
+    ///
+    /// Symbolizing frames is costly for guests that start many threads. Defaults to
+    /// [`BacktraceDetails::Enable`].
+    pub fn with_backtrace_details(mut self, backtrace_details: BacktraceDetails) -> Self {
+        self.backtrace_details = backtrace_details;
         self
     }
 
@@ -1360,14 +1400,15 @@ fn configure_wasmtime(
     wasm_features: WasmFeatures,
     profiling_strategy: ProfilingStrategy,
     debug_info: bool,
+    backtrace_details: BacktraceDetails,
 ) -> wasmtime::Config {
-    use wasmtime::{Config, InstanceAllocationStrategy, WasmBacktraceDetails};
+    use wasmtime::{Config, InstanceAllocationStrategy};
 
     let mut config = Config::new();
     // Off by default: translating the guest's DWARF into native debug info costs compile time,
     // and is only useful when the guest was built with debug info to begin with.
     config.debug_info(debug_info);
-    config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
+    config.wasm_backtrace_details(backtrace_details.into());
     config.epoch_interruption(true);
     config.profiler(profiling_strategy);
 
