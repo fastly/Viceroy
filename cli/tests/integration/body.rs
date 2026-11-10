@@ -14,10 +14,11 @@ viceroy_test!(bodies_can_be_written_and_appended, |is_component| {
         .against_empty()
         .await?;
 
-    let body = body::to_bytes(resp.into_body())
+    let body = resp
+        .into_body()
+        .read_into_vec()
         .await
-        .expect("can read body")
-        .to_vec();
+        .expect("can read body");
     let body = String::from_utf8(body)?;
     assert_eq!(&body, "Hello, Viceroy!");
 

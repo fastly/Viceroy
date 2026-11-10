@@ -109,7 +109,6 @@ viceroy_test!(async_io_methods, |is_component| {
                         // the guest that we have read from the request body
                         // and the write handle should be ready again.
                         sync_barrier.wait().await;
-                        let _body = hyper::body::to_bytes(bod);
                         Response::builder()
                             .status(StatusCode::OK)
                             .body(Body::empty())

@@ -28,7 +28,7 @@ async fn trap_behavior_function_called() -> TestResult {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body_bytes = hyper::body::to_bytes(resp.into_body()).await?;
+    let body_bytes = resp.into_body().read_into_vec().await?;
     let body = std::str::from_utf8(&body_bytes)?;
     // The backtrace contains things like stack addresses and gensyms, so we just look for a couple
     // key parts that should be relatively stable across invocations and wasmtime

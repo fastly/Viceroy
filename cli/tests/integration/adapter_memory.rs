@@ -13,7 +13,7 @@ use {
         common::{GoToolchain, TestResult},
         go_fixture,
     },
-    hyper::{StatusCode, body},
+    hyper::StatusCode,
 };
 
 /// A guest with an empty handler reproduces the adapter state clobber under both TinyGo and Go.
@@ -26,7 +26,7 @@ async fn empty_handler_responds(toolchain: GoToolchain) -> TestResult {
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = body::to_bytes(resp.into_body()).await?;
+    let body = resp.into_body().read_into_vec().await?;
     assert!(body.is_empty(), "expected an empty body, got {body:?}");
 
     Ok(())

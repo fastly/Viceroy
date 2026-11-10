@@ -1,7 +1,7 @@
 use crate::common::{Test, TestResult};
 use crate::viceroy_test;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode, body};
+use hyper::{Body, Request, Response, Server, StatusCode};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 
@@ -37,7 +37,7 @@ viceroy_test!(shielding_running_on, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp2.status());
-    let body = body::to_bytes(resp2.into_body()).await.unwrap().to_vec();
+    let body = resp2.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("true", &string);
 
@@ -49,7 +49,7 @@ viceroy_test!(shielding_running_on, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp3.status());
-    let body = body::to_bytes(resp3.into_body()).await.unwrap().to_vec();
+    let body = resp3.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("false", &string);
 
@@ -108,7 +108,7 @@ viceroy_test!(shield_backends, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp1.status());
-    let body = body::to_bytes(resp1.into_body()).await.unwrap().to_vec();
+    let body = resp1.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("unencrypted land", &string);
 
@@ -121,7 +121,7 @@ viceroy_test!(shield_backends, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp2.status());
-    let body = body::to_bytes(resp2.into_body()).await.unwrap().to_vec();
+    let body = resp2.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("encrypted land", &string);
 
