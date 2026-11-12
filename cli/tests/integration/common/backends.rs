@@ -3,7 +3,7 @@ use std::sync::{Arc, Weak};
 
 use hyper::http::HeaderValue;
 use hyper::http::uri::PathAndQuery;
-use hyper::{Body as HyperBody, Request, Response, Uri};
+use hyper::{Request, Response, Uri, body::Incoming};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
@@ -234,13 +234,14 @@ impl TestBackendBuilder {
 
     /// Set the asynchronous service function to use for this backend.
     ///
-    /// The service function takes a request argument with a `hyper::Body`, and returns a response
-    /// with a `hyper::Body`. It will be called for each request sent to this backend's test server.
+    /// The service function takes a request argument with a [`hyper::body::Incoming`] body, and
+    /// returns a response with a [`TestBody`][super::TestBody]. It will be called for each request
+    /// sent to this backend's test server.
     ///
     /// A test service (sync or async) must be set before starting the test servers.
     pub fn async_test_service<TestServiceFn>(mut self, test_service: TestServiceFn) -> Self
     where
-        TestServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        TestServiceFn: Fn(Request<Incoming>) -> AsyncResp,
         TestServiceFn: Send + Sync + 'static,
     {
         self.test_service = Some(TestService::Async(Arc::new(test_service)));

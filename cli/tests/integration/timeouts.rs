@@ -1,18 +1,19 @@
 use crate::common::{Test, TestBody, TestResult};
 use crate::viceroy_test;
 use futures::stream::StreamExt;
-use hyper::{Request, Response, StatusCode};
+use http_body_util::BodyDataStream;
+use hyper::{Request, Response, StatusCode, body::Incoming};
 use std::time::Duration;
 use viceroy_lib::Error;
 
 fn generate_delaying_service(
     first_byte_delay: Duration,
     between_bytes_delay: Duration,
-) -> impl Fn(Request<hyper::body::Body>) -> crate::common::AsyncResp {
+) -> impl Fn(Request<Incoming>) -> crate::common::AsyncResp {
     move |request| {
         Box::new(async move {
             let (mut write, read) = TestBody::channel();
-            let mut incoming_body = request.into_body();
+            let mut incoming_body = BodyDataStream::new(request.into_body());
 
             tokio::spawn(async move {
                 while let Some(Ok(bytes)) = incoming_body.next().await {

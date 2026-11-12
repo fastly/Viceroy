@@ -10,7 +10,7 @@ use crate::{
     common::{Test, TestBody, TestResult},
     viceroy_test,
 };
-use hyper::body::HttpBody as _;
+use http_body_util::BodyExt;
 use hyper::{Request, Response, StatusCode};
 use std::sync::{
     Arc,
@@ -96,7 +96,9 @@ viceroy_test!(async_io_methods, |is_component| {
                         let mut bod = req.into_body();
                         let mut bytes_read = 0;
                         while bytes_read < (4 * 1024 * 1024) + (8 * 1024) {
-                            if let Some(Ok(bytes)) = bod.data().await {
+                            if let Some(Ok(frame)) = bod.frame().await
+                                && let Some(bytes) = frame.data_ref()
+                            {
                                 bytes_read += bytes.len();
                             }
                         }

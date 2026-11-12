@@ -1,7 +1,14 @@
 //! Common values and types used by test fixtures
 
-use futures::stream::StreamExt;
-use hyper::{Body as HyperBody, Request, Response, Uri, body::Bytes, service};
+use bytes::Bytes;
+use http_body::{Frame, SizeHint};
+use http_body_util::{BodyExt, Empty, Full, StreamBody, channel::Channel, combinators::BoxBody};
+use hyper::{Request, Response, Uri, body::Incoming, service::service_fn};
+use hyper_util::{
+    client::legacy::Client,
+    rt::{TokioExecutor, TokioIo, TokioTimer},
+    server::conn::auto,
+};
 use std::{
     collections::HashSet,
     convert::Infallible,
@@ -9,7 +16,9 @@ use std::{
     io::{self, Write},
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
     time::Duration,
 };
 use test_fixtures_artifacts::FIXTURE_DIR;
@@ -319,7 +328,7 @@ impl Test {
         service: ServiceFn,
     ) -> Self
     where
-        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Fn(Request<Incoming>) -> AsyncResp,
         ServiceFn: Send + Sync + 'static,
     {
         let uri: Uri = url.parse().expect("invalid backend URL");
@@ -363,7 +372,7 @@ impl Test {
         service: ServiceFn,
     ) -> Self
     where
-        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Fn(Request<Incoming>) -> AsyncResp,
         ServiceFn: Send + Sync + 'static,
     {
         let uri: Uri = url.parse().expect("invalid backend URL");
@@ -526,9 +535,11 @@ impl Test {
                 *req.uri_mut() = new_uri;
 
                 // Pass the request to the server via a Hyper client on the _current_ task:
-                let resp = hyper::Client::new()
-                    .request(req.map(|r| hyper::Body::from(r.into())))
-                    .await?;
+                let client = Client::builder(TokioExecutor::new())
+                    .timer(TokioTimer::new())
+                    .pool_timer(TokioTimer::new())
+                    .build_http();
+                let resp = client.request(req.map(|b| Full::new(b.into()))).await?;
                 responses.push(resp.map(Into::into));
             }
 
@@ -555,7 +566,7 @@ impl Test {
                 let remote = (Ipv4Addr::LOCALHOST, 0).into();
                 let resp = ctx
                     .clone()
-                    .handle_request(req.map(|r| hyper::Body::from(r.into())), local, remote)
+                    .handle_request(req.map(|b| Full::new(b.into())), local, remote)
                     .await
                     .map(|result| {
                         match result {
@@ -621,56 +632,58 @@ impl Test {
 }
 
 /// The response body type for test backends.
-pub struct TestBody(hyper::Body);
+pub struct TestBody(BoxBody<Bytes, Error>);
 
 impl TestBody {
+    /// Wrap an arbitrary body.
+    pub fn new<B>(body: B) -> Self
+    where
+        B: http_body::Body<Data = Bytes> + Send + Sync + 'static,
+        B::Error: Into<Error>,
+    {
+        Self(body.map_err(Into::into).boxed())
+    }
+
     /// An empty body.
     pub fn empty() -> Self {
-        Self(hyper::Body::empty())
+        Self::new(Empty::new())
     }
 
     /// A body with the given contents.
     pub fn full(bytes: impl Into<Bytes>) -> Self {
-        Self(hyper::Body::from(bytes.into()))
+        Self::new(Full::new(bytes.into()))
     }
 
     /// A body that is written to via the returned sender.
-    pub fn channel() -> (hyper::body::Sender, Self) {
-        let (sender, body) = hyper::Body::channel();
-        (sender, Self(body))
+    pub fn channel() -> (http_body_util::channel::Sender<Bytes, Error>, Self) {
+        let (sender, body) = Channel::new(1);
+        (sender, Self::new(body))
     }
 
     /// A body that never completes.
     pub fn pending() -> Self {
-        Self(hyper::Body::wrap_stream(futures::stream::pending::<
-            Result<Bytes, Infallible>,
+        Self::new(StreamBody::new(futures::stream::pending::<
+            Result<Frame<Bytes>, Error>,
         >()))
     }
 }
 
-impl hyper::body::HttpBody for TestBody {
-    type Data = <hyper::Body as hyper::body::HttpBody>::Data;
-    type Error = <hyper::Body as hyper::body::HttpBody>::Error;
+impl http_body::Body for TestBody {
+    type Data = Bytes;
+    type Error = Error;
 
-    fn poll_data(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Result<Self::Data, Self::Error>>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_data(cx)
-    }
-
-    fn poll_trailers(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Option<hyper::HeaderMap>, Self::Error>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_trailers(cx)
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.0).poll_frame(cx)
     }
 
     fn is_end_stream(&self) -> bool {
         self.0.is_end_stream()
     }
 
-    fn size_hint(&self) -> hyper::body::SizeHint {
+    fn size_hint(&self) -> SizeHint {
         self.0.size_hint()
     }
 }
@@ -717,10 +730,10 @@ pub fn spawn_server<MakeService, S, B>(
 ) -> io::Result<TestServer>
 where
     MakeService: Fn(SocketAddr, SocketAddr) -> S + Send + 'static,
-    S: hyper::service::Service<Request<HyperBody>, Response = Response<B>> + Send + 'static,
+    S: hyper::service::Service<Request<Incoming>, Response = Response<B>> + Send + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Error>,
-    B: hyper::body::HttpBody + Send + 'static,
+    B: http_body::Body + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error>,
 {
@@ -731,6 +744,7 @@ where
     let bound_addr = listener.local_addr()?;
     // We set up shutdown with a oneshot channel signaling the listener to stop accepting.
     let (terminate_signal, mut receiver) = tokio::sync::oneshot::channel();
+    let builder = auto::Builder::new(TokioExecutor::new());
 
     let task_handle = tokio::spawn(async move {
         loop {
@@ -747,11 +761,11 @@ where
                 }
             };
             let service = make_service(bound_addr, remote_addr);
+            let builder = builder.clone();
             // Connections run independently of the listener so shutdown does not cut off bodies.
             tokio::spawn(async move {
-                if let Err(e) = hyper::server::conn::Http::new()
-                    .serve_connection(stream, service)
-                    .with_upgrades()
+                if let Err(e) = builder
+                    .serve_connection_with_upgrades(TokioIo::new(stream), service)
                     .await
                 {
                     tracing::warn!("test server connection error: {e}");
@@ -773,13 +787,13 @@ async fn server_shutdown_preserves_streaming_responses() -> TestResult {
     let body = Arc::new(Mutex::new(Some(body)));
     let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |_, _| {
         let body = body.clone();
-        service::service_fn(move |_| {
+        service_fn(move |_| {
             let body = body.lock().unwrap().take().expect("only one request");
             async move { Ok::<_, Infallible>(Response::new(body)) }
         })
     })?;
     let addr = server.bound_addr;
-    let client = hyper::Client::new();
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
     let request = client.get(format!("http://{addr}/").parse()?);
     // Send an initial chunk so Hyper flushes the headers before we shut down the listener.
     let (response, sent) = tokio::join!(request, sender.send_data(Bytes::from_static(b"before ")));
@@ -790,7 +804,7 @@ async fn server_shutdown_preserves_streaming_responses() -> TestResult {
     assert!(tokio::net::TcpStream::connect(addr).await.is_err());
     sender.send_data(Bytes::from_static(b"after")).await?;
     drop(sender);
-    let body = hyper::body::to_bytes(response.into_body()).await?;
+    let body = response.into_body().collect().await?.to_bytes();
     assert_eq!(body, "before after");
     Ok(())
 }
@@ -798,7 +812,7 @@ async fn server_shutdown_preserves_streaming_responses() -> TestResult {
 type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
 
 pub type AsyncResp = Box<dyn Future<Output = Response<TestBody>> + Send + Sync>;
-type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
+type AsyncService = dyn Fn(Request<Incoming>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]
 enum TestService {
@@ -816,26 +830,22 @@ impl std::fmt::Debug for TestService {
 }
 
 impl TestService {
-    /// Spawn a test server onto a dedicated Tokio task, returning a handle to allow for graceful
-    /// termination of the server when it is no longer needed.
+    /// Spawn a test server onto a dedicated Tokio task, returning a handle that shuts down the
+    /// server when it is no longer needed.
     fn spawn(&self) -> TestServer {
         let service = self.clone();
 
         // we transform `service` into an async function that consumes Hyper bodies. that requires a bit
         // of `Arc` and `move` operations because each invocation needs to produce a distinct `Future`
-        let async_service = Arc::new(move |req: Request<HyperBody>| {
+        let async_service = Arc::new(move |req: Request<Incoming>| {
             let service = service.clone();
 
             async move {
                 let resp = match service {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
-                        let mut body = Box::new(body); // for pinning
                         // read out all of the bytes from the body into a vector, then re-assemble the request
-                        let mut body_bytes = Vec::new();
-                        while let Some(chunk) = body.next().await {
-                            body_bytes.extend_from_slice(&chunk.unwrap());
-                        }
+                        let body_bytes = body.collect().await.unwrap().to_bytes().to_vec();
                         let req = Request::from_parts(parts, body_bytes);
 
                         // pass the request through the service function, then convert its body into
@@ -855,7 +865,7 @@ impl TestService {
         // concurrently-executing tests.
         spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |_, _| {
             let async_service = async_service.clone();
-            service::service_fn(move |req| async_service(req))
+            service_fn(move |req| async_service(req))
         })
         .expect("could not bind test server")
     }
