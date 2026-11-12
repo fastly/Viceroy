@@ -1,12 +1,16 @@
 use crate::opts::SharedArgs;
-use hyper::{Body, Request, client::Client};
+use hyper::Request;
+use hyper_util::{
+    client::legacy::Client,
+    rt::{TokioExecutor, TokioTimer},
+};
 use std::io::{self, Stderr, Stdout};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Level, Metadata, event};
 use tracing_subscriber::fmt::writer::MakeWriter;
-use viceroy_lib::{BackendConnector, ExecuteCtx, config::FastlyConfig};
+use viceroy_lib::{BackendConnector, ExecuteCtx, body::Body, config::FastlyConfig};
 
 pub(crate) enum Stdio {
     Stdout(Stdout),
@@ -128,11 +132,14 @@ pub(crate) async fn create_execution_context(
 
     if check_backends {
         for (name, backend) in backends.iter() {
-            let client = Client::builder().build(BackendConnector::new(
-                backend.clone(),
-                ctx.tls_config().clone(),
-            ));
-            let req = Request::get(&backend.uri).body(Body::empty()).unwrap();
+            let client = Client::builder(TokioExecutor::new())
+                .timer(TokioTimer::new())
+                .pool_timer(TokioTimer::new())
+                .build(BackendConnector::new(
+                    backend.clone(),
+                    ctx.tls_config().clone(),
+                ));
+            let req = Request::get(&backend.uri).body(Body::empty())?;
 
             event!(Level::INFO, "checking if backend '{}' is up", name);
             match timeout(Duration::from_secs(5), client.request(req)).await {
