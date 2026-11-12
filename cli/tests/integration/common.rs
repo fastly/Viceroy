@@ -1,7 +1,7 @@
 //! Common values and types used by test fixtures
 
 use futures::stream::StreamExt;
-use hyper::{Body as HyperBody, Request, Response, Server, Uri, service};
+use hyper::{Body as HyperBody, Request, Response, Server, Uri, body::Bytes, service};
 use std::{
     collections::HashSet,
     convert::Infallible,
@@ -450,7 +450,7 @@ impl Test {
     /// [`Test`] object, and are therefore potentially reused for multiple `against*()` invocations.
     pub async fn against_many(
         &self,
-        mut reqs: Vec<Request<impl Into<HyperBody>>>,
+        mut reqs: Vec<Request<impl Into<Bytes>>>,
     ) -> Result<Vec<Response<Body>>, Error> {
         let mut responses = Vec::with_capacity(reqs.len());
 
@@ -535,7 +535,9 @@ impl Test {
                 *req.uri_mut() = new_uri;
 
                 // Pass the request to the server via a Hyper client on the _current_ task:
-                let resp = hyper::Client::new().request(req.map(Into::into)).await?;
+                let resp = hyper::Client::new()
+                    .request(req.map(|r| hyper::Body::from(r.into())))
+                    .await?;
                 responses.push(resp.map(Into::into));
             }
 
@@ -564,7 +566,7 @@ impl Test {
                 let remote = (Ipv4Addr::LOCALHOST, 0).into();
                 let resp = ctx
                     .clone()
-                    .handle_request(req.map(Into::into), local, remote)
+                    .handle_request(req.map(|r| hyper::Body::from(r.into())), local, remote)
                     .await
                     .map(|result| {
                         match result {
@@ -595,10 +597,7 @@ impl Test {
     ///
     /// A `Test` can be used repeatedly against different requests. Note, however, that
     /// a fresh execution context is set up each time.
-    pub async fn against(
-        &self,
-        req: Request<impl Into<HyperBody>>,
-    ) -> Result<Response<Body>, Error> {
+    pub async fn against(&self, req: Request<impl Into<Bytes>>) -> Result<Response<Body>, Error> {
         Ok(self
             .against_many(vec![req])
             .await?
@@ -632,6 +631,61 @@ impl Test {
     }
 }
 
+/// The response body type for test backends.
+pub struct TestBody(hyper::Body);
+
+impl TestBody {
+    /// An empty body.
+    pub fn empty() -> Self {
+        Self(hyper::Body::empty())
+    }
+
+    /// A body with the given contents.
+    pub fn full(bytes: impl Into<Bytes>) -> Self {
+        Self(hyper::Body::from(bytes.into()))
+    }
+
+    /// A body that is written to via the returned sender.
+    pub fn channel() -> (hyper::body::Sender, Self) {
+        let (sender, body) = hyper::Body::channel();
+        (sender, Self(body))
+    }
+
+    /// A body that never completes.
+    pub fn pending() -> Self {
+        Self(hyper::Body::wrap_stream(futures::stream::pending::<
+            Result<Bytes, Infallible>,
+        >()))
+    }
+}
+
+impl hyper::body::HttpBody for TestBody {
+    type Data = <hyper::Body as hyper::body::HttpBody>::Data;
+    type Error = <hyper::Body as hyper::body::HttpBody>::Error;
+
+    fn poll_data(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<Self::Data, Self::Error>>> {
+        std::pin::Pin::new(&mut self.get_mut().0).poll_data(cx)
+    }
+
+    fn poll_trailers(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<Option<hyper::HeaderMap>, Self::Error>> {
+        std::pin::Pin::new(&mut self.get_mut().0).poll_trailers(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.0.size_hint()
+    }
+}
+
 /// A handle to a running test server, used to keep track of its assigned ephemeral port and to
 /// gracefully shut down the server when it's no longer needed.
 #[derive(Debug)]
@@ -655,7 +709,7 @@ impl Drop for TestServer {
 }
 type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
 
-pub type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
+pub type AsyncResp = Box<dyn Future<Output = Response<TestBody>> + Send + Sync>;
 type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]
@@ -698,9 +752,9 @@ impl TestService {
 
                         // pass the request through the service function, then convert its body into
                         // the form that Hyper wants
-                        s(req).map(HyperBody::from)
+                        s(req).map(TestBody::full)
                     }
-                    TestService::Async(s) => Box::into_pin(s(req)).await.map(HyperBody::from),
+                    TestService::Async(s) => Box::into_pin(s(req)).await,
                 };
 
                 let res: Result<_, hyper::Error> = Ok(resp);

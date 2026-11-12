@@ -4,7 +4,7 @@ use tokio::sync::Semaphore;
 
 use {
     crate::{
-        common::{Test, TestResult},
+        common::{Test, TestBody, TestResult},
         viceroy_test,
     },
     hyper::{Response, StatusCode},
@@ -27,7 +27,7 @@ viceroy_test!(upstream_async_methods, |is_component| {
                 Response::builder()
                     .header("Backend-1-Response", "")
                     .status(StatusCode::OK)
-                    .body(hyper::Body::empty())
+                    .body(TestBody::empty())
                     .unwrap()
             })
         })
@@ -39,7 +39,7 @@ viceroy_test!(upstream_async_methods, |is_component| {
                 Response::builder()
                     .header("Backend-2-Response", "")
                     .status(StatusCode::OK)
-                    .body(hyper::Body::empty())
+                    .body(TestBody::empty())
                     .unwrap()
             })
         })

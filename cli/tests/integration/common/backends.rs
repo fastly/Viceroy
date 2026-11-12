@@ -102,51 +102,6 @@ impl TestBackends {
         }
     }
 
-    /// Set the test service for the backend of the given name.
-    ///
-    /// Panics if the test servers have already been started.
-    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
-    pub async fn set_test_service<TestServiceFn>(&self, name: &str, test_service: TestServiceFn)
-    where
-        TestServiceFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
-        TestServiceFn: Send + Sync + 'static,
-    {
-        let mut inner = self.inner.lock().await;
-        assert!(
-            !inner.servers_are_running,
-            "cannot set a test service once servers are running"
-        );
-        inner
-            .map
-            .get_mut(name)
-            .unwrap_or_else(|| panic!("backend {name:?} not found"))
-            .test_service = Some(TestService::Sync(Arc::new(test_service)));
-    }
-
-    /// Set the asynchronous test service for the backend of the given name.
-    ///
-    /// Panics if the test servers have already been started.
-    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
-    pub async fn set_async_test_service<TestServiceFn>(
-        &self,
-        name: &str,
-        test_service: TestServiceFn,
-    ) where
-        TestServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
-        TestServiceFn: Send + Sync + 'static,
-    {
-        let mut inner = self.inner.lock().await;
-        assert!(
-            !inner.servers_are_running,
-            "cannot set a test service once servers are running"
-        );
-        inner
-            .map
-            .get_mut(name)
-            .unwrap_or_else(|| panic!("backend {name:?} not found"))
-            .test_service = Some(TestService::Async(Arc::new(test_service)));
-    }
-
     /// Are the backend test servers running?
     pub async fn servers_are_running(&self) -> bool {
         self.inner.lock().await.servers_are_running

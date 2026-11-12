@@ -1,4 +1,4 @@
-use crate::common::{Test, TestResult};
+use crate::common::{Test, TestBody, TestResult};
 use crate::viceroy_test;
 use futures::stream::StreamExt;
 use hyper::{Request, Response, StatusCode};
@@ -11,7 +11,7 @@ fn generate_delaying_service(
 ) -> impl Fn(Request<hyper::body::Body>) -> crate::common::AsyncResp {
     move |request| {
         Box::new(async move {
-            let (mut write, read) = hyper::Body::channel();
+            let (mut write, read) = TestBody::channel();
             let mut incoming_body = request.into_body();
 
             tokio::spawn(async move {
