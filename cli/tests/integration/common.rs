@@ -1,12 +1,12 @@
 //! Common values and types used by test fixtures
 
 use futures::stream::StreamExt;
-use hyper::{Body as HyperBody, Request, Response, Server, Uri, body::Bytes, service};
+use hyper::{Body as HyperBody, Request, Response, Uri, body::Bytes, service};
 use std::{
     collections::HashSet,
     convert::Infallible,
     future::Future,
-    io::Write,
+    io::{self, Write},
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -16,7 +16,7 @@ use test_fixtures_artifacts::FIXTURE_DIR;
 use tracing_subscriber::filter::EnvFilter;
 use viceroy_lib::config::UnknownImportBehavior;
 use viceroy_lib::{
-    ExecuteCtx, ProfilingConfig, ViceroyService,
+    ExecuteCtx, ProfilingConfig, RequestService,
     body::Body,
     config::{
         Acls, DeviceDetection, Dictionaries, FakeValidFastlyKeys, FastlyConfig, Geolocation,
@@ -501,22 +501,13 @@ impl Test {
         .finish()?;
 
         if self.via_hyper {
-            let svc = ViceroyService::new(ctx);
-            // We use the "graceful shutdown" capability of Hyper, with a oneshot channel signaling
-            // completion:
-            let (tx, rx) = tokio::sync::oneshot::channel();
             // NB the server is spawned onto a dedicated async task; we are going to use the
             // _current_ task to act as the client.
-            let (server_handle, server_addr) = {
-                // Bind the server to an ephemeral port to allow for parallel test execution.
-                let server = hyper::Server::bind(&([127, 0, 0, 1], 0).into()).serve(svc);
-                let server_addr = server.local_addr();
-                let server_handle = tokio::spawn(server.with_graceful_shutdown(async {
-                    rx.await
-                        .expect("receiver error while shutting down hyper server")
-                }));
-                (server_handle, server_addr)
-            };
+            // Bind the server to an ephemeral port to allow for parallel test execution.
+            let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |local, remote| {
+                RequestService::new(ctx.clone(), local, remote)
+            })?;
+            let server_addr = server.bound_addr;
 
             for mut req in reqs.drain(..) {
                 // Fix up the request URI to include the ephemeral port assignment. The `http::Uri`
@@ -541,11 +532,9 @@ impl Test {
                 responses.push(resp.map(Into::into));
             }
 
-            // We're done with these test requests, so shut down the server.
-            tx.send(())
-                .expect("sender error while shutting down hyper server");
-            // Reap the task handle to ensure that the server did indeed shut down.
-            let _ = server_handle.await?;
+            // We're done with these test requests, so stop accepting connections and reap the
+            // listener task. Open connections can finish streaming their responses.
+            server.shutdown().await?;
         } else {
             for mut req in reqs.drain(..) {
                 // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
@@ -687,26 +676,125 @@ impl hyper::body::HttpBody for TestBody {
 }
 
 /// A handle to a running test server, used to keep track of its assigned ephemeral port and to
-/// gracefully shut down the server when it's no longer needed.
+/// shut down the server when it's no longer needed.
+///
+/// Dropping this handle stops accepting connections. Open connections are left to finish, so
+/// responses still being streamed after the [`Test`] is dropped are not cut off.
 #[derive(Debug)]
-struct TestServer {
-    bound_addr: SocketAddr,
+pub struct TestServer {
+    pub bound_addr: SocketAddr,
     terminate_signal: Option<tokio::sync::oneshot::Sender<()>>,
     task_handle: tokio::task::JoinHandle<()>,
 }
 
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.terminate_signal
-            .take()
-            .unwrap()
-            .send(())
-            .expect("could not send terminate signal to test server");
-        if !self.task_handle.is_finished() {
-            self.task_handle.abort();
+impl TestServer {
+    /// Stop accepting connections and wait for the listener task to exit.
+    pub async fn shutdown(mut self) -> Result<(), tokio::task::JoinError> {
+        self.stop_accepting();
+        (&mut self.task_handle).await
+    }
+
+    fn stop_accepting(&mut self) {
+        if let Some(signal) = self.terminate_signal.take() {
+            let _ = signal.send(());
         }
     }
 }
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.stop_accepting();
+    }
+}
+
+/// Spawn a test server bound to `addr` onto a dedicated Tokio task.
+///
+/// `make_service` is called for each accepted connection with its local and remote addresses
+/// to create the service that handles requests on it.
+pub fn spawn_server<MakeService, S, B>(
+    addr: SocketAddr,
+    make_service: MakeService,
+) -> io::Result<TestServer>
+where
+    MakeService: Fn(SocketAddr, SocketAddr) -> S + Send + 'static,
+    S: hyper::service::Service<Request<HyperBody>, Response = Response<B>> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Error>,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Error>,
+{
+    // Bind synchronously, so that the bound address is known before returning.
+    let listener = std::net::TcpListener::bind(addr)?;
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+    let bound_addr = listener.local_addr()?;
+    // We set up shutdown with a oneshot channel signaling the listener to stop accepting.
+    let (terminate_signal, mut receiver) = tokio::sync::oneshot::channel();
+
+    let task_handle = tokio::spawn(async move {
+        loop {
+            let accepted = tokio::select! {
+                biased;
+                _ = &mut receiver => break,
+                accepted = listener.accept() => accepted,
+            };
+            let (stream, remote_addr) = match accepted {
+                Ok(accepted) => accepted,
+                Err(e) => {
+                    tracing::warn!("test server failed to accept connection: {e}");
+                    continue;
+                }
+            };
+            let service = make_service(bound_addr, remote_addr);
+            // Connections run independently of the listener so shutdown does not cut off bodies.
+            tokio::spawn(async move {
+                if let Err(e) = hyper::server::conn::Http::new()
+                    .serve_connection(stream, service)
+                    .with_upgrades()
+                    .await
+                {
+                    tracing::warn!("test server connection error: {e}");
+                }
+            });
+        }
+    });
+
+    Ok(TestServer {
+        bound_addr,
+        terminate_signal: Some(terminate_signal),
+        task_handle,
+    })
+}
+
+#[tokio::test]
+async fn server_shutdown_preserves_streaming_responses() -> TestResult {
+    let (mut sender, body) = TestBody::channel();
+    let body = Arc::new(Mutex::new(Some(body)));
+    let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |_, _| {
+        let body = body.clone();
+        service::service_fn(move |_| {
+            let body = body.lock().unwrap().take().expect("only one request");
+            async move { Ok::<_, Infallible>(Response::new(body)) }
+        })
+    })?;
+    let addr = server.bound_addr;
+    let client = hyper::Client::new();
+    let request = client.get(format!("http://{addr}/").parse()?);
+    // Send an initial chunk so Hyper flushes the headers before we shut down the listener.
+    let (response, sent) = tokio::join!(request, sender.send_data(Bytes::from_static(b"before ")));
+    sent?;
+    let response = response?;
+
+    server.shutdown().await?;
+    assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+    sender.send_data(Bytes::from_static(b"after")).await?;
+    drop(sender);
+    let body = hyper::body::to_bytes(response.into_body()).await?;
+    assert_eq!(body, "before after");
+    Ok(())
+}
+
 type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
 
 pub type AsyncResp = Box<dyn Future<Output = Response<TestBody>> + Send + Sync>;
@@ -762,31 +850,13 @@ impl TestService {
             }
         });
 
-        // now we go through Tower's service layers, wrapping `async_host`
-        let make_service = service::make_service_fn(move |_conn| {
-            let async_host = async_service.clone();
-            async move { Ok::<_, Infallible>(service::service_fn(move |req| async_host(req))) }
-        });
-
-        // we set up a "graceful shutdown" for the server, with a oneshot channel signaling completion.
-        let (terminate_signal, rx) = tokio::sync::oneshot::channel();
+        // Now wrap the async service in a per-connection Hyper service.
         // Bind the test server to an ephemeral port to avoid conflicts between
         // concurrently-executing tests.
-        let server = Server::bind(&([127, 0, 0, 1], 0).into()).serve(make_service);
-        let bound_addr = server.local_addr();
-        let graceful_server = server.with_graceful_shutdown(async {
-            rx.await
-                .expect("receiver error while shutting down mock host")
-        });
-        let task_handle = tokio::spawn(async {
-            graceful_server
-                .await
-                .expect("mock host shut down with hyper error")
-        });
-        TestServer {
-            bound_addr,
-            terminate_signal: Some(terminate_signal),
-            task_handle,
-        }
+        spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |_, _| {
+            let async_service = async_service.clone();
+            service::service_fn(move |req| async_service(req))
+        })
+        .expect("could not bind test server")
     }
 }

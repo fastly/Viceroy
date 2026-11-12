@@ -66,7 +66,7 @@ impl ViceroyService {
 
     /// An internal helper, create a [`RequestService`](struct.RequestService.html).
     fn make_service(&self, remote: &AddrStream) -> RequestService {
-        RequestService::new(self.ctx.clone(), remote)
+        RequestService::new(self.ctx.clone(), remote.local_addr(), remote.remote_addr())
     }
 
     /// Bind this service to the given address and start serving responses.
@@ -118,11 +118,8 @@ pub struct RequestService {
 }
 
 impl RequestService {
-    /// Create a new request service.
-    fn new(ctx: Arc<ExecuteCtx>, addr: &AddrStream) -> Self {
-        let local_addr = addr.local_addr();
-        let remote_addr = addr.remote_addr();
-
+    /// Create a new request service for a connection with the given local and remote addresses.
+    pub fn new(ctx: Arc<ExecuteCtx>, local_addr: SocketAddr, remote_addr: SocketAddr) -> Self {
         Self {
             ctx,
             local_addr,
