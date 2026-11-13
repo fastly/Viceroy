@@ -1,7 +1,7 @@
 use std::{collections::HashSet, path::PathBuf};
 use {
-    hyper::{Body, Request, StatusCode},
-    viceroy_lib::{ExecuteCtx, ProfilingConfig, WasmFeatures},
+    http::{Request, StatusCode},
+    viceroy_lib::{ExecuteCtx, ProfilingConfig, WasmFeatures, body::Body},
 };
 
 /// A catch-all error, so we can easily use `?` in test cases.
@@ -24,7 +24,7 @@ async fn fatal_error_traps_impl(adapt_core_wasm: bool) -> TestResult {
         adapt_core_wasm,
         WasmFeatures::default(),
     )?;
-    let req = Request::get("http://127.0.0.1:7676/").body(Body::from(""))?;
+    let req = Request::get("http://127.0.0.1:7676/").body(Body::empty())?;
     let local = "127.0.0.1:80".parse().unwrap();
     let remote = "127.0.0.1:0".parse().unwrap();
     let resp = ctx
