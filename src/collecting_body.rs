@@ -3,7 +3,7 @@
 
 use bytes::Bytes;
 use http::HeaderMap;
-use http_body::Body as HttpBody;
+use http_body_util::BodyExt;
 use tokio::sync::watch;
 
 use crate::{
@@ -126,36 +126,45 @@ impl CollectingBody {
         // IMPORTANT IMPLEMENTATION NOTE:
         // This should always exit with the watched state as Error or Complete.
 
-        // Read data first:
+        // Read data first. Trailers, if any, arrive as the final frame.
         let mut length = 0;
-        while let Some(chunk) = rx.data().await {
-            match chunk {
-                Ok(data) => {
-                    tx.send_modify(|state| {
-                        if let CollectingBodyInner::Streaming(chunks) = state {
-                            length += data.len();
-                            chunks.push(data);
-                        } else {
-                            panic!("received data after CollectingBody is complete");
-                        }
-
-                        // Generate length-exceeded error before exiting send_modify.
-                        match expected_length {
-                            Some(expected_length) if (length as u64) > expected_length => {
-                                *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
-                            }
-                            _ => (),
-                        }
-                    });
-                }
-                Err(Error::Again) => continue,
+        let mut trailers = HeaderMap::new();
+        while let Some(frame) = rx.frame().await {
+            let frame = match frame {
+                Ok(frame) => frame,
                 Err(e) => {
                     tx.send_modify(move |state| {
                         *state = CollectingBodyInner::Error(e);
                     });
                     return;
                 }
-            }
+            };
+            let data = match frame.into_data() {
+                Ok(data) => data,
+                Err(frame) => {
+                    // Not data, so either trailers or an unknown frame type, which we skip.
+                    if let Ok(t) = frame.into_trailers() {
+                        trailers.extend(t);
+                    }
+                    continue;
+                }
+            };
+            tx.send_modify(|state| {
+                if let CollectingBodyInner::Streaming(chunks) = state {
+                    length += data.len();
+                    chunks.push(data);
+                } else {
+                    panic!("received data after CollectingBody is complete");
+                }
+
+                // Generate length-exceeded error before exiting send_modify.
+                match expected_length {
+                    Some(expected_length) if (length as u64) > expected_length => {
+                        *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
+                    }
+                    _ => (),
+                }
+            });
         }
 
         // We're done with all the data.
@@ -170,21 +179,14 @@ impl CollectingBody {
             _ => (),
         }
 
-        // Then wait for trailers (if any) to be present, which is the "finish" signal.
-        let trailers = rx.trailers().await;
-        tx.send_modify(move |state| match trailers {
-            Ok(trailers) => {
-                let CollectingBodyInner::Streaming(chunks) = state else {
-                    panic!("received trailers after CollectingBody is complete")
-                };
-                let mut body = Vec::new();
-                std::mem::swap(&mut body, chunks);
-                *state = CollectingBodyInner::Complete {
-                    body,
-                    trailers: trailers.unwrap_or_default(),
-                }
-            }
-            Err(e) => *state = CollectingBodyInner::Error(e),
+        // Reaching the end of the body is the "finish" signal.
+        tx.send_modify(move |state| {
+            let CollectingBodyInner::Streaming(chunks) = state else {
+                panic!("unexpected state on finishing CollectingBody")
+            };
+            let mut body = Vec::new();
+            std::mem::swap(&mut body, chunks);
+            *state = CollectingBodyInner::Complete { body, trailers }
         });
     }
 
