@@ -3,7 +3,7 @@ use std::sync::{Arc, Weak};
 
 use hyper::http::HeaderValue;
 use hyper::http::uri::PathAndQuery;
-use hyper::{Body as HyperBody, Request, Response, Uri};
+use hyper::{Request, Response, Uri, body::Incoming};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
@@ -100,51 +100,6 @@ impl TestBackends {
             use_sni: true,
             test_service: None,
         }
-    }
-
-    /// Set the test service for the backend of the given name.
-    ///
-    /// Panics if the test servers have already been started.
-    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
-    pub async fn set_test_service<TestServiceFn>(&self, name: &str, test_service: TestServiceFn)
-    where
-        TestServiceFn: Fn(Request<Vec<u8>>) -> Response<Vec<u8>>,
-        TestServiceFn: Send + Sync + 'static,
-    {
-        let mut inner = self.inner.lock().await;
-        assert!(
-            !inner.servers_are_running,
-            "cannot set a test service once servers are running"
-        );
-        inner
-            .map
-            .get_mut(name)
-            .unwrap_or_else(|| panic!("backend {name:?} not found"))
-            .test_service = Some(TestService::Sync(Arc::new(test_service)));
-    }
-
-    /// Set the asynchronous test service for the backend of the given name.
-    ///
-    /// Panics if the test servers have already been started.
-    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
-    pub async fn set_async_test_service<TestServiceFn>(
-        &self,
-        name: &str,
-        test_service: TestServiceFn,
-    ) where
-        TestServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
-        TestServiceFn: Send + Sync + 'static,
-    {
-        let mut inner = self.inner.lock().await;
-        assert!(
-            !inner.servers_are_running,
-            "cannot set a test service once servers are running"
-        );
-        inner
-            .map
-            .get_mut(name)
-            .unwrap_or_else(|| panic!("backend {name:?} not found"))
-            .test_service = Some(TestService::Async(Arc::new(test_service)));
     }
 
     /// Are the backend test servers running?
@@ -279,13 +234,14 @@ impl TestBackendBuilder {
 
     /// Set the asynchronous service function to use for this backend.
     ///
-    /// The service function takes a request argument with a `hyper::Body`, and returns a response
-    /// with a `hyper::Body`. It will be called for each request sent to this backend's test server.
+    /// The service function takes a request argument with a [`hyper::body::Incoming`] body, and
+    /// returns a response with a [`TestBody`][super::TestBody]. It will be called for each request
+    /// sent to this backend's test server.
     ///
     /// A test service (sync or async) must be set before starting the test servers.
     pub fn async_test_service<TestServiceFn>(mut self, test_service: TestServiceFn) -> Self
     where
-        TestServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        TestServiceFn: Fn(Request<Incoming>) -> AsyncResp,
         TestServiceFn: Send + Sync + 'static,
     {
         self.test_service = Some(TestService::Async(Arc::new(test_service)));

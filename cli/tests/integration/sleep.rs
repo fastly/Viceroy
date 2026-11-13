@@ -2,7 +2,7 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::{StatusCode, body::to_bytes};
+use hyper::StatusCode;
 
 // Run a program that only sleeps. This exercises async functionality in wasi.
 // Check that an empty response is sent downstream by default.
@@ -16,10 +16,10 @@ viceroy_test!(empty_ok_response_by_default_after_sleep, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(
-        to_bytes(resp.into_body())
+        resp.into_body()
+            .read_into_vec()
             .await
             .expect("can read body")
-            .to_vec()
             .is_empty()
     );
 

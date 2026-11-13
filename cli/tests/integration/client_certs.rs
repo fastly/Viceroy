@@ -4,17 +4,21 @@ use crate::{
 };
 use base64::engine::{Engine, general_purpose};
 use hyper::http::response;
-use hyper::server::conn::AddrIncoming;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Request, Server, StatusCode};
-use rustls::server::{AllowAnyAuthenticatedClient, ServerConfig};
-use rustls::{Certificate, PrivateKey, RootCertStore};
+use hyper::service::service_fn;
+use hyper::{Request, StatusCode};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::conn::auto,
+};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, UnixTime};
+use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
+use rustls::server::{ServerConfig, WebPkiClientVerifier};
+use rustls::{DigitallySignedStruct, DistinguishedName, RootCertStore, SignatureScheme};
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tls_listener::TlsListener;
+use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
-use tokio_rustls::server::TlsStream;
 
 // So, let's say you want to regenerate some of the keys used in these tests,
 // because they've expired or you want to try different algorithms. To do so,
@@ -60,25 +64,48 @@ use tokio_rustls::server::TlsStream;
 // be, but this is the only consistent way I can build a server that requires and
 // passes back TLS client certificates.
 
+#[derive(Debug)]
 struct Watcher {
-    inner: AllowAnyAuthenticatedClient,
+    inner: Arc<dyn ClientCertVerifier>,
 }
 
-impl rustls::server::ClientCertVerifier for Watcher {
-    fn client_auth_root_subjects(&self) -> &[rustls::DistinguishedName] {
-        tracing::warn!("client_auth_root_subjects");
-        self.inner.client_auth_root_subjects()
+impl ClientCertVerifier for Watcher {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        tracing::warn!("root_hint_subjects");
+        self.inner.root_hint_subjects()
     }
 
     fn verify_client_cert(
         &self,
-        end_entity: &Certificate,
-        intermediates: &[Certificate],
-        now: std::time::SystemTime,
-    ) -> Result<rustls::server::ClientCertVerified, rustls::Error> {
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        now: UnixTime,
+    ) -> Result<ClientCertVerified, rustls::Error> {
         tracing::warn!("varify_client_cert");
         self.inner
             .verify_client_cert(end_entity, intermediates, now)
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
     }
 }
 
@@ -90,9 +117,10 @@ fn build_server_tls_config() -> ServerConfig {
     ));
 
     let mut ca_cursor = Cursor::new(ca_cert_bytes);
-    let mut root_certs = rustls_pemfile::certs(&mut ca_cursor).expect("pem ca certs");
-    for cert in root_certs.drain(..) {
-        roots.add(&Certificate(cert)).expect("can add root certs");
+    for cert in rustls_pemfile::certs(&mut ca_cursor) {
+        roots
+            .add(cert.expect("pem ca certs"))
+            .expect("can add root certs");
     }
 
     let server_cert_bytes: &[u8] = include_bytes!(concat!(
@@ -100,11 +128,9 @@ fn build_server_tls_config() -> ServerConfig {
         "/../test-fixtures/data/server.crt"
     ));
     let mut server_cursor = Cursor::new(server_cert_bytes);
-    let server_cert_list: Vec<Certificate> = rustls_pemfile::certs(&mut server_cursor)
-        .expect("can read server cert")
-        .into_iter()
-        .map(Certificate)
-        .collect();
+    let server_cert_list: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut server_cursor)
+        .collect::<Result<_, _>>()
+        .expect("can read server cert");
 
     let server_key_bytes: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -112,60 +138,75 @@ fn build_server_tls_config() -> ServerConfig {
     ));
     let mut key_cursor = Cursor::new(server_key_bytes);
     let server_key = rustls_pemfile::rsa_private_keys(&mut key_cursor)
-        .expect("have a key")
-        .into_iter()
-        .map(PrivateKey)
         .next()
-        .expect("have one key");
+        .expect("have one key")
+        .map(PrivateKeyDer::from)
+        .expect("have a key");
+
+    let inner = WebPkiClientVerifier::builder(Arc::new(roots))
+        .build()
+        .expect("basic client cert verifier");
 
     ServerConfig::builder()
-        .with_safe_default_cipher_suites()
-        .with_safe_default_kx_groups()
-        .with_safe_default_protocol_versions()
-        .expect("basic tls server config")
-        .with_client_cert_verifier(Arc::new(Watcher {
-            inner: AllowAnyAuthenticatedClient::new(roots),
-        }))
+        .with_client_cert_verifier(Arc::new(Watcher { inner }))
         .with_single_cert(server_cert_list, server_key)
         .expect("valid server cert")
 }
 
-viceroy_test!(custom_ca_works, |is_component| {
-    let test = Test::using_fixture("mutual-tls.wasm").adapt_component(is_component);
+/// Spawn a TLS server that requires a client certificate, and responds with the base64 encoding of
+/// the certificate it was given. Returns the port the server is bound to.
+async fn spawn_cert_echo_server() -> u16 {
     let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
-    let incoming = AddrIncoming::bind(&server_addr).expect("bind");
-    let bound_port = incoming.local_addr().port();
-
+    let listener = TcpListener::bind(server_addr).await.expect("bind");
+    let bound_port = listener.local_addr().expect("bound address").port();
     let acceptor = TlsAcceptor::from(Arc::new(build_server_tls_config()));
-    let listener = TlsListener::new_hyper(acceptor, incoming);
 
-    let service = make_service_fn(|stream: &TlsStream<_>| {
-        let (_, server_connection) = stream.get_ref();
-        let peer_certs = server_connection.peer_certificates().map(|x| x.to_vec());
-        async move {
-            Ok::<_, std::io::Error>(service_fn(move |_req| {
-                let peer_certs = peer_certs.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
+            let acceptor = acceptor.clone();
+            // Handshake on the connection's own task, so a failed handshake (which some tests
+            // expect) does not hold up accepting other connections.
+            tokio::spawn(async move {
+                let Ok(stream) = acceptor.accept(stream).await else {
+                    return;
+                };
+                let (_, server_connection) = stream.get_ref();
+                let peer_certs = server_connection.peer_certificates().map(|x| x.to_vec());
+                let service = service_fn(move |_req| {
+                    let peer_certs = peer_certs.clone();
 
-                async {
-                    match peer_certs {
-                        None => response::Builder::new()
-                            .status(401)
-                            .body("could not identify client certificate".to_string()),
-                        Some(vec) if vec.len() != 1 => response::Builder::new()
-                            .status(406)
-                            .body(format!("can only handle 1 cert, got {}", vec.len())),
-                        Some(mut cert_vec) => {
-                            let Certificate(cert) = cert_vec.remove(0);
-                            let base64_cert = general_purpose::STANDARD.encode(cert);
-                            response::Builder::new().status(200).body(base64_cert)
+                    async {
+                        match peer_certs {
+                            None => response::Builder::new()
+                                .status(401)
+                                .body("could not identify client certificate".to_string()),
+                            Some(vec) if vec.len() != 1 => response::Builder::new()
+                                .status(406)
+                                .body(format!("can only handle 1 cert, got {}", vec.len())),
+                            Some(mut cert_vec) => {
+                                let cert = cert_vec.remove(0);
+                                let base64_cert = general_purpose::STANDARD.encode(cert);
+                                response::Builder::new().status(200).body(base64_cert)
+                            }
                         }
                     }
-                }
-            }))
+                });
+                let _ = auto::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(stream), service)
+                    .await;
+            });
         }
     });
-    let server = Server::builder(listener).serve(service);
-    tokio::spawn(server);
+
+    bound_port
+}
+
+viceroy_test!(custom_ca_works, |is_component| {
+    let test = Test::using_fixture("mutual-tls.wasm").adapt_component(is_component);
+    let bound_port = spawn_cert_echo_server().await;
 
     // positive test: setting the CA should allow this
     let resp = test
@@ -212,40 +253,7 @@ viceroy_test!(client_certs_work, |is_component| {
     };
     let test = Test::using_fixture("mutual-tls.wasm").adapt_component(is_component);
 
-    let server_addr: SocketAddr = "127.0.0.1:0".parse().expect("localhost parses");
-    let incoming = AddrIncoming::bind(&server_addr).expect("bind");
-    let bound_port = incoming.local_addr().port();
-
-    let acceptor = TlsAcceptor::from(Arc::new(build_server_tls_config()));
-    let listener = TlsListener::new_hyper(acceptor, incoming);
-
-    let service = make_service_fn(|stream: &TlsStream<_>| {
-        let (_, server_connection) = stream.get_ref();
-        let peer_certs = server_connection.peer_certificates().map(|x| x.to_vec());
-        async move {
-            Ok::<_, std::io::Error>(service_fn(move |_req| {
-                let peer_certs = peer_certs.clone();
-
-                async {
-                    match peer_certs {
-                        None => response::Builder::new()
-                            .status(401)
-                            .body("could not identify client certificate".to_string()),
-                        Some(vec) if vec.len() != 1 => response::Builder::new()
-                            .status(406)
-                            .body(format!("can only handle 1 cert, got {}", vec.len())),
-                        Some(mut cert_vec) => {
-                            let Certificate(cert) = cert_vec.remove(0);
-                            let base64_cert = general_purpose::STANDARD.encode(cert);
-                            response::Builder::new().status(200).body(base64_cert)
-                        }
-                    }
-                }
-            }))
-        }
-    });
-    let server = Server::builder(listener).serve(service);
-    tokio::spawn(server);
+    let bound_port = spawn_cert_echo_server().await;
 
     let resp = test
         .against(

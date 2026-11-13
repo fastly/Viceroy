@@ -1,15 +1,22 @@
 use crate::{
-    body::{Body, Chunk},
+    body::Body,
     cache::CacheOverride,
     config::Backend,
-    error::Error,
+    error::{Error, HyperError},
     http::framing::apply_request_framing,
     sandbox::{AsyncItem, AsyncItemHandle, ViceroyRequestMetadata},
     wiggle_abi::types::ContentEncodings,
 };
 use futures::Future;
 use http::{HeaderValue, Version, uri};
-use hyper::{Client, HeaderMap, Request, Response, Uri, client::HttpConnector, header};
+use hyper::{HeaderMap, Request, Response, Uri, header};
+use hyper_util::{
+    client::legacy::{
+        Client,
+        connect::{Connected, Connection as HyperConnection, HttpConnector},
+    },
+    rt::{TokioExecutor, TokioIo, TokioTimer},
+};
 use rustls::pki_types::ServerName;
 use std::{
     io,
@@ -24,6 +31,7 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_rustls::{TlsConnector, client::TlsStream};
+use tower_service::Service;
 use tracing::warn;
 
 static GZIP_VALUES: [HeaderValue; 2] = [
@@ -121,8 +129,8 @@ pub struct ConnMetadata {
     pub remote_addr: SocketAddr,
 }
 
-impl hyper::service::Service<Uri> for BackendConnector {
-    type Response = Connection;
+impl Service<Uri> for BackendConnector {
+    type Response = TokioIo<Connection>;
     type Error = BoxError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, BoxError>> + Send>>;
 
@@ -163,7 +171,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
         };
 
         Box::pin(async move {
-            let tcp = connect_fut.await?;
+            let tcp = connect_fut.await?.into_inner();
 
             let remote_addr = tcp.peer_addr()?;
             let metadata = ConnMetadata {
@@ -251,7 +259,7 @@ impl hyper::service::Service<Uri> for BackendConnector {
                 Connection::Http(tcp, metadata)
             };
 
-            Ok(conn)
+            Ok(TokioIo::new(conn))
         })
     }
 }
@@ -361,7 +369,10 @@ pub fn send_request(
     let backend_name = backend_name.to_string();
     let backend_uri = backend.uri.to_string();
     async move {
-        let mut builder = Client::builder();
+        let mut builder = Client::builder(TokioExecutor::new());
+        builder
+            .timer(TokioTimer::new())
+            .pool_timer(TokioTimer::new());
 
         if req.version() == Version::HTTP_2 {
             builder.http2_only(true);
@@ -382,12 +393,13 @@ pub fn send_request(
                 .map_err(Error::FirstByteTimeout)?,
         }
         .map_err(|source| {
-            let err = Error::BackendConnectionError {
-                backend_name: backend_name.clone(),
-                uri: backend_uri.clone(),
+            let err = Error::from(HyperError::backend(
+                backend_name.clone(),
+                backend_uri.clone(),
                 source,
-            };
-            tracing::error!("{}", err);
+            ));
+            // Record as an error value, so that subscribers report the full source chain.
+            tracing::error!(error = &err as &(dyn std::error::Error + 'static));
             err
         })?;
 
@@ -403,8 +415,7 @@ pub fn send_request(
                 .map(|x| GZIP_VALUES.contains(x))
                 .unwrap_or(false)
         {
-            let mut decompressing_response =
-                basic_response.map(Chunk::compressed_body).map(Body::from);
+            let mut decompressing_response = basic_response.map(Body::compressed_body);
 
             decompressing_response
                 .headers_mut()
@@ -446,9 +457,9 @@ pub struct SelectTarget {
 
 // Boilerplate forwarding implementations for `Connection`:
 
-impl hyper::client::connect::Connection for Connection {
-    fn connected(&self) -> hyper::client::connect::Connected {
-        hyper::client::connect::Connected::new().extra(self.metadata().clone())
+impl HyperConnection for Connection {
+    fn connected(&self) -> Connected {
+        Connected::new().extra(self.metadata().clone())
     }
 }
 

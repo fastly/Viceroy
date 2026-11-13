@@ -5,7 +5,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{StatusCode, body},
+    hyper::StatusCode,
 };
 
 // `write-and-read-body.wasm` is the fixture whose DWARF originally blocked enabling `debug_info`
@@ -28,10 +28,11 @@ viceroy_test!(bodies_are_unaffected_by_debug_info, |is_component| {
         .against_empty()
         .await?;
 
-    let body = body::to_bytes(resp.into_body())
+    let body = resp
+        .into_body()
+        .read_into_vec()
         .await
-        .expect("can read body")
-        .to_vec();
+        .expect("can read body");
     assert_eq!(String::from_utf8(body)?, "Hello, Viceroy!");
 
     Ok(())

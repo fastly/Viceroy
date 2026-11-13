@@ -5,10 +5,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{
-        StatusCode,
-        body::{HttpBody, to_bytes},
-    },
+    hyper::StatusCode,
 };
 
 // Use the `teapot-status` fixture to check that responses can be sent downstream by the guest.
@@ -41,10 +38,10 @@ viceroy_test!(empty_ok_response_by_default, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(
-        to_bytes(resp.into_body())
+        resp.into_body()
+            .read_into_vec()
             .await
             .expect("can read body")
-            .to_vec()
             .is_empty()
     );
 
@@ -66,7 +63,7 @@ viceroy_test!(five_hundred_when_guest_panics, |is_component| {
 
 // Test that gradually writing to a streaming body works.
 viceroy_test!(responses_can_be_streamed_downstream, |is_component| {
-    let mut resp = Test::using_fixture("streaming-response.wasm")
+    let resp = Test::using_fixture("streaming-response.wasm")
         .adapt_component(is_component)
         .via_hyper()
         .against_empty()
@@ -79,14 +76,12 @@ viceroy_test!(responses_can_be_streamed_downstream, |is_component| {
     );
     assert!(!resp.headers().contains_key(hyper::header::CONTENT_LENGTH));
 
-    // accumulate the entire body to a vector
-    let mut body = Vec::new();
-    while let Some(chunk) = resp.data().await {
-        body.extend_from_slice(&chunk.unwrap());
-    }
-
     // work with the body as a string, breaking it into lines
-    let body_str = String::from_utf8(body).unwrap();
+    let body_str = resp
+        .into_body()
+        .read_into_string()
+        .await
+        .expect("can read body");
     let mut i: u32 = 0;
     for line in body_str.lines() {
         assert_eq!(line, i.to_string());

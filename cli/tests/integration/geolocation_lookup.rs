@@ -2,7 +2,7 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::{StatusCode, body::to_bytes};
+use hyper::StatusCode;
 
 viceroy_test!(json_geolocation_lookup_works, |is_component| {
     const FASTLY_TOML: &str = r#"
@@ -25,10 +25,10 @@ viceroy_test!(json_geolocation_lookup_works, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(
-        to_bytes(resp.into_body())
+        resp.into_body()
+            .read_into_vec()
             .await
             .expect("can read body")
-            .to_vec()
             .is_empty()
     );
 
@@ -94,10 +94,10 @@ viceroy_test!(inline_toml_geolocation_lookup_works, |is_component| {
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(
-        to_bytes(resp.into_body())
+        resp.into_body()
+            .read_into_vec()
             .await
             .expect("can read body")
-            .to_vec()
             .is_empty()
     );
 
@@ -122,10 +122,10 @@ viceroy_test!(
 
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(
-            to_bytes(resp.into_body())
+            resp.into_body()
+                .read_into_vec()
                 .await
                 .expect("can read body")
-                .to_vec()
                 .is_empty()
         );
 

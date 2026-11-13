@@ -33,16 +33,19 @@ rust-version = "1.95"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = "0.1.59"
-bytes = "^1.2.1"
+bytes = { workspace = true }
 cfg-if = "^1.0"
 clap = { workspace = true }
 cranelift-entity = { workspace = true }
 fastly-shared = "^0.13.0"
 flate2 = "^1.0.24"
 futures = { workspace = true }
-http = "^0.2.8"
-http-body = "^0.4.5"
+http = { workspace = true }
+http-body = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true, features = ["server-auto"] }
+futures-util = "0.3.34"
 itertools = { workspace = true }
 lazy_static = "^1.4.0"
 pin-project = { workspace = true }
@@ -57,6 +60,7 @@ thiserror = "^2.0.20"
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 toml = "^1.1.6"
+tower-service = "0.3"
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 url = { workspace = true }
@@ -75,6 +79,7 @@ moka = { version = "0.12.12", features = ["future"] }
 walrus = "0.27.2"
 
 [dev-dependencies]
+http-body-util = { workspace = true, features = ["channel"] }
 proptest = "1.6.0"
 proptest-derive = "0.8.0"
 tempfile = "3.6.0"
@@ -128,7 +133,11 @@ invalid_codeblock_attributes = "warn"
 anyhow = "1.0.31"
 base64 = "0.23.1"
 clap = { version = "^4.0.18", features = ["derive"] }
-hyper = { version = "=0.14.26", features = ["full"] }
+hyper = { version = "1.12.0", features = ["full"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "http2", "tokio"] }
+http = { version = "1.5.0" }
+http-body = { version = "1.1.0" }
+http-body-util = { version = "0.1.5" }
 itertools = "0.15.0"
 pin-project = "1.0.8"
 rustls = "0.23.45"
@@ -141,6 +150,7 @@ tracing = "0.1.37"
 tracing-futures = "0.2.5"
 futures = "0.3.24"
 url = "2.3.1"
+bytes = "1.12.1"
 
 # Wasmtime dependencies
 wasmtime = { version =  "46.0.3", features = ["anyhow", "call-hook"] }
@@ -173,4 +183,3 @@ cranelift-entity = "0.135.7"
 
 # test fixtures, used only in dev-dependencies
 test-fixtures-artifacts = { path = "test-fixtures/artifacts" }
-

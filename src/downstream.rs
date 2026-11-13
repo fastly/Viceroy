@@ -2,6 +2,7 @@
 use std::net::SocketAddr;
 
 use crate::body::Body;
+use crate::error::BoxError;
 use crate::error::DownstreamRequestError;
 use crate::handoff::HandoffInfo;
 use crate::sandbox::PendingResponse;
@@ -73,7 +74,11 @@ pub enum DownstreamResponse {
 ///
 /// The primary canonicalization is to provide an absolute URL (with authority), using the HOST
 /// header of the request.
-pub fn prepare_request(req: Request<hyper::Body>) -> Result<Request<Body>, DownstreamRequestError> {
+pub fn prepare_request<B>(req: Request<B>) -> Result<Request<Body>, DownstreamRequestError>
+where
+    B: http_body::Body<Data = bytes::Bytes> + Send + Sync + 'static,
+    B::Error: Into<BoxError>,
+{
     let (mut metadata, body) = req.into_parts();
     let uri_parts = metadata.uri.into_parts();
 
@@ -102,5 +107,5 @@ pub fn prepare_request(req: Request<hyper::Body>) -> Result<Request<Body>, Downs
         .build()
         .map_err(|_| DownstreamRequestError::InvalidUrl)?;
 
-    Ok(Request::from_parts(metadata, Body::from(body)))
+    Ok(Request::from_parts(metadata, Body::http_body(body)))
 }
