@@ -1,17 +1,13 @@
 use {
-    crate::{config::ClientCertInfo, upstream::TlsConfig},
+    crate::{body::Body, config::ClientCertInfo, upstream::TlsConfig},
     http::{
         HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Uri, header,
         request::Parts,
     },
-    hyper::{
-        Body,
-        client::conn::{Builder, Parts as ConnParts},
-        http::Result as HttpResult,
-        upgrade::OnUpgrade,
-    },
-    tokio::{io::copy_bidirectional, net::TcpStream, task::JoinHandle},
-    tracing::{debug, error, info, warn},
+    hyper::{client::conn::http1::Builder, http::Result as HttpResult, upgrade::OnUpgrade},
+    hyper_util::rt::TokioIo,
+    tokio::{io::copy_bidirectional, net::TcpStream},
+    tracing::{debug, error, info},
 };
 
 /// The list of request header names that cannot be modified during handoff.
@@ -153,13 +149,18 @@ impl tokio::io::AsyncWrite for Connection {
 /// If the handoff target responds with `101 Switching Protocols`, then the
 /// `on_upgrade` future is used to take over the incoming request connection and
 /// wire it up with the handoff connection.
-pub async fn perform_handoff(
+pub async fn perform_handoff<B>(
     request_info: Option<HandoffRequestInfo>,
     orig_request_info: HandoffRequestInfo,
-    orig_body: Body,
+    orig_body: B,
     on_upgrade: OnUpgrade,
     perform_handoff_config: HandoffConfig,
-) -> Response<Body> {
+) -> Response<Body>
+where
+    B: http_body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     let mut proxy_req = match create_request_for_handoff(
         &perform_handoff_config.host_header,
         request_info,
@@ -227,12 +228,12 @@ pub async fn perform_handoff(
 }
 
 /// Creates a request suitable for use with execute_handoff().
-fn create_request_for_handoff(
+fn create_request_for_handoff<B>(
     backend_host: &str,
     handoff_request_info: Option<HandoffRequestInfo>,
     original_request_info: HandoffRequestInfo,
-    body: Body,
-) -> HttpResult<Request<Body>> {
+    body: B,
+) -> HttpResult<Request<B>> {
     let (path_and_query, method) = if let Some(ref handoff_request_info) = handoff_request_info {
         (
             handoff_request_info.path_and_query.as_deref().unwrap_or(""),
@@ -286,13 +287,18 @@ fn create_request_for_handoff(
 /// If the handoff target responds with `101 Switching Protocols`, then use the
 /// provided `OnUpgrade` future to take over the incoming request connection and
 /// wire it up with the handoff connection.
-async fn execute_handoff(
+async fn execute_handoff<B>(
     target_addr: String,
     target_name: String,
-    req: Request<Body>,
+    req: Request<B>,
     downstream_on_upgrade: OnUpgrade,
     tls_config: Option<HandoffTlsConfig>,
-) -> Response<Body> {
+) -> Response<Body>
+where
+    B: http_body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     debug!("Proxying through handoff target '{target_name}'.");
 
     let handoff_stream = match TcpStream::connect(&target_addr).await {
@@ -360,7 +366,10 @@ async fn execute_handoff(
         Connection::Http(handoff_stream)
     };
 
-    let (mut sender, conn) = match Builder::new().handshake(handoff_connection).await {
+    let (mut sender, conn) = match Builder::new()
+        .handshake(TokioIo::new(handoff_connection))
+        .await
+    {
         Ok(res) => res,
         Err(e) => {
             error!("Handoff handshake failed: {e}");
@@ -371,13 +380,15 @@ async fn execute_handoff(
         }
     };
 
-    // Spawn the connection driver and keep a handle to it.
-    // We need this future to complete so we can get the raw IO stream back after the HTTP response is parsed.
-    // `without_shutdown` prevents hyper from trying to gracefully close the connection,
-    // which is what we want when taking it over for a WebSocket.
-    let conn_fut = tokio::spawn(conn.without_shutdown());
+    // Spawn the connection driver with upgrade support. Hyper retains the raw IO and any bytes
+    // read past the HTTP response for the WebSocket proxy's OnUpgrade future.
+    tokio::spawn(async move {
+        if let Err(e) = conn.with_upgrades().await {
+            error!("Upstream connection error: {e}");
+        }
+    });
 
-    let upstream_resp = match sender.send_request(req).await {
+    let mut upstream_resp = match sender.send_request(req).await {
         Ok(proxy_resp) => {
             info!(
                 "Handoff target '{}' responded with status: {}. Proxying response.",
@@ -399,20 +410,24 @@ async fn execute_handoff(
     // to attempt an upgrade
     if upstream_resp.status() == StatusCode::SWITCHING_PROTOCOLS {
         debug!("Handoff target requested 101 Switching Protocols; upgrading...");
-        tokio::spawn(proxy_upgraded_connection(downstream_on_upgrade, conn_fut));
+        let upstream_on_upgrade = hyper::upgrade::on(&mut upstream_resp);
+        tokio::spawn(proxy_upgraded_connection(
+            downstream_on_upgrade,
+            upstream_on_upgrade,
+        ));
     }
 
-    upstream_resp
+    upstream_resp.map(Body::from)
 }
 
 /// A background task to proxy an upgraded (e.g., WebSocket) connection
 async fn proxy_upgraded_connection(
     downstream_req_on_upgrade: OnUpgrade,
-    upstream_conn_fut: JoinHandle<Result<ConnParts<Connection>, hyper::Error>>,
+    upstream_on_upgrade: OnUpgrade,
 ) {
     // Await the client-side upgrade. This future will not resolve until
     // the `101` response is sent to the client by the main service.
-    let mut downstream_upgraded = match downstream_req_on_upgrade.await {
+    let downstream_upgraded = match downstream_req_on_upgrade.await {
         Ok(upgraded) => upgraded,
         Err(e) => {
             error!("Downstream client upgrade failed: {e}");
@@ -420,24 +435,22 @@ async fn proxy_upgraded_connection(
         }
     };
 
+    let mut downstream_upgraded = TokioIo::new(downstream_upgraded);
     debug!("Downstream client connection upgraded.");
 
-    // Await the server-side connection driver to get the raw IO back.
-    let mut upstream_parts = match upstream_conn_fut.await {
-        Ok(Ok(parts)) => parts,
-        Ok(Err(e)) => {
-            error!("Upstream connection error: {e}");
-            return;
-        }
+    // Await the server-side upgrade to get the raw IO back, including any buffered bytes.
+    let upstream_upgraded = match upstream_on_upgrade.await {
+        Ok(upgraded) => upgraded,
         Err(e) => {
-            warn!("Upstream connection task failed: {e}");
+            error!("Upstream connection upgrade failed: {e}");
             return;
         }
     };
+    let mut upstream_upgraded = TokioIo::new(upstream_upgraded);
 
     debug!("Upstream connection IO stream obtained.");
 
-    match copy_bidirectional(&mut downstream_upgraded, &mut upstream_parts.io).await {
+    match copy_bidirectional(&mut downstream_upgraded, &mut upstream_upgraded).await {
         Ok((from_client, from_server)) => {
             info!(
                 "Upgraded proxy connection finished gracefully. Bytes transferred: client->server: {}, server->client: {}",
