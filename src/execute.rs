@@ -438,11 +438,12 @@ impl ExecuteCtx {
     /// ```no_run
     /// # use std::collections::HashSet;
     /// # use wasmtime::WasmFeatures;
-    /// use hyper::{Body, http::Request};
+    /// use http::Request;
+    /// use viceroy_lib::body::Body;
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingConfig, ViceroyService};
     /// # use viceroy_lib::config::UnknownImportBehavior;
     /// # async fn f() -> Result<(), Error> {
-    /// # let req = Request::new(Body::from(""));
+    /// # let req = Request::new(Body::empty());
     /// let adapt_core_wasm = false;
     /// let wasm_features = WasmFeatures::default();
     /// let ctx = ExecuteCtx::new(
@@ -459,17 +460,21 @@ impl ExecuteCtx {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn handle_request(
+    pub async fn handle_request<B>(
         self: Arc<Self>,
-        mut incoming_req: Request<hyper::Body>,
+        mut incoming_req: Request<B>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<(Response<Body>, Option<wasmtime::Error>), Error> {
+    ) -> Result<(Response<Body>, Option<wasmtime::Error>), Error>
+    where
+        B: http_body::Body<Data = bytes::Bytes> + Send + 'static,
+        B::Error: std::error::Error + Send + Sync + 'static,
+    {
         let orig_req_on_upgrade = hyper::upgrade::on(&mut incoming_req);
         let (incoming_req_parts, incoming_req_body) = incoming_req.into_parts();
         let local_pushpin_proxy_port = self.settings.local_pushpin_proxy_port;
 
-        let (body_for_wasm, orig_body_tee) = tee(incoming_req_body).await;
+        let (body_for_wasm, orig_body_tee) = tee(incoming_req_body);
         let orig_request_info_for_pushpin = HandoffRequestInfo::from_parts(&incoming_req_parts);
 
         let original_headers = incoming_req_parts.headers.clone();
@@ -510,9 +515,9 @@ impl ExecuteCtx {
                     let local_pushpin_proxy_port = match local_pushpin_proxy_port {
                         None => {
                             error!("Pushpin handoff signaled, but Pushpin mode not enabled.");
-                            let mut resp = Response::new(Body::from(hyper::Body::from(
+                            let mut resp = Response::new(Body::from(
                                 "Pushpin handoff signaled, but Pushpin mode not enabled.",
-                            )));
+                            ));
                             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                             return Ok((resp, None));
                         }
@@ -544,8 +549,7 @@ impl ExecuteCtx {
                     )
                     .await;
 
-                    let (p, hyper_body) = handoff_resp.into_parts();
-                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                    return Ok((handoff_resp, None));
                 }
                 Ok(NonHttpResponse::HandoffToBackend(handoff_info)) => {
                     let backend_name = handoff_info.backend_name.clone();
@@ -556,9 +560,9 @@ impl ExecuteCtx {
                     let backend = match backend {
                         None => {
                             error!("Backend handoff signaled to unknown backend '{backend_name}'.");
-                            let mut resp = Response::new(Body::from(hyper::Body::from(format!(
+                            let mut resp = Response::new(Body::from(format!(
                                 "Backend handoff signaled to unknown backend '{backend_name}'."
-                            ))));
+                            )));
                             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                             return Ok((resp, None));
                         }
@@ -624,8 +628,7 @@ impl ExecuteCtx {
                     )
                     .await;
 
-                    let (p, hyper_body) = handoff_resp.into_parts();
-                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                    return Ok((handoff_resp, None));
                 }
                 Err(e) => {
                     err = Some(e);
@@ -652,12 +655,17 @@ impl ExecuteCtx {
         });
     }
 
-    pub async fn handle_request_with_runtime_error(
+    #[cfg(feature = "test-fatalerror-config")]
+    pub async fn handle_request_with_runtime_error<B>(
         self: Arc<Self>,
-        incoming_req: Request<hyper::Body>,
+        incoming_req: Request<B>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<Response<Body>, Error>
+    where
+        B: http_body::Body<Data = bytes::Bytes> + Send + 'static,
+        B::Error: std::error::Error + Send + Sync + 'static,
+    {
         let result = self.handle_request(incoming_req, local, remote).await?;
         let resp = guest_result_to_response(result.0, result.1);
 

@@ -1,5 +1,5 @@
 use crate::{
-    body::{Body, Chunk},
+    body::Body,
     cache::CacheOverride,
     config::Backend,
     error::{Error, HyperError},
@@ -415,8 +415,7 @@ pub fn send_request(
                 .map(|x| GZIP_VALUES.contains(x))
                 .unwrap_or(false)
         {
-            let mut decompressing_response =
-                basic_response.map(Chunk::compressed_body).map(Body::from);
+            let mut decompressing_response = basic_response.map(Body::compressed_body);
 
             decompressing_response
                 .headers_mut()

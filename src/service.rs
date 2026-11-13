@@ -2,27 +2,24 @@
 
 use {
     crate::{Error, body::Body, execute::ExecuteCtx},
-    futures::future::{self, Ready},
     hyper::{
+        body::Incoming,
         http::{Request, Response},
-        server::conn::AddrStream,
         service::Service,
     },
-    std::{
-        convert::Infallible,
-        future::Future,
-        net::SocketAddr,
-        pin::Pin,
-        sync::Arc,
-        task::{self, Poll},
+    hyper_util::{
+        rt::{TokioExecutor, TokioIo},
+        server::conn::auto::Builder,
     },
+    std::{future::Future, io, net::SocketAddr, pin::Pin, sync::Arc},
+    tokio::net::TcpListener,
     tracing::{Level, event},
 };
 
 /// A Viceroy service uses a Wasm module and a handler function to respond to HTTP requests.
 ///
 /// This service type is used to compile a Wasm [`Module`][mod], and perform the actions necessary
-/// to initialize a [`Server`][serv] and bind the service to a local port.
+/// to initialize an HTTP server and bind the service to a local port.
 ///
 /// Each time a connection is received, a [`RequestService`][req-svc] will be created, to
 /// instantiate the module and return a [`Response`][resp].
@@ -30,7 +27,6 @@ use {
 /// [mod]: https://docs.rs/wasmtime/latest/wasmtime/struct.Module.html
 /// [req-svc]: struct.RequestService.html
 /// [resp]: https://docs.rs/http/latest/http/response/struct.Response.html
-/// [serv]: https://docs.rs/hyper/latest/hyper/server/struct.Server.html
 pub struct ViceroyService {
     ctx: Arc<ExecuteCtx>,
 }
@@ -65,8 +61,8 @@ impl ViceroyService {
     }
 
     /// An internal helper, create a [`RequestService`](struct.RequestService.html).
-    fn make_service(&self, remote: &AddrStream) -> RequestService {
-        RequestService::new(self.ctx.clone(), remote.local_addr(), remote.remote_addr())
+    fn make_service(&self, local_addr: SocketAddr, remote_addr: SocketAddr) -> RequestService {
+        RequestService::new(self.ctx.clone(), local_addr, remote_addr)
     }
 
     /// Bind this service to the given address and start serving responses.
@@ -74,42 +70,40 @@ impl ViceroyService {
     /// This will consume the service, using it to start a server that will execute the given module
     /// each time a new request is sent. This function will only return if an error occurs.
     // FIXME KTM 2020-06-22: Once `!` is stabilized, this should be `Result<!, hyper::Error>`.
-    pub async fn serve(self, addr: SocketAddr) -> Result<(), hyper::Error> {
-        let server = hyper::Server::bind(&addr).serve(self);
-        event!(Level::INFO, "Listening on http://{}", server.local_addr());
-        server.await?;
-        Ok(())
-    }
-}
+    pub async fn serve(self, addr: SocketAddr) -> Result<(), io::Error> {
+        let listener = TcpListener::bind(addr).await?;
+        event!(
+            Level::INFO,
+            "Listening on http://{}",
+            listener.local_addr()?
+        );
 
-impl<'addr> Service<&'addr AddrStream> for ViceroyService {
-    type Response = RequestService;
-    type Error = Infallible;
-    type Future = Ready<Result<Self::Response, Self::Error>>;
+        loop {
+            let (stream, remote_addr) = listener.accept().await?;
+            let service = self.make_service(stream.local_addr()?, remote_addr);
 
-    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, addr: &'addr AddrStream) -> Self::Future {
-        future::ok(self.make_service(addr))
+            tokio::spawn(async move {
+                let builder = Builder::new(TokioExecutor::new());
+                if let Err(error) = builder
+                    .serve_connection_with_upgrades(TokioIo::new(stream), service)
+                    .await
+                {
+                    event!(Level::WARN, %remote_addr, %error, "Error serving connection");
+                }
+            });
+        }
     }
 }
 
 /// A request service is responsible for handling a single request.
 ///
-/// Most importantly, this structure implements the [`tower::Service`][service] trait, which allows
-/// it to be dispatched by [`ViceroyService`][viceroy] to handle a single request.
+/// Most importantly, this structure implements the [`hyper::service::Service`] trait, which allows
+/// it to be dispatched by [`ViceroyService`] to handle a single request.
 ///
 /// This object does not need to be used directly; users most likely should use
-/// [`ViceroyService::serve`][serve] to bind a service to a port, or
-/// [`ExecuteCtx::handle_request`][handle_request] to generate a response for a request when writing
+/// [`ViceroyService::serve`] to bind a service to a port, or
+/// [`ExecuteCtx::handle_request`] to generate a response for a request when writing
 /// test cases.
-///
-/// [handle_request]: ../execute/struct.ExecuteCtx.html#method.handle_request
-/// [serve]: struct.ViceroyService.html#method.serve
-/// [service]: https://docs.rs/tower/latest/tower/trait.Service.html
-/// [viceroy]: struct.ViceroyService.html
 #[derive(Clone)]
 pub struct RequestService {
     ctx: Arc<ExecuteCtx>,
@@ -130,17 +124,13 @@ impl RequestService {
 
 type ServiceFuture = dyn Future<Output = Result<Response<Body>, Error>> + Send;
 
-impl Service<Request<hyper::Body>> for RequestService {
+impl Service<Request<Incoming>> for RequestService {
     type Response = Response<Body>;
     type Error = Error;
     type Future = Pin<Box<ServiceFuture>>;
 
-    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
     /// Process the request and return the response asynchronously.
-    fn call(&mut self, req: Request<hyper::Body>) -> Self::Future {
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
         // Request handling currently takes ownership of the context, which is cheaply cloneable.
         let ctx = self.ctx.clone();
         let local = self.local_addr;
