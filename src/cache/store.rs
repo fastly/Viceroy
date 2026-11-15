@@ -4,7 +4,10 @@ use crate::cache::{Error, variance::VaryRule};
 use bytes::Bytes;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
@@ -13,7 +16,7 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{Found, SurrogateKeySet, WriteOptions, variance::Variant};
+use super::{Found, ReplaceStrategy, SurrogateKeySet, WriteOptions, variance::Variant};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -45,6 +48,10 @@ pub struct ObjectMeta {
     // Soft-purge bit: atomic so we don't have to wrap the whole thing in a lock.
     // This can only transition false -> true.
     soft_purge: AtomicBool,
+
+    /// The number of times this object has been served from the cache.
+    // Atomic so we can count hits through a shared reference, like `soft_purge`.
+    hits: AtomicU64,
 }
 impl ObjectMeta {
     /// Retrieve the current age of this object.
@@ -56,6 +63,21 @@ impl ObjectMeta {
     /// Maximum fresh age of this object.
     pub fn max_age(&self) -> Duration {
         self.max_age
+    }
+
+    /// The stale-while-revalidate period of this object, which begins after `max_age`.
+    pub fn stale_while_revalidate(&self) -> Duration {
+        self.stale_while_revalidate
+    }
+
+    /// The number of times this object has been served from the cache.
+    pub fn hits(&self) -> u64 {
+        self.hits.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Count a delivery of this object from the cache.
+    fn record_hit(&self) {
+        self.hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Return true if the entry is fresh at the current time.
@@ -121,6 +143,7 @@ impl ObjectMeta {
             length,
             surrogate_keys,
             soft_purge: AtomicBool::new(false),
+            hits: AtomicU64::new(0),
         }
     }
 }
@@ -137,6 +160,9 @@ impl Clone for ObjectMeta {
             length: self.length,
             surrogate_keys: self.surrogate_keys.clone(),
             soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
+            // As on Compute, a `Found` handed to the guest reports the hit count as of its
+            // delivery, rather than tracking later hits.
+            hits: AtomicU64::new(self.hits()),
         }
     }
 }
@@ -145,7 +171,7 @@ impl Clone for ObjectMeta {
 pub struct CacheKeyObjects(watch::Sender<CacheKeyObjectsInner>);
 
 impl CacheKeyObjects {
-    /// Get the applicable CacheData, if available.
+    /// Get the applicable CacheData, if available, counting a hit against it.
     pub fn get(&self, request_headers: &HeaderMap) -> Option<Arc<CacheData>> {
         let key_objects = self.0.borrow();
 
@@ -156,6 +182,7 @@ impl CacheKeyObjects {
                 .get(&response_key)
                 .and_then(|v| v.present.clone())
             {
+                object.meta.record_hit();
                 return Some(object);
             }
         }
@@ -197,6 +224,7 @@ impl CacheKeyObjects {
                     if let Some(data) = &cache_value.present {
                         if data.meta.is_fresh() {
                             // We have fresh data; no need to generate an obligation.
+                            data.meta.record_hit();
                             return (Some(Arc::clone(data)), None);
                         }
                         if data.meta.is_usable() && cache_value.obligated {
@@ -204,6 +232,7 @@ impl CacheKeyObjects {
                             // obligated to freshen it.
                             // So we can go ahead and use the current data, without generating an
                             // obligation.
+                            data.meta.record_hit();
                             return (Some(Arc::clone(data)), None);
                         }
                     }
@@ -277,13 +306,13 @@ impl CacheKeyObjects {
                     }
                     let variant = Variant::clone(variant);
 
-                    key_objects.objects.insert(
-                        variant.clone(),
-                        CacheValue {
-                            obligated: true,
-                            present: Some(Arc::clone(d)),
-                        },
-                    );
+                    // Update in place (`present` is already `d`), so as not to lose track of any
+                    // replaces in progress.
+                    key_objects
+                        .objects
+                        .entry(variant.clone())
+                        .or_default()
+                        .obligated = true;
 
                     obligated = Some(Obligation {
                         object: Arc::clone(self),
@@ -316,11 +345,9 @@ impl CacheKeyObjects {
                     key_objects.vary_rules.push_front(VaryRule::default());
                     VaryRule::default().variant(request_headers)
                 });
-                let pending = CacheValue {
-                    obligated: true,
-                    present: None,
-                };
-                key_objects.objects.insert(response_key.clone(), pending);
+                let pending = key_objects.objects.entry(response_key.clone()).or_default();
+                pending.obligated = true;
+                pending.present = None;
                 obligated = Some(Obligation {
                     object: Arc::clone(self),
                     variant: response_key,
@@ -337,11 +364,158 @@ impl CacheKeyObjects {
 
             // Now outside of the lock: return what we have.
             if data.is_some() || obligated.is_some() || !ok_to_wait {
+                if let Some(data) = &data {
+                    data.meta.record_hit();
+                }
                 return (data, obligated);
             }
 
             // Return back to the top of the loop: look for the obligation we missed in the first
             // read pass.
+        }
+    }
+
+    /// Begin a replace operation.
+    ///
+    /// Returns the existing CacheData, if any (even if stale), counting a hit against it; and the
+    /// [`Replacing`] through which the replacement is written.
+    ///
+    /// Every replace counts towards its variant's `replacing` total until it completes or is
+    /// abandoned. The three strategies differ in how they interact with that and with the
+    /// obligation slot:
+    ///
+    /// - `Immediate` takes the obligation if it is free, so that transactional lookups that find
+    ///   nothing usable wait for the replacement; but it leaves the existing object visible to
+    ///   lookups.
+    /// - `ImmediateForceMiss` does the same, and also hides the existing object, so that lookups
+    ///   miss (or, if transactional, wait for the replacement).
+    /// - `Wait` blocks until no matching variant is obligated or being replaced, then takes the
+    ///   obligation. This is what serializes concurrent replaces of the same object, which is what
+    ///   makes read-modify-write ("counter") patterns work.
+    pub async fn replace(
+        self: &Arc<Self>,
+        request_headers: &HeaderMap,
+        strategy: ReplaceStrategy,
+    ) -> (Option<Arc<CacheData>>, Replacing) {
+        let mut sub = self.0.subscribe();
+
+        loop {
+            // Anything that changes from here on will wake the `changed()` below.
+            sub.mark_unchanged();
+
+            let mut result = None;
+            self.0.send_if_modified(|key_objects| {
+                // The variants that could serve this request, most-recent vary rule first.
+                let response_keys: Vec<Variant> = key_objects
+                    .vary_rules
+                    .iter()
+                    .map(|v| v.variant(request_headers))
+                    .collect();
+
+                if strategy == ReplaceStrategy::Wait
+                    && response_keys
+                        .iter()
+                        .filter_map(|key| key_objects.objects.get(key))
+                        .any(|value| value.obligated || value.replacing > 0)
+                {
+                    // Someone else is inserting or replacing this object; wait for them to finish.
+                    //
+                    // Note that a guest which begins a `Wait` replace while *itself* holding an
+                    // unfulfilled obligation or replace on the same key will wait indefinitely; on
+                    // Compute the request would eventually time out. We deliberately don't impose a
+                    // timeout of our own.
+                    return false;
+                }
+
+                // The existing object we'll hand to the guest: the same one a lookup would find.
+                let found = response_keys
+                    .iter()
+                    .find(|key| {
+                        key_objects
+                            .objects
+                            .get(key)
+                            .is_some_and(|value| value.present.is_some())
+                    })
+                    .cloned();
+                let data = found.as_ref().and_then(|key| {
+                    key_objects
+                        .objects
+                        .get(key)
+                        .and_then(|value| value.present.clone())
+                });
+
+                if strategy == ReplaceStrategy::ImmediateForceMiss
+                    && let Some(key) = &found
+                    && let Some(value) = key_objects.objects.get_mut(key)
+                {
+                    // As on Compute, hide only the object we found. As in `purge`, we keep the
+                    // `CacheValue` around (minus its data) so we don't confuse whoever holds an
+                    // obligation or replace on it.
+                    value.present = None;
+                }
+
+                // Track the replace against the variant we read from if there was one; failing
+                // that, any existing matching variant; failing that, a new variant derived from the
+                // most recent vary rule.
+                let variant = found
+                    .or_else(|| {
+                        response_keys
+                            .iter()
+                            .find(|key| key_objects.objects.contains_key(*key))
+                            .cloned()
+                    })
+                    .unwrap_or_else(|| {
+                        response_keys.into_iter().next().unwrap_or_else(|| {
+                            key_objects.vary_rules.push_front(VaryRule::default());
+                            VaryRule::default().variant(request_headers)
+                        })
+                    });
+
+                let value = key_objects.objects.entry(variant.clone()).or_default();
+                value.replacing += 1;
+
+                // Only a `Wait` replace is guaranteed to find the obligation free. On Compute, the
+                // other strategies take it over from whoever holds it; but the store's invariant
+                // is one `Obligation` per obligated `CacheValue`, so instead they fall back to a
+                // racing plain insert. (They still count as `replacing`, so `Wait` replaces
+                // still queue behind them.)
+                let obligation = if !value.obligated {
+                    value.obligated = true;
+                    Some(Obligation {
+                        object: Arc::clone(self),
+                        variant: variant.clone(),
+                        request_headers: request_headers.clone(),
+                        // A replace always inserts a fresh body, never `update`s.
+                        present: None,
+                        completed: false,
+                    })
+                } else {
+                    None
+                };
+
+                result = Some((
+                    data,
+                    Replacing {
+                        object: Arc::clone(self),
+                        variant,
+                        request_headers: request_headers.clone(),
+                        obligation,
+                    },
+                ));
+
+                // No notification: waiters wait on obligations and replaces being *finished*,
+                // which didn't happen here.
+                false
+            });
+
+            if let Some((data, replacing)) = result {
+                if let Some(data) = &data {
+                    // As on Compute, beginning a replace counts as a hit on the existing object.
+                    data.meta.record_hit();
+                }
+                return (data, replacing);
+            }
+            let _ = sub.changed().await;
         }
     }
 
@@ -436,15 +610,15 @@ impl CacheKeyObjects {
                             .soft_purge
                             .store(true, std::sync::atomic::Ordering::SeqCst);
                         Some((variant, value))
-                    } else if value.obligated {
-                        // This value has an outstanding obligation.
+                    } else if value.obligated || value.replacing > 0 {
+                        // This value has an outstanding obligation or replace.
                         // We don't want to clobber that; otherwise, the obligee will be Confused;
                         // So, keep the CacheValue but remove the "present".
                         Some((
                             variant,
                             CacheValue {
                                 present: None,
-                                obligated: true,
+                                ..value
                             },
                         ))
                     } else {
@@ -475,7 +649,8 @@ struct CacheKeyObjectsInner {
     /// Each CacheValue may have its headers complete (completed or streaming body),
     /// or may represent a task with an Obligation to fetch the corresponding object.
     //
-    // INVARIANT: There is exactly one Obligation for each CacheValue::obligated.
+    // INVARIANT: There is exactly one Obligation for each CacheValue::obligated, and
+    // CacheValue::replacing is the number of live Replacings for that Variant.
     objects: HashMap<Variant, CacheValue>,
 }
 
@@ -492,6 +667,10 @@ struct CacheValue {
 
     /// Whether there is an outstanding Obligation to freshen this entry.
     obligated: bool,
+
+    /// The number of replace operations in progress against this entry, whatever their strategy.
+    /// `Wait` replaces queue behind these.
+    replacing: usize,
 }
 
 /// An obligation to fetch & update the cache.
@@ -560,6 +739,48 @@ impl Drop for Obligation {
             } else {
                 // Something odd happened -- our variant is no longer in the map.
                 // In this case, we didn't change anything, so avoid a spurious wakeup.
+                false
+            }
+        });
+    }
+}
+
+/// A replace operation in progress against one variant, which may also hold that variant's
+/// obligation.
+///
+/// Dropping this without calling `insert` abandons the replace.
+#[derive(Debug)]
+pub struct Replacing {
+    object: Arc<CacheKeyObjects>,
+    variant: Variant,
+    request_headers: HeaderMap,
+    obligation: Option<Obligation>,
+}
+
+impl Replacing {
+    /// Write the replacement object, completing the replace.
+    pub fn insert(mut self, options: WriteOptions, body: Body) {
+        if let Some(obligation) = self.obligation.take() {
+            // Fulfilling the obligation also releases it, waking anyone waiting on this object.
+            obligation.insert(options, body);
+        } else {
+            // No obligation: a plain, racing, last-writer-wins insert.
+            let request_headers = std::mem::take(&mut self.request_headers);
+            self.object.insert(request_headers, options, body, None);
+        }
+    }
+}
+
+impl Drop for Replacing {
+    fn drop(&mut self) {
+        // Whether completed or abandoned, this replace is no longer in progress; wake any `Wait`
+        // replace queued behind it.
+        self.object.0.send_if_modified(|key_objects| {
+            if let Some(v) = key_objects.objects.get_mut(&self.variant) {
+                v.replacing -= 1;
+                true
+            } else {
+                // As in `Obligation::drop`: our variant is no longer in the map.
                 false
             }
         });
