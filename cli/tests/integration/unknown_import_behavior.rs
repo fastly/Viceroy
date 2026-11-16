@@ -23,7 +23,9 @@ async fn default_behavior_link_failure() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn trap_behavior_function_called() -> TestResult {
     let resp = Test::using_fixture("unknown-import.wasm")
-        .using_unknown_import_behavior(UnknownImportBehavior::Trap)
+        .configure_ctx(|ctx| {
+            ctx.set_unknown_import_behavior(UnknownImportBehavior::Trap);
+        })
         .against(Request::get("/").header("call-it", "yes").body("").unwrap())
         .await?;
 
@@ -57,7 +59,9 @@ async fn trap_behavior_function_not_called() -> TestResult {
                 .unwrap()
         })
         .await
-        .using_unknown_import_behavior(UnknownImportBehavior::Trap)
+        .configure_ctx(|ctx| {
+            ctx.set_unknown_import_behavior(UnknownImportBehavior::Trap);
+        })
         .against_empty()
         .await?;
 

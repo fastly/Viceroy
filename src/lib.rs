@@ -31,6 +31,7 @@ pub use {
     error::Error,
     execute::BacktraceDetails,
     execute::ExecuteCtx,
+    execute::ExecuteCtxBuilder,
     execute::ProfilingConfig,
     execute::WasmFeatures,
     service::{RequestService, ViceroyService},

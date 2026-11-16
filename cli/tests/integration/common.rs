@@ -5,15 +5,14 @@ use http_body::{Frame, SizeHint};
 use http_body_util::{BodyExt, Empty, Full, StreamBody, channel::Channel, combinators::BoxBody};
 use hyper::{Request, Response, Uri, body::Incoming, service::service_fn};
 use hyper_util::{
-    client::legacy::Client,
+    client::legacy::{Client, connect::HttpConnector},
     rt::{TokioExecutor, TokioIo, TokioTimer},
     server::conn::auto,
 };
 use std::{
-    collections::HashSet,
     convert::Infallible,
     future::Future,
-    io::{self, Write},
+    io,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     pin::Pin,
@@ -23,16 +22,8 @@ use std::{
 };
 use test_fixtures_artifacts::FIXTURE_DIR;
 use tracing_subscriber::filter::EnvFilter;
-use viceroy_lib::config::UnknownImportBehavior;
-use viceroy_lib::{
-    ExecuteCtx, ProfilingConfig, RequestService,
-    body::Body,
-    config::{
-        Acls, DeviceDetection, Dictionaries, FakeValidFastlyKeys, FastlyConfig, Geolocation,
-        ObjectStores, SecretStores, ShieldingSites,
-    },
-};
-use wasmtime::WasmFeatures;
+use viceroy_lib::{ExecuteCtx, ExecuteCtxBuilder};
+use viceroy_lib::{RequestService, body::Body, config::FastlyConfig};
 
 pub use self::backends::TestBackends;
 
@@ -131,25 +122,74 @@ pub type TestResult = Result<(), Error>;
 
 /// A builder for running individual requests through a wasm fixture.
 pub struct Test {
-    module_path: PathBuf,
-    acls: Acls,
+    builder: ExecuteCtxBuilder,
     backends: TestBackends,
-    device_detection: DeviceDetection,
-    dictionaries: Dictionaries,
-    geolocation: Geolocation,
-    object_stores: ObjectStores,
-    secret_stores: SecretStores,
-    shielding_sites: ShieldingSites,
-    fake_valid_fastly_keys: FakeValidFastlyKeys,
-    capture_logs: Arc<Mutex<dyn Write + Send>>,
-    log_stdout: bool,
-    log_stderr: bool,
     via_hyper: bool,
-    unknown_import_behavior: UnknownImportBehavior,
-    adapt_component: bool,
-    enable_local_websocket_passthrough: bool,
-    profiling: ProfilingConfig,
-    debug_info: bool,
+}
+
+#[derive(Clone)]
+pub struct TestSession {
+    /// http client and server address for when `Test::via_hyper()` is used.
+    /// Otherwise, the request is passed directly to the guest.
+    hyper: Option<(Client<HttpConnector, Full<Bytes>>, String)>,
+    ctx: Arc<ExecuteCtx>,
+}
+
+impl TestSession {
+    pub async fn request(
+        &self,
+        mut req: Request<impl Into<Bytes>>,
+    ) -> Result<Response<Body>, Error> {
+        let authority = if let Some((_, server)) = &self.hyper {
+            server.clone()
+        } else {
+            "localhost".to_string()
+        };
+
+        let new_uri = Uri::builder()
+            .scheme("http")
+            .authority(authority)
+            .path_and_query(
+                req.uri()
+                    .path_and_query()
+                    .map(|p_and_q| p_and_q.as_str())
+                    .unwrap_or(""),
+            )
+            .build()
+            .unwrap();
+        *req.uri_mut() = new_uri;
+
+        if let Some((client, _)) = &self.hyper {
+            let resp = client.request(req.map(|b| Full::new(b.into()))).await?;
+            Ok(resp.map(Into::into))
+        } else {
+            // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
+            // still normalize the request URI for consistency.
+            let local = (Ipv4Addr::LOCALHOST, 80).into();
+            let remote = (Ipv4Addr::LOCALHOST, 0).into();
+            let resp = self
+                .ctx
+                .clone()
+                .handle_request(req.map(|b| Full::new(b.into())), local, remote)
+                .await
+                .map(|result| {
+                    match result {
+                        (resp, None) => resp,
+                        (_, Some(err)) => {
+                            // Splat the string representation of the runtime error into a synthetic
+                            // 500. This is a bit of a hack, but good enough to check for expected error
+                            // strings.
+                            let body = err.to_string();
+                            Response::builder()
+                                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from(body.as_bytes()))
+                                .unwrap()
+                        }
+                    }
+                })?;
+            Ok(resp)
+        }
+    }
 }
 
 impl Test {
@@ -157,25 +197,9 @@ impl Test {
     /// and the release mode.
     pub fn using_wasm_fixture(module_path: PathBuf) -> Self {
         Self {
-            module_path,
-            acls: Acls::new(),
+            builder: ExecuteCtxBuilder::new(module_path),
             backends: TestBackends::new(),
-            device_detection: DeviceDetection::new(),
-            dictionaries: Dictionaries::new(),
-            geolocation: Geolocation::new(),
-            object_stores: ObjectStores::new(),
-            secret_stores: SecretStores::new(),
-            shielding_sites: ShieldingSites::new(),
-            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
-            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
-            log_stdout: false,
-            log_stderr: false,
             via_hyper: false,
-            unknown_import_behavior: Default::default(),
-            adapt_component: false,
-            enable_local_websocket_passthrough: true,
-            profiling: ProfilingConfig::None,
-            debug_info: false,
         }
     }
 
@@ -211,59 +235,30 @@ impl Test {
         module_path.push(fixture);
 
         Self {
-            module_path,
-            acls: Acls::new(),
+            builder: ExecuteCtxBuilder::new(module_path),
             backends: TestBackends::new(),
-            device_detection: DeviceDetection::new(),
-            dictionaries: Dictionaries::new(),
-            geolocation: Geolocation::new(),
-            object_stores: ObjectStores::new(),
-            secret_stores: SecretStores::new(),
-            shielding_sites: ShieldingSites::new(),
-            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
-            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
-            log_stdout: false,
-            log_stderr: false,
             via_hyper: false,
-            unknown_import_behavior: Default::default(),
-            adapt_component: false,
-            enable_local_websocket_passthrough: true,
-            profiling: ProfilingConfig::None,
-            debug_info: false,
+        }
+    }
+
+    /// Directly configure the execute context builder for this test.
+    /// The backends on the builder will be ignored, use
+    /// [Self::backend] or [Self::async_backend] instead.
+    pub fn configure_ctx(self, f: impl FnOnce(&mut ExecuteCtxBuilder)) -> Self {
+        Self {
+            builder: self.builder.with(f),
+            ..self
         }
     }
 
     /// Use backend and dictionary settings provided in a `fastly.toml` file.
-    pub fn using_fastly_toml(self, fastly_toml: &str) -> Result<Self, Error> {
+    pub fn using_fastly_toml(mut self, fastly_toml: &str) -> Result<Self, Error> {
         let config = fastly_toml.parse::<FastlyConfig>()?;
+        self.builder.use_config(&config);
         Ok(Self {
-            acls: config.acls().to_owned(),
             backends: TestBackends::from_backend_configs(config.backends()),
-            device_detection: config.device_detection().to_owned(),
-            dictionaries: config.dictionaries().to_owned(),
-            geolocation: config.geolocation().to_owned(),
-            object_stores: config.object_stores().to_owned(),
-            secret_stores: config.secret_stores().to_owned(),
-            shielding_sites: config.shielding_sites().to_owned(),
-            fake_valid_fastly_keys: config.fake_valid_fastly_keys().to_owned(),
             ..self
         })
-    }
-
-    /// Use existing [`TestBackends`] for this test, replacing any previously existing backends.
-    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
-    pub fn using_test_backends(mut self, test_backends: &TestBackends) -> Self {
-        self.backends = test_backends.clone();
-        self
-    }
-
-    /// Use the specified [`UnknownImportBehavior`] for this test.
-    pub fn using_unknown_import_behavior(
-        mut self,
-        unknown_import_behavior: UnknownImportBehavior,
-    ) -> Self {
-        self.unknown_import_behavior = unknown_import_behavior;
-        self
     }
 
     /// Add a backend definition to this test.
@@ -389,27 +384,6 @@ impl Test {
         self
     }
 
-    pub fn capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
-        self.capture_logs = capture_logs;
-        self
-    }
-
-    /// Treat stderr as a logging endpoint for this test.
-    pub fn log_stderr(self) -> Self {
-        Self {
-            log_stderr: true,
-            ..self
-        }
-    }
-
-    /// Treat stdout as a logging endpoint for this test.
-    pub fn log_stdout(self) -> Self {
-        Self {
-            log_stdout: true,
-            ..self
-        }
-    }
-
     /// Actually spin up a hyper server and client for this test, rather than just
     /// passing the request through the guest code.
     pub fn via_hyper(self) -> Self {
@@ -421,48 +395,16 @@ impl Test {
 
     /// Automatically adapt the wasm to a component before running.
     pub fn adapt_component(mut self, adapt: bool) -> Self {
-        self.adapt_component = adapt;
+        self.builder.set_adapt_components(adapt);
         self
     }
 
-    /// Set whether WebSocket passthrough is enabled for this test.
-    pub fn enable_local_websocket_passthrough(mut self, enable: bool) -> Self {
-        self.enable_local_websocket_passthrough = enable;
-        self
-    }
-
-    /// Set the profiling configuration for this test.
-    pub fn with_profiling(mut self, profiling: ProfilingConfig) -> Self {
-        self.profiling = profiling;
-        self
-    }
-
-    /// Compile the guest with native debug information.
-    pub fn debug_info(mut self, debug_info: bool) -> Self {
-        self.debug_info = debug_info;
-        self
-    }
-
-    /// Pass the given requests through this test, returning the associated responses.
+    /// Start the backends and create the [`ExecuteCtx`], returning a
+    /// [`TestSession`] that can be used to to send requests through the guest,
+    /// and a handle to the running test server, if `Test::via_hyper()` was used.
     ///
-    /// A `Test` can be used repeatedly against different requests, either individually (as with
-    /// `against()`) or in batches (as with `against_many()`).
-    ///
-    /// The difference between calling this function with many requests, rather than calling
-    /// `against()` multiple times, is that the requests shared in an `against_many()` call will
-    /// share the same Wasm execution context. This can be useful when validating interactions
-    /// across shared state in the context. Subsequent calls to `against_many()` (or `against()`)
-    /// will use a fresh context.
-    ///
-    /// When this function is called, the test servers for its defined backends will be started, if
-    /// they have not been already. Those test servers will remain running for the lifetime of this
-    /// [`Test`] object, and are therefore potentially reused for multiple `against*()` invocations.
-    pub async fn against_many(
-        &self,
-        mut reqs: Vec<Request<impl Into<Bytes>>>,
-    ) -> Result<Vec<Response<Body>>, Error> {
-        let mut responses = Vec::with_capacity(reqs.len());
-
+    /// Shut down the test server with [`TestServer::shutdown()`] when done.
+    pub async fn start(&self) -> Result<(TestSession, Option<TestServer>), Error> {
         // Install a tracing subscriber. We use a human-readable event formatter in tests, using a
         // writer that supports input capturing for `cargo test`. This subscribes to all events in
         // the `viceroy-lib` library.
@@ -485,106 +427,64 @@ impl Test {
             self.backends.start_servers().await;
         }
 
-        let ctx = ExecuteCtx::build(
-            &self.module_path,
-            self.profiling.clone(),
-            HashSet::new(),
-            self.unknown_import_behavior,
-            self.adapt_component,
-            WasmFeatures::default(),
-        )?
-        .with_debug_info(self.debug_info)
-        .with_acls(self.acls.clone())
-        .with_backends(self.backends.backend_configs().await)
-        .with_dictionaries(self.dictionaries.clone())
-        .with_device_detection(self.device_detection.clone())
-        .with_geolocation(self.geolocation.clone())
-        .with_object_stores(self.object_stores.clone())
-        .with_secret_stores(self.secret_stores.clone())
-        .with_shielding_sites(self.shielding_sites.clone())
-        .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
-        .with_enable_local_websocket_passthrough(self.enable_local_websocket_passthrough)
-        .with_capture_logs(self.capture_logs.clone())
-        .with_log_stderr(self.log_stderr)
-        .with_log_stdout(self.log_stdout)
-        .finish()?;
+        let mut builder = self.builder.clone();
+        builder.set_backends(self.backends.backend_configs().await);
+        let ctx = builder.finish()?;
 
-        if self.via_hyper {
-            // NB the server is spawned onto a dedicated async task; we are going to use the
-            // _current_ task to act as the client.
-            // Bind the server to an ephemeral port to allow for parallel test execution.
-            let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |local, remote| {
-                RequestService::new(ctx.clone(), local, remote)
-            })?;
-            let server_addr = server.bound_addr;
+        if !self.via_hyper {
+            return Ok((TestSession { hyper: None, ctx }, None));
+        }
 
-            for mut req in reqs.drain(..) {
-                // Fix up the request URI to include the ephemeral port assignment. The `http::Uri`
-                // interface makes this unfortunately verbose.
-                let new_uri = Uri::builder()
-                    .scheme("http")
-                    .authority(server_addr.to_string())
-                    .path_and_query(
-                        req.uri()
-                            .path_and_query()
-                            .map(|p_and_q| p_and_q.as_str())
-                            .unwrap_or(""),
-                    )
-                    .build()
-                    .unwrap();
-                *req.uri_mut() = new_uri;
+        let inner = ctx.clone();
+        // NB the server is spawned onto a dedicated async task; we are going to use the
+        // _current_ task to act as the client.
+        // Bind the server to an ephemeral port to allow for parallel test execution.
+        let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |local, remote| {
+            RequestService::new(inner.clone(), local, remote)
+        })?;
+        let client = Client::builder(TokioExecutor::new())
+            .timer(TokioTimer::new())
+            .pool_timer(TokioTimer::new())
+            .build_http();
+        Ok((
+            TestSession {
+                hyper: Some((client, server.bound_addr.to_string())),
+                ctx,
+            },
+            Some(server),
+        ))
+    }
 
-                // Pass the request to the server via a Hyper client on the _current_ task:
-                let client = Client::builder(TokioExecutor::new())
-                    .timer(TokioTimer::new())
-                    .pool_timer(TokioTimer::new())
-                    .build_http();
-                let resp = client.request(req.map(|b| Full::new(b.into()))).await?;
-                responses.push(resp.map(Into::into));
-            }
+    /// Pass the given requests through this test, returning the associated responses.
+    ///
+    /// A `Test` can be used repeatedly against different requests, either individually (as with
+    /// `against()`) or in batches (as with `against_many()`).
+    ///
+    /// The difference between calling this function with many requests, rather than calling
+    /// `against()` multiple times, is that the requests shared in an `against_many()` call will
+    /// share the same Wasm execution context. This can be useful when validating interactions
+    /// across shared state in the context. Subsequent calls to `against_many()` (or `against()`)
+    /// will use a fresh context.
+    ///
+    /// When this function is called, the test servers for its defined backends will be started, if
+    /// they have not been already. Those test servers will remain running for the lifetime of this
+    /// [`Test`] object, and are therefore potentially reused for multiple `against*()` invocations.
+    pub async fn against_many(
+        &self,
+        mut reqs: Vec<Request<impl Into<Bytes>>>,
+    ) -> Result<Vec<Response<Body>>, Error> {
+        let mut responses = Vec::with_capacity(reqs.len());
+        let (session, server) = self.start().await?;
 
-            // We're done with these test requests, so stop accepting connections and reap the
-            // listener task. Open connections can finish streaming their responses.
+        for req in reqs.drain(..) {
+            let resp = session.request(req).await?;
+            responses.push(resp);
+        }
+
+        // We're done with these test requests, so stop accepting connections and reap the
+        // listener task. Open connections can finish streaming their responses.
+        if let Some(server) = server {
             server.shutdown().await?;
-        } else {
-            for mut req in reqs.drain(..) {
-                // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
-                // still normalize the request URI for consistency.
-                let new_uri = Uri::builder()
-                    .scheme("http")
-                    .authority("localhost")
-                    .path_and_query(
-                        req.uri()
-                            .path_and_query()
-                            .map(|p_and_q| p_and_q.as_str())
-                            .unwrap_or(""),
-                    )
-                    .build()
-                    .unwrap();
-                *req.uri_mut() = new_uri;
-                let local = (Ipv4Addr::LOCALHOST, 80).into();
-                let remote = (Ipv4Addr::LOCALHOST, 0).into();
-                let resp = ctx
-                    .clone()
-                    .handle_request(req.map(|b| Full::new(b.into())), local, remote)
-                    .await
-                    .map(|result| {
-                        match result {
-                            (resp, None) => resp,
-                            (_, Some(err)) => {
-                                // Splat the string representation of the runtime error into a synthetic
-                                // 500. This is a bit of a hack, but good enough to check for expected error
-                                // strings.
-                                let body = err.to_string();
-                                Response::builder()
-                                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Body::from(body.as_bytes()))
-                                    .unwrap()
-                            }
-                        }
-                    })?;
-                responses.push(resp);
-            }
         }
 
         Ok(responses)

@@ -17,8 +17,10 @@ viceroy_test!(acl_works, |is_component| {
     let resp = Test::using_fixture("acl.wasm")
         .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
-        .log_stderr()
-        .log_stdout()
+        .configure_ctx(|ctx| {
+            ctx.set_log_stderr(true);
+            ctx.set_log_stdout(true);
+        })
         .against_empty()
         .await?;
 

@@ -10,7 +10,9 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Level, Metadata, event};
 use tracing_subscriber::fmt::writer::MakeWriter;
-use viceroy_lib::{BackendConnector, ExecuteCtx, body::Body, config::FastlyConfig};
+use viceroy_lib::{
+    BackendConnector, ExecuteCtx, ExecuteCtxBuilder, body::Body, config::FastlyConfig,
+};
 
 pub(crate) enum Stdio {
     Stdout(Stdout),
@@ -72,21 +74,18 @@ pub(crate) async fn create_execution_context(
     args: &SharedArgs,
     check_backends: bool,
 ) -> Result<Arc<ExecuteCtx>, anyhow::Error> {
-    let input = args.input();
-    let ctx = ExecuteCtx::build(
-        input,
-        args.profiling_config(),
-        args.wasi_modules(),
-        args.unknown_import_behavior(),
-        args.adapt(),
-        args.wasm_features(),
-    )?
-    .with_debug_info(args.debug_info())
-    .with_backtrace_details(args.backtrace_details())
-    .with_log_stderr(args.log_stderr())
-    .with_log_stdout(args.log_stdout())
-    .with_local_pushpin_proxy_port(args.local_pushpin_proxy_port())
-    .with_enable_local_websocket_passthrough(args.enable_local_websocket_passthrough());
+    let mut ctx = ExecuteCtxBuilder::new(args.input());
+    ctx.set_profiling(args.profiling_config());
+    ctx.set_wasi_modules(args.wasi_modules());
+    ctx.set_unknown_import_behavior(args.unknown_import_behavior());
+    ctx.set_adapt_components(args.adapt());
+    ctx.set_wasm_features(args.wasm_features());
+    ctx.set_debug_info(args.debug_info());
+    ctx.set_backtrace_details(args.backtrace_details());
+    ctx.set_log_stderr(args.log_stderr());
+    ctx.set_log_stdout(args.log_stdout());
+    ctx.set_local_pushpin_proxy_port(args.local_pushpin_proxy_port());
+    ctx.set_enable_local_websocket_passthrough(args.enable_local_websocket_passthrough());
 
     let Some(config_path) = args.config_path() else {
         event!(
@@ -98,29 +97,12 @@ pub(crate) async fn create_execution_context(
     };
 
     let config = FastlyConfig::from_file(config_path)?;
-    let acls = config.acls();
     let backends = config.backends();
-    let device_detection = config.device_detection();
-    let geolocation = config.geolocation();
-    let dictionaries = config.dictionaries();
-    let object_stores = config.object_stores();
-    let secret_stores = config.secret_stores();
-    let shielding_sites = config.shielding_sites();
-    let fake_valid_fastly_keys = config.fake_valid_fastly_keys();
     let backend_names = itertools::join(backends.keys(), ", ");
 
-    let ctx = ctx
-        .with_acls(acls.clone())
-        .with_backends(backends.clone())
-        .with_device_detection(device_detection.clone())
-        .with_geolocation(geolocation.clone())
-        .with_dictionaries(dictionaries.clone())
-        .with_object_stores(object_stores.clone())
-        .with_secret_stores(secret_stores.clone())
-        .with_shielding_sites(shielding_sites.clone())
-        .with_fake_valid_fastly_keys(fake_valid_fastly_keys.clone())
-        .with_config_path(config_path.into())
-        .finish()?;
+    ctx.set_config_path(config_path.to_path_buf());
+    ctx.use_config(&config);
+    let ctx = ctx.finish()?;
 
     if backend_names.is_empty() {
         event!(
