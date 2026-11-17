@@ -69,6 +69,7 @@ fn main() {
 
     run_test!(test_stream_back);
     run_test!(test_stream_back_fixed);
+    run_test!(test_abandoned_fill);
 
     eprintln!("Completed all tests for version {service}")
 }
@@ -1371,6 +1372,98 @@ fn test_stream_back_fixed() {
     let got = got.into_string();
 
     assert_eq!(&got, &body[6..=14]);
+}
+
+fn test_abandoned_fill() {
+    // After the writer of a fill abandons the body, no later lookup gets the entry.
+    // The next transaction lookup must become the leader.
+    struct Case {
+        name: &'static str,
+        written: usize,
+        stream_back: bool,
+        abandon: bool,
+    }
+    let cases = [
+        Case {
+            name: "short, stream back",
+            written: 5,
+            stream_back: true,
+            abandon: true,
+        },
+        Case {
+            name: "long, stream back",
+            written: 15,
+            stream_back: true,
+            abandon: true,
+        },
+        Case {
+            name: "short, insert",
+            written: 5,
+            stream_back: false,
+            abandon: true,
+        },
+        Case {
+            name: "long, insert",
+            written: 15,
+            stream_back: false,
+            abandon: true,
+        },
+        Case {
+            name: "short, drop without finish",
+            written: 5,
+            stream_back: false,
+            abandon: false,
+        },
+    ];
+    for case in cases {
+        eprintln!("abandoned fill: {}", case.name);
+        let key = new_key();
+
+        let tx = Transaction::lookup(key.clone()).execute().unwrap();
+        assert!(tx.must_insert_or_update());
+        let builder = tx.insert(Duration::from_secs(600)).known_length(10);
+        let (mut writer, found) = if case.stream_back {
+            builder.execute_and_stream_back().unwrap()
+        } else {
+            let writer = builder.execute().unwrap();
+            let found = lookup(key.clone())
+                .execute()
+                .unwrap()
+                .expect("a lookup must find the fill while it streams");
+            (writer, found)
+        };
+
+        writer.write_all(&vec![b'a'; case.written]).unwrap();
+        if case.abandon {
+            writer.abandon().unwrap();
+        } else {
+            std::mem::drop(writer);
+        }
+
+        // A reader of the fill gets an error, not a short body that ends as if complete.
+        // The error also tells us that the host has seen the end of the fill.
+        let mut data = Vec::new();
+        found
+            .to_stream()
+            .unwrap()
+            .read_to_end(&mut data)
+            .expect_err("a read of an abandoned fill must fail");
+
+        assert!(
+            lookup(key.clone()).execute().unwrap().is_none(),
+            "a lookup must not find an abandoned fill"
+        );
+        let tx = Transaction::lookup(key.clone()).execute().unwrap();
+        assert!(
+            tx.found().is_none(),
+            "a transaction lookup must not find an abandoned fill"
+        );
+        assert!(
+            tx.must_insert_or_update(),
+            "the transaction lookup after an abandoned fill must be the leader"
+        );
+        tx.cancel_insert_or_update().unwrap();
+    }
 }
 
 fn test_simple_cache_expires() {

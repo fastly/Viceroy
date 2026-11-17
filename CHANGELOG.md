@@ -4,6 +4,10 @@
   `WASMTIME_BACKTRACE_DETAILS=0`, and let `WASMTIME_BACKTRACE_DETAILS` control symbolization when
   it is set. Both make guests that start many threads or tasks much faster.
 
+- Fix the Core Cache when the writer of an insert abandons the body, or drops it without
+  `finish()`. Lookups no longer find that entry, and the next transaction lookup must insert or
+  update. Before this fix, lookups found a usable entry whose body could not be read.
+
 - Support custom page size in `viceroy adapt`. ([#714](https://github.com/fastly/Viceroy/pull/714))
 
 ## 0.22.0 (2026-10-27)
