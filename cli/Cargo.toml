@@ -1,15 +1,15 @@
 [package]
 name = "viceroy"
 description = "Viceroy is a local testing daemon for Fastly Compute."
-version = "0.22.1"
-authors = ["Fastly"]
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
 readme = "../README.md"
-edition = "2024"
-license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://developer.fastly.com/learning/compute/testing/#running-a-local-testing-server"
 homepage = "https://developer.fastly.com/learning/compute/"
-repository = "https://github.com/fastly/Viceroy"
-keywords = ["wasm", "fastly"]
 categories = [
   "command-line-utilities",
   "development-tools",
@@ -65,7 +65,7 @@ clap = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
-viceroy-lib = { path = "..", version = "=0.22.1" }
+viceroy-lib = { path = "..", version = "=0.23.0" }
 wat = "^1.0.38"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }

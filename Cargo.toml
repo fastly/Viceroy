@@ -1,14 +1,14 @@
 [package]
 name = "viceroy-lib"
-version = "0.22.1"
 description = "Viceroy implementation details."
-authors = ["Fastly"]
-edition = "2024"
-license = "Apache-2.0 WITH LLVM-exception"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
 documentation = "https://docs.rs/viceroy-lib"
 homepage = "https://github.com/fastly/Viceroy"
-repository = "https://github.com/fastly/Viceroy"
-keywords = ["wasm", "fastly"]
 categories = [
     "development-tools",
     "network-programming",
@@ -124,6 +124,14 @@ codegen-units = 1
 
 [lints]
 workspace = true
+
+[workspace.package]
+version = "0.23.0"
+authors = ["Fastly"]
+license = "Apache-2.0 WITH LLVM-exception"
+edition = "2024"
+repository = "https://github.com/fastly/Viceroy"
+keywords = ["wasm", "fastly"]
 
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "warn"
