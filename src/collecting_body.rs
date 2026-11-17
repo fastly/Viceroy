@@ -50,6 +50,12 @@ impl CollectingBody {
         }
     }
 
+    /// Returns true if the writer did not complete the body: it hung up without finishing, or
+    /// wrote a length other than the expected length.
+    pub fn is_failed(&self) -> bool {
+        matches!(*self.inner.borrow(), CollectingBodyInner::Error(_))
+    }
+
     /// Wait until the length is known (or the writer hangs up without finishing).
     pub async fn known_length(&self) -> Result<u64, error::Error> {
         let mut recv = self.inner.clone();

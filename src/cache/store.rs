@@ -154,7 +154,7 @@ impl CacheKeyObjects {
             if let Some(object) = key_objects
                 .objects
                 .get(&response_key)
-                .and_then(|v| v.present.clone())
+                .and_then(|v| v.valid_data().cloned())
             {
                 return Some(object);
             }
@@ -194,7 +194,7 @@ impl CacheKeyObjects {
                     .map(|v| v.variant(request_headers))
                     .filter_map(|key| key_objects.objects.get(&key));
                 for cache_value in response_values {
-                    if let Some(data) = &cache_value.present {
+                    if let Some(data) = cache_value.valid_data() {
                         if data.meta.is_fresh() {
                             // We have fresh data; no need to generate an obligation.
                             return (Some(Arc::clone(data)), None);
@@ -239,6 +239,15 @@ impl CacheKeyObjects {
                     .iter()
                     .map(|v| v.variant(request_headers))
                     .collect();
+                // An entry whose body failed (e.g. the writer abandoned it) cannot be served.
+                // Remove it, so that this lookup can take the obligation to insert.
+                for key in &response_keys {
+                    if let Some(value) = key_objects.objects.get_mut(key)
+                        && value.present.as_ref().is_some_and(|data| data.is_failed())
+                    {
+                        value.present = None;
+                    }
+                }
                 // These are the existing cache entries that would be valid for this request,
                 // taking into account vary rules.
                 // They may be stale or not-yet-filled (i.e. obligation-only); let's see what we
@@ -251,7 +260,7 @@ impl CacheKeyObjects {
                 // First, if we have fresh data, we can immediately short-circuit.
                 if let Some(fresh) = response_keyed_objects
                     .iter()
-                    .filter_map(|(_, cache_value)| cache_value.present.as_ref())
+                    .filter_map(|(_, cache_value)| cache_value.valid_data())
                     .find(|cache_data| cache_data.meta.is_fresh())
                 {
                     data = Some(Arc::clone(fresh));
@@ -264,12 +273,11 @@ impl CacheKeyObjects {
                 if let Some((variant, revalidatable)) =
                     response_keyed_objects.iter().find(|(_, cache_value)| {
                         cache_value
-                            .present
-                            .as_ref()
+                            .valid_data()
                             .is_some_and(|data| data.meta.is_usable())
                     })
                 {
-                    let d = revalidatable.present.as_ref().unwrap();
+                    let d = revalidatable.valid_data().unwrap();
                     data = Some(Arc::clone(d));
                     // Already an obligation? We've captured the data to return, so we're done.
                     if revalidatable.obligated {
@@ -494,6 +502,15 @@ struct CacheValue {
     obligated: bool,
 }
 
+impl CacheValue {
+    /// The data of this entry, if it is present and its body has not failed.
+    ///
+    /// A body that is still streaming is valid: a reader can stream it while it is written.
+    fn valid_data(&self) -> Option<&Arc<CacheData>> {
+        self.present.as_ref().filter(|data| !data.is_failed())
+    }
+}
+
 /// An obligation to fetch & update the cache.
 #[derive(Debug)]
 pub struct Obligation {
@@ -702,6 +719,11 @@ impl CacheData {
         &self.meta
     }
 
+    /// Returns true if the body of this object was not completed, e.g. the writer abandoned it.
+    fn is_failed(&self) -> bool {
+        self.body.is_failed()
+    }
+
     /// Return the length of this object, if the final or expected length is known.
     fn length(&self) -> Option<u64> {
         self.body.length().or(self.meta.length)
@@ -718,6 +740,7 @@ mod tests {
     use crate::{
         body::{Body, Chunk},
         cache::{VaryRule, WriteOptions},
+        streaming_body::StreamingBody,
     };
 
     use super::CacheKeyObjects;
@@ -930,6 +953,45 @@ mod tests {
         let (Some(_), None) = ko.transaction_get(&empty_headers, false).await else {
             panic!("unexpected value")
         };
+    }
+
+    #[tokio::test]
+    async fn failed_fill_is_not_served() {
+        // (bytes written, declared length)
+        for (written, length) in [(5, Some(10)), (15, Some(10)), (5, None)] {
+            let objects = Arc::new(CacheKeyObjects::default());
+            let headers = HeaderMap::default();
+
+            let (None, Some(obligation)) = objects.transaction_get(&headers, true).await else {
+                panic!("expected an obligation for an empty key")
+            };
+            let (mut tx, rx) = StreamingBody::new();
+            let options = WriteOptions {
+                length,
+                ..WriteOptions::new(Duration::from_secs(100))
+            };
+            let found = obligation.insert(options, Body::from(Chunk::from(rx)));
+
+            tx.send_chunk(vec![b'a'; written]).await.unwrap();
+            // Hang up without a finish message, as an abandoned body does.
+            std::mem::drop(tx);
+
+            // A reader of the fill gets an error. This also waits until the body has failed.
+            found
+                .data
+                .body()
+                .build()
+                .await
+                .unwrap()
+                .read_into_vec()
+                .await
+                .unwrap_err();
+
+            assert!(objects.get(&headers).is_none());
+            let (found, obligation) = objects.transaction_get(&headers, true).await;
+            assert!(found.is_none());
+            assert!(obligation.is_some());
+        }
     }
 
     #[tokio::test]
