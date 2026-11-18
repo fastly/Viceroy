@@ -4,7 +4,7 @@
 use bytes::Bytes;
 use http::HeaderMap;
 use http_body_util::BodyExt;
-use tokio::sync::watch;
+use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
     Error,
@@ -112,10 +112,15 @@ impl CollectingBody {
     /// Writes to the StreamingBody are collected, and propagated to all readers of this
     /// CollectingBody.
     pub fn new(from: Body, length: Option<u64>) -> CollectingBody {
+        Self::new_with_task(from, length).0
+    }
+
+    /// As `new`, and also return the task that collects the body.
+    fn new_with_task(from: Body, length: Option<u64>) -> (CollectingBody, JoinHandle<()>) {
         let (tx, rx) = watch::channel(CollectingBodyInner::default());
         let body = CollectingBody { inner: rx };
-        tokio::task::spawn(Self::tee(from, tx, length));
-        body
+        let task = tokio::task::spawn(Self::tee(from, tx, length));
+        (body, task)
     }
 
     /// "tee" a single Body to the watch channel.
@@ -155,6 +160,7 @@ impl CollectingBody {
                     continue;
                 }
             };
+            let mut overfilled = false;
             tx.send_modify(|state| {
                 if let CollectingBodyInner::Streaming(chunks) = state {
                     length += data.len();
@@ -167,10 +173,15 @@ impl CollectingBody {
                 match expected_length {
                     Some(expected_length) if (length as u64) > expected_length => {
                         *state = CollectingBodyInner::Error(Error::UnfinishedStreamingBody);
+                        overfilled = true;
                     }
                     _ => (),
                 }
             });
+            if overfilled {
+                // The state is final; ignore the rest of the input.
+                return;
+            }
         }
 
         // We're done with all the data.
@@ -204,9 +215,14 @@ impl CollectingBody {
     /// Get a handle to read the requested range from this body.
     /// Start is inclusive, end is exclusive.
     pub fn read_range(&self, start: u64, end: Option<u64>) -> Result<Body, error::Error> {
+        Ok(self.read_range_with_task(start, end).0)
+    }
+
+    /// As `read_range`, and also return the task that sends the data to the returned Body.
+    fn read_range_with_task(&self, start: u64, end: Option<u64>) -> (Body, JoinHandle<()>) {
         let mut upstream = self.inner.clone();
         let (mut tx, rx) = StreamingBody::new();
-        tokio::task::spawn(async move {
+        let task = tokio::task::spawn(async move {
             let mut next_chunk = 0;
             let mut cursor = 0u64;
             // The receiver tracks the "current" value, and assumes that the value at the receiver
@@ -220,8 +236,6 @@ impl CollectingBody {
                 let (send_chunks, trailers) = {
                     // Acquire the read lock:
                     let current_value = upstream.borrow_and_update();
-                    let send_chunks: Vec<Bytes> = current_value.chunks()[next_chunk..].to_owned();
-                    let trailers = current_value.trailers().cloned();
                     if let CollectingBodyInner::Error(ref e) = *current_value {
                         // To trigger a guest error, it is sufficient to not .finish() the
                         // StreamingBody (so, early return).
@@ -230,6 +244,10 @@ impl CollectingBody {
                         tracing::warn!("error in reading from CollectingBody: {e}");
                         return;
                     }
+                    // The Error state has no chunks, so this slice is valid only after the
+                    // check above.
+                    let send_chunks: Vec<Bytes> = current_value.chunks()[next_chunk..].to_owned();
+                    let trailers = current_value.trailers().cloned();
                     (send_chunks, trailers)
                 };
 
@@ -309,7 +327,7 @@ impl CollectingBody {
         });
         let c: Chunk = rx.into();
         let b: Body = c.into();
-        Ok(b)
+        (b, task)
     }
 }
 
@@ -353,6 +371,7 @@ mod tests {
 
     use bytes::{Bytes, BytesMut};
     use http::{HeaderName, HeaderValue};
+    use http_body_util::BodyExt as _;
     use tokio::{sync::oneshot, task::JoinSet};
 
     use crate::{
@@ -597,6 +616,41 @@ mod tests {
         tx.send_chunk(b"hello".as_slice()).await.unwrap();
         tx.finish().unwrap();
 
+        let err = collect.read().unwrap().read_into_vec().await.unwrap_err();
+        assert!(matches!(err, Error::UnfinishedStreamingBody));
+    }
+
+    #[tokio::test]
+    async fn reader_does_not_panic_when_body_fails() {
+        let (mut tx, rx) = StreamingBody::new();
+        let collect = CollectingBody::new(Body::from(Chunk::from(rx)), None);
+        let (mut read, task) = collect.read_range_with_task(0, None);
+
+        // Make sure that the reader has sent a chunk before the body fails.
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        let frame = read.frame().await.unwrap().unwrap();
+        assert_eq!(frame.into_data().unwrap().as_ref(), b"hello");
+
+        // Hang up without a finish message.
+        std::mem::drop(tx);
+
+        let err = read.read_into_vec().await.unwrap_err();
+        assert!(matches!(err, Error::UnfinishedStreamingBody));
+        task.await.expect("the reader task must not panic");
+    }
+
+    #[tokio::test]
+    async fn collector_does_not_panic_on_data_after_overfill() {
+        let (mut tx, rx) = StreamingBody::new();
+        let (collect, task) = CollectingBody::new_with_task(Body::from(Chunk::from(rx)), Some(2));
+
+        // The first chunk is longer than the expected length; the second chunk comes after it.
+        tx.send_chunk(b"hello".as_slice()).await.unwrap();
+        // The collector can stop before it reads this chunk, so the send can fail.
+        let _ = tx.send_chunk(b"world".as_slice()).await;
+        std::mem::drop(tx);
+
+        task.await.expect("the collector task must not panic");
         let err = collect.read().unwrap().read_into_vec().await.unwrap_err();
         assert!(matches!(err, Error::UnfinishedStreamingBody));
     }
