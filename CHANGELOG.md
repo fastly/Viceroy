@@ -10,6 +10,10 @@
   `finish()`. Lookups no longer find that entry, and the next transaction lookup must insert or
   update. Before this fix, lookups found a usable entry whose body could not be read.
 
+- Fix two panics in cached bodies that do not complete. A reader panicked when the body failed
+  after the reader got some data. The body collector panicked when it got more data after the
+  body was longer than its declared length.
+
 - Support custom page size in `viceroy adapt`. ([#714](https://github.com/fastly/Viceroy/pull/714))
 
 ## 0.22.0 (2026-10-27)
