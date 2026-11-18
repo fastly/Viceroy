@@ -1,8 +1,7 @@
-use crate::common::{Test, TestResult};
+use crate::common::{Test, TestBody, TestResult, spawn_server};
 use crate::viceroy_test;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode, body};
-use std::convert::Infallible;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
 use std::net::SocketAddr;
 
 viceroy_test!(shielding_running_on, |is_component| {
@@ -37,7 +36,7 @@ viceroy_test!(shielding_running_on, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp2.status());
-    let body = body::to_bytes(resp2.into_body()).await.unwrap().to_vec();
+    let body = resp2.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("true", &string);
 
@@ -49,7 +48,7 @@ viceroy_test!(shielding_running_on, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp3.status());
-    let body = body::to_bytes(resp3.into_body()).await.unwrap().to_vec();
+    let body = resp3.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("false", &string);
 
@@ -59,27 +58,19 @@ viceroy_test!(shielding_running_on, |is_component| {
 viceroy_test!(shield_backends, |is_component| {
     let blank_addr = SocketAddr::from(([127, 0, 0, 1], 0));
 
-    let make_service_unenc = make_service_fn(|_conn| async {
-        Ok::<_, Infallible>(service_fn(|_: Request<Body>| async {
-            Ok::<Response<Body>, std::io::Error>(Response::new(Body::from("unencrypted land")))
-        }))
-    });
+    let unenc_server = spawn_server(blank_addr, |_, _| {
+        service_fn(|_| async {
+            Ok::<_, std::io::Error>(Response::new(TestBody::full("unencrypted land")))
+        })
+    })?;
+    let enc_server = spawn_server(blank_addr, |_, _| {
+        service_fn(|_| async {
+            Ok::<_, std::io::Error>(Response::new(TestBody::full("encrypted land")))
+        })
+    })?;
 
-    let make_service_enc = make_service_fn(|_conn| async {
-        Ok::<_, Infallible>(service_fn(|_: Request<Body>| async {
-            Ok::<Response<Body>, std::io::Error>(Response::new(Body::from("encrypted land")))
-        }))
-    });
-
-    let unenc_server = Server::bind(&blank_addr).serve(make_service_unenc);
-    let enc_server = Server::bind(&blank_addr).serve(make_service_enc);
-
-    let unenc_addr = unenc_server.local_addr();
-    let enc_addr = enc_server.local_addr();
-
-    let mut server_set = tokio::task::JoinSet::new();
-    server_set.spawn(unenc_server);
-    server_set.spawn(enc_server);
+    let unenc_addr = unenc_server.bound_addr;
+    let enc_addr = enc_server.bound_addr;
 
     let fastly_toml = format!(
         r#"
@@ -108,7 +99,7 @@ viceroy_test!(shield_backends, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp1.status());
-    let body = body::to_bytes(resp1.into_body()).await.unwrap().to_vec();
+    let body = resp1.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("unencrypted land", &string);
 
@@ -121,7 +112,7 @@ viceroy_test!(shield_backends, |is_component| {
         )
         .await?;
     assert_eq!(StatusCode::OK, resp2.status());
-    let body = body::to_bytes(resp2.into_body()).await.unwrap().to_vec();
+    let body = resp2.into_body().read_into_vec().await.unwrap();
     let string = String::from_utf8(body).unwrap();
     assert_eq!("encrypted land", &string);
 

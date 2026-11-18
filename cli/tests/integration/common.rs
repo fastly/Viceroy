@@ -1,29 +1,29 @@
 //! Common values and types used by test fixtures
 
-use futures::stream::StreamExt;
-use hyper::{Body as HyperBody, Request, Response, Server, Uri, service};
+use bytes::Bytes;
+use http_body::{Frame, SizeHint};
+use http_body_util::{BodyExt, Empty, Full, StreamBody, channel::Channel, combinators::BoxBody};
+use hyper::{Request, Response, Uri, body::Incoming, service::service_fn};
+use hyper_util::{
+    client::legacy::{Client, connect::HttpConnector},
+    rt::{TokioExecutor, TokioIo, TokioTimer},
+    server::conn::auto,
+};
 use std::{
-    collections::HashSet,
     convert::Infallible,
     future::Future,
-    io::Write,
+    io,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
     time::Duration,
 };
 use test_fixtures_artifacts::FIXTURE_DIR;
 use tracing_subscriber::filter::EnvFilter;
-use viceroy_lib::config::UnknownImportBehavior;
-use viceroy_lib::{
-    ExecuteCtx, ProfilingConfig, ViceroyService,
-    body::Body,
-    config::{
-        Acls, DeviceDetection, Dictionaries, FakeValidFastlyKeys, FastlyConfig, Geolocation,
-        ObjectStores, SecretStores, ShieldingSites,
-    },
-};
-use wasmtime::WasmFeatures;
+use viceroy_lib::{ExecuteCtx, ExecuteCtxBuilder};
+use viceroy_lib::{RequestService, body::Body, config::FastlyConfig};
 
 pub use self::backends::TestBackends;
 
@@ -122,25 +122,74 @@ pub type TestResult = Result<(), Error>;
 
 /// A builder for running individual requests through a wasm fixture.
 pub struct Test {
-    module_path: PathBuf,
-    acls: Acls,
+    builder: ExecuteCtxBuilder,
     backends: TestBackends,
-    device_detection: DeviceDetection,
-    dictionaries: Dictionaries,
-    geolocation: Geolocation,
-    object_stores: ObjectStores,
-    secret_stores: SecretStores,
-    shielding_sites: ShieldingSites,
-    fake_valid_fastly_keys: FakeValidFastlyKeys,
-    capture_logs: Arc<Mutex<dyn Write + Send>>,
-    log_stdout: bool,
-    log_stderr: bool,
     via_hyper: bool,
-    unknown_import_behavior: UnknownImportBehavior,
-    adapt_component: bool,
-    enable_local_websocket_passthrough: bool,
-    profiling: ProfilingConfig,
-    debug_info: bool,
+}
+
+#[derive(Clone)]
+pub struct TestSession {
+    /// http client and server address for when `Test::via_hyper()` is used.
+    /// Otherwise, the request is passed directly to the guest.
+    hyper: Option<(Client<HttpConnector, Full<Bytes>>, String)>,
+    ctx: Arc<ExecuteCtx>,
+}
+
+impl TestSession {
+    pub async fn request(
+        &self,
+        mut req: Request<impl Into<Bytes>>,
+    ) -> Result<Response<Body>, Error> {
+        let authority = if let Some((_, server)) = &self.hyper {
+            server.clone()
+        } else {
+            "localhost".to_string()
+        };
+
+        let new_uri = Uri::builder()
+            .scheme("http")
+            .authority(authority)
+            .path_and_query(
+                req.uri()
+                    .path_and_query()
+                    .map(|p_and_q| p_and_q.as_str())
+                    .unwrap_or(""),
+            )
+            .build()
+            .unwrap();
+        *req.uri_mut() = new_uri;
+
+        if let Some((client, _)) = &self.hyper {
+            let resp = client.request(req.map(|b| Full::new(b.into()))).await?;
+            Ok(resp.map(Into::into))
+        } else {
+            // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
+            // still normalize the request URI for consistency.
+            let local = (Ipv4Addr::LOCALHOST, 80).into();
+            let remote = (Ipv4Addr::LOCALHOST, 0).into();
+            let resp = self
+                .ctx
+                .clone()
+                .handle_request(req.map(|b| Full::new(b.into())), local, remote)
+                .await
+                .map(|result| {
+                    match result {
+                        (resp, None) => resp,
+                        (_, Some(err)) => {
+                            // Splat the string representation of the runtime error into a synthetic
+                            // 500. This is a bit of a hack, but good enough to check for expected error
+                            // strings.
+                            let body = err.to_string();
+                            Response::builder()
+                                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from(body.as_bytes()))
+                                .unwrap()
+                        }
+                    }
+                })?;
+            Ok(resp)
+        }
+    }
 }
 
 impl Test {
@@ -148,25 +197,9 @@ impl Test {
     /// and the release mode.
     pub fn using_wasm_fixture(module_path: PathBuf) -> Self {
         Self {
-            module_path,
-            acls: Acls::new(),
+            builder: ExecuteCtxBuilder::new(module_path),
             backends: TestBackends::new(),
-            device_detection: DeviceDetection::new(),
-            dictionaries: Dictionaries::new(),
-            geolocation: Geolocation::new(),
-            object_stores: ObjectStores::new(),
-            secret_stores: SecretStores::new(),
-            shielding_sites: ShieldingSites::new(),
-            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
-            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
-            log_stdout: false,
-            log_stderr: false,
             via_hyper: false,
-            unknown_import_behavior: Default::default(),
-            adapt_component: false,
-            enable_local_websocket_passthrough: true,
-            profiling: ProfilingConfig::None,
-            debug_info: false,
         }
     }
 
@@ -202,59 +235,30 @@ impl Test {
         module_path.push(fixture);
 
         Self {
-            module_path,
-            acls: Acls::new(),
+            builder: ExecuteCtxBuilder::new(module_path),
             backends: TestBackends::new(),
-            device_detection: DeviceDetection::new(),
-            dictionaries: Dictionaries::new(),
-            geolocation: Geolocation::new(),
-            object_stores: ObjectStores::new(),
-            secret_stores: SecretStores::new(),
-            shielding_sites: ShieldingSites::new(),
-            fake_valid_fastly_keys: FakeValidFastlyKeys::new(),
-            capture_logs: Arc::new(Mutex::new(std::io::stdout())),
-            log_stdout: false,
-            log_stderr: false,
             via_hyper: false,
-            unknown_import_behavior: Default::default(),
-            adapt_component: false,
-            enable_local_websocket_passthrough: true,
-            profiling: ProfilingConfig::None,
-            debug_info: false,
+        }
+    }
+
+    /// Directly configure the execute context builder for this test.
+    /// The backends on the builder will be ignored, use
+    /// [Self::backend] or [Self::async_backend] instead.
+    pub fn configure_ctx(self, f: impl FnOnce(&mut ExecuteCtxBuilder)) -> Self {
+        Self {
+            builder: self.builder.with(f),
+            ..self
         }
     }
 
     /// Use backend and dictionary settings provided in a `fastly.toml` file.
-    pub fn using_fastly_toml(self, fastly_toml: &str) -> Result<Self, Error> {
+    pub fn using_fastly_toml(mut self, fastly_toml: &str) -> Result<Self, Error> {
         let config = fastly_toml.parse::<FastlyConfig>()?;
+        self.builder.use_config(&config);
         Ok(Self {
-            acls: config.acls().to_owned(),
             backends: TestBackends::from_backend_configs(config.backends()),
-            device_detection: config.device_detection().to_owned(),
-            dictionaries: config.dictionaries().to_owned(),
-            geolocation: config.geolocation().to_owned(),
-            object_stores: config.object_stores().to_owned(),
-            secret_stores: config.secret_stores().to_owned(),
-            shielding_sites: config.shielding_sites().to_owned(),
-            fake_valid_fastly_keys: config.fake_valid_fastly_keys().to_owned(),
             ..self
         })
-    }
-
-    /// Use existing [`TestBackends`] for this test, replacing any previously existing backends.
-    #[allow(unused)] // It's not used for now, but could be useful for advanced backend chicanery.
-    pub fn using_test_backends(mut self, test_backends: &TestBackends) -> Self {
-        self.backends = test_backends.clone();
-        self
-    }
-
-    /// Use the specified [`UnknownImportBehavior`] for this test.
-    pub fn using_unknown_import_behavior(
-        mut self,
-        unknown_import_behavior: UnknownImportBehavior,
-    ) -> Self {
-        self.unknown_import_behavior = unknown_import_behavior;
-        self
     }
 
     /// Add a backend definition to this test.
@@ -319,7 +323,7 @@ impl Test {
         service: ServiceFn,
     ) -> Self
     where
-        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Fn(Request<Incoming>) -> AsyncResp,
         ServiceFn: Send + Sync + 'static,
     {
         let uri: Uri = url.parse().expect("invalid backend URL");
@@ -363,7 +367,7 @@ impl Test {
         service: ServiceFn,
     ) -> Self
     where
-        ServiceFn: Fn(Request<HyperBody>) -> AsyncResp,
+        ServiceFn: Fn(Request<Incoming>) -> AsyncResp,
         ServiceFn: Send + Sync + 'static,
     {
         let uri: Uri = url.parse().expect("invalid backend URL");
@@ -380,27 +384,6 @@ impl Test {
         self
     }
 
-    pub fn capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
-        self.capture_logs = capture_logs;
-        self
-    }
-
-    /// Treat stderr as a logging endpoint for this test.
-    pub fn log_stderr(self) -> Self {
-        Self {
-            log_stderr: true,
-            ..self
-        }
-    }
-
-    /// Treat stdout as a logging endpoint for this test.
-    pub fn log_stdout(self) -> Self {
-        Self {
-            log_stdout: true,
-            ..self
-        }
-    }
-
     /// Actually spin up a hyper server and client for this test, rather than just
     /// passing the request through the guest code.
     pub fn via_hyper(self) -> Self {
@@ -412,48 +395,16 @@ impl Test {
 
     /// Automatically adapt the wasm to a component before running.
     pub fn adapt_component(mut self, adapt: bool) -> Self {
-        self.adapt_component = adapt;
+        self.builder.set_adapt_components(adapt);
         self
     }
 
-    /// Set whether WebSocket passthrough is enabled for this test.
-    pub fn enable_local_websocket_passthrough(mut self, enable: bool) -> Self {
-        self.enable_local_websocket_passthrough = enable;
-        self
-    }
-
-    /// Set the profiling configuration for this test.
-    pub fn with_profiling(mut self, profiling: ProfilingConfig) -> Self {
-        self.profiling = profiling;
-        self
-    }
-
-    /// Compile the guest with native debug information.
-    pub fn debug_info(mut self, debug_info: bool) -> Self {
-        self.debug_info = debug_info;
-        self
-    }
-
-    /// Pass the given requests through this test, returning the associated responses.
+    /// Start the backends and create the [`ExecuteCtx`], returning a
+    /// [`TestSession`] that can be used to to send requests through the guest,
+    /// and a handle to the running test server, if `Test::via_hyper()` was used.
     ///
-    /// A `Test` can be used repeatedly against different requests, either individually (as with
-    /// `against()`) or in batches (as with `against_many()`).
-    ///
-    /// The difference between calling this function with many requests, rather than calling
-    /// `against()` multiple times, is that the requests shared in an `against_many()` call will
-    /// share the same Wasm execution context. This can be useful when validating interactions
-    /// across shared state in the context. Subsequent calls to `against_many()` (or `against()`)
-    /// will use a fresh context.
-    ///
-    /// When this function is called, the test servers for its defined backends will be started, if
-    /// they have not been already. Those test servers will remain running for the lifetime of this
-    /// [`Test`] object, and are therefore potentially reused for multiple `against*()` invocations.
-    pub async fn against_many(
-        &self,
-        mut reqs: Vec<Request<impl Into<HyperBody>>>,
-    ) -> Result<Vec<Response<Body>>, Error> {
-        let mut responses = Vec::with_capacity(reqs.len());
-
+    /// Shut down the test server with [`TestServer::shutdown()`] when done.
+    pub async fn start(&self) -> Result<(TestSession, Option<TestServer>), Error> {
         // Install a tracing subscriber. We use a human-readable event formatter in tests, using a
         // writer that supports input capturing for `cargo test`. This subscribes to all events in
         // the `viceroy-lib` library.
@@ -476,113 +427,64 @@ impl Test {
             self.backends.start_servers().await;
         }
 
-        let ctx = ExecuteCtx::build(
-            &self.module_path,
-            self.profiling.clone(),
-            HashSet::new(),
-            self.unknown_import_behavior,
-            self.adapt_component,
-            WasmFeatures::default(),
-        )?
-        .with_debug_info(self.debug_info)
-        .with_acls(self.acls.clone())
-        .with_backends(self.backends.backend_configs().await)
-        .with_dictionaries(self.dictionaries.clone())
-        .with_device_detection(self.device_detection.clone())
-        .with_geolocation(self.geolocation.clone())
-        .with_object_stores(self.object_stores.clone())
-        .with_secret_stores(self.secret_stores.clone())
-        .with_shielding_sites(self.shielding_sites.clone())
-        .with_fake_valid_fastly_keys(self.fake_valid_fastly_keys.clone())
-        .with_enable_local_websocket_passthrough(self.enable_local_websocket_passthrough)
-        .with_capture_logs(self.capture_logs.clone())
-        .with_log_stderr(self.log_stderr)
-        .with_log_stdout(self.log_stdout)
-        .finish()?;
+        let mut builder = self.builder.clone();
+        builder.set_backends(self.backends.backend_configs().await);
+        let ctx = builder.finish()?;
 
-        if self.via_hyper {
-            let svc = ViceroyService::new(ctx);
-            // We use the "graceful shutdown" capability of Hyper, with a oneshot channel signaling
-            // completion:
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            // NB the server is spawned onto a dedicated async task; we are going to use the
-            // _current_ task to act as the client.
-            let (server_handle, server_addr) = {
-                // Bind the server to an ephemeral port to allow for parallel test execution.
-                let server = hyper::Server::bind(&([127, 0, 0, 1], 0).into()).serve(svc);
-                let server_addr = server.local_addr();
-                let server_handle = tokio::spawn(server.with_graceful_shutdown(async {
-                    rx.await
-                        .expect("receiver error while shutting down hyper server")
-                }));
-                (server_handle, server_addr)
-            };
+        if !self.via_hyper {
+            return Ok((TestSession { hyper: None, ctx }, None));
+        }
 
-            for mut req in reqs.drain(..) {
-                // Fix up the request URI to include the ephemeral port assignment. The `http::Uri`
-                // interface makes this unfortunately verbose.
-                let new_uri = Uri::builder()
-                    .scheme("http")
-                    .authority(server_addr.to_string())
-                    .path_and_query(
-                        req.uri()
-                            .path_and_query()
-                            .map(|p_and_q| p_and_q.as_str())
-                            .unwrap_or(""),
-                    )
-                    .build()
-                    .unwrap();
-                *req.uri_mut() = new_uri;
+        let inner = ctx.clone();
+        // NB the server is spawned onto a dedicated async task; we are going to use the
+        // _current_ task to act as the client.
+        // Bind the server to an ephemeral port to allow for parallel test execution.
+        let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |local, remote| {
+            RequestService::new(inner.clone(), local, remote)
+        })?;
+        let client = Client::builder(TokioExecutor::new())
+            .timer(TokioTimer::new())
+            .pool_timer(TokioTimer::new())
+            .build_http();
+        Ok((
+            TestSession {
+                hyper: Some((client, server.bound_addr.to_string())),
+                ctx,
+            },
+            Some(server),
+        ))
+    }
 
-                // Pass the request to the server via a Hyper client on the _current_ task:
-                let resp = hyper::Client::new().request(req.map(Into::into)).await?;
-                responses.push(resp.map(Into::into));
-            }
+    /// Pass the given requests through this test, returning the associated responses.
+    ///
+    /// A `Test` can be used repeatedly against different requests, either individually (as with
+    /// `against()`) or in batches (as with `against_many()`).
+    ///
+    /// The difference between calling this function with many requests, rather than calling
+    /// `against()` multiple times, is that the requests shared in an `against_many()` call will
+    /// share the same Wasm execution context. This can be useful when validating interactions
+    /// across shared state in the context. Subsequent calls to `against_many()` (or `against()`)
+    /// will use a fresh context.
+    ///
+    /// When this function is called, the test servers for its defined backends will be started, if
+    /// they have not been already. Those test servers will remain running for the lifetime of this
+    /// [`Test`] object, and are therefore potentially reused for multiple `against*()` invocations.
+    pub async fn against_many(
+        &self,
+        mut reqs: Vec<Request<impl Into<Bytes>>>,
+    ) -> Result<Vec<Response<Body>>, Error> {
+        let mut responses = Vec::with_capacity(reqs.len());
+        let (session, server) = self.start().await?;
 
-            // We're done with these test requests, so shut down the server.
-            tx.send(())
-                .expect("sender error while shutting down hyper server");
-            // Reap the task handle to ensure that the server did indeed shut down.
-            let _ = server_handle.await?;
-        } else {
-            for mut req in reqs.drain(..) {
-                // We do not have to worry about an ephemeral port in the non-hyper scenario, but we
-                // still normalize the request URI for consistency.
-                let new_uri = Uri::builder()
-                    .scheme("http")
-                    .authority("localhost")
-                    .path_and_query(
-                        req.uri()
-                            .path_and_query()
-                            .map(|p_and_q| p_and_q.as_str())
-                            .unwrap_or(""),
-                    )
-                    .build()
-                    .unwrap();
-                *req.uri_mut() = new_uri;
-                let local = (Ipv4Addr::LOCALHOST, 80).into();
-                let remote = (Ipv4Addr::LOCALHOST, 0).into();
-                let resp = ctx
-                    .clone()
-                    .handle_request(req.map(Into::into), local, remote)
-                    .await
-                    .map(|result| {
-                        match result {
-                            (resp, None) => resp,
-                            (_, Some(err)) => {
-                                // Splat the string representation of the runtime error into a synthetic
-                                // 500. This is a bit of a hack, but good enough to check for expected error
-                                // strings.
-                                let body = err.to_string();
-                                Response::builder()
-                                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Body::from(body.as_bytes()))
-                                    .unwrap()
-                            }
-                        }
-                    })?;
-                responses.push(resp);
-            }
+        for req in reqs.drain(..) {
+            let resp = session.request(req).await?;
+            responses.push(resp);
+        }
+
+        // We're done with these test requests, so stop accepting connections and reap the
+        // listener task. Open connections can finish streaming their responses.
+        if let Some(server) = server {
+            server.shutdown().await?;
         }
 
         Ok(responses)
@@ -595,10 +497,7 @@ impl Test {
     ///
     /// A `Test` can be used repeatedly against different requests. Note, however, that
     /// a fresh execution context is set up each time.
-    pub async fn against(
-        &self,
-        req: Request<impl Into<HyperBody>>,
-    ) -> Result<Response<Body>, Error> {
+    pub async fn against(&self, req: Request<impl Into<Bytes>>) -> Result<Response<Body>, Error> {
         Ok(self
             .against_many(vec![req])
             .await?
@@ -632,31 +531,188 @@ impl Test {
     }
 }
 
+/// The response body type for test backends.
+pub struct TestBody(BoxBody<Bytes, Error>);
+
+impl TestBody {
+    /// Wrap an arbitrary body.
+    pub fn new<B>(body: B) -> Self
+    where
+        B: http_body::Body<Data = Bytes> + Send + Sync + 'static,
+        B::Error: Into<Error>,
+    {
+        Self(body.map_err(Into::into).boxed())
+    }
+
+    /// An empty body.
+    pub fn empty() -> Self {
+        Self::new(Empty::new())
+    }
+
+    /// A body with the given contents.
+    pub fn full(bytes: impl Into<Bytes>) -> Self {
+        Self::new(Full::new(bytes.into()))
+    }
+
+    /// A body that is written to via the returned sender.
+    pub fn channel() -> (http_body_util::channel::Sender<Bytes, Error>, Self) {
+        let (sender, body) = Channel::new(1);
+        (sender, Self::new(body))
+    }
+
+    /// A body that never completes.
+    pub fn pending() -> Self {
+        Self::new(StreamBody::new(futures::stream::pending::<
+            Result<Frame<Bytes>, Error>,
+        >()))
+    }
+}
+
+impl http_body::Body for TestBody {
+    type Data = Bytes;
+    type Error = Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.0).poll_frame(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.0.size_hint()
+    }
+}
+
 /// A handle to a running test server, used to keep track of its assigned ephemeral port and to
-/// gracefully shut down the server when it's no longer needed.
+/// shut down the server when it's no longer needed.
+///
+/// Dropping this handle stops accepting connections. Open connections are left to finish, so
+/// responses still being streamed after the [`Test`] is dropped are not cut off.
 #[derive(Debug)]
-struct TestServer {
-    bound_addr: SocketAddr,
+pub struct TestServer {
+    pub bound_addr: SocketAddr,
     terminate_signal: Option<tokio::sync::oneshot::Sender<()>>,
     task_handle: tokio::task::JoinHandle<()>,
 }
 
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.terminate_signal
-            .take()
-            .unwrap()
-            .send(())
-            .expect("could not send terminate signal to test server");
-        if !self.task_handle.is_finished() {
-            self.task_handle.abort();
+impl TestServer {
+    /// Stop accepting connections and wait for the listener task to exit.
+    pub async fn shutdown(mut self) -> Result<(), tokio::task::JoinError> {
+        self.stop_accepting();
+        (&mut self.task_handle).await
+    }
+
+    fn stop_accepting(&mut self) {
+        if let Some(signal) = self.terminate_signal.take() {
+            let _ = signal.send(());
         }
     }
 }
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.stop_accepting();
+    }
+}
+
+/// Spawn a test server bound to `addr` onto a dedicated Tokio task.
+///
+/// `make_service` is called for each accepted connection with its local and remote addresses
+/// to create the service that handles requests on it.
+pub fn spawn_server<MakeService, S, B>(
+    addr: SocketAddr,
+    make_service: MakeService,
+) -> io::Result<TestServer>
+where
+    MakeService: Fn(SocketAddr, SocketAddr) -> S + Send + 'static,
+    S: hyper::service::Service<Request<Incoming>, Response = Response<B>> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Into<Error>,
+    B: http_body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Error>,
+{
+    // Bind synchronously, so that the bound address is known before returning.
+    let listener = std::net::TcpListener::bind(addr)?;
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+    let bound_addr = listener.local_addr()?;
+    // We set up shutdown with a oneshot channel signaling the listener to stop accepting.
+    let (terminate_signal, mut receiver) = tokio::sync::oneshot::channel();
+    let builder = auto::Builder::new(TokioExecutor::new());
+
+    let task_handle = tokio::spawn(async move {
+        loop {
+            let accepted = tokio::select! {
+                biased;
+                _ = &mut receiver => break,
+                accepted = listener.accept() => accepted,
+            };
+            let (stream, remote_addr) = match accepted {
+                Ok(accepted) => accepted,
+                Err(e) => {
+                    tracing::warn!("test server failed to accept connection: {e}");
+                    continue;
+                }
+            };
+            let service = make_service(bound_addr, remote_addr);
+            let builder = builder.clone();
+            // Connections run independently of the listener so shutdown does not cut off bodies.
+            tokio::spawn(async move {
+                if let Err(e) = builder
+                    .serve_connection_with_upgrades(TokioIo::new(stream), service)
+                    .await
+                {
+                    tracing::warn!("test server connection error: {e}");
+                }
+            });
+        }
+    });
+
+    Ok(TestServer {
+        bound_addr,
+        terminate_signal: Some(terminate_signal),
+        task_handle,
+    })
+}
+
+#[tokio::test]
+async fn server_shutdown_preserves_streaming_responses() -> TestResult {
+    let (mut sender, body) = TestBody::channel();
+    let body = Arc::new(Mutex::new(Some(body)));
+    let server = spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |_, _| {
+        let body = body.clone();
+        service_fn(move |_| {
+            let body = body.lock().unwrap().take().expect("only one request");
+            async move { Ok::<_, Infallible>(Response::new(body)) }
+        })
+    })?;
+    let addr = server.bound_addr;
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+    let request = client.get(format!("http://{addr}/").parse()?);
+    // Send an initial chunk so Hyper flushes the headers before we shut down the listener.
+    let (response, sent) = tokio::join!(request, sender.send_data(Bytes::from_static(b"before ")));
+    sent?;
+    let response = response?;
+
+    server.shutdown().await?;
+    assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+    sender.send_data(Bytes::from_static(b"after")).await?;
+    drop(sender);
+    let body = response.into_body().collect().await?.to_bytes();
+    assert_eq!(body, "before after");
+    Ok(())
+}
+
 type SyncService = dyn Fn(Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync;
 
-pub type AsyncResp = Box<dyn Future<Output = Response<HyperBody>> + Send + Sync>;
-type AsyncService = dyn Fn(Request<HyperBody>) -> AsyncResp + Send + Sync;
+pub type AsyncResp = Box<dyn Future<Output = Response<TestBody>> + Send + Sync>;
+type AsyncService = dyn Fn(Request<Incoming>) -> AsyncResp + Send + Sync;
 
 #[derive(Clone)]
 enum TestService {
@@ -674,33 +730,29 @@ impl std::fmt::Debug for TestService {
 }
 
 impl TestService {
-    /// Spawn a test server onto a dedicated Tokio task, returning a handle to allow for graceful
-    /// termination of the server when it is no longer needed.
+    /// Spawn a test server onto a dedicated Tokio task, returning a handle that shuts down the
+    /// server when it is no longer needed.
     fn spawn(&self) -> TestServer {
         let service = self.clone();
 
         // we transform `service` into an async function that consumes Hyper bodies. that requires a bit
         // of `Arc` and `move` operations because each invocation needs to produce a distinct `Future`
-        let async_service = Arc::new(move |req: Request<HyperBody>| {
+        let async_service = Arc::new(move |req: Request<Incoming>| {
             let service = service.clone();
 
             async move {
                 let resp = match service {
                     TestService::Sync(s) => {
                         let (parts, body) = req.into_parts();
-                        let mut body = Box::new(body); // for pinning
                         // read out all of the bytes from the body into a vector, then re-assemble the request
-                        let mut body_bytes = Vec::new();
-                        while let Some(chunk) = body.next().await {
-                            body_bytes.extend_from_slice(&chunk.unwrap());
-                        }
+                        let body_bytes = body.collect().await.unwrap().to_bytes().to_vec();
                         let req = Request::from_parts(parts, body_bytes);
 
                         // pass the request through the service function, then convert its body into
                         // the form that Hyper wants
-                        s(req).map(HyperBody::from)
+                        s(req).map(TestBody::full)
                     }
-                    TestService::Async(s) => Box::into_pin(s(req)).await.map(HyperBody::from),
+                    TestService::Async(s) => Box::into_pin(s(req)).await,
                 };
 
                 let res: Result<_, hyper::Error> = Ok(resp);
@@ -708,31 +760,13 @@ impl TestService {
             }
         });
 
-        // now we go through Tower's service layers, wrapping `async_host`
-        let make_service = service::make_service_fn(move |_conn| {
-            let async_host = async_service.clone();
-            async move { Ok::<_, Infallible>(service::service_fn(move |req| async_host(req))) }
-        });
-
-        // we set up a "graceful shutdown" for the server, with a oneshot channel signaling completion.
-        let (terminate_signal, rx) = tokio::sync::oneshot::channel();
+        // Now wrap the async service in a per-connection Hyper service.
         // Bind the test server to an ephemeral port to avoid conflicts between
         // concurrently-executing tests.
-        let server = Server::bind(&([127, 0, 0, 1], 0).into()).serve(make_service);
-        let bound_addr = server.local_addr();
-        let graceful_server = server.with_graceful_shutdown(async {
-            rx.await
-                .expect("receiver error while shutting down mock host")
-        });
-        let task_handle = tokio::spawn(async {
-            graceful_server
-                .await
-                .expect("mock host shut down with hyper error")
-        });
-        TestServer {
-            bound_addr,
-            terminate_signal: Some(terminate_signal),
-            task_handle,
-        }
+        spawn_server((Ipv4Addr::LOCALHOST, 0).into(), move |_, _| {
+            let async_service = async_service.clone();
+            service_fn(move |req| async_service(req))
+        })
+        .expect("could not bind test server")
     }
 }

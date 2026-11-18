@@ -1,12 +1,12 @@
 use {
     crate::{
-        common::{Test, TestResult},
+        common::{Test, TestBody, TestResult, spawn_server},
         viceroy_test,
     },
     hyper::{
-        Request, Response, Server, StatusCode,
+        Request, Response, StatusCode,
         header::{self, HeaderValue},
-        service::{make_service_fn, service_fn},
+        service::service_fn,
     },
     std::{
         convert::Infallible,
@@ -74,18 +74,12 @@ viceroy_test!(upstream_sync, |is_component| {
 
 viceroy_test!(ipv6_origin_works, |is_component| {
     // Bind specifically to IPv6 loopback so success cannot come from IPv4 fallback.
-    let server = Server::try_bind(&SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 0))?;
-    let service = make_service_fn(|_| async {
-        Ok::<_, Infallible>(service_fn(|_req| async {
-            Ok::<_, Infallible>(Response::new("Hello from IPv6!".to_owned()))
-        }))
-    });
-    let server = server.serve(service);
-    let origin_addr = server.local_addr();
-    let (shutdown, receiver) = tokio::sync::oneshot::channel();
-    let server = tokio::spawn(server.with_graceful_shutdown(async {
-        let _ = receiver.await;
-    }));
+    let server = spawn_server(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 0), |_, _| {
+        service_fn(|_req| async {
+            Ok::<_, Infallible>(Response::new(TestBody::full("Hello from IPv6!")))
+        })
+    })?;
+    let origin_addr = server.bound_addr;
 
     let response = Test::using_fixture("upstream-dynamic.wasm")
         .adapt_component(is_component)
@@ -101,8 +95,7 @@ viceroy_test!(ipv6_origin_works, |is_component| {
         "Hello from IPv6!"
     );
 
-    shutdown.send(()).expect("origin shutdown receiver is open");
-    server.await??;
+    server.shutdown().await?;
     Ok(())
 });
 

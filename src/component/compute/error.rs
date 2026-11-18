@@ -5,7 +5,7 @@ use {
     },
     crate::{
         config::ClientCertError,
-        error::{self, HandleError},
+        error::{self, HandleError, HyperErrorKind},
         object_store::{KeyValidationError, KvStoreError, ObjectStoreError},
         wiggle_abi::{DictionaryError, SecretStoreError},
     },
@@ -15,7 +15,6 @@ use {
         status::InvalidStatusCode,
         uri::InvalidUri,
     },
-    std::{error::Error as StdError, io},
     wasmtime_wasi::ResourceTableError,
 };
 
@@ -234,40 +233,12 @@ impl From<error::Error> for types::Error {
             Error::HandleError { .. } => panic!("`HandleError` should not be used in components"),
             Error::InvalidStatusCode { .. } => types::Error::InvalidArgument,
             // Map specific kinds of `hyper::Error` into their respective error codes.
-            Error::HyperError(e) if e.is_parse() => types::Error::HttpInvalid,
-            Error::HyperError(e) if e.is_user() => types::Error::HttpUser,
-            Error::HyperError(e) if e.is_incomplete_message() => types::Error::HttpIncomplete,
-            // A body that ends early does not satisfy `is_incomplete_message`. Hyper reports kind
-            // `Body`, with an `io::Error` cause of `UnexpectedEof`, so the cause needs a downcast.
-            Error::HyperError(e)
-                if e.source()
-                    .and_then(|e| e.downcast_ref::<io::Error>())
-                    .map(|ioe| ioe.kind())
-                    == Some(io::ErrorKind::UnexpectedEof) =>
-            {
-                types::Error::HttpIncomplete
-            }
-            Error::HyperError(_) => types::Error::GenericError,
-            // BackendConnectionError wraps hyper::Error with context
-            Error::BackendConnectionError { source, .. } if source.is_parse() => {
-                types::Error::HttpInvalid
-            }
-            Error::BackendConnectionError { source, .. } if source.is_user() => {
-                types::Error::HttpUser
-            }
-            Error::BackendConnectionError { source, .. } if source.is_incomplete_message() => {
-                types::Error::HttpIncomplete
-            }
-            Error::BackendConnectionError { source, .. }
-                if source
-                    .source()
-                    .and_then(|e| e.downcast_ref::<io::Error>())
-                    .map(|ioe| ioe.kind())
-                    == Some(io::ErrorKind::UnexpectedEof) =>
-            {
-                types::Error::HttpIncomplete
-            }
-            Error::BackendConnectionError { .. } => types::Error::GenericError,
+            Error::HyperError(e) => match e.kind() {
+                HyperErrorKind::Invalid => types::Error::HttpInvalid,
+                HyperErrorKind::User => types::Error::HttpUser,
+                HyperErrorKind::Incomplete => types::Error::HttpIncomplete,
+                HyperErrorKind::Timeout | HyperErrorKind::Other => types::Error::GenericError,
+            },
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => e.into(),
             // We delegate to some error types' own implementation of `to_fastly_status`.
@@ -289,7 +260,6 @@ impl From<error::Error> for types::Error {
             | Error::FastlyConfig(_)
             | Error::FatalError(_)
             | Error::FileFormat
-            | Error::Infallible(_)
             | Error::InvalidClientCert(_)
             | Error::InvalidHeaderName(_)
             | Error::InvalidHeaderValue(_)

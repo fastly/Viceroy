@@ -24,7 +24,7 @@ viceroy_test!(backend_accessors_report_configuration, |is_component| {
         .expect("response");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = std::str::from_utf8(&hyper::body::to_bytes(resp.into_body()).await?)
+    let body = std::str::from_utf8(&resp.into_body().read_into_vec().await?)
         .expect("body is valid UTF-8")
         .to_owned();
 

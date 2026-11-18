@@ -6,7 +6,6 @@ use crate::{
 };
 use hyper::StatusCode;
 use std::error::Error as StdError;
-use std::io;
 use url::Url;
 use wiggle::GuestError;
 
@@ -48,22 +47,13 @@ pub enum Error {
     #[error(transparent)]
     HandleError(#[from] HandleError),
 
+    /// An error from the hyper HTTP stack, either from a backend connection or from reading a
+    /// request or response body.
     #[error(transparent)]
-    HyperError(#[from] hyper::Error),
+    HyperError(HyperError),
 
     #[error(transparent)]
     HealthcheckCreationError(#[from] HealthcheckCreationError),
-
-    #[error("Backend connection error for '{backend_name}' ({uri}): {source}")]
-    BackendConnectionError {
-        backend_name: String,
-        uri: String,
-        #[source]
-        source: hyper::Error,
-    },
-
-    #[error(transparent)]
-    Infallible(#[from] std::convert::Infallible),
 
     /// Error when an invalid argument is supplied to a hostcall.
     #[error("Invalid argument given")]
@@ -199,16 +189,12 @@ impl Error {
     pub fn as_status_code(&self) -> StatusCode {
         match self {
             Self::FirstByteTimeout(_) | Self::BetweenBytesTimeout => StatusCode::GATEWAY_TIMEOUT,
-            Self::HyperError(e) => {
-                if e.is_timeout() {
-                    StatusCode::GATEWAY_TIMEOUT
-                } else {
-                    StatusCode::BAD_GATEWAY
-                }
-            }
+            Self::HyperError(e) => match e.kind() {
+                HyperErrorKind::Timeout => StatusCode::GATEWAY_TIMEOUT,
+                _ => StatusCode::BAD_GATEWAY,
+            },
 
             Self::BackendUrl(..)
-            | Self::BackendConnectionError { .. }
             | Self::InvalidArgument
             | Self::InvalidHeaderName(..)
             | Self::InvalidHeaderValue(..)
@@ -250,38 +236,12 @@ impl Error {
             Error::InvalidStatusCode { .. } => FastlyStatus::Inval,
             Error::UnknownBackend(_) | Error::InvalidClientCert(_) => FastlyStatus::Inval,
             // Map specific kinds of `hyper::Error` into their respective error codes.
-            Error::HyperError(e) if e.is_parse() => FastlyStatus::Httpinvalid,
-            Error::HyperError(e) if e.is_user() => FastlyStatus::Httpuser,
-            Error::HyperError(e) if e.is_incomplete_message() => FastlyStatus::Httpincomplete,
-            Error::HyperError(e)
-                if e.source()
-                    .and_then(|e| e.downcast_ref::<io::Error>())
-                    .map(|ioe| ioe.kind())
-                    == Some(io::ErrorKind::UnexpectedEof) =>
-            {
-                FastlyStatus::Httpincomplete
-            }
-            Error::HyperError(_) => FastlyStatus::Error,
-            // BackendConnectionError contains detailed context but maps to same status as HyperError
-            Error::BackendConnectionError { source, .. } if source.is_parse() => {
-                FastlyStatus::Httpinvalid
-            }
-            Error::BackendConnectionError { source, .. } if source.is_user() => {
-                FastlyStatus::Httpuser
-            }
-            Error::BackendConnectionError { source, .. } if source.is_incomplete_message() => {
-                FastlyStatus::Httpincomplete
-            }
-            Error::BackendConnectionError { source, .. }
-                if source
-                    .source()
-                    .and_then(|e| e.downcast_ref::<io::Error>())
-                    .map(|ioe| ioe.kind())
-                    == Some(io::ErrorKind::UnexpectedEof) =>
-            {
-                FastlyStatus::Httpincomplete
-            }
-            Error::BackendConnectionError { .. } => FastlyStatus::Error,
+            Error::HyperError(e) => match e.kind() {
+                HyperErrorKind::Invalid => FastlyStatus::Httpinvalid,
+                HyperErrorKind::User => FastlyStatus::Httpuser,
+                HyperErrorKind::Incomplete => FastlyStatus::Httpincomplete,
+                HyperErrorKind::Timeout | HyperErrorKind::Other => FastlyStatus::Error,
+            },
             // Destructuring a GuestError is recursive, so we use a helper function:
             Error::GuestError(e) => Self::guest_error_fastly_status(e),
             // We delegate to some error types' own implementation of `to_fastly_status`.
@@ -306,7 +266,6 @@ impl Error {
             | Error::FastlyConfig(_)
             | Error::FatalError(_)
             | Error::FileFormat
-            | Error::Infallible(_)
             | Error::InvalidHeaderName(_)
             | Error::InvalidHeaderValue(_)
             | Error::InvalidMethod(_)
@@ -935,4 +894,127 @@ pub enum NonHttpResponse {
     HandoffToPushpin(HandoffInfo),
     #[error("graceful Backend handoff")]
     HandoffToBackend(HandoffInfo),
+}
+
+/// A boxed, type-erased error, as used throughout the hyper ecosystem.
+pub type BoxError = Box<dyn StdError + Send + Sync>;
+
+/// The backend a [`HyperError`] came from.
+#[derive(Debug)]
+pub struct BackendContext {
+    pub name: String,
+    pub uri: String,
+}
+
+/// An error from the hyper HTTP stack.
+///
+/// The underlying error is type-erased, as it may come from a number of layers: the hyper client,
+/// a hyper body, or a wrapper around a body (e.g. a tee). Use [`HyperError::kind`] to classify it.
+#[derive(Debug)]
+pub struct HyperError {
+    /// The backend this error came from, if any.
+    backend: Option<BackendContext>,
+    source: BoxError,
+}
+
+/// A classification of a [`HyperError`], for mapping onto status codes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HyperErrorKind {
+    /// Invalid HTTP was received.
+    Invalid,
+    /// Hyper was used incorrectly.
+    User,
+    /// A message ended before it was complete.
+    Incomplete,
+    /// An operation timed out.
+    Timeout,
+    Other,
+}
+
+impl HyperError {
+    /// Wrap an error that did not come from a backend connection.
+    pub fn new(source: impl Into<BoxError>) -> Self {
+        Self {
+            backend: None,
+            source: source.into(),
+        }
+    }
+
+    /// Wrap an error from a connection to the given backend.
+    pub fn backend(name: String, uri: String, source: impl Into<BoxError>) -> Self {
+        Self {
+            backend: Some(BackendContext { name, uri }),
+            source: source.into(),
+        }
+    }
+
+    /// The backend this error came from, if any.
+    pub fn backend_context(&self) -> Option<&BackendContext> {
+        self.backend.as_ref()
+    }
+
+    /// Iterate over the source error chain, starting with the wrapped error itself.
+    fn chain(&self) -> impl Iterator<Item = &(dyn StdError + 'static)> {
+        let first: &(dyn StdError + 'static) = self.source.as_ref();
+        std::iter::successors(Some(first), |&e| e.source())
+    }
+
+    /// Classify this error by walking its source chain.
+    pub fn kind(&self) -> HyperErrorKind {
+        if let Some(e) = self.chain().find_map(|e| e.downcast_ref::<hyper::Error>()) {
+            if e.is_parse() {
+                return HyperErrorKind::Invalid;
+            } else if e.is_user() {
+                return HyperErrorKind::User;
+            } else if e.is_incomplete_message() {
+                return HyperErrorKind::Incomplete;
+            } else if e.is_timeout() {
+                return HyperErrorKind::Timeout;
+            }
+        }
+        // A body that ends early does not satisfy `is_incomplete_message`. Hyper reports kind
+        // `Body`, with an `io::Error` cause of `UnexpectedEof`, so the cause needs a downcast.
+        if self
+            .chain()
+            .filter_map(|e| e.downcast_ref::<std::io::Error>())
+            .any(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
+        {
+            return HyperErrorKind::Incomplete;
+        }
+        HyperErrorKind::Other
+    }
+}
+
+impl std::fmt::Display for HyperError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.backend {
+            // The wrapped error is available via `source`, so don't repeat it here.
+            Some(BackendContext { name, uri }) => {
+                write!(f, "Backend connection error for '{name}' ({uri})")
+            }
+            None => self.source.fmt(f),
+        }
+    }
+}
+
+impl StdError for HyperError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match &self.backend {
+            Some(_) => Some(self.source.as_ref()),
+            // We display as the wrapped error, so behave transparently to avoid repeating it.
+            None => self.source.source(),
+        }
+    }
+}
+
+impl From<HyperError> for Error {
+    fn from(e: HyperError) -> Self {
+        Error::HyperError(e)
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(e: hyper::Error) -> Self {
+        Error::HyperError(HyperError::new(e))
+    }
 }

@@ -2,7 +2,6 @@ use crate::{
     common::{Test, TestResult},
     viceroy_test,
 };
-use hyper::body::to_bytes;
 use hyper::{Request, StatusCode};
 
 viceroy_test!(direct_wasm_works, |is_component| {
@@ -35,7 +34,7 @@ viceroy_test!(heap_limit_test_ok, |is_component| {
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit viverra."
     );
     let body = resp.into_body();
-    assert_eq!(to_bytes(body).await.unwrap().len(), 16 * 1024);
+    assert_eq!(body.read_into_vec().await.unwrap().len(), 16 * 1024);
     Ok(())
 });
 

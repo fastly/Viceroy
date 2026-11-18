@@ -23,12 +23,14 @@ async fn default_behavior_link_failure() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn trap_behavior_function_called() -> TestResult {
     let resp = Test::using_fixture("unknown-import.wasm")
-        .using_unknown_import_behavior(UnknownImportBehavior::Trap)
+        .configure_ctx(|ctx| {
+            ctx.set_unknown_import_behavior(UnknownImportBehavior::Trap);
+        })
         .against(Request::get("/").header("call-it", "yes").body("").unwrap())
         .await?;
 
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body_bytes = hyper::body::to_bytes(resp.into_body()).await?;
+    let body_bytes = resp.into_body().read_into_vec().await?;
     let body = std::str::from_utf8(&body_bytes)?;
     // The backtrace contains things like stack addresses and gensyms, so we just look for a couple
     // key parts that should be relatively stable across invocations and wasmtime
@@ -57,7 +59,9 @@ async fn trap_behavior_function_not_called() -> TestResult {
                 .unwrap()
         })
         .await
-        .using_unknown_import_behavior(UnknownImportBehavior::Trap)
+        .configure_ctx(|ctx| {
+            ctx.set_unknown_import_behavior(UnknownImportBehavior::Trap);
+        })
         .against_empty()
         .await?;
 

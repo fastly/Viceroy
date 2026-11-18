@@ -27,9 +27,13 @@ viceroy_test!(logging_works, |is_component| {
     let log_writer = Arc::new(Mutex::new(LogWriter(Vec::new())));
     let resp = Test::using_fixture("logging.wasm")
         .adapt_component(is_component)
-        .capture_logs(log_writer.clone())
-        .log_stderr()
-        .log_stdout()
+        .configure_ctx(|ctx| {
+            ctx.set_capture_logs(log_writer.clone());
+        })
+        .configure_ctx(|ctx| {
+            ctx.set_log_stderr(true);
+            ctx.set_log_stdout(true);
+        })
         .against_empty()
         .await?;
 

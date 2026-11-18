@@ -5,7 +5,7 @@ use {
         common::{Test, TestResult},
         viceroy_test,
     },
-    hyper::{StatusCode, body},
+    hyper::StatusCode,
 };
 
 // `write-and-read-body.wasm` is the fixture whose DWARF originally blocked enabling `debug_info`
@@ -13,7 +13,9 @@ use {
 // fixtures are built as debug artifacts, so they carry the DWARF that wasmtime has to translate.
 viceroy_test!(guests_run_with_debug_info_enabled, |is_component| {
     let resp = Test::using_fixture("write-and-read-body.wasm")
-        .debug_info(true)
+        .configure_ctx(|ctx| {
+            ctx.set_debug_info(true);
+        })
         .adapt_component(is_component)
         .against_empty()
         .await?;
@@ -23,15 +25,18 @@ viceroy_test!(guests_run_with_debug_info_enabled, |is_component| {
 
 viceroy_test!(bodies_are_unaffected_by_debug_info, |is_component| {
     let resp = Test::using_fixture("write-body.wasm")
-        .debug_info(true)
+        .configure_ctx(|ctx| {
+            ctx.set_debug_info(true);
+        })
         .adapt_component(is_component)
         .against_empty()
         .await?;
 
-    let body = body::to_bytes(resp.into_body())
+    let body = resp
+        .into_body()
+        .read_into_vec()
         .await
-        .expect("can read body")
-        .to_vec();
+        .expect("can read body");
     assert_eq!(String::from_utf8(body)?, "Hello, Viceroy!");
 
     Ok(())

@@ -7,11 +7,11 @@
 #![cfg(target_family = "unix")]
 
 use crate::{
-    common::{Test, TestResult},
+    common::{Test, TestBody, TestResult},
     viceroy_test,
 };
-use hyper::{Body, Request, Response, StatusCode, body::HttpBody};
-use std::convert::Infallible;
+use http_body_util::BodyExt;
+use hyper::{Request, Response, StatusCode};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -39,7 +39,7 @@ viceroy_test!(async_io_methods, |is_component| {
     // processing.
     let test = Test::using_fixture("async_io.wasm")
         .adapt_component(is_component)
-        .async_backend("Simple", "/", None, move |req: Request<Body>| {
+        .async_backend("Simple", "/", None, move |req| {
             assert_eq!(req.headers()["Host"], "simple.org");
             let req_count_1 = req_count_1.clone();
             let barrier_1 = barrier_1.clone();
@@ -47,13 +47,13 @@ viceroy_test!(async_io_methods, |is_component| {
                 match req_count_1.load(Ordering::Relaxed) {
                     1 => Response::builder()
                         .status(StatusCode::OK)
-                        .body(Body::empty())
+                        .body(TestBody::empty())
                         .unwrap(),
                     0 | 2 | 3 => {
                         barrier_1.wait().await;
                         Response::builder()
                             .status(StatusCode::OK)
-                            .body(Body::empty())
+                            .body(TestBody::empty())
                             .unwrap()
                     }
                     _ => unreachable!(),
@@ -61,29 +61,27 @@ viceroy_test!(async_io_methods, |is_component| {
             })
         })
         .await
-        .async_backend("ReadBody", "/", None, move |req: Request<Body>| {
+        .async_backend("ReadBody", "/", None, move |req| {
             assert_eq!(req.headers()["Host"], "readbody.org");
             let req_count_2 = req_count_2.clone();
             Box::new(async move {
                 match req_count_2.load(Ordering::Relaxed) {
                     2 => Response::builder()
                         .status(StatusCode::OK)
-                        .body(Body::empty())
+                        .body(TestBody::empty())
                         .unwrap(),
                     // A body that never yields data or completes, so the
                     // guest's handle to it never becomes ready.
                     0 | 1 | 3 => Response::builder()
                         .status(StatusCode::OK)
-                        .body(Body::wrap_stream(futures::stream::pending::<
-                            Result<hyper::body::Bytes, Infallible>,
-                        >()))
+                        .body(TestBody::pending())
                         .unwrap(),
                     _ => unreachable!(),
                 }
             })
         })
         .await
-        .async_backend("WriteBody", "/", None, move |req: Request<Body>| {
+        .async_backend("WriteBody", "/", None, move |req| {
             assert_eq!(req.headers()["Host"], "writebody.org");
             let req_count_3 = req_count_3.clone();
             let barrier_2 = barrier_2.clone();
@@ -98,7 +96,9 @@ viceroy_test!(async_io_methods, |is_component| {
                         let mut bod = req.into_body();
                         let mut bytes_read = 0;
                         while bytes_read < (4 * 1024 * 1024) + (8 * 1024) {
-                            if let Some(Ok(bytes)) = bod.data().await {
+                            if let Some(Ok(frame)) = bod.frame().await
+                                && let Some(bytes) = frame.data_ref()
+                            {
                                 bytes_read += bytes.len();
                             }
                         }
@@ -109,17 +109,16 @@ viceroy_test!(async_io_methods, |is_component| {
                         // the guest that we have read from the request body
                         // and the write handle should be ready again.
                         sync_barrier.wait().await;
-                        let _body = hyper::body::to_bytes(bod);
                         Response::builder()
                             .status(StatusCode::OK)
-                            .body(Body::empty())
+                            .body(TestBody::empty())
                             .unwrap()
                     }
                     0..=2 => {
                         barrier_2.wait().await;
                         Response::builder()
                             .status(StatusCode::OK)
-                            .body(Body::empty())
+                            .body(TestBody::empty())
                             .unwrap()
                     }
                     _ => unreachable!(),
@@ -127,7 +126,7 @@ viceroy_test!(async_io_methods, |is_component| {
             })
         })
         .await
-        .async_backend("Semaphore", "/", None, move |req: Request<Body>| {
+        .async_backend("Semaphore", "/", None, move |req| {
             assert_eq!(req.headers()["Host"], "writebody.org");
             let req_count_4 = req_count_4.clone();
             let sync_barrier_1 = sync_barrier_1.clone();
@@ -137,12 +136,12 @@ viceroy_test!(async_io_methods, |is_component| {
                         sync_barrier_1.wait().await;
                         Response::builder()
                             .status(StatusCode::OK)
-                            .body(Body::empty())
+                            .body(TestBody::empty())
                             .unwrap()
                     }
                     0..=2 => Response::builder()
                         .status(StatusCode::OK)
-                        .body(Body::empty())
+                        .body(TestBody::empty())
                         .unwrap(),
                     _ => unreachable!(),
                 }
@@ -196,7 +195,7 @@ viceroy_test!(async_io_methods, |is_component| {
         .against(
             Request::get("/")
                 .header("Empty-Select-Timeout", "0")
-                .body(Body::empty())
+                .body("")
                 .unwrap(),
         )
         .await?;
@@ -206,7 +205,7 @@ viceroy_test!(async_io_methods, |is_component| {
         .against(
             Request::get("/")
                 .header("Empty-Select-Timeout", "1")
-                .body(Body::empty())
+                .body("")
                 .unwrap(),
         )
         .await?;

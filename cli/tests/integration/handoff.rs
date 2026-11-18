@@ -48,7 +48,9 @@ viceroy_test!(
         let resp = with_backend(
             Test::using_fixture("handoff.wasm")
                 .adapt_component(is_component)
-                .enable_local_websocket_passthrough(false),
+                .configure_ctx(|ctx| {
+                    ctx.set_enable_local_websocket_passthrough(false);
+                }),
         )
         .await
         .against(Request::get("/websocket").body("")?)
@@ -86,7 +88,9 @@ viceroy_test!(
         let resp = with_backend(
             Test::using_fixture("handoff.wasm")
                 .adapt_component(is_component)
-                .enable_local_websocket_passthrough(false),
+                .configure_ctx(|ctx| {
+                    ctx.set_enable_local_websocket_passthrough(false);
+                }),
         )
         .await
         .against(

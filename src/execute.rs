@@ -107,9 +107,10 @@ impl From<BacktraceDetails> for wasmtime::WasmBacktraceDetails {
 /// Viceroy supports two types of profiling:
 /// - **Guest profiling**: Profiles the WebAssembly guest code itself, producing Firefox profiler compatible JSON.
 /// - **Native profiling**: Profiles wasmtime's JIT compiler for debugging across guest, viceroy and wasmtime.
-#[derive(Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ProfilingConfig {
     /// No profiling enabled
+    #[default]
     None,
     /// Profile the WebAssembly guest code
     Guest {
@@ -213,6 +214,7 @@ pub struct ExecuteCtx {
 /// These are held separately from the rest of the context so that the builder can collect them
 /// before the Wasm engine has been created: building the engine is deferred to
 /// [`ExecuteCtxBuilder::finish`], so that engine-affecting settings can be adjusted first.
+#[derive(Clone)]
 struct Settings {
     /// The acls for this execution.
     acls: Acls,
@@ -249,6 +251,30 @@ struct Settings {
     fake_valid_fastly_keys: FakeValidFastlyKeys,
 }
 
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Settings")
+            .field("acls", &self.acls)
+            .field("backends", &self.backends)
+            .field("device_detection", &self.device_detection)
+            .field("geolocation", &self.geolocation)
+            .field("dictionaries", &self.dictionaries)
+            .field("config_path", &self.config_path)
+            .field("log_stdout", &self.log_stdout)
+            .field("log_stderr", &self.log_stderr)
+            .field("local_pushpin_proxy_port", &self.local_pushpin_proxy_port)
+            .field(
+                "enable_local_websocket_passthrough",
+                &self.enable_local_websocket_passthrough,
+            )
+            .field("object_store", &self.object_store)
+            .field("secret_stores", &self.secret_stores)
+            .field("shielding_sites", &self.shielding_sites)
+            .field("fake_valid_fastly_keys", &self.fake_valid_fastly_keys)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -272,35 +298,7 @@ impl Default for Settings {
 }
 
 impl ExecuteCtx {
-    /// Build a new execution context with unified profiling configuration.
-    ///
-    /// Note that the module is not read, compiled, or linked until
-    /// [`ExecuteCtxBuilder::finish`] is called, so errors relating to the module itself are
-    /// reported from there rather than here.
-    pub fn build(
-        module_path: impl AsRef<Path>,
-        profiling: ProfilingConfig,
-        wasi_modules: HashSet<ExperimentalModule>,
-        unknown_import_behavior: UnknownImportBehavior,
-        adapt_components: bool,
-        wasm_features: WasmFeatures,
-    ) -> Result<ExecuteCtxBuilder, Error> {
-        Ok(ExecuteCtxBuilder {
-            module_path: module_path.as_ref().to_owned(),
-            profiling,
-            wasi_modules,
-            unknown_import_behavior,
-            adapt_components,
-            wasm_features,
-            debug_info: false,
-            backtrace_details: BacktraceDetails::default(),
-            settings: Settings::default(),
-        })
-    }
-
     /// Create a new execution context with unified profiling configuration.
-    ///
-    /// This is a convenience wrapper around `build().finish()`.
     pub fn new(
         module_path: impl AsRef<Path>,
         profiling: ProfilingConfig,
@@ -309,15 +307,13 @@ impl ExecuteCtx {
         adapt_components: bool,
         wasm_features: WasmFeatures,
     ) -> Result<Arc<Self>, Error> {
-        ExecuteCtx::build(
-            module_path,
-            profiling,
-            wasi_modules,
-            unknown_import_behavior,
-            adapt_components,
-            wasm_features,
-        )?
-        .finish()
+        let mut builder = ExecuteCtxBuilder::new(module_path.as_ref().to_path_buf());
+        builder.set_profiling(profiling);
+        builder.set_wasi_modules(wasi_modules);
+        builder.set_unknown_import_behavior(unknown_import_behavior);
+        builder.set_adapt_components(adapt_components);
+        builder.set_wasm_features(wasm_features);
+        builder.finish()
     }
 
     /// Get the engine for this execution context.
@@ -438,11 +434,12 @@ impl ExecuteCtx {
     /// ```no_run
     /// # use std::collections::HashSet;
     /// # use wasmtime::WasmFeatures;
-    /// use hyper::{Body, http::Request};
+    /// use http::Request;
+    /// use viceroy_lib::body::Body;
     /// # use viceroy_lib::{Error, ExecuteCtx, ProfilingConfig, ViceroyService};
     /// # use viceroy_lib::config::UnknownImportBehavior;
     /// # async fn f() -> Result<(), Error> {
-    /// # let req = Request::new(Body::from(""));
+    /// # let req = Request::new(Body::empty());
     /// let adapt_core_wasm = false;
     /// let wasm_features = WasmFeatures::default();
     /// let ctx = ExecuteCtx::new(
@@ -459,17 +456,21 @@ impl ExecuteCtx {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn handle_request(
+    pub async fn handle_request<B>(
         self: Arc<Self>,
-        mut incoming_req: Request<hyper::Body>,
+        mut incoming_req: Request<B>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<(Response<Body>, Option<wasmtime::Error>), Error> {
+    ) -> Result<(Response<Body>, Option<wasmtime::Error>), Error>
+    where
+        B: http_body::Body<Data = bytes::Bytes> + Send + 'static,
+        B::Error: std::error::Error + Send + Sync + 'static,
+    {
         let orig_req_on_upgrade = hyper::upgrade::on(&mut incoming_req);
         let (incoming_req_parts, incoming_req_body) = incoming_req.into_parts();
         let local_pushpin_proxy_port = self.settings.local_pushpin_proxy_port;
 
-        let (body_for_wasm, orig_body_tee) = tee(incoming_req_body).await;
+        let (body_for_wasm, orig_body_tee) = tee(incoming_req_body);
         let orig_request_info_for_pushpin = HandoffRequestInfo::from_parts(&incoming_req_parts);
 
         let original_headers = incoming_req_parts.headers.clone();
@@ -510,9 +511,9 @@ impl ExecuteCtx {
                     let local_pushpin_proxy_port = match local_pushpin_proxy_port {
                         None => {
                             error!("Pushpin handoff signaled, but Pushpin mode not enabled.");
-                            let mut resp = Response::new(Body::from(hyper::Body::from(
+                            let mut resp = Response::new(Body::from(
                                 "Pushpin handoff signaled, but Pushpin mode not enabled.",
-                            )));
+                            ));
                             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                             return Ok((resp, None));
                         }
@@ -544,8 +545,7 @@ impl ExecuteCtx {
                     )
                     .await;
 
-                    let (p, hyper_body) = handoff_resp.into_parts();
-                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                    return Ok((handoff_resp, None));
                 }
                 Ok(NonHttpResponse::HandoffToBackend(handoff_info)) => {
                     let backend_name = handoff_info.backend_name.clone();
@@ -556,9 +556,9 @@ impl ExecuteCtx {
                     let backend = match backend {
                         None => {
                             error!("Backend handoff signaled to unknown backend '{backend_name}'.");
-                            let mut resp = Response::new(Body::from(hyper::Body::from(format!(
+                            let mut resp = Response::new(Body::from(format!(
                                 "Backend handoff signaled to unknown backend '{backend_name}'."
-                            ))));
+                            )));
                             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                             return Ok((resp, None));
                         }
@@ -624,8 +624,7 @@ impl ExecuteCtx {
                     )
                     .await;
 
-                    let (p, hyper_body) = handoff_resp.into_parts();
-                    return Ok((Response::from_parts(p, Body::from(hyper_body)), None));
+                    return Ok((handoff_resp, None));
                 }
                 Err(e) => {
                     err = Some(e);
@@ -652,12 +651,17 @@ impl ExecuteCtx {
         });
     }
 
-    pub async fn handle_request_with_runtime_error(
+    #[cfg(feature = "test-fatalerror-config")]
+    pub async fn handle_request_with_runtime_error<B>(
         self: Arc<Self>,
-        incoming_req: Request<hyper::Body>,
+        incoming_req: Request<B>,
         local: SocketAddr,
         remote: SocketAddr,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<Response<Body>, Error>
+    where
+        B: http_body::Body<Data = bytes::Bytes> + Send + 'static,
+        B::Error: std::error::Error + Send + Sync + 'static,
+    {
         let result = self.handle_request(incoming_req, local, remote).await?;
         let resp = guest_result_to_response(result.0, result.1);
 
@@ -1057,6 +1061,7 @@ impl ExecuteCtx {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ExecuteCtxBuilder {
     /// Path to the module to run.
     module_path: PathBuf,
@@ -1080,6 +1085,20 @@ pub struct ExecuteCtxBuilder {
 }
 
 impl ExecuteCtxBuilder {
+    pub fn new(module_path: PathBuf) -> Self {
+        Self {
+            module_path,
+            profiling: Default::default(),
+            wasi_modules: Default::default(),
+            unknown_import_behavior: Default::default(),
+            adapt_components: Default::default(),
+            wasm_features: Default::default(),
+            debug_info: Default::default(),
+            backtrace_details: Default::default(),
+            settings: Default::default(),
+        }
+    }
+
     /// Read, compile, and link the module, producing an execution context ready to serve
     /// requests.
     pub fn finish(self) -> Result<Arc<ExecuteCtx>, Error> {
@@ -1207,119 +1226,148 @@ impl ExecuteCtxBuilder {
         }))
     }
 
+    /// Apply a function to this builder, returning the builder for further configuration.
+    pub fn with(mut self, f: impl FnOnce(&mut Self)) -> Self {
+        f(&mut self);
+        self
+    }
+
+    /// Set the path to the module to run.
+    pub fn set_module_path(&mut self, module_path: PathBuf) {
+        self.module_path = module_path;
+    }
+
+    /// Set how execution of this module should be profiled, if at all.
+    pub fn set_profiling(&mut self, profiling: ProfilingConfig) {
+        self.profiling = profiling;
+    }
+
+    /// Set the experimental wasi modules to link against.
+    pub fn set_wasi_modules(&mut self, wasi_modules: HashSet<ExperimentalModule>) {
+        self.wasi_modules = wasi_modules;
+    }
+
+    /// Set what to do with imports the host does not provide.
+    pub fn set_unknown_import_behavior(&mut self, unknown_import_behavior: UnknownImportBehavior) {
+        self.unknown_import_behavior = unknown_import_behavior;
+    }
+
+    /// Set whether to adapt core wasm modules to components before running them.
+    pub fn set_adapt_components(&mut self, adapt_components: bool) {
+        self.adapt_components = adapt_components;
+    }
+
+    /// Set which wasm proposals to enable for this execution context.
+    pub fn set_wasm_features(&mut self, wasm_features: WasmFeatures) {
+        self.wasm_features = wasm_features;
+    }
+
     /// Set whether the guest should be compiled with native debug info, so that it can be
     /// inspected with a native debugger.
     ///
     /// Defaults to `false`, as generating debug info both slows compilation down and requires the
     /// guest to have been built with debug info of its own.
-    pub fn with_debug_info(mut self, debug_info: bool) -> Self {
+    pub fn set_debug_info(&mut self, debug_info: bool) {
         self.debug_info = debug_info;
-        self
     }
 
     /// Set how wasm backtrace frames are symbolized.
     ///
     /// Symbolizing frames is costly for guests that start many threads. Defaults to
     /// [`BacktraceDetails::Enable`].
-    pub fn with_backtrace_details(mut self, backtrace_details: BacktraceDetails) -> Self {
+    pub fn set_backtrace_details(&mut self, backtrace_details: BacktraceDetails) {
         self.backtrace_details = backtrace_details;
-        self
     }
 
     /// Set the acls for this execution context.
-    pub fn with_acls(mut self, acls: Acls) -> Self {
+    pub fn set_acls(&mut self, acls: Acls) {
         self.settings.acls = acls;
-        self
     }
 
     /// Set the backends for this execution context.
-    pub fn with_backends(mut self, backends: Backends) -> Self {
+    pub fn set_backends(&mut self, backends: Backends) {
         self.settings.backends = backends;
-        self
     }
 
     /// Set the device detection mappings for this execution context.
-    pub fn with_device_detection(mut self, device_detection: DeviceDetection) -> Self {
+    pub fn set_device_detection(&mut self, device_detection: DeviceDetection) {
         self.settings.device_detection = device_detection;
-        self
     }
 
     /// Set the geolocation mappings for this execution context.
-    pub fn with_geolocation(mut self, geolocation: Geolocation) -> Self {
+    pub fn set_geolocation(&mut self, geolocation: Geolocation) {
         self.settings.geolocation = geolocation;
-        self
     }
 
     /// Set the dictionaries for this execution context.
-    pub fn with_dictionaries(mut self, dictionaries: Dictionaries) -> Self {
+    pub fn set_dictionaries(&mut self, dictionaries: Dictionaries) {
         self.settings.dictionaries = dictionaries;
-        self
     }
 
     /// Set the object store for this execution context.
-    pub fn with_object_stores(mut self, object_store: ObjectStores) -> Self {
+    pub fn set_object_stores(&mut self, object_store: ObjectStores) {
         self.settings.object_store = object_store;
-        self
     }
 
     /// Set the secret stores for this execution context.
-    pub fn with_secret_stores(mut self, secret_stores: SecretStores) -> Self {
+    pub fn set_secret_stores(&mut self, secret_stores: SecretStores) {
         self.settings.secret_stores = secret_stores;
-        self
     }
     /// Set the shielding sites for this execution context.
-    pub fn with_shielding_sites(mut self, shielding_sites: ShieldingSites) -> Self {
+    pub fn set_shielding_sites(&mut self, shielding_sites: ShieldingSites) {
         self.settings.shielding_sites = shielding_sites;
-        self
     }
 
     /// Set the valid mock Fastly API keys for this execution context.
-    pub fn with_fake_valid_fastly_keys(
-        mut self,
-        fake_valid_fastly_keys: FakeValidFastlyKeys,
-    ) -> Self {
+    pub fn set_fake_valid_fastly_keys(&mut self, fake_valid_fastly_keys: FakeValidFastlyKeys) {
         self.settings.fake_valid_fastly_keys = fake_valid_fastly_keys;
-        self
     }
 
     /// Set the path to the config for this execution context.
-    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
+    pub fn set_config_path(&mut self, config_path: PathBuf) {
         self.settings.config_path = Some(config_path);
-        self
     }
 
     /// Set where to direct logging endpoint messages for this execution
     /// context. Defaults to stdout.
-    pub fn with_capture_logs(mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) -> Self {
+    pub fn set_capture_logs(&mut self, capture_logs: Arc<Mutex<dyn Write + Send>>) {
         self.settings.capture_logs = capture_logs;
-        self
     }
 
     /// Set the stdout logging policy for this execution context.
-    pub fn with_log_stdout(mut self, log_stdout: bool) -> Self {
+    pub fn set_log_stdout(&mut self, log_stdout: bool) {
         self.settings.log_stdout = log_stdout;
-        self
     }
 
     /// Set the stderr logging policy for this execution context.
-    pub fn with_log_stderr(mut self, log_stderr: bool) -> Self {
+    pub fn set_log_stderr(&mut self, log_stderr: bool) {
         self.settings.log_stderr = log_stderr;
-        self
     }
 
     /// Set the local Pushpin proxy port
-    pub fn with_local_pushpin_proxy_port(mut self, local_pushpin_proxy_port: Option<u16>) -> Self {
+    pub fn set_local_pushpin_proxy_port(&mut self, local_pushpin_proxy_port: Option<u16>) {
         self.settings.local_pushpin_proxy_port = local_pushpin_proxy_port;
-        self
     }
 
     /// Set whether WebSocket passthrough is enabled for this execution context.
-    pub fn with_enable_local_websocket_passthrough(
-        mut self,
+    pub fn set_enable_local_websocket_passthrough(
+        &mut self,
         enable_local_websocket_passthrough: bool,
-    ) -> Self {
+    ) {
         self.settings.enable_local_websocket_passthrough = enable_local_websocket_passthrough;
-        self
+    }
+
+    /// Configure this execution context using the provided Fastly config
+    pub fn use_config(&mut self, config: &crate::config::FastlyConfig) {
+        self.set_acls(config.acls().to_owned());
+        self.set_backends(config.backends().to_owned());
+        self.set_device_detection(config.device_detection().to_owned());
+        self.set_geolocation(config.geolocation().to_owned());
+        self.set_dictionaries(config.dictionaries().to_owned());
+        self.set_object_stores(config.object_stores().to_owned());
+        self.set_secret_stores(config.secret_stores().to_owned());
+        self.set_shielding_sites(config.shielding_sites().to_owned());
+        self.set_fake_valid_fastly_keys(config.fake_valid_fastly_keys().to_owned());
     }
 }
 

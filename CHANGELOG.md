@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Update hyper to 1.12.0. ([#770](https://github.com/fastly/Viceroy/pull/770))
+
 - Add a `--disable-symbolization` flag that skips symbolizing guest backtraces, like
   `WASMTIME_BACKTRACE_DETAILS=0`, and let `WASMTIME_BACKTRACE_DETAILS` control symbolization when
   it is set. Both make guests that start many threads or tasks much faster.

@@ -1,5 +1,5 @@
 use crate::{common::Test, common::TestResult, viceroy_test};
-use hyper::{StatusCode, body::to_bytes};
+use hyper::StatusCode;
 use viceroy_lib::config::FastlyConfig;
 use viceroy_lib::error::{AclConfigError, FastlyConfigError};
 
@@ -17,17 +17,19 @@ viceroy_test!(acl_works, |is_component| {
     let resp = Test::using_fixture("acl.wasm")
         .adapt_component(is_component)
         .using_fastly_toml(FASTLY_TOML)?
-        .log_stderr()
-        .log_stdout()
+        .configure_ctx(|ctx| {
+            ctx.set_log_stderr(true);
+            ctx.set_log_stdout(true);
+        })
         .against_empty()
         .await?;
 
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(
-        to_bytes(resp.into_body())
+        resp.into_body()
+            .read_into_vec()
             .await
             .expect("can read body")
-            .to_vec()
             .is_empty()
     );
 

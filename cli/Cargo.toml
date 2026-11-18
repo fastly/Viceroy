@@ -1,15 +1,15 @@
 [package]
 name = "viceroy"
 description = "Viceroy is a local testing daemon for Fastly Compute."
-version = "0.22.1"
-authors = ["Fastly"]
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
 readme = "../README.md"
-edition = "2024"
-license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://developer.fastly.com/learning/compute/testing/#running-a-local-testing-server"
 homepage = "https://developer.fastly.com/learning/compute/"
-repository = "https://github.com/fastly/Viceroy"
-keywords = ["wasm", "fastly"]
 categories = [
   "command-line-utilities",
   "development-tools",
@@ -58,13 +58,14 @@ workspace = true
 anyhow = { workspace = true }
 base64 = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "^0.3.16", features = ["env-filter", "fmt"] }
-viceroy-lib = { path = "..", version = "=0.22.1" }
+viceroy-lib = { path = "..", version = "=0.23.0" }
 wat = "^1.0.38"
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
@@ -74,18 +75,13 @@ libc = "^0.2.139"
 anyhow = { workspace = true }
 futures = { workspace = true }
 url = { workspace = true }
-tls-listener = { version = "^0.8.0", features = ["rustls", "hyper-h1", "tokio-net", "rt"] }
 tempfile = "3"
 serde_json = { workspace = true }
-
-# NOT the workspace rustls (0.23). The viceroy cli crate doesn't actually use rustls.
-# This dependency is only for the mutual-TLS integration test. That test uses
-# `tls-listener`, which pins tokio-rustls 0.24 -> rustls 0.21.
-# Moving to tls-listener 0.11 requires onto hyper 1.x, and we're currently
-# pinning an exact hyper version. For now we just hold back the dev deps
-# until we can update hyper (or remove tls-listener). `dangerous_configuration` is
-# required for `rustls::server::ClientCertVerifier` in the test.
-rustls = { version = "0.21.5", features = ["dangerous_configuration"] }
-rustls-pemfile = "1.0.3"
-tokio-rustls = "0.24.1"
+http-body = { workspace = true }
+http-body-util = { workspace = true, features = ["channel"] }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }
+bytes = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+tokio-rustls = { workspace = true }
 test-fixtures-artifacts = { workspace = true }
