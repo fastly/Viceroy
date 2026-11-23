@@ -3,6 +3,9 @@
 - Support `fastly_http_resp::reason_phrase_get` for reading backend HTTP/1 reason phrases.
 
 - Update hyper to 1.12.0. ([#770](https://github.com/fastly/Viceroy/pull/770))
+- Write guest profiles of core Wasm modules with offsets into the Wasm binary instead of offsets
+  into the compiled native code, so tools can symbolize them from the module's DWARF without
+  reproducing Viceroy's compilation.
 
 - Add a `--disable-symbolization` flag that skips symbolizing guest backtraces, like
   `WASMTIME_BACKTRACE_DETAILS=0`, and let `WASMTIME_BACKTRACE_DETAILS` control symbolization when

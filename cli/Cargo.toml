@@ -84,4 +84,5 @@ bytes = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 tokio-rustls = { workspace = true }
+wasmparser = { workspace = true }
 test-fixtures-artifacts = { workspace = true }

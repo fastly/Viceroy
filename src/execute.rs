@@ -15,6 +15,7 @@ use {
         },
         downstream::{DownstreamMetadata, DownstreamRequest, DownstreamResponse, prepare_request},
         error::{ExecutionError, NonHttpResponse},
+        guest_profile::WasmOffsets,
         handoff::{HandoffConfig, HandoffRequestInfo, HandoffTlsConfig, perform_handoff},
         http::framing::apply_response_framing,
         linking::{ComponentCtx, WasmCtx, create_store, link_host_functions},
@@ -142,6 +143,7 @@ impl ProfilingConfig {
             } => Some(GuestProfileConfig {
                 path: path.clone(),
                 sample_period: *sample_period,
+                wasm_offsets: None,
             }),
             _ => None,
         }
@@ -153,6 +155,9 @@ impl ProfilingConfig {
 struct GuestProfileConfig {
     path: PathBuf,
     sample_period: Duration,
+    /// Maps native code offsets in profiles to Wasm binary offsets. Only set
+    /// for core modules.
+    wasm_offsets: Option<Arc<WasmOffsets>>,
 }
 
 pub struct NextRequest(Option<(Box<DownstreamRequest>, Arc<ExecuteCtx>)>);
@@ -901,7 +906,7 @@ impl ExecuteCtx {
                 };
 
                 // If we collected a profile, write it to the file
-                write_profile(&mut store, guest_profile_path.as_ref());
+                write_profile(&mut store, guest_profile_path.as_ref(), self.wasm_offsets());
 
                 // Ensure the downstream response channel is closed, whether or not a response was
                 // sent during execution.
@@ -992,6 +997,7 @@ impl ExecuteCtx {
         write_profile(
             &mut store,
             self.guest_profile_config.as_deref().map(|cfg| &cfg.path),
+            self.wasm_offsets(),
         );
 
         // Ensure the downstream response channel is closed, whether or not a response was
@@ -1059,6 +1065,12 @@ impl ExecuteCtx {
     pub fn is_component(&self) -> bool {
         matches!(self.instance_pre.as_ref(), Instance::Component(_, _))
     }
+
+    fn wasm_offsets(&self) -> Option<&WasmOffsets> {
+        self.guest_profile_config
+            .as_deref()
+            .and_then(|cfg| cfg.wasm_offsets.as_deref())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1114,7 +1126,7 @@ impl ExecuteCtxBuilder {
             settings,
         } = self;
 
-        let guest_profile_config = profiling.guest_config();
+        let mut guest_profile_config = profiling.guest_config();
 
         let input = fs::read(&module_path)?;
 
@@ -1190,6 +1202,16 @@ impl ExecuteCtxBuilder {
             let instance_pre = linker
                 .instantiate_pre(&module)
                 .map_err(anyhow::Error::from)?;
+
+            if let Some(pcfg) = guest_profile_config.as_mut() {
+                let wasm = if is_wat {
+                    wat::parse_bytes(&input).map_err(anyhow::Error::from)?
+                } else {
+                    std::borrow::Cow::Borrowed(input.as_slice())
+                };
+                pcfg.wasm_offsets = WasmOffsets::new(&module, &wasm).map(Arc::new);
+            }
+
             Instance::Module(module, instance_pre)
         };
 
@@ -1371,11 +1393,27 @@ impl ExecuteCtxBuilder {
     }
 }
 
-fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {
-    match std::fs::File::create(path)
-        .map_err(wasmtime::Error::new)
-        .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
-    {
+fn write_profile_to_file(
+    profile: Box<GuestProfiler>,
+    path: &PathBuf,
+    wasm_offsets: Option<&WasmOffsets>,
+) {
+    let result = match wasm_offsets {
+        None => std::fs::File::create(path)
+            .map_err(wasmtime::Error::new)
+            .and_then(|output| profile.finish(std::io::BufWriter::new(output))),
+        Some(wasm_offsets) => (|| {
+            let mut json = Vec::new();
+            profile.finish(&mut json)?;
+            let mut json: serde_json::Value =
+                serde_json::from_slice(&json).map_err(wasmtime::Error::new)?;
+            wasm_offsets.rewrite_profile(&mut json);
+            let output = std::fs::File::create(path).map_err(wasmtime::Error::new)?;
+            serde_json::to_writer(std::io::BufWriter::new(output), &json)
+                .map_err(wasmtime::Error::new)
+        })(),
+    };
+    match result {
         Err(e) => {
             event!(
                 Level::ERROR,
@@ -1393,11 +1431,15 @@ fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {
     }
 }
 
-fn write_profile(store: &mut wasmtime::Store<WasmCtx>, guest_profile_path: Option<&PathBuf>) {
+fn write_profile(
+    store: &mut wasmtime::Store<WasmCtx>,
+    guest_profile_path: Option<&PathBuf>,
+    wasm_offsets: Option<&WasmOffsets>,
+) {
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
     {
-        write_profile_to_file(profile, path);
+        write_profile_to_file(profile, path, wasm_offsets);
     }
 }
 
@@ -1408,7 +1450,7 @@ fn write_profile_component(
     if let (Some(profile), Some(path)) =
         (store.data_mut().take_guest_profiler(), guest_profile_path)
     {
-        write_profile_to_file(profile, path);
+        write_profile_to_file(profile, path, None);
     }
 }
 

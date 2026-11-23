@@ -15,6 +15,7 @@ mod collecting_body;
 pub mod component;
 mod downstream;
 mod execute;
+mod guest_profile;
 mod handoff;
 mod http;
 mod linking;

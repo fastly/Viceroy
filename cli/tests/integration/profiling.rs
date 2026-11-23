@@ -6,7 +6,8 @@ use {
         viceroy_test,
     },
     hyper::StatusCode,
-    std::time::Duration,
+    std::{path::PathBuf, time::Duration},
+    test_fixtures_artifacts::FIXTURE_DIR,
     viceroy_lib::ProfilingConfig,
 };
 
@@ -52,3 +53,69 @@ viceroy_test!(guest_profiling_works, |is_component| {
 
     Ok(())
 });
+
+/// For core modules, profiles give code addresses as offsets into the Wasm binary.
+#[tokio::test(flavor = "multi_thread")]
+async fn guest_profile_uses_wasm_offsets() -> TestResult {
+    let temp_dir = tempfile::tempdir()?;
+    let profile_dir = temp_dir.path().join("profiles");
+    std::fs::create_dir(&profile_dir)?;
+
+    // This fixture makes hostcalls, and the profiler samples at every hostcall.
+    let fixture = "teapot-status.wasm";
+    let resp = Test::using_fixture(fixture)
+        .configure_ctx(|ctx| {
+            ctx.set_profiling(ProfilingConfig::Guest {
+                path: profile_dir.clone(),
+                sample_period: Duration::from_micros(50),
+            });
+        })
+        .against_empty()
+        .await?;
+    assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT);
+
+    let wasm = std::fs::read(
+        PathBuf::from(FIXTURE_DIR)
+            .join("rust")
+            .join("wasm32-wasip1")
+            .join("debug")
+            .join(fixture),
+    )?;
+    let mut bodies = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(&wasm) {
+        if let wasmparser::Payload::CodeSectionEntry(body) = payload? {
+            bodies.push(body.range());
+        }
+    }
+
+    let profile_path = std::fs::read_dir(&profile_dir)?
+        .next()
+        .expect("a profile was written")?
+        .path();
+    let profile: serde_json::Value = serde_json::from_slice(&std::fs::read(profile_path)?)?;
+    let numbers = |pointer: &str| -> Vec<u64> {
+        profile
+            .pointer(pointer)
+            .and_then(serde_json::Value::as_array)
+            .unwrap_or_else(|| panic!("profile has {pointer}"))
+            .iter()
+            .filter_map(serde_json::Value::as_u64)
+            .collect()
+    };
+
+    let symbols = numbers("/threads/0/nativeSymbols/address");
+    assert!(!symbols.is_empty(), "profile has samples");
+    for address in symbols {
+        assert!(
+            bodies.iter().any(|b| b.start == address),
+            "symbol address {address:#x} is not the start of a function body"
+        );
+    }
+    for address in numbers("/threads/0/frameTable/address") {
+        assert!(
+            bodies.iter().any(|b| b.contains(&address)),
+            "frame address {address:#x} is not inside a function body"
+        );
+    }
+    Ok(())
+}
