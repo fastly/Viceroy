@@ -3176,6 +3176,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "viceroy-lib",
+ "wasmparser 0.262.0",
  "wasmtime",
  "wasmtime-wasi",
  "wat",
