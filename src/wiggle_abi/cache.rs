@@ -131,6 +131,7 @@ fn load_write_options(
         sensitive_data,
         edge_max_age,
         surrogate_keys,
+        http: None,
     })
 }
 

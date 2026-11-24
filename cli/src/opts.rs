@@ -124,6 +124,13 @@ pub struct SharedArgs {
         default_missing_value = "true",
     )]
     enable_local_websocket_passthrough: bool,
+    /// Enable the readthrough (HTTP) cache API.
+    ///
+    /// When enabled, SDKs that support guest-side HTTP caching (e.g. `js-compute` built with
+    /// `--enable-http-cache`) cache backend responses in Viceroy's in-memory cache, following
+    /// HTTP caching semantics, and can use the before-send / after-send hooks.
+    #[arg(long = "enable-http-cache")]
+    enable_http_cache: bool,
     /// Set of experimental WASI modules to link against.
     #[arg(value_enum, long = "experimental_modules", required = false)]
     experimental_modules: Vec<ExperimentalModuleArg>,
@@ -246,6 +253,11 @@ impl SharedArgs {
     /// Whether WebSocket passthrough is enabled for the service.
     pub fn enable_local_websocket_passthrough(&self) -> bool {
         self.enable_local_websocket_passthrough
+    }
+
+    /// Whether the readthrough (HTTP) cache API is enabled.
+    pub fn enable_http_cache(&self) -> bool {
+        self.enable_http_cache
     }
 
     /// Set of experimental wasi modules to link against.

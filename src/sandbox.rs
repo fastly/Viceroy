@@ -20,7 +20,7 @@ use std::time::Duration;
 use crate::cache::{Cache, CacheEntry};
 use crate::linking::Limiter;
 use crate::object_store::KvStoreError;
-use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode};
+use crate::wiggle_abi::types::{CacheBusyHandle, CacheHandle, FramingHeadersMode, HttpCacheHandle};
 
 use {
     self::downstream::DownstreamResponseState,
@@ -1677,6 +1677,21 @@ impl From<RequestPromiseHandle> for AsyncItemHandle {
 // CacheBusyHandle and CacheHandle are equivalent; CacheHandle is just a "later" resolution.
 impl From<CacheBusyHandle> for CacheHandle {
     fn from(h: CacheBusyHandle) -> CacheHandle {
+        let raw: u32 = h.into();
+        CacheHandle::from(raw)
+    }
+}
+
+impl From<AsyncItemHandle> for HttpCacheHandle {
+    fn from(h: AsyncItemHandle) -> HttpCacheHandle {
+        HttpCacheHandle::from(h.as_u32())
+    }
+}
+
+// HTTP cache handles share the async item table with core cache handles: both refer to a
+// `CacheEntry`.
+impl From<HttpCacheHandle> for CacheHandle {
+    fn from(h: HttpCacheHandle) -> CacheHandle {
         let raw: u32 = h.into();
         CacheHandle::from(raw)
     }

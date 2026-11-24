@@ -13,7 +13,9 @@ use http::HeaderMap;
 
 use crate::{body::Body, collecting_body::CollectingBody};
 
-use super::{Found, SurrogateKeySet, WriteOptions, variance::Variant};
+use super::{
+    Found, SurrogateKeySet, WriteOptions, http_semantics::HttpResponseMeta, variance::Variant,
+};
 
 /// Metadata associated with a particular object on insert.
 #[derive(Debug)]
@@ -41,6 +43,9 @@ pub struct ObjectMeta {
 
     length: Option<u64>,
     surrogate_keys: SurrogateKeySet,
+
+    /// For objects inserted via the HTTP cache API: the stored response.
+    http: Option<Arc<HttpResponseMeta>>,
 
     // Soft-purge bit: atomic so we don't have to wrap the whole thing in a lock.
     // This can only transition false -> true.
@@ -90,6 +95,19 @@ impl ObjectMeta {
     pub fn length(&self) -> Option<u64> {
         self.length
     }
+
+    pub fn stale_while_revalidate(&self) -> Duration {
+        self.stale_while_revalidate
+    }
+
+    pub fn surrogate_keys(&self) -> &SurrogateKeySet {
+        &self.surrogate_keys
+    }
+
+    /// The stored response, for objects inserted via the HTTP cache API.
+    pub fn http(&self) -> Option<&Arc<HttpResponseMeta>> {
+        self.http.as_ref()
+    }
 }
 
 impl ObjectMeta {
@@ -108,6 +126,7 @@ impl ObjectMeta {
             // Similarly, edge_max_age has no effect and cannot be read.
             edge_max_age: _,
             surrogate_keys,
+            http,
             ..
         } = value;
         ObjectMeta {
@@ -120,6 +139,7 @@ impl ObjectMeta {
             user_metadata,
             length,
             surrogate_keys,
+            http,
             soft_purge: AtomicBool::new(false),
         }
     }
@@ -136,6 +156,7 @@ impl Clone for ObjectMeta {
             user_metadata: self.user_metadata.clone(),
             length: self.length,
             surrogate_keys: self.surrogate_keys.clone(),
+            http: self.http.clone(),
             soft_purge: AtomicBool::new(self.soft_purge.load(std::sync::atomic::Ordering::SeqCst)),
         }
     }

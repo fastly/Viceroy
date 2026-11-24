@@ -47,6 +47,11 @@ impl VaryRule {
         VaryRule { headers }
     }
 
+    /// The header names in this rule, lowercase and sorted.
+    pub fn headers(&self) -> &[HeaderName] {
+        &self.headers
+    }
+
     /// Construct the Variant for the given headers: the (header, value) pairs that must be present
     /// for a request to match a response.
     pub fn variant(&self, headers: &HeaderMap) -> Variant {

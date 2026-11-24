@@ -86,6 +86,7 @@ pub(crate) async fn create_execution_context(
     ctx.set_log_stdout(args.log_stdout());
     ctx.set_local_pushpin_proxy_port(args.local_pushpin_proxy_port());
     ctx.set_enable_local_websocket_passthrough(args.enable_local_websocket_passthrough());
+    ctx.set_enable_http_cache(args.enable_http_cache());
 
     let Some(config_path) = args.config_path() else {
         event!(

@@ -13,9 +13,11 @@ use crate::{
 
 use http::{HeaderMap, HeaderValue};
 
+pub mod http_semantics;
 mod store;
 mod variance;
 
+use http_semantics::{HttpRequestHead, HttpResponseMeta};
 use store::{CacheData, CacheKeyObjects, GetBodyBuilder, ObjectMeta, Obligation};
 pub use variance::VaryRule;
 
@@ -146,9 +148,25 @@ pub struct CacheEntry {
     /// When always_use_requested_range is true, and the length is unknown,
     /// body() blocks until the start of the range is available.
     always_use_requested_range: bool,
+
+    /// For HTTP cache lookups: the looked-up request.
+    http_request: Option<Arc<HttpRequestHead>>,
 }
 
 impl CacheEntry {
+    /// Associate the looked-up HTTP request with this entry (HTTP cache API).
+    pub fn with_http_request(self, http_request: Arc<HttpRequestHead>) -> Self {
+        Self {
+            http_request: Some(http_request),
+            ..self
+        }
+    }
+
+    /// The looked-up HTTP request, for entries from the HTTP cache API.
+    pub fn http_request(&self) -> Option<&Arc<HttpRequestHead>> {
+        self.http_request.as_ref()
+    }
+
     /// Set the always_use_requested_range flag.
     /// This applies to all subsequent lookups from this CacheEntry or future entries derived from it.
     pub fn with_always_use_requested_range(self, always_use_requested_range: bool) -> Self {
@@ -165,6 +183,7 @@ impl CacheEntry {
             found: None,
             go_get: None,
             always_use_requested_range: false,
+            http_request: self.http_request.clone(),
         }
     }
 
@@ -222,6 +241,7 @@ impl CacheEntry {
             found: Some(found),
             go_get: None,
             always_use_requested_range: self.always_use_requested_range,
+            http_request: self.http_request.clone(),
         })
     }
 
@@ -316,6 +336,7 @@ impl Cache {
             found,
             go_get: None,
             always_use_requested_range: false,
+            http_request: None,
         }
     }
 
@@ -337,6 +358,7 @@ impl Cache {
             found: found.map(|v| Found::from((*v).clone())),
             go_get: obligation,
             always_use_requested_range: false,
+            http_request: None,
         }
     }
 
@@ -381,6 +403,8 @@ pub struct WriteOptions {
     pub sensitive_data: bool,
     pub edge_max_age: Duration,
     pub surrogate_keys: SurrogateKeySet,
+    /// For objects inserted via the HTTP cache API: the stored response.
+    pub http: Option<Arc<HttpResponseMeta>>,
 }
 
 impl WriteOptions {
@@ -395,6 +419,7 @@ impl WriteOptions {
             sensitive_data: false,
             edge_max_age: max_age,
             surrogate_keys: Default::default(),
+            http: None,
         }
     }
 }
@@ -488,6 +513,15 @@ impl std::fmt::Display for SurrogateKeySet {
             }
         }
         write!(f, "}}")
+    }
+}
+
+impl SurrogateKeySet {
+    /// The keys as a space-separated list, as used by the HTTP cache API.
+    pub fn to_space_separated(&self) -> String {
+        let mut keys: Vec<&str> = self.0.iter().map(|k| k.0.as_str()).collect();
+        keys.sort_unstable();
+        keys.join(" ")
     }
 }
 

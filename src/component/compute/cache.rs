@@ -87,6 +87,7 @@ fn load_write_options(options: &api::WriteOptions) -> Result<WriteOptions, Error
         sensitive_data,
         surrogate_keys,
         edge_max_age,
+        http: None,
     })
 }
 

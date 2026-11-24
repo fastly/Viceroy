@@ -241,6 +241,11 @@ struct Settings {
     /// Set this to `false` to simulate a service that does not have the WebSockets feature
     /// enabled, so that guests can exercise their handling of that state locally.
     enable_local_websocket_passthrough: bool,
+    /// Whether the readthrough (HTTP) cache API is enabled.
+    ///
+    /// Off by default: when it is on, SDKs switch from host-side to guest-side HTTP caching, so
+    /// backend responses start being cached locally.
+    enable_http_cache: bool,
     /// The ObjectStore associated with this instance of Viceroy
     object_store: ObjectStores,
     /// The secret stores for this execution.
@@ -267,6 +272,7 @@ impl std::fmt::Debug for Settings {
                 "enable_local_websocket_passthrough",
                 &self.enable_local_websocket_passthrough,
             )
+            .field("enable_http_cache", &self.enable_http_cache)
             .field("object_store", &self.object_store)
             .field("secret_stores", &self.secret_stores)
             .field("shielding_sites", &self.shielding_sites)
@@ -289,6 +295,7 @@ impl Default for Settings {
             log_stderr: false,
             local_pushpin_proxy_port: None,
             enable_local_websocket_passthrough: true,
+            enable_http_cache: false,
             object_store: ObjectStores::new(),
             secret_stores: SecretStores::new(),
             shielding_sites: ShieldingSites::new(),
@@ -1038,6 +1045,11 @@ impl ExecuteCtx {
         self.settings.enable_local_websocket_passthrough
     }
 
+    /// Whether the readthrough (HTTP) cache API is enabled for this execution context.
+    pub fn enable_http_cache(&self) -> bool {
+        self.settings.enable_http_cache
+    }
+
     /// Get the valid mock Fastly API keys for this execution context.
     pub fn fake_valid_fastly_keys(&self) -> &FakeValidFastlyKeys {
         &self.settings.fake_valid_fastly_keys
@@ -1355,6 +1367,11 @@ impl ExecuteCtxBuilder {
         enable_local_websocket_passthrough: bool,
     ) {
         self.settings.enable_local_websocket_passthrough = enable_local_websocket_passthrough;
+    }
+
+    /// Set whether the readthrough (HTTP) cache API is enabled for this execution context.
+    pub fn set_enable_http_cache(&mut self, enable_http_cache: bool) {
+        self.settings.enable_http_cache = enable_http_cache;
     }
 
     /// Configure this execution context using the provided Fastly config
