@@ -155,6 +155,11 @@ pub struct SharedArgs {
     /// or tasks faster.
     #[arg(long = "disable-symbolization")]
     disable_symbolization: bool,
+    /// Directory for the compilation cache, so that previously compiled wasm
+    /// modules can be reused if the wasm code and engine settings are
+    /// compatible.
+    #[arg(long = "compilation-cache-dir", value_name = "DIR")]
+    compilation_cache_dir: Option<PathBuf>,
     /// Enable the Wasm Exception Handling feature.
     #[arg(long)]
     wasm_exceptions: bool,
@@ -283,6 +288,18 @@ impl SharedArgs {
         } else {
             BacktraceDetails::Enable
         }
+    }
+
+    /// The cache for compiled guests, if `--compilation-cache-dir` was given.
+    pub fn compilation_cache(&self) -> Result<Option<wasmtime::Cache>, anyhow::Error> {
+        let Some(dir) = &self.compilation_cache_dir else {
+            return Ok(None);
+        };
+        // wasmtime requires an absolute cache directory.
+        let dir = std::path::absolute(dir)?;
+        let mut config = wasmtime::CacheConfig::new();
+        config.with_directory(dir);
+        Ok(Some(wasmtime::Cache::new(config)?))
     }
 
     pub fn wasm_features(&self) -> WasmFeatures {

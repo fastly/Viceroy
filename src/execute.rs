@@ -1080,6 +1080,8 @@ pub struct ExecuteCtxBuilder {
     debug_info: bool,
     /// How to symbolize wasm backtrace frames.
     backtrace_details: BacktraceDetails,
+    /// An optional cache to use for compiled wasm modules.
+    compilation_cache: Option<wasmtime::Cache>,
     /// The settings to hand to the finished context.
     settings: Settings,
 }
@@ -1095,6 +1097,7 @@ impl ExecuteCtxBuilder {
             wasm_features: Default::default(),
             debug_info: Default::default(),
             backtrace_details: Default::default(),
+            compilation_cache: None,
             settings: Default::default(),
         }
     }
@@ -1111,6 +1114,7 @@ impl ExecuteCtxBuilder {
             wasm_features,
             debug_info,
             backtrace_details,
+            compilation_cache,
             settings,
         } = self;
 
@@ -1145,6 +1149,7 @@ impl ExecuteCtxBuilder {
             profiling.native_strategy(),
             debug_info,
             backtrace_details,
+            compilation_cache,
         );
         let engine = Engine::new(config).map_err(anyhow::Error::from)?;
         let instance_pre = if is_component {
@@ -1277,6 +1282,17 @@ impl ExecuteCtxBuilder {
     /// [`BacktraceDetails::Enable`].
     pub fn set_backtrace_details(&mut self, backtrace_details: BacktraceDetails) {
         self.backtrace_details = backtrace_details;
+    }
+
+    /// Configures the compilation cache, so that previously compiled wasm
+    /// modules can be reused if the wasm code and engine settings are
+    /// compatible.
+    ///
+    /// If you want to configure caching for multiple execute contexts, prefer
+    /// cloning the same [`wasmtime::Cache`] value so that the background worker
+    /// is shared.
+    pub fn set_compilation_cache(&mut self, compilation_cache: Option<wasmtime::Cache>) {
+        self.compilation_cache = compilation_cache;
     }
 
     /// Set the acls for this execution context.
@@ -1449,6 +1465,7 @@ fn configure_wasmtime(
     profiling_strategy: ProfilingStrategy,
     debug_info: bool,
     backtrace_details: BacktraceDetails,
+    compilation_cache: Option<wasmtime::Cache>,
 ) -> wasmtime::Config {
     use wasmtime::{Config, InstanceAllocationStrategy};
 
@@ -1459,6 +1476,7 @@ fn configure_wasmtime(
     config.wasm_backtrace_details(backtrace_details.into());
     config.epoch_interruption(true);
     config.profiler(profiling_strategy);
+    config.cache(compilation_cache);
 
     config.allocation_strategy(InstanceAllocationStrategy::OnDemand);
 

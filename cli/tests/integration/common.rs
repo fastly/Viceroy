@@ -16,7 +16,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     task::{Context, Poll},
     time::Duration,
 };
@@ -193,11 +193,26 @@ impl TestSession {
 }
 
 impl Test {
+    /// A builder for the guest at `module_path`, sharing a compilation cache with every other test.
+    ///
+    /// Many tests run the same fixture, and nextest runs each test in its own process, so without
+    /// an on-disk cache each of them would compile its fixture from scratch.
+    fn builder(module_path: PathBuf) -> ExecuteCtxBuilder {
+        static CACHE: LazyLock<wasmtime::Cache> = LazyLock::new(|| {
+            let mut config = wasmtime::CacheConfig::new();
+            config.with_directory(concat!(env!("CARGO_TARGET_TMPDIR"), "/compilation-cache"));
+            wasmtime::Cache::new(config).expect("can create the compilation cache")
+        });
+        let mut builder = ExecuteCtxBuilder::new(module_path);
+        builder.set_compilation_cache(Some(CACHE.clone()));
+        builder
+    }
+
     /// Create a new test given the file name for its wasm fixture, its target architecture,
     /// and the release mode.
     pub fn using_wasm_fixture(module_path: PathBuf) -> Self {
         Self {
-            builder: ExecuteCtxBuilder::new(module_path),
+            builder: Self::builder(module_path),
             backends: TestBackends::new(),
             via_hyper: false,
         }
@@ -235,7 +250,7 @@ impl Test {
         module_path.push(fixture);
 
         Self {
-            builder: ExecuteCtxBuilder::new(module_path),
+            builder: Self::builder(module_path),
             backends: TestBackends::new(),
             via_hyper: false,
         }
