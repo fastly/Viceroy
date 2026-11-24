@@ -82,6 +82,7 @@ pub(crate) async fn create_execution_context(
     ctx.set_wasm_features(args.wasm_features());
     ctx.set_debug_info(args.debug_info());
     ctx.set_backtrace_details(args.backtrace_details());
+    ctx.set_compilation_cache(args.compilation_cache());
     ctx.set_log_stderr(args.log_stderr());
     ctx.set_log_stdout(args.log_stdout());
     ctx.set_local_pushpin_proxy_port(args.local_pushpin_proxy_port());

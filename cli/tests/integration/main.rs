@@ -8,6 +8,7 @@ mod bot_detection;
 mod cache;
 mod client_certs;
 mod common;
+mod compilation_cache;
 mod config_store_lookup;
 mod debug_info;
 mod device_detection_lookup;

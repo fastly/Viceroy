@@ -122,6 +122,13 @@ fn test_a_handler_with_fastly_types() {
 
 The reason that `cargo-nextest` is needed rather than just `cargo test` is to allow tests to keep executing if any other test fails. There is no way to recover from a panic in wasm, so test execution would halt as soon as the first test failure occurs. Because of this, we need each test to be executed in its own wasm instance and have the results aggregated to report overall success/failure. cargo-nextest [handles that orchestration for us](https://nexte.st/book/how-it-works.html#the-nextest-model).
 
+To avoid repeated compilation of the same wasm fixture, pass `--compilation-cache-dir` to Viceroy,
+so that native code from prior runs can be reused.
+```toml
+[target.wasm32-wasip1]
+runner = "viceroy run -C fastly.toml --compilation-cache-dir target/viceroy-compilation-cache -- "
+```
+
 ## Documentation
 
 Since the Fastly CLI uses Viceroy under the hood, the two share documentation for

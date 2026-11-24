@@ -7,6 +7,9 @@
   into the compiled native code, so tools can symbolize them from the module's DWARF without
   reproducing Viceroy's compilation.
 
+- Add a `--compilation-cache-dir` flag that configures wasmtime's `wasmtime::Cache` for the engine.
+  This allows reusing native code for guests across multiple runs of Viceroy.
+
 - Add a `--disable-symbolization` flag that skips symbolizing guest backtraces, like
   `WASMTIME_BACKTRACE_DETAILS=0`, and let `WASMTIME_BACKTRACE_DETAILS` control symbolization when
   it is set. Both make guests that start many threads or tasks much faster.

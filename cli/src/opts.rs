@@ -155,6 +155,11 @@ pub struct SharedArgs {
     /// or tasks faster.
     #[arg(long = "disable-symbolization")]
     disable_symbolization: bool,
+    /// Directory for the compilation cache, so that previously compiled wasm
+    /// modules can be reused if the wasm code and engine settings are
+    /// compatible.
+    #[arg(long = "compilation-cache-dir", value_name = "DIR")]
+    compilation_cache_dir: Option<PathBuf>,
     /// Enable the Wasm Exception Handling feature.
     #[arg(long)]
     wasm_exceptions: bool,
@@ -282,6 +287,28 @@ impl SharedArgs {
             BacktraceDetails::Environment
         } else {
             BacktraceDetails::Enable
+        }
+    }
+
+    /// The cache for compiled guests, if requested and successfully initialized.
+    pub fn compilation_cache(&self) -> Option<wasmtime::Cache> {
+        let dir = self.compilation_cache_dir.as_ref()?;
+        let create_cache = || -> Result<wasmtime::Cache, anyhow::Error> {
+            // wasmtime requires an absolute cache directory.
+            let dir = std::path::absolute(dir)?;
+            let mut config = wasmtime::CacheConfig::new();
+            config.with_directory(dir);
+            Ok(wasmtime::Cache::new(config)?)
+        };
+        match create_cache() {
+            Ok(cache) => Some(cache),
+            Err(error) => {
+                tracing::warn!(
+                    "could not initialize compilation cache at {}: {error:#}; continuing without caching",
+                    dir.display()
+                );
+                None
+            }
         }
     }
 
@@ -476,6 +503,34 @@ mod opts_tests {
 
     /// A small type alias for test results, with a boxed error type.
     type TestResult = Result<(), anyhow::Error>;
+
+    #[test]
+    fn compilation_cache_creates_directory() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let cache_dir = dir.path().join("nested/cache");
+        let opts = Opts::try_parse_from([
+            "dummy-program-name",
+            "--compilation-cache-dir",
+            cache_dir.to_str().unwrap(),
+            &test_file("minimal.wat"),
+        ])?;
+        assert!(opts.serve.shared().compilation_cache().is_some());
+        assert!(cache_dir.is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_compilation_cache_falls_back_to_no_cache() -> TestResult {
+        let file = tempfile::NamedTempFile::new()?;
+        let opts = Opts::try_parse_from([
+            "dummy-program-name",
+            "--compilation-cache-dir",
+            file.path().to_str().unwrap(),
+            &test_file("minimal.wat"),
+        ])?;
+        assert!(opts.serve.shared().compilation_cache().is_none());
+        Ok(())
+    }
 
     /// Test that the default address works as expected.
     #[test]
