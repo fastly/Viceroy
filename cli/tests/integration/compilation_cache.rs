@@ -62,7 +62,14 @@ viceroy_test!(settings_changes_miss_the_cache, |is_component| {
     };
 
     test(false).start().await?;
+    let misses = cache.cache_misses();
+    assert!(misses > 0, "the first start compiles the guest");
+
     test(true).start().await?;
+    assert!(
+        cache.cache_misses() > misses,
+        "changing debug info compiles the guest again"
+    );
     assert_eq!(cache.cache_hits(), 0);
     Ok(())
 });
