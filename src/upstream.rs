@@ -403,6 +403,23 @@ pub fn send_request(
             err
         })?;
 
+        // Upstream hyper only stores non-canonical HTTP/1 reason phrases. Restore
+        // canonical phrases here so the hostcall can read the received value from
+        // extensions, without inventing phrases for HTTP/2 or guest-created responses.
+        if matches!(
+            basic_response.version(),
+            Version::HTTP_10 | Version::HTTP_11
+        ) && basic_response
+            .extensions()
+            .get::<hyper::ext::ReasonPhrase>()
+            .is_none()
+            && let Some(phrase) = basic_response.status().canonical_reason()
+        {
+            basic_response
+                .extensions_mut()
+                .insert(hyper::ext::ReasonPhrase::from_static(phrase.as_bytes()));
+        }
+
         if let Some(md) = basic_response.extensions_mut().get_mut::<ConnMetadata>() {
             // This is used later to create similar behaviour between Compute and Viceroy.
             md.direct_pass = is_pass;

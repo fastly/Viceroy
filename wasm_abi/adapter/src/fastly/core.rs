@@ -3237,6 +3237,26 @@ pub mod fastly_http_resp {
         convert_result(resp_handle.set_status(status))
     }
 
+    #[export_name = "fastly_http_resp#reason_phrase_get"]
+    pub fn reason_phrase_get(
+        resp_handle: ResponseHandle,
+        reason_phrase_out: *mut u8,
+        reason_phrase_max_len: usize,
+        nwritten: *mut usize,
+    ) -> FastlyStatus {
+        let resp_handle =
+            ManuallyDrop::new(unsafe { http_resp::Response::from_handle(resp_handle) });
+        alloc_result!(
+            unsafe_main_ptr!(reason_phrase_out),
+            reason_phrase_max_len,
+            main_ptr!(nwritten),
+            {
+                resp_handle
+                    .get_reason_phrase(u64::try_from(reason_phrase_max_len).trapping_unwrap())
+            }
+        )
+    }
+
     #[export_name = "fastly_http_resp#version_get"]
     pub fn version_get(resp_handle: ResponseHandle, version: *mut u32) -> FastlyStatus {
         let resp_handle =

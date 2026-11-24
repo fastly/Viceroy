@@ -187,6 +187,22 @@ impl http_resp::HostResponse for ComponentCtx {
         Ok(())
     }
 
+    fn get_reason_phrase(
+        &mut self,
+        h: Resource<http_resp::Response>,
+        max_len: u64,
+    ) -> Result<Vec<u8>, types::Error> {
+        let parts = self.sandbox().response_parts(h.into())?;
+        let phrase = crate::http::get_reason_phrase(parts);
+        let len = u64::try_from(phrase.len()).unwrap();
+
+        if len > max_len {
+            Err(types::Error::BufferLen(len))
+        } else {
+            Ok(phrase.to_vec())
+        }
+    }
+
     fn append_header(
         &mut self,
         h: Resource<http_resp::Response>,

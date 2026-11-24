@@ -1250,6 +1250,17 @@ interface http-resp {
     /// Sets the HTTP status code of the response.
     set-status: func(status: http-status) -> result<_, error>;
 
+    /// Gets the response's HTTP reason phrase as raw bytes.
+    ///
+    /// The reason phrase is the text following the status code on an HTTP/1 status
+    /// line. This returns the reason phrase currently associated with the response,
+    /// which could be received from a backend, retrieved from cache, or created by the
+    /// guest. Per RFC 9112 it may contain obs-text, so it is returned as raw bytes and
+    /// is not guaranteed to be valid UTF-8. It is written into a buffer of `max-len`
+    /// bytes; if it does not fit, the call fails with the required length so the caller
+    /// can retry. The returned bytes are empty when the response has no reason phrase.
+    get-reason-phrase: func(max-len: u64) -> result<list<u8>, error>;
+
     /// Sets how the framing headers `Content-Length` and `Transfer-Encoding` will be determined
     /// when sending this response.
     set-framing-headers-mode: func(mode: framing-headers-mode) -> result<_, error>;
