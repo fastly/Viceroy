@@ -1398,21 +1398,38 @@ fn write_profile_to_file(
     path: &PathBuf,
     wasm_offsets: Option<&WasmOffsets>,
 ) {
-    let result = match wasm_offsets {
-        None => std::fs::File::create(path)
-            .map_err(wasmtime::Error::new)
-            .and_then(|output| profile.finish(std::io::BufWriter::new(output))),
-        Some(wasm_offsets) => (|| {
-            let mut json = Vec::new();
-            profile.finish(&mut json)?;
-            let mut json: serde_json::Value =
-                serde_json::from_slice(&json).map_err(wasmtime::Error::new)?;
-            wasm_offsets.rewrite_profile(&mut json);
-            let output = std::fs::File::create(path).map_err(wasmtime::Error::new)?;
-            serde_json::to_writer(std::io::BufWriter::new(output), &json)
+    // Write to a staging file and rename it into place once complete, so that
+    // a profile is never observed half-written.
+    let mut staging = path.clone().into_os_string();
+    staging.push(".tmp");
+    let staging = PathBuf::from(staging);
+    let result = (|| {
+        let create = || {
+            std::fs::File::create(&staging)
+                .map(std::io::BufWriter::new)
                 .map_err(wasmtime::Error::new)
-        })(),
-    };
+        };
+        let mut output = create()?;
+        profile.finish(&mut output)?;
+        output.flush().map_err(wasmtime::Error::new)?;
+        drop(output);
+        if let Some(wasm_offsets) = wasm_offsets {
+            // Read the profile back from disk rather than buffering it in
+            // memory, so that only the parsed JSON is held while rewriting.
+            let input = std::fs::File::open(&staging).map_err(wasmtime::Error::new)?;
+            let mut json: serde_json::Value =
+                serde_json::from_reader(std::io::BufReader::new(input))
+                    .map_err(wasmtime::Error::new)?;
+            wasm_offsets.rewrite_profile(&mut json);
+            let mut output = create()?;
+            serde_json::to_writer(&mut output, &json).map_err(wasmtime::Error::new)?;
+            output.flush().map_err(wasmtime::Error::new)?;
+        }
+        std::fs::rename(&staging, path).map_err(wasmtime::Error::new)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&staging);
+    }
     match result {
         Err(e) => {
             event!(
