@@ -2,6 +2,17 @@ use std::collections::HashSet;
 
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 
+/// Return the reason phrase of a response as raw bytes.
+///
+/// If no reason phrase, an empty slice is returned.
+pub fn get_reason_phrase(parts: &http::response::Parts) -> &[u8] {
+    parts
+        .extensions
+        .get::<hyper::ext::ReasonPhrase>()
+        .map(hyper::ext::ReasonPhrase::as_bytes)
+        .unwrap_or_default()
+}
+
 /// Headers intended be set on a future `Response`.
 #[derive(Debug, Default)]
 pub struct PendingHeaders {
@@ -69,6 +80,23 @@ impl PendingHeaders {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reason_phrase_raw_bytes() {
+        let phrase = b"raw \x80\xff";
+        let (parts, _) = http::Response::builder()
+            .extension(hyper::ext::ReasonPhrase::from_static(phrase))
+            .body(())
+            .unwrap()
+            .into_parts();
+        assert_eq!(get_reason_phrase(&parts), phrase);
+    }
+
+    #[test]
+    fn test_reason_phrase_absent() {
+        let (parts, _) = http::Response::new(()).into_parts();
+        assert!(get_reason_phrase(&parts).is_empty());
+    }
 
     const HEADER_FOO: HeaderName = HeaderName::from_static("foo");
     const HEADER_BAR: HeaderName = HeaderName::from_static("bar");

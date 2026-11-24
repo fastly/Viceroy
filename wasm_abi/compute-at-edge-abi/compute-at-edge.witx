@@ -1032,6 +1032,25 @@
         (result $err (expected (error $fastly_status)))
     )
 
+    ;;; Gets the response's HTTP reason phrase, as raw bytes.
+    ;;;
+    ;;; The reason phrase is the text following the status code on an HTTP/1 status
+    ;;; line. This returns the reason phrase currently associated with the response,
+    ;;; which could be received from a backend, retrieved from cache, or created by the
+    ;;; guest. A phrase may contain `obs-text` (`0x80..=0xFF`) per RFC 9112, so it is
+    ;;; returned as raw bytes and is not guaranteed to be valid UTF-8. The returned
+    ;;; bytes are empty when the response has no reason phrase. The phrase is written
+    ;;; into a buffer of `reason_phrase_max_len` bytes; if it does not fit, the required
+    ;;; length is written to `nwritten_out` and a `buflen` error is returned so the
+    ;;; caller can retry with a larger buffer. The result is not NUL-terminated.
+    (@interface func (export "reason_phrase_get")
+        (param $h $response_handle)
+        (param $reason_phrase_out (@witx pointer (@witx char8)))
+        (param $reason_phrase_max_len (@witx usize))
+        (param $nwritten_out (@witx pointer (@witx usize)))
+        (result $err (expected (error $fastly_status)))
+    )
+
     (@interface func (export "close")
         (param $h $response_handle)
         (result $err (expected (error $fastly_status)))

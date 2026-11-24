@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Support `fastly_http_resp::reason_phrase_get` for reading backend HTTP/1 reason phrases.
+
 - Update hyper to 1.12.0. ([#770](https://github.com/fastly/Viceroy/pull/770))
 
 - Add a `--disable-symbolization` flag that skips symbolizing guest backtraces, like

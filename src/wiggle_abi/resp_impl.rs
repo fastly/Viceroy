@@ -200,6 +200,33 @@ impl FastlyHttpResp for Sandbox {
         Ok(())
     }
 
+    fn reason_phrase_get(
+        &mut self,
+        memory: &mut GuestMemory<'_>,
+        resp_handle: ResponseHandle,
+        reason_phrase_out: GuestPtr<u8>,
+        reason_phrase_max_len: u32,
+        nwritten_out: GuestPtr<u32>,
+    ) -> Result<(), Error> {
+        let parts = self.response_parts(resp_handle)?;
+        let phrase = crate::http::get_reason_phrase(parts);
+
+        if phrase.len() > reason_phrase_max_len as usize {
+            // Report the required size, or zero if it cannot fit in a guest usize.
+            memory.write(nwritten_out, phrase.len().try_into().unwrap_or(0))?;
+            return Err(Error::BufferLengthError {
+                buf: "reason_phrase_out",
+                len: "reason_phrase_max_len",
+            });
+        }
+
+        let phrase_len = u32::try_from(phrase.len())
+            .expect("smaller than reason_phrase_max_len means it must fit");
+        memory.copy_from_slice(phrase, reason_phrase_out.as_array(phrase_len))?;
+        memory.write(nwritten_out, phrase_len)?;
+        Ok(())
+    }
+
     fn framing_headers_mode_set(
         &mut self,
         _memory: &mut GuestMemory<'_>,
