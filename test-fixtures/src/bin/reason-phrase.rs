@@ -1,14 +1,12 @@
 //! Exercise reason phrases through the Rust SDK.
 use fastly::{Error, Request, Response};
-use fastly_shared::FastlyStatus;
-use fastly_sys::fastly_http_resp::reason_phrase_get;
 
 /// Verify the response's reason phrase using the SDK API methods:
 fn check_reason_phrase(resp: &Response, expected: &[u8]) {
     assert_eq!(resp.get_reason_phrase(expected.len()).unwrap(), expected);
     assert_eq!(
         resp.get_reason_phrase_lossy(expected.len()).unwrap(),
-        String::from_utf8_lossy(&expected)
+        String::from_utf8_lossy(expected)
     );
 
     if expected.is_empty() {
