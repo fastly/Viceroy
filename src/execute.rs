@@ -1352,8 +1352,11 @@ impl ExecuteCtxBuilder {
 fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {
     match std::fs::File::create(path)
         .map_err(anyhow::Error::new)
-        .and_then(|output| profile.finish(std::io::BufWriter::new(output)).map_err(|e| e.into()))
-    {
+        .and_then(|output| {
+            profile
+                .finish(std::io::BufWriter::new(output))
+                .map_err(|e| e.into())
+        }) {
         Err(e) => {
             event!(
                 Level::ERROR,

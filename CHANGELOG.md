@@ -2,6 +2,10 @@
 
 - **Security**: Upgrade wasmtime from 39.0.2 to 48.0.7 to fix critical CVEs (CVE-2026-115893, CVE-2026-115889). ([#5](https://github.com/StellateHQ/Viceroy/pull/5))
 
+## Unreleased
+
+- **Security**: Upgrade wasmtime from 39.0.2 to 48.0.7 to fix critical CVEs (CVE-2026-115893, CVE-2026-115889). ([#5](https://github.com/StellateHQ/Viceroy/pull/5))
+
 ## 0.20.1 (2026-07-16)
 
 - Fix wiggle abi implementation for bot detection mocking. ([#664](https://github.com/fastly/Viceroy/pull/664))
