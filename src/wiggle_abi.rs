@@ -250,7 +250,7 @@ impl UserErrorConversion for Sandbox {
 
         match e {
             // If a Fatal Error was encountered, propagate the error message out.
-            Error::FatalError(msg) => Err(wasmtime::Error::msg(format!("Fatal error: {}", msg))),
+            Error::FatalError(msg) => Err(wasmtime::Error::msg(format!("Fatal error: [{}]", msg))),
             // Propagate the actionable error to the guest.
             _ => Ok(e.to_fastly_status()),
         }
