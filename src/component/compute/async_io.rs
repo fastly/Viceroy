@@ -4,7 +4,6 @@ use {
         linking::{ComponentCtx, SandboxView},
         wiggle_abi,
     },
-    anyhow::bail,
     futures::FutureExt,
     std::time::Duration,
     wasmtime::component::Resource,
@@ -13,7 +12,9 @@ use {
 impl async_io::Host for ComponentCtx {
     async fn select(&mut self, hs: Vec<Resource<async_io::Pollable>>) -> wasmtime::Result<u32> {
         if hs.is_empty() {
-            bail!("`select` without a timeout must have at least one handle");
+            return Err(wasmtime::Error::msg(
+                "`select` without a timeout must have at least one handle",
+            ));
         }
 
         let select_fut = self.sandbox_mut().select_impl(

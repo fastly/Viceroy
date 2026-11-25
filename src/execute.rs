@@ -932,15 +932,21 @@ impl ExecuteCtx {
 
         match self.instance_pre.as_ref() {
             Instance::Component(component, instance_pre) => {
-                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
-                    let program_name = "main";
-                    GuestProfiler::new_component(
-                        program_name,
-                        pcfg.sample_period,
-                        component.clone(),
-                        std::iter::empty(),
-                    )
-                });
+                let profiler = self
+                    .guest_profile_config
+                    .as_deref()
+                    .map(|pcfg| {
+                        let program_name = "main";
+                        GuestProfiler::new_component(
+                            self.engine(),
+                            program_name,
+                            pcfg.sample_period,
+                            component.clone(),
+                            std::iter::empty(),
+                        )
+                    })
+                    .transpose()
+                    .map_err(|e| ExecutionError::Context(e.into()))?;
 
                 let req = sandbox.downstream_request();
                 let body = sandbox.downstream_request_body();
@@ -953,7 +959,7 @@ impl ExecuteCtx {
                 let compute = instance_pre
                     .instantiate_async(&mut store)
                     .await
-                    .map_err(ExecutionError::Instantiation)?;
+                    .map_err(|e| ExecutionError::Instantiation(e.into()))?;
 
                 let result = compute
                     .fastly_compute_http_incoming()
@@ -974,11 +980,11 @@ impl ExecuteCtx {
                                 Ok(())
                             } else {
                                 event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);
-                                Err(ExecutionError::WasmTrap(e))
+                                Err(ExecutionError::WasmTrap(e.into()))
                             }
                         } else {
                             event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
-                            Err(ExecutionError::WasmTrap(e))
+                            Err(ExecutionError::WasmTrap(e.into()))
                         }
                     }
                 };
@@ -1011,14 +1017,20 @@ impl ExecuteCtx {
             }
 
             Instance::Module(module, instance_pre) => {
-                let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
-                    let program_name = "main";
-                    GuestProfiler::new(
-                        program_name,
-                        pcfg.sample_period,
-                        vec![(program_name.to_string(), module.clone())],
-                    )
-                });
+                let profiler = self
+                    .guest_profile_config
+                    .as_deref()
+                    .map(|pcfg| {
+                        let program_name = "main";
+                        GuestProfiler::new(
+                            self.engine(),
+                            program_name,
+                            pcfg.sample_period,
+                            vec![(program_name.to_string(), module.clone())],
+                        )
+                    })
+                    .transpose()
+                    .map_err(|e| ExecutionError::Context(e.into()))?;
 
                 // We currently have to postpone linking and instantiation to the guest task
                 // due to wasmtime limitations, in particular the fact that `Instance` is not `Send`.
@@ -1032,13 +1044,13 @@ impl ExecuteCtx {
                 let instance = instance_pre
                     .instantiate_async(&mut store)
                     .await
-                    .map_err(ExecutionError::Instantiation)?;
+                    .map_err(|e| ExecutionError::Instantiation(e.into()))?;
 
                 // Pull out the `_start` function, which by convention with WASI is the main entry point for
                 // an application.
                 let main_func = instance
                     .get_typed_func::<(), ()>(&mut store, "_start")
-                    .map_err(ExecutionError::Typechecking)?;
+                    .map_err(|e| ExecutionError::Typechecking(e.into()))?;
 
                 // Invoke the entrypoint function, which may or may not send a downstream response.
                 let outcome = match main_func.call_async(&mut store, ()).await {
@@ -1049,11 +1061,11 @@ impl ExecuteCtx {
                                 Ok(())
                             } else {
                                 event!(Level::ERROR, "WebAssembly exited with error: {:?}", e);
-                                Err(ExecutionError::WasmTrap(e))
+                                Err(ExecutionError::WasmTrap(e.into()))
                             }
                         } else {
                             event!(Level::ERROR, "WebAssembly trapped: {:?}", e);
-                            Err(ExecutionError::WasmTrap(e))
+                            Err(ExecutionError::WasmTrap(e.into()))
                         }
                     }
                 };
@@ -1109,13 +1121,19 @@ impl ExecuteCtx {
 
         let (module, instance_pre) = self.instance_pre.unwrap_module();
 
-        let profiler = self.guest_profile_config.as_deref().map(|pcfg| {
-            GuestProfiler::new(
-                program_name,
-                pcfg.sample_period,
-                vec![(program_name.to_string(), module.clone())],
-            )
-        });
+        let profiler = self
+            .guest_profile_config
+            .as_deref()
+            .map(|pcfg| {
+                GuestProfiler::new(
+                    self.engine(),
+                    program_name,
+                    pcfg.sample_period,
+                    vec![(program_name.to_string(), module.clone())],
+                )
+            })
+            .transpose()
+            .map_err(|e| ExecutionError::Context(e.into()))?;
 
         let mut store = create_store(&self, sandbox, profiler, |builder| {
             builder.arg(program_name);
@@ -1128,13 +1146,13 @@ impl ExecuteCtx {
         let instance = instance_pre
             .instantiate_async(&mut store)
             .await
-            .map_err(ExecutionError::Instantiation)?;
+            .map_err(|e| ExecutionError::Instantiation(e.into()))?;
 
         // Pull out the `_start` function, which by convention with WASI is the main entry point for
         // an application.
         let main_func = instance
             .get_typed_func::<(), ()>(&mut store, "_start")
-            .map_err(ExecutionError::Typechecking)?;
+            .map_err(|e| ExecutionError::Typechecking(e.into()))?;
 
         // Invoke the entrypoint function and collect its exit code
         let result =
@@ -1157,7 +1175,7 @@ impl ExecuteCtx {
         // finished.
         drop(receiver);
 
-        result
+        result.map_err(|e| e.into())
     }
 
     /// Create a fork of this execution context, sharing the engine and compiled module
@@ -1334,7 +1352,7 @@ impl ExecuteCtxBuilder {
 fn write_profile_to_file(profile: Box<GuestProfiler>, path: &PathBuf) {
     match std::fs::File::create(path)
         .map_err(anyhow::Error::new)
-        .and_then(|output| profile.finish(std::io::BufWriter::new(output)))
+        .and_then(|output| profile.finish(std::io::BufWriter::new(output)).map_err(|e| e.into()))
     {
         Err(e) => {
             event!(
@@ -1413,7 +1431,7 @@ fn configure_wasmtime(
     let mut config = Config::new();
     config.debug_info(false); // Keep this disabled - wasmtime will hang if enabled
     config.wasm_backtrace_details(WasmBacktraceDetails::Enable);
-    config.async_support(true);
+    // Note: async_support is always enabled by default in wasmtime 48+
     config.epoch_interruption(true);
     config.profiler(profiling_strategy);
 

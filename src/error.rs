@@ -96,6 +96,9 @@ pub enum Error {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 
+    #[error(transparent)]
+    Wasmtime(#[from] wasmtime::Error),
+
     #[error("Unsupported operation: {msg}")]
     Unsupported { msg: &'static str },
 
@@ -228,7 +231,8 @@ impl Error {
             | Self::UnfinishedStreamingBody
             | Self::InvalidClientCert(..)
             | Self::InvalidAlpnResponse(..)
-            | Self::CacheError(..) => StatusCode::BAD_GATEWAY,
+            | Self::CacheError(..)
+            | Self::Wasmtime(..) => StatusCode::BAD_GATEWAY,
 
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -326,7 +330,8 @@ impl Error {
             | Error::ToStr(_)
             | Error::FirstByteTimeout(_)
             | Error::BetweenBytesTimeout
-            | Error::InvalidAlpnResponse(_, _) => FastlyStatus::Error,
+            | Error::InvalidAlpnResponse(_, _)
+            | Error::Wasmtime(_) => FastlyStatus::Error,
         }
     }
 

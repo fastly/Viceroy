@@ -279,7 +279,8 @@ impl From<error::Error> for types::Error {
             | Error::TlsNoCAAvailable
             | Error::TlsNoValidCACerts
             | Error::TlsInvalidHost
-            | Error::TlsCertificateValidationFailed => types::Error::GenericError,
+            | Error::TlsCertificateValidationFailed
+            | Error::Wasmtime(_) => types::Error::GenericError,
         }
     }
 }

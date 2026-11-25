@@ -76,8 +76,8 @@ impl shielding::HostShieldBackendOptions for ComponentCtx {
         &mut self,
         resource: Resource<ShieldBackendOptions>,
         timeout_ms: u32,
-    ) -> Result<(), anyhow::Error> {
-        let current = self.wasi_table.get_mut(&resource)?;
+    ) -> wasmtime::Result<()> {
+        let current = self.wasi_table.get_mut(&resource).map_err(|e| wasmtime::Error::msg(e.to_string()))?;
         current.first_byte_timeout_ms = Some(timeout_ms);
         Ok(())
     }
@@ -86,16 +86,16 @@ impl shielding::HostShieldBackendOptions for ComponentCtx {
         &mut self,
         resource: Resource<ShieldBackendOptions>,
         timeout_ms: u32,
-    ) -> Result<(), anyhow::Error> {
-        let current = self.wasi_table.get_mut(&resource)?;
+    ) -> wasmtime::Result<()> {
+        let current = self.wasi_table.get_mut(&resource).map_err(|e| wasmtime::Error::msg(e.to_string()))?;
         current.between_bytes_timeout_ms = Some(timeout_ms);
         Ok(())
     }
 
     fn set_cache_key(&mut self, _resource: Resource<ShieldBackendOptions>, _cache_key: String) {}
 
-    fn new(&mut self) -> Result<Resource<ShieldBackendOptions>, anyhow::Error> {
-        Ok(self.wasi_table.push(ShieldBackendOptions::default())?)
+    fn new(&mut self) -> wasmtime::Result<Resource<ShieldBackendOptions>> {
+        Ok(self.wasi_table.push(ShieldBackendOptions::default()).map_err(|e| wasmtime::Error::msg(e.to_string()))?)
     }
 
     fn drop(&mut self, _options: Resource<ShieldBackendOptions>) -> wasmtime::Result<()> {
