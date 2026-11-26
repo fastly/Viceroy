@@ -20,6 +20,7 @@ mod fastly_key_is_valid;
 mod geolocation_lookup;
 mod grpc;
 mod handoff;
+mod http_cache;
 mod http_semantics;
 mod inspect;
 mod invalid_status_code;

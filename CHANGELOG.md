@@ -1,5 +1,12 @@
 ## Unreleased
 
+- Add experimental support for the readthrough (HTTP) cache API, behind the new
+  `--enable-http-cache` flag. When enabled, SDKs that support guest-side HTTP caching cache
+  backend responses in Viceroy's in-memory cache following HTTP caching semantics, and can use
+  the before-send / after-send hooks. Only core wasm modules are supported so far; hit-for-pass
+  objects and range requests are not implemented yet.
+  ([#496](https://github.com/fastly/Viceroy/issues/496))
+
 - Update hyper to 1.12.0. ([#770](https://github.com/fastly/Viceroy/pull/770))
 
 - Add a `--disable-symbolization` flag that skips symbolizing guest backtraces, like

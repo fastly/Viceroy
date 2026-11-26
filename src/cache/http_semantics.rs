@@ -351,11 +351,11 @@ pub fn prepare_response_for_storage(
         .flat_map(|v| v.split(','))
         .any(|name| name.trim() == "*");
 
-    let action = if !is_status_cacheable(status) || cache_control.has("no-store") || vary_all {
+    let action = if !is_status_cacheable(status) || vary_all {
         StorageAction::DoNotStore
-    } else if cache_control.has("private") {
-        // The default VCL boilerplate passes on `Cache-Control: private`, recording a
-        // hit-for-pass object.
+    } else if cache_control.has("private") || cache_control.has("no-store") {
+        // The default VCL boilerplate executes `return(pass)` in `vcl_fetch` for
+        // `Cache-Control: private` and `no-store`, which records a hit-for-pass object.
         StorageAction::RecordUncacheable
     } else {
         let options = suggested_write_options(request, headers, now);
@@ -610,7 +610,7 @@ mod tests {
         );
         assert_eq!(
             prepare(200, &[("cache-control", "no-store")]),
-            StorageAction::DoNotStore
+            StorageAction::RecordUncacheable
         );
         assert_eq!(
             prepare(200, &[("cache-control", "private")]),
